@@ -1,0 +1,385 @@
+syntax = "proto3";
+
+package doordash.retail.order.v1;
+
+import "doordash.retail.common.v1/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+
+// Settings specific to CnG stores
+service CnGStoreService {
+  // bulk tool design doc: https://drd.sh/hAxvBnQdJlSn66OQ/
+  rpc UpdateSubstitutionEnabled(UpdateSubstitutionEnabledRequest) returns (UpdateSubstitutionEnabledResponse);
+  // bulk tool design doc: https://drd.sh/mwt1kj4benuJtD4J/
+  rpc UpdateWeightedItemsEnabled(UpdateWeightedItemsEnabledRequest) returns (UpdateWeightedItemsEnabledResponse);
+  // GetWeightedItemsEnabled API design doc (for feed service to use): https://drd.sh/cv5SbyjvGLydbGID/
+  rpc GetWeightedItemsEnabled(GetWeightedItemsEnabledRequest) returns (GetWeightedItemsEnabledResponse);
+  // Update PickAccuracyEnabled column in stores table from retail db
+  rpc UpdatePickAccuracyEnabled(UpdatePickAccuracyEnabledRequest) returns (UpdatePickAccuracyEnabledResponse);
+  // Update AisleInfoEnabled column in stores table from retail db
+  rpc UpdateAisleInfoEnabled(UpdateAisleInfoEnabledRequest) returns (UpdateAisleInfoEnabledResponse);
+  // Update EntityConfiguration table in rfds CRDB (entity can be businesses, stores, items)
+  rpc UpdateEntityConfiguration(UpdateEntityConfigurationRequest) returns (UpdateEntityConfigurationResponse);
+  // Get configuration from EntityConfiguration table for a given entity (entity can be businesses, stores, items)
+  rpc GetEntityConfiguration(GetEntityConfigurationRequest) returns (GetEntityConfigurationResponse);
+  // Upsert checkout barcode to EntityConfiguration table - designed for bulk service's internal use only
+  rpc UpsertCheckoutBarcode(UpsertCheckoutBarcodeRequest) returns (UpsertCheckoutBarcodeResponse);
+}
+
+// request to enable/disable the substitution feature of a CnG store
+message UpdateSubstitutionEnabledRequest {
+  // ID of the store to change
+  string store_id = 1;
+  // flag if we enable orders in this store to have substitutions
+  bool substitution_enabled = 2;
+}
+
+// request to enable/disable the weighted items feature of a CnG store
+message UpdateWeightedItemsEnabledRequest {
+  // ID of the store to change
+  string store_id = 1;
+  // flag if we enable weighted-items feature for this store
+  bool weighted_items_enabled = 2;
+}
+
+// request to enable/disable the pick accuracy feature of a CnG store
+message UpdatePickAccuracyEnabledRequest {
+  // ID of the store to change
+  string store_id = 1;
+  // flag if we enable pick accuracy for this store
+  bool pick_accuracy_enabled = 2;
+}
+
+// request to enable/disable the aisle information feature of a CnG store
+message UpdateAisleInfoEnabledRequest {
+  // ID of the store to change
+  string store_id = 1;
+  // flag if we enable aisle information for this store
+  bool aisle_info_enabled = 2;
+}
+
+// request to enable/disable features of entities
+message UpdateEntityConfigurationRequest {
+  // support bulk update multiple entityUrns at once
+  repeated EntityConfiguration update_entity_configuration = 1;
+}
+
+// request to check if a CnG store enables the weighted items feature
+message GetWeightedItemsEnabledRequest {
+  // ID of the store to change
+  string store_id = 1;
+}
+
+// get current configurations for given entities
+message GetEntityConfigurationRequest {
+  // entities to get configurations for
+  repeated Entity entities = 1;
+}
+
+// request to generate barcodes
+message UpsertCheckoutBarcodeRequest {
+  // bulk barcode generation requests
+  repeated CheckoutBarcodeRequest checkout_barcode_request = 1;
+}
+
+// update substitutionEnabled response
+message UpdateSubstitutionEnabledResponse {}
+
+// update weightedItemsEnabled response
+message UpdateWeightedItemsEnabledResponse {}
+
+// update PickAccuracyEnabled response
+message UpdatePickAccuracyEnabledResponse {}
+
+// update AisleInfoEnabled response
+message UpdateAisleInfoEnabledResponse {}
+
+// update EntityConfiguration response
+message UpdateEntityConfigurationResponse {}
+
+// get weightedItemsEnabled response. Non-nullable. Returns false if store_id not found in retail DB
+message GetWeightedItemsEnabledResponse {
+  // flag if we enable weighted-items feature for this store
+  bool weighted_items_enabled = 1;
+}
+
+// get EntityConfigurationResponse
+message GetEntityConfigurationResponse {
+  // returned features enabled/disabled from EntityConfiguration table
+  repeated EntityConfiguration get_entity_configuration = 1;
+}
+
+// update EntityConfiguration response
+message UpsertCheckoutBarcodeResponse {
+  // generated barcode responses
+  repeated CheckoutBarcodeResponse checkout_barcode_response = 1;
+}
+
+// Structured locations list for the crowdsourced item locations feature
+message StructuredLocationsList {
+  // locations e.g. Aisle 1, Pharmacy, etc.
+  repeated string structured_locations = 1;
+}
+
+// Configuration for given entity
+message EntityConfiguration {
+  // entity to get configurations for
+  Entity entity = 1;
+  // substitution enabled
+  google.protobuf.BoolValue is_substitution_enabled = 2;
+  // weighted item enabled
+  google.protobuf.BoolValue is_weighted_items_enabled = 3;
+  // pick accuracy enabled
+  google.protobuf.BoolValue is_pick_accuracy_enabled = 4;
+  // aisle info enabled
+  google.protobuf.BoolValue is_aisle_info_enabled = 5;
+  // checkout barcode enabled
+  google.protobuf.BoolValue is_checkout_enabled = 6;
+  // delivery windows configuration
+  DeliveryWindowConfiguration delivery_window_configuration = 7;
+  // Are structured locations enabled for crowdsourced item locations
+  google.protobuf.BoolValue is_structured_locations_enabled = 8;
+  // list of locations
+  StructuredLocationsList structured_locations = 9;
+}
+
+// Entity (Entity type and associated id)
+message Entity {
+  // Specifies the type of entity to query for
+  enum Type {
+    // Unspecified and/or invalid entity
+    TYPE_UNSPECIFIED = 0;
+    // Business
+    TYPE_BUSINESS = 1;
+    // Store
+    TYPE_STORE = 2;
+  }
+  // type of entity to get/update (business, store, item)
+  Type type = 1;
+  // Id of entity (businessId, storeId, ItemId)
+  string id = 2;
+}
+
+// specifies use case of barcode
+enum CheckoutBarcodeUseCase {
+  // unknown use case
+  CHECKOUT_BARCODE_USE_CASE_UNSPECIFIED = 0;
+  // loyalty flag
+  CHECKOUT_BARCODE_USE_CASE_LOYALTY = 1;
+}
+
+// Checkout barcode schema
+message CheckoutBarcode {
+  // formats of barcode currently supported
+  enum Format {
+    // unknown format
+    FORMAT_UNSPECIFIED = 0;
+    // UPC-A format
+    FORMAT_UPC_A = 1;
+    // Code 128 format
+    FORMAT_CODE_128 = 2;
+    // PDF 417 format
+    FORMAT_PDF_417 = 3;
+    // QR code format
+    FORMAT_QR_CODE = 4;
+  }
+  // raw barcode string
+  string code = 1;
+  // format of barcode
+  Format format = 2;
+}
+
+// Checkout barcode request from bulk tool for given entity
+message CheckoutBarcodeRequest {
+  // identifier
+  Entity entity = 1;
+  // barcode
+  CheckoutBarcode barcode = 2;
+  // use case of barcode
+  CheckoutBarcodeUseCase use_case = 3;
+  // flag for barcode removal
+  bool remove_barcode = 4;
+}
+
+// Checkout barcode response returned to bulk tool for given entity
+message CheckoutBarcodeResponse {
+  // This is also the schema of checkout barcode configuration stored in the entity configuration table
+  message Configuration {
+    // barcode specifications
+    CheckoutBarcode barcode = 1;
+    // generated barcode url
+    string url = 2;
+    // use case of current barcode
+    CheckoutBarcodeUseCase use_case = 3;
+  }
+  // identifier
+  Entity entity = 1;
+  // configuration
+  Configuration configuration = 2;
+}
+
+// Ground truth filter types
+enum GroundTruthFilterType {
+  // Unspecified filte type
+  GROUND_TRUTH_FILTER_TYPE_UNSPECIFIED = 0;
+  // Filter based on L3 categories
+  GROUND_TRUTH_FILTER_TYPE_L3_CATEGORY = 1;
+  // Filter based on L4 categories
+  GROUND_TRUTH_FILTER_TYPE_L4_CATEGORY = 2;
+}
+
+// Ground truth task filter
+message GroundTruthFilter {
+  // Filter type
+  GroundTruthFilterType filter_type = 1;
+  // Filter value, e.g. category id, dasher id
+  string filter_content = 2;
+}
+
+// Filter configuration used for creating sub tasks in ground truth workflow
+message GroundTruthFilterConfiguration {
+  // List of filter contents
+  repeated GroundTruthFilter filters = 1;
+  // Configuration creation time
+  google.protobuf.Timestamp created_time = 2;
+}
+
+// Delivery Window Configuration used for override values for promo/fees/windows
+message DeliveryWindowConfiguration {
+  // rules
+  repeated DeliveryWindowRule rules = 1;
+}
+
+// Delivery Window Rule
+message DeliveryWindowRule {
+  // Rule configuration
+  oneof rule {
+    // Window size rule based on store time window
+    TimeBasedDeliveryWindowSize time_window_size = 1;
+    // Window size rule based on Flf score
+    FlfBasedDeliveryWindowSize flf_window_size = 2;
+    // Monetary (incentive or fee) based on store time window
+    TimeBasedDeliveryMonetary time_monetary = 3;
+    // Monetary (incentive or fee) based on Flf
+    FlfBasedDeliveryMonetary flf_monetary = 4;
+    // Monetary (incentive or fee) based on window score
+    WindowScoreBasedDeliveryMonetary score_monetary = 5;
+    // Disable window based on store time window
+    TimeBasedDeliveryWindowDisabled time_window_disabled = 6;
+    // Disable window based on Flf
+    FlfBasedDeliveryWindowDisabled flf_window_disabled = 7;
+    // Disable window based on window score
+    WindowScoreBasedDeliveryWindowDisabled score_window_disabled = 8;
+    // Disable option based on store time option
+    TimeBasedDeliveryOptionDisabled time_option_disabled = 9;
+    // Disable option based on Flf
+    FlfBasedDeliveryOptionDisabled flf_option_disabled = 10;
+    // Configure default option
+    DefaultDeliveryOption default_delivery_option = 11;
+  }
+  // Window size rule based on store time window
+  message TimeBasedDeliveryWindowSize {
+    // Min starting range
+    int32 min_range_time = 1;
+    // Max end range
+    int32 max_range_time = 2;
+    // Window size
+    int32 window_duration = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Window size rule based on Flf score
+  message FlfBasedDeliveryWindowSize {
+    // FLF score
+    double flf = 1;
+    // Operator for comparison
+    string operator = 2;
+    // Window size
+    int32 window_duration = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Monetary (incentive or fee) based on store time window
+  message TimeBasedDeliveryMonetary {
+    // Min starting range
+    int32 min_range_time = 1;
+    // Max end range
+    int32 max_range_time = 2;
+    // Monetary group
+    common.v1.MonetaryGroup monetary_group = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Monetary (incentive or fee) based on FLF score range
+  message FlfBasedDeliveryMonetary {
+    // FLF score
+    double flf = 1;
+    // Operator for comparison
+    string operator = 2;
+    // Monetary group
+    common.v1.MonetaryGroup monetary_group = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Monetary (incentive or fee) based on window score range
+  message WindowScoreBasedDeliveryMonetary {
+    // Window score
+    double window_score = 1;
+    // Operator for comparison
+    string operator = 2;
+    // Monetary group
+    common.v1.MonetaryGroup monetary_group = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Disable Window rule based on store time window
+  message TimeBasedDeliveryWindowDisabled {
+    // Min starting range
+    int32 min_range_time = 1;
+    // Max end range
+    int32 max_range_time = 2;
+  }
+  // Disable Window rule based on FLF score range
+  message FlfBasedDeliveryWindowDisabled {
+    // FLF score
+    double flf = 1;
+    // Operator for comparison
+    string operator = 2;
+  }
+  // Disable Window rule based on Window Score range
+  message WindowScoreBasedDeliveryWindowDisabled {
+    // Window score
+    double window_score = 1;
+    // Operator for comparison
+    string operator = 2;
+  }
+  // Override delivery option eligibility based on store time window
+  message TimeBasedDeliveryOptionDisabled {
+    // Min starting range
+    int32 min_range_time = 1;
+    // Max end range
+    int32 max_range_time = 2;
+    // Eligibility
+    bool eligible = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Override delivery option eligibility based on Flf
+  message FlfBasedDeliveryOptionDisabled {
+    // FLF score
+    double flf = 1;
+    // Operator for comparison
+    string operator = 2;
+    // Eligibility
+    bool eligible = 3;
+    // Delivery Option Type
+    common.v1.RetailDeliveryOptionType delivery_option_type = 4;
+  }
+  // Default delivery option
+  message DefaultDeliveryOption {
+    // Default delivery option
+    common.v1.RetailDeliveryOptionType delivery_option_type = 1;
+  }
+}

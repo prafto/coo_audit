@@ -1,0 +1,169 @@
+syntax = "proto3";
+
+package zero2one.v1;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "common/shop_anywhere.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.zero2one";
+
+// Service for all Shop Anywhere logic
+service ShopAnywhereService {
+  option (doordash.api.service) = {
+    url: "zero2one-shop-anywhere.service.prod.ddsd"
+    name: "zero2one-shop-anywhere-service"
+    port: 50051
+    name_spaces: ["shop-anywhere"]
+    owner: {
+      id: "swat-team"
+      name: "swat-team"
+      slack_channel: "#ask-swat-eng"
+      email_alias: "swat-eng-team@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Get homepage data for the provided submarket
+  rpc GetHomepage(GetHomepageRequest) returns (GetHomepageResponse) {
+    option (google.api.http) = {get: "/shop-anywhere/v1/homepage"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+
+  // generate shopping cart estimate
+  rpc GenerateShoppingCartEstimate(GenerateShoppingCartEstimateRequest) returns (GenerateShoppingCartEstimateResponse) {
+    option (google.api.http) = {
+      post: "/shop-anywhere/v1/shopping-cart-estimate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+
+  // Get autocomplete stores
+  rpc SearchStoreAutocomplete(SearchStoreAutocompleteRequest) returns (SearchStoreAutocompleteResponse) {
+    option (google.api.http) = {get: "/shop-anywhere/v1/search-store-autocomplete"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+}
+
+// Request to get homepage data
+message GetHomepageRequest {
+  // Submarket ID
+  google.protobuf.StringValue submarket_id = 1 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// Response for get homepage data
+message GetHomepageResponse {
+  // Shopping instructions
+  message ShopAnywhereInstructions {
+    // Instruction title for Shop Anywhere
+    google.protobuf.StringValue instruction_title = 1;
+    // Instructions for Shop Anywhere
+    repeated google.protobuf.StringValue instructions = 2;
+  }
+  // Consumer rating for Shop Anywhere
+  message ShopAnywhereConsumerRating {
+    // Star rating
+    google.protobuf.Int32Value star_rating = 1;
+    // Review text
+    google.protobuf.StringValue review_text = 2;
+    // Date of review
+    google.protobuf.StringValue date_display_string = 3;
+    // Reviewer display name
+    google.protobuf.StringValue reviewer_display_name = 4;
+  }
+  // Image URL for Shop Anywhere home page
+  google.protobuf.StringValue shop_anywhere_image_url = 1;
+  // Deprecated consumer ratings
+  reserved 2;
+  reserved "consumer_ratings";
+  // Shop Anywhere instructions
+  ShopAnywhereInstructions shop_anywhere_instructions = 3;
+}
+
+// Request to generate shopping cart estimate
+message GenerateShoppingCartEstimateRequest {
+  // e.g. "Trader Joe's"
+  google.protobuf.StringValue store_name = 1;
+  // e.g. "123 Main St, San Francisco, CA 94105"
+  google.protobuf.StringValue address_display_string = 2;
+  // Shopping cart items
+  repeated common.shop_anywhere.v1.ShoppingCartItem shopping_cart_items = 3;
+  // Consumer ID (Open AI prompt DV is gated by consumer_id)
+  google.protobuf.StringValue consumer_id = 4 [(doordash.api.inject_id) = CX_ID];
+  // Submarket ID
+  google.protobuf.StringValue submarket_id = 5 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// Response for generate shopping cart estimate
+message GenerateShoppingCartEstimateResponse {
+  // Estimated subtotal
+  money.MonetaryFields estimated_subtotal = 1;
+  // Min subtotal allowed in the submarket in cents (e.g. 500 means $5.00)
+  google.protobuf.Int32Value estimated_cost_min_unit_amount = 2;
+  // Max subtotal allowed in the submarket in cents
+  google.protobuf.Int32Value estimated_cost_max_unit_amount = 3;
+}
+
+// Request to autocomplete store
+message SearchStoreAutocompleteRequest {
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Submarket ID
+  google.protobuf.StringValue submarket_id = 2 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // User input
+  google.protobuf.StringValue input = 3;
+  // Max number of stores to return
+  google.protobuf.Int32Value max_results = 4;
+}
+
+// Response for autocomplete store
+message SearchStoreAutocompleteResponse {
+  // List of predicted stores
+  repeated common.shop_anywhere.v1.ShopAnywhereStoreDetails shop_anywhere_stores = 1;
+  // Placeholder string for UI
+  google.protobuf.StringValue placeholder_message = 2;
+}

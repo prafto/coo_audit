@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package risk_core.v1.risk_evaluation_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "risk-core/action.proto";
+import "risk-core/common.proto";
+import "risk-core/risk-evaluation-service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.risk_core.riskevaluation";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service RiskEvaluationService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 1500 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 500;
+  // Make a total 2 attempts (initial + one retries).
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Comments
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+
+  // Evaluate request stream
+  rpc EvaluateStream(stream EvaluateStreamRequest) returns (EvaluateStreamResponse);
+}
+
+// EvaluateStreamRequest stream request
+message EvaluateStreamRequest {
+  // each evaluation id for each of the checkpoint when evaluation starts
+  string evaluation_id = 1;
+  // each checkpoint's name
+  string checkpoint_id = 2;
+  // fact data containing fact name and fact value in byte
+  // list of fact data inputted for evaluation
+  repeated FactData fact_data = 3;
+}
+
+// EvaluateStreamResponse stream request
+message EvaluateStreamResponse {
+  // each evaluation's action output list
+  repeated Action actions = 1;
+
+  // RuleConfigProperty -> evaluted rules' partial config values
+  // this is needed to contruct checkpoint evaluation events
+  repeated RuleConfigProperty rule_config_properties = 2;
+
+  // live rule evaluation results, above fields will be deprecated once fully rollout
+  EvaluationResult live_evaluation_result = 3;
+
+  // shadow rule evaluation results, above fields will be deprecated once fully rollout
+  EvaluationResult shadow_evaluation_result = 4;
+
+  // list of fact data needed for evaluation
+  repeated FactData fact_data = 5;
+}
+
+/**
+ * Request for evaluation for each checkpoint.ev
+ *
+ * Clients pass in 1) evaluation_uuid 2) checkpoint_id
+ * to the grpc API
+ * These two params will serve as the query key to load
+ * data from the C* db and both the data and rule specs
+ * for the checkpoints
+ *
+ */
+message EvaluateRequest {
+  // each evaluation id for each of the checkpoint when evaluation starts
+  // This is also the pk of the underlying C* table
+  string evaluation_id = 1;
+  // each checkpoint's name
+  string checkpoint_id = 2;
+  // EvaluationContext is the additional data sent from risk-core to res
+  EvaluationContext evaluation_context = 3 [deprecated = true];
+  // fact data containing fact name and fact value in json format
+  message FactData {
+    // fact name
+    string fact_name = 1;
+    // value - encoded json
+    bytes fact_value = 2;
+  }
+  // list of fact datas needed for evaluation
+  repeated FactData fact_datas = 4;
+}
+
+/**
+ * Evaluation response for each checkpoint
+ *
+ */
+message EvaluateResponse {
+  // each evaluation's action output list
+  repeated Action actions = 1;
+  reserved 2;
+  reserved "rule_exemptions";
+
+  reserved 3;
+  reserved "rule_labels";
+
+  reserved 4;
+  reserved "rule_actions";
+  // RuleConfigProperty -> evaluted rules' partial config values
+  // this is needed to contruct checkpoint evaluation events
+  repeated RuleConfigProperty rule_config_properties = 5;
+
+  // live rule evaluation results, above fields will be deprecated once fully rollout
+  EvaluationResult live_evaluation_result = 6;
+
+  // shadow rule evaluation results, above fields will be deprecated once fully rollout
+  EvaluationResult shadow_evaluation_result = 7;
+}
+
+/*
+ * EvaluationResult captures the final evaluation result and each
+ * rule's result
+ */
+message EvaluationResult {
+  // each evaluation's action output list
+  repeated Action actions = 1;
+
+  // map of rule names to rule evaluation output
+  // removed previous separations of exemptions, labels, actions
+  // as the output's being used as string transformation of details only
+  map<string, RuleResult> rule_exemptions = 2;
+  // label rules for backward compatibilty puropse
+  map<string, RuleResult> rule_labels = 3;
+  // action rules for backward compatibility puropse
+  map<string, RuleResult> rule_actions = 4;
+}
+
+/*
+ * EvaluationContext captures both the list of entity type anbd ids to be evaluated per request
+ * together with some additional properties to be recorded within the evalutoin request
+ * the properties mostly are extracted from the risk-context set from the upstream services
+ */
+message EvaluationContext {
+  // one or multiple evaluation entities that can exist for each checkpoint / evaluation request
+  repeated EvaluationEntity entities = 1;
+  // extra properties that extracted from the risk-context but no necesarily to be evaluated
+  // but needs to be sent to iguazu / evaluation events table
+  google.protobuf.Struct extra_properties = 2;
+  // there should be just one segment user exist per checkpoint
+  SegmentUser segment_users = 3;
+}
+
+/**
+ * fact data containing fact name and fact value in json format
+ *
+ */
+message FactData {
+  // fact name
+  string fact_name = 1;
+  // value - encoded json
+  bytes fact_value = 2;
+}

@@ -1,0 +1,396 @@
+syntax = "proto3";
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/sibyl_prediction_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.sibyl_prediction_service.api";
+
+service SibylPredictionService {
+  option (service_client.client_config).service_name = "sibyl-prediction-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 500;
+  rpc GetLiveness(LivenessRequest) returns (LivenessResponse);
+  rpc GetReadiness(ReadinessRequest) returns (ReadinessResponse);
+  rpc GetPrediction(PredictionRequest) returns (PredictionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.1;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+service SibylPredictionServiceAdhoc {
+  rpc GetAdhocPrediction(PredictionRequest) returns (PredictionResponse);
+  rpc GetModelConfig(ModelConfigRequest) returns (ModelConfigResponse);
+  rpc GetPredictorConfig(PredictorConfigRequest) returns (PredictorConfigResponse);
+  rpc RegisterModel(RegisterModelRequest) returns (RegisterModelResponse);
+}
+
+message LivenessRequest {}
+
+message LivenessResponse {
+  bool alive = 1;
+}
+
+message ReadinessRequest {}
+
+message ReadinessResponse {
+  bool ready = 1;
+}
+
+message PredictionRequest {
+  repeated Predictor predictors = 1;
+  repeated PredictionFeatureSet feature_sets = 2;
+  RequestContext request_context = 3;
+}
+
+message PredictionResponse {
+  ResultCode result = 1;
+  repeated PredictorResult predictor_responses = 2;
+}
+
+message Predictor {
+  string predictor_name = 1;
+  string model_override_id = 2;
+}
+
+message PredictionFeatureSet {
+  string feature_set_id = 1;
+  repeated NumericalFeature numerical_features = 2;
+  repeated CategoricalFeature categorical_features = 3;
+  repeated EntityId entity_ids = 4;
+  repeated EmbeddingFeature embedding_features = 5;
+  repeated ListFeature list_features = 6;
+  repeated StringFeature string_features = 7;
+  repeated NumericalSignal numerical_signals = 8;
+  repeated TimeSeriesSignal time_series_signals = 9;
+  repeated SignalFeatures signal_features = 10;
+  repeated DdInferInputTensor provided_raw_tensors = 11;
+}
+
+message RequestContext {
+  // configure request execution
+  message RequestConfig {
+    // turn on debug logging for this request
+    bool debug = 1;
+  }
+
+  // tag string to track use-cases behind a prediction
+  string use_case = 1;
+  // tag string to help identify the calling service
+  string caller_service_name = 2;
+  // ad-hoc request configuration
+  RequestConfig request_config = 3;
+}
+
+message NumericalFeature {
+  string feature_name = 1;
+  float value = 2;
+  int32 seq_index = 3;
+}
+
+message CategoricalFeature {
+  string feature_name = 1;
+  oneof value {
+    string str_categorical_value = 2;
+    int32 num_categorical_value = 3;
+  }
+  int32 seq_index = 4;
+}
+
+message StringFeature {
+  string feature_name = 1;
+  string value = 2;
+  int32 seq_index = 3;
+}
+
+message NumericalSignal {
+  string signal_name = 1;
+  float value = 2;
+  int32 seq_index = 3;
+}
+
+message TimeSeriesSignal {
+  string signal_name = 1;
+  TimeSeries time_series = 2;
+  int32 seq_index = 3;
+}
+
+message SignalFeatures {
+  string signal_name = 1;
+  oneof value {
+    float aggregation_value = 2;
+    TimeSeries time_series = 3;
+  }
+  int32 seq_index = 4;
+}
+
+// EntityId is used to lookup aggregate features from feature store.
+// are listed in:  https://doordash.atlassian.net/wiki/spaces/MLPlatform/pages/1130201123/Feature+naming+convention
+// seq_index is used for features which are repeated multiple times in the model.
+// For example in seqence2classifier model,  same word embedding feature will appear n times.
+// In that case seq_index will be from 0 to n-1 with entity_name being "word" and id_value being the words.
+// In another example, for item comparision case same item embedding appears twice.
+// So for that case seq_index will be 0 and 1 with id_value being the item name and entity_name being
+// "store_item".
+message EntityId {
+  string entity_name = 1;
+  string id_value = 2;
+  int32 seq_index = 3;
+}
+
+message Embedding {
+  repeated float values = 1;
+}
+
+message EmbeddingFeature {
+  string feature_name = 1;
+  Embedding embedding = 2;
+  int32 seq_index = 3;
+}
+
+message Int64List {
+  repeated int64 values = 1;
+}
+
+message FloatList {
+  repeated float values = 1;
+}
+
+message TimeSeries {
+  repeated float time_series = 1;
+}
+
+message ListFeature {
+  string feature_name = 1;
+  oneof value {
+    Int64List int64_list = 2;
+    FloatList float_list = 3;
+  }
+  int32 seq_index = 4;
+}
+
+message TimestampedValue {
+  int64 expires_at = 1;
+  oneof value {
+    float numerical_value = 2;
+    Embedding embedding_value = 3;
+  }
+}
+
+// Encodes buckets as a map for various values of the dependee feature.
+message FeatureValueInner {
+  oneof value {
+    float float_value = 1;
+  }
+}
+
+message FeatureValue {
+  map<string, FeatureValueInner> values = 1;
+}
+
+message DependentFeature {
+  string feature_name = 1;
+  FeatureValue values = 2;
+  int32 seq_index = 3;
+}
+
+message ResultMetaData {
+  // the error message
+  string error_message = 1;
+}
+
+// `predictions` is a list of predictions, one prediction for each `PredictionFeatureSet`
+message PredictorResult {
+  string predictor_name = 1;
+  string model_id = 2;
+  repeated Prediction predictions = 3;
+  ResultCode result_code = 4;
+  ResultMetaData result_meta_data = 5;
+  repeated PredictionDebugInfo prediction_debug_info = 6;
+}
+
+message Prediction {
+  string feature_set_id = 1;
+  string model_id = 8;
+  // prediction output
+  oneof value {
+    float regression_value = 2;
+    float binary_classification_probability = 3;
+    MultiLabelValue multi_label_value = 6;
+    StringSequence string_sequence = 7;
+    EmbeddingOutput embedding_output = 9;
+    // output directly from triton server, each prediction can have multiple output tensors
+    MultiDdInferOutputTensor multi_dd_infer_output_tensor = 10;
+  }
+  ResultCode result_code = 4;
+  ResultMetaData result_meta_data = 5;
+}
+
+message MultiDdInferOutputTensor {
+  repeated DdInferOutputTensor dd_infer_output_tensor = 1;
+}
+
+message MultiLabelValue {
+  repeated LabelValue label_values = 1;
+}
+
+message StringSequence {
+  repeated string string_values = 1;
+}
+
+message EmbeddingOutput {
+  repeated float embedding_values = 1;
+}
+
+message LabelValue {
+  string label = 1;
+  float confidence = 2;
+}
+
+message PredictionDebugInfo {
+  string step_name = 1;
+  string debug_value = 2;
+  google.protobuf.Timestamp debug_timestamp = 3;
+  string step_name_description = 4;
+}
+
+enum ResultCode {
+  SUCCESS = 0;
+  TIMEOUT = 1;
+  PARSE_ERR = 2;
+  MODEL_NOT_FOUND = 3;
+  INTERNAL = 4;
+  INVALID_FEATURE_SET = 5;
+}
+
+message ModelConfigRequest {
+  string model_id = 1;
+}
+
+message ModelConfigResponse {
+  string model_config = 1;
+}
+
+message PredictorConfigRequest {
+  string predictor_name = 1;
+}
+
+message PredictorConfigResponse {
+  repeated string predictor_config = 1;
+}
+
+message RegisterModelRequest {
+  string s3_bucket = 1;
+  string predictor_name = 2;
+  string model_id = 3;
+}
+
+message RegisterModelResponse {
+  ModelStatus status = 1;
+  string message = 2;
+}
+
+enum ModelStatus {
+  MODEL_STATUS_UNKNOWN = 0;
+  MODEL_STATUS_LOCAL_STORED = 1;
+  MODEL_STATUS_LOADED = 2;
+  MODEL_STATUS_SERVING = 3;
+  MODEL_STATUS_ERROR = 4;
+}
+
+message DdInferInputTensor {
+  string name = 1;
+
+  // data type must one of the following:
+  // "BOOL", "BYTES"
+  // "INT8", "INT16", "INT32", "INT64",
+  // "UINT8", "UINT16", "UINT32", "UINT64",
+  //  "FP32", "FP64", ""STRING"
+  string datatype = 2;
+
+  repeated int64 shape = 3;
+
+  map<string, DdInferParameter> parameters = 4;
+
+  DdInferTensorContents contents = 5;
+}
+
+message DdInferOutputTensor {
+  string name = 1;
+  // data type must one of the following:
+  // "BOOL", "BYTES"
+  // "INT8", "INT16", "INT32", "INT64",
+  // "UINT8", "UINT16", "UINT32", "UINT64",
+  //  "FP32", "FP64"
+  string datatype = 2;
+
+  repeated int64 shape = 3;
+
+  map<string, DdInferParameter> parameters = 4;
+
+  DdInferTensorContents contents = 5;
+}
+
+message DdInferParameter {
+  oneof parameter_choice {
+    bool bool_param = 1;
+
+    int64 int64_param = 2;
+
+    string string_param = 3;
+
+    double double_param = 4;
+
+    uint64 uint64_param = 5;
+  }
+}
+
+message DdInferTensorContents {
+  // Representation for BOOL data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated bool bool_contents = 1;
+
+  // Representation for INT8, INT16, and INT32 data types. The size
+  // must match what is expected by the tensor's shape. The contents
+  // must be the flattened, one-dimensional, row-major order of the
+  // tensor elements.
+  repeated int32 int_contents = 2;
+
+  // Representation for INT64 data types. The size must match what
+  // is expected by the tensor's shape. The contents must be the
+  // flattened, one-dimensional, row-major order of the tensor elements.
+  repeated int64 int64_contents = 3;
+
+  // Representation for UINT8, UINT16, and UINT32 data types. The size
+  // must match what is expected by the tensor's shape. The contents
+  // must be the flattened, one-dimensional, row-major order of the
+  // tensor elements.
+  repeated uint32 uint_contents = 4;
+
+  // Representation for UINT64 data types. The size must match what
+  // is expected by the tensor's shape. The contents must be the
+  // flattened, one-dimensional, row-major order of the tensor elements.
+  repeated uint64 uint64_contents = 5;
+
+  // Representation for FP32 data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated float fp32_contents = 6;
+
+  // Representation for FP64 data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated double fp64_contents = 7;
+
+  // Representation for BYTES data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated bytes bytes_contents = 8;
+}

@@ -1,0 +1,404 @@
+syntax = "proto3";
+
+package attestation_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.attestation";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service AttestationService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // UpsertAttestation uploads message contains attestation and device info
+  rpc UpsertAttestation(UpsertAttestationRequest) returns (UpsertAttestationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 700;
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "attestation-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "web";
+  }
+
+  // VerifySession returns verification result by session
+  rpc VerifySession(VerifySessionRequest) returns (VerifySessionResponse);
+
+  // VerifyAttestation uploads attestation and returns verification result
+  rpc VerifyAttestation(VerifyAttestationRequest) returns (VerifyAttestationResponse);
+
+  // Challenge API
+  rpc Challenge(ChallengeRequest) returns (ChallengeResponse);
+
+  // Generic Evaluation API, initial usage is Mx Portal APIs
+  rpc EvaluateApi(EvaluateApiRequest) returns (EvaluateApiResponse);
+
+  // Web Device Fingerprint API, link device session id, device id, user id with sift fingerprint
+  rpc LinkDeviceSession(LinkDeviceSessionRequest) returns (LinkDeviceSessionResponse);
+
+  // GetResolvedDevice returns the resolved_device_id for given fingerprint
+  rpc GetResolvedDeviceId(GetResolvedDeviceIdRequest) returns (GetResolvedDeviceIdResponse);
+
+  // Add user to allowlist
+  rpc AddAllowlistUser(AddAllowlistUserRequest) returns (AddAllowlistUserResponse);
+
+  // Remove user from allowlist
+  rpc RemoveAllowlistUser(RemoveAllowlistUserRequest) returns (RemoveAllowlistUserResponse);
+
+  // DEPRECATED: Given device id, user id, risk context, link device to the user
+  rpc LinkDeviceToUser(LinkDeviceToUserRequest) returns (LinkDeviceToUserResponse) {
+    option deprecated = true;
+  }
+}
+
+// MessageType defines message payload type
+enum MessageType {
+  // UNKNOWN type
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  // IOS DeviceCheck device token
+  MESSAGE_TYPE_DEVICE_TOKEN = 1;
+  // SafetyNet attestation
+  MESSAGE_TYPE_SAFETY_NET = 2;
+  // IOS App Attest attestation
+  MESSAGE_TYPE_APP_ATTEST = 3;
+  // Google Integrity token
+  MESSAGE_TYPE_INTEGRITY_TOKEN = 4;
+  // App Attest assertion
+  MESSAGE_TYPE_APP_ATTEST_ASSERTION = 5;
+  // Custom token
+  MESSAGE_TYPE_CUSTOM_TOKEN = 6;
+}
+
+// DeviceInfo information about a mobile device
+message DeviceInfo {
+  // dd device id
+  string device_id = 1;
+  // os name
+  string os_name = 2;
+  // os version
+  string os_version = 3;
+  // device model
+  string device_model = 4;
+  // app name
+  string app_name = 5;
+  // app version
+  string app_version = 6;
+  // target type
+  string target_type = 7;
+  // is debug
+  bool is_debug = 8;
+  // finger prints
+  repeated Fingerprint finger_prints = 9;
+  // metadata
+  map<string, string> metadata = 10;
+}
+
+// finger print
+message Fingerprint {
+  // finger print type
+  FingerprintType type = 1;
+  // finger print value
+  string value = 2;
+}
+
+// UpsertAttestationRequest defines client upsert request
+message UpsertAttestationRequest {
+  // message content
+  string message = 1;
+  // message type
+  MessageType message_type = 2;
+  // user id if logged in
+  string user_id = 3;
+  // session id (uuid format)
+  string session_id = 4;
+  // Device Info
+  DeviceInfo device_info = 5;
+  // event_type is a string defines upsert event, i.e. app_start
+  string event_type = 6;
+  // error from third party attestation servers
+  string error = 7;
+  // timestamp used for nonce
+  int64 timestamp = 8;
+  // header value array
+  message HeaderValue {
+    // header values
+    repeated string values = 1;
+  }
+  // Map from HTTP headers
+  map<string, HeaderValue> headers = 9;
+  // Device token for keep sending ios device token when switch over to app attest
+  string device_token = 10;
+  // Key Id used for ios app attest key pair validation
+  string key_id = 11;
+  // client data hash used for associating an attestation with a payload
+  string client_data_hash = 12;
+}
+
+// UpsertAttestationResponse returns verification result from upsert
+message UpsertAttestationResponse {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // attestation verification result
+  bool is_trusted = 3;
+  // reason of the integrity verdict (deprecated, use reasons instead)
+  string reason = 4;
+  // refresh_in (in seconds) a threshold set for client to know when to refresh session and get attestation payload
+  int32 refresh_in = 5;
+  // reasons of the integrity verdict
+  repeated string reasons = 6;
+  // let client known this is retryable
+  bool retry = 7;
+}
+
+// VerifySessionRequest
+message VerifySessionRequest {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // event_type is a string defines current event / api i.e. login
+  string event_type = 3;
+  // client_version defines caller client version i.e. ios 2.024
+  string client_version = 4;
+  // client_data base64 to be verified for on demand
+  string client_data = 5;
+}
+
+// VerifySessionResponse
+message VerifySessionResponse {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // attestation verification result
+  bool is_trusted = 3;
+  // reason of the integrity verdict (deprecated, use reasons instead)
+  string reason = 4;
+  // reasons of the integrity verdict
+  repeated string reasons = 5;
+}
+
+// VerifyAttestationRequest defines verify attestation request
+message VerifyAttestationRequest {
+  // message content
+  string message = 1;
+  // message type
+  MessageType message_type = 2;
+  // user id if logged in
+  string user_id = 3;
+  // session id (uuid format)
+  string session_id = 4;
+  // Device Info
+  DeviceInfo device_info = 5;
+  // event_type is a string defines upsert event, i.e. app_start
+  string event_type = 6;
+  // error from third party attestation servers
+  string error = 7;
+  // timestamp used for nonce
+  int64 timestamp = 8;
+}
+
+// VerifyAttestationResponse
+message VerifyAttestationResponse {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // attestation verification result
+  bool is_trusted = 3;
+  // reason of the integrity verdict (deprecated, use reasons instead)
+  string reason = 4;
+  // reasons of the integrity verdict
+  repeated string reasons = 5;
+}
+
+// ChallengeRequest
+message ChallengeRequest {
+  // user id
+  string user_id = 1;
+  // session id
+  string session_id = 2;
+  // Device Info
+  DeviceInfo device_info = 3;
+  // event_type is a string defines upsert event, i.e. app_start
+  string event_type = 4;
+}
+
+// ChallengeResponse
+message ChallengeResponse {
+  // session id
+  string session_id = 1;
+  // challenge
+  string challenge = 2;
+}
+
+// Request for evaluation
+message ApiRequest {
+  // request host
+  string host = 1;
+  // request url
+  string url = 2;
+  // request method
+  string method = 3;
+  // request body
+  string body = 4;
+  // request params
+  string params = 5;
+  // request query
+  string query = 6;
+  // header value array
+  message HeaderValue {
+    // header values
+    repeated string values = 1;
+  }
+  // Map from HTTP headers
+  map<string, HeaderValue> headers = 7;
+}
+
+// EvaluateRequest
+message EvaluateApiRequest {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // Device Info
+  DeviceInfo device_info = 3;
+  // event_type is a string defines use case i.e. api name
+  string event_type = 4;
+  // Request for evaluation
+  ApiRequest api_request = 5;
+}
+
+// EvaluateResponse
+message EvaluateApiResponse {
+  // session id
+  string session_id = 1;
+  // user id
+  string user_id = 2;
+  // attestation verification result
+  bool is_trusted = 3;
+  // reasons of the integrity verdict
+  repeated string reasons = 4;
+}
+
+// LinkDeviceSessionRequest
+message LinkDeviceSessionRequest {
+  // dd_device_session_id
+  string dd_device_session_id = 1;
+  // dd_device_id
+  string dd_device_id = 2;
+  // user_id
+  string user_id = 3;
+  // Map from HTTP headers
+  map<string, HeaderValue> headers = 4;
+}
+
+// LinkDeviceSessionResponse
+message LinkDeviceSessionResponse {}
+
+// LinkDeviceToUserRequest
+message LinkDeviceToUserRequest {
+  option deprecated = true;
+  // user id
+  string user_id = 1;
+  // device unique id
+  string device_unique_id = 2;
+  // event type
+  EventType event_type = 3;
+  // device type
+  FingerprintType fingerprint_type = 4;
+}
+
+// LinkDeviceToUserResponse
+message LinkDeviceToUserResponse {
+  option deprecated = true;
+}
+
+// GetResolvedDeviceIdRequest
+message GetResolvedDeviceIdRequest {
+  // user_id
+  string user_id = 1;
+  // device_session_id
+  string device_session_id = 2;
+  // fingerprints
+  map<string, string> fingerprints = 3;
+}
+
+// GetResolvedDeviceIdResponse
+message GetResolvedDeviceIdResponse {
+  // resolved_device_id
+  string resolved_device_id = 1;
+}
+
+// header value array
+message HeaderValue {
+  // header values
+  repeated string values = 1;
+}
+
+// Event type
+enum EventType {
+  // unspecified
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // mfa
+  EVENT_TYPE_MFA = 1;
+  // checkout
+  EVENT_TYPE_CHECKOUT = 2;
+  // profile update
+  EVENT_TYPE_PROFILE_UPDATE = 3;
+  // sign up
+  EVENT_TYPE_SIGNUP = 4;
+  // login
+  EVENT_TYPE_LOGIN = 5;
+  // unknown
+  EVENT_TYPE_UNKNOWN = 6;
+}
+
+// fingperprint type
+enum FingerprintType {
+  // unspecified
+  FINGERPRINT_TYPE_UNSPECIFIED = 0;
+  // ddweb
+  FINGERPRINT_TYPE_DDWEB = 1;
+  // spid
+  FINGERPRINT_TYPE_SPID = 2;
+  // idfv
+  FINGERPRINT_TYPE_IDFV = 3;
+  // android id
+  FINGERPRINT_TYPE_ANDROID_ID = 4;
+  // siftweb
+  FINGERPRINT_TYPE_SIFTWEB = 5;
+  // drm id
+  FINGERPRINT_TYPE_DRM_ID = 6;
+  // advertising id
+  FINGERPRINT_TYPE_ADVERTISING_ID = 7;
+}
+
+// AddAllowlistUserRequest
+message AddAllowlistUserRequest {
+  // user id
+  string user_id = 1;
+}
+
+// AddAllowlistUserResponse
+message AddAllowlistUserResponse {}
+
+//RemoveAllowlistUserRequest
+message RemoveAllowlistUserRequest {
+  // user id
+  string user_id = 1;
+}
+
+// RemoveAllowlistUserResponse
+message RemoveAllowlistUserResponse {}

@@ -1,0 +1,778 @@
+syntax = "proto3";
+
+package doordash_consumer_profile_service;
+
+import "common/common.proto";
+import "common/personal_address_label.proto";
+import "common/service_client_config.proto";
+import "consumer_profile_service/common.proto";
+import "consumer_profile_service/consumer.proto";
+import "consumer_profile_service/consumer_address_link.proto";
+import "consumer_profile_service/consumer_metadata.proto";
+import "consumer_profile_service/consumer_tos_link.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/consumer_profile_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_profile_service";
+
+service ConsumerProfileService {
+  option (service_client.client_config).service_name = "consumer-profile-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 10;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  rpc CreateLiteGuestConsumer(CreateLiteGuestConsumerRequest) returns (CreateLiteGuestConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc GetLiteGuestConsumer(GetLiteGuestConsumerRequest) returns (GetLiteGuestConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc UpdateLiteGuestConsumer(UpdateLiteGuestConsumerRequest) returns (UpdateLiteGuestConsumerResponse);
+
+  rpc ConvertToFullGuestConsumer(ConvertToFullGuestConsumerRequest) returns (ConvertToFullGuestConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+  }
+
+  rpc CreateFullGuestConsumer(CreateFullGuestConsumerRequest) returns (CreateFullGuestConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 750;
+  }
+
+  rpc ConvertGuestToAuthenticatedConsumer(ConvertGuestToAuthenticatedConsumerRequest) returns (ConvertGuestToAuthenticatedConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2500;
+  }
+
+  rpc UpdateFullGuestToAuthenticatedConsumer(UpdateFullGuestToAuthenticatedConsumerRequest) returns (UpdateFullGuestToAuthenticatedConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2500;
+  }
+
+  rpc UpdateLiteGuestConsumerAddress(UpdateLiteGuestConsumerAddressRequest) returns (UpdateLiteGuestConsumerAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc GetConsumerById(GetConsumerByIdRequest) returns (GetConsumerByIdResponse) {
+    // This threshold is based on last 7 days p999 latency of 38ms. (12/26/23)
+    // Based on latency * 2 + COPS Retry time (25ms)
+    option (service_client.client_method_config).response_attempt_timeout_millis = 110;
+    option (service_client.client_method_config).retry_config.max_attempts = 4;
+    // We want to retry the likely transient conditions.
+    // 4: DEADLINE_EXCEEDED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    // 1: CANCELLED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 1;
+    // 14: UNAVAILABLE
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 14;
+    // 2: UNKNOWN (This should not happen, but just in case)
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 2;
+    // 10: ABORTED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 10;
+    // Circuit breaker config has been left to default
+    // Default behavior : https://doordash.atlassian.net/wiki/spaces/Eng/pages/2649752743/Hermes+Default+Behavior#Circuit-Breaking
+  }
+
+  rpc GetConsumer(GetConsumerRequest) returns (GetConsumerResponse) {
+    // This threshold is based on last 7 days p999 latency of 75ms. (12/26/23)
+    // Based on latency * 2 + COPS Retry time (25ms)
+    option (service_client.client_method_config).response_attempt_timeout_millis = 175;
+    option (service_client.client_method_config).retry_config.max_attempts = 4;
+    // We want to retry the likely transient conditions.
+    // 4: DEADLINE_EXCEEDED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    // 1: CANCELLED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 1;
+    // 14: UNAVAILABLE
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 14;
+    // 2: UNKNOWN (This should not happen, but just in case)
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 2;
+    // 10: ABORTED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 10;
+    // Circuit breaker config has been left to default
+    // Default behavior : https://doordash.atlassian.net/wiki/spaces/Eng/pages/2649752743/Hermes+Default+Behavior#Circuit-Breaking
+  }
+
+  rpc GetFullGuestConsumer(GetFullGuestConsumerRequest) returns (GetFullGuestConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+  }
+
+  rpc SetConsumerDefaultAddress(SetConsumerDefaultAddressRequest) returns (SetConsumerDefaultAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  rpc ListConsumersByUserID(ListConsumersByUserIDRequest) returns (ListConsumersByUserIDResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 750;
+  }
+
+  // This endpoint is tailored for Order Service and has max limit controlled by max_limit_list_consumers_by_ids
+  // Only order is enabled to call this endpoint.
+  rpc ListConsumersByIDs(ListConsumersByIDsRequest) returns (ListConsumersByIDsResponse) {
+    // Timeout is liberal here and would need tuning. this is a batch call.
+    // It would at max be querying roughly 20 consumers at a a time.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 750;
+  }
+
+  rpc BatchedListConsumersByUserID(BatchedListConsumersByUserIDRequest) returns (BatchedListConsumersByUserIDResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  /* This endpoint is tailored for Comms Service use case, and access controlled. */
+  rpc ListConsumersBySanitizedEmail(ListConsumersBySanitizedEmailRequest) returns (ListConsumersBySanitizedEmailResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  rpc QueryConsumer(QueryConsumerRequest) returns (QueryConsumerResponse);
+
+  rpc GetOrCreateAuthenticatedConsumer(GetOrCreateAuthenticatedConsumerRequest) returns (GetOrCreateAuthenticatedConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 150;
+  }
+
+  rpc ListConsumerAddressLinks(ListConsumerAddressLinksRequest) returns (ListConsumerAddressLinksResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+  }
+
+  rpc CreateConsumerAddressLink(CreateConsumerAddressLinkRequest) returns (CreateConsumerAddressLinkResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  // STOP! This API is used by GEO-ONLY. Instead, use CreateAddressByEntity in Geo address.proto
+  // We are migrating to Geo being the source of consumerAddressLink info, inverting the previous call pattern
+  // where CreateConsumerAddressLink called Geo. Now Geo CreateAddressByEntity calls COPS CreateConsumerAddressLinkRow
+  rpc CreateConsumerAddressLinkRow(CreateConsumerAddressLinkRowRequest) returns (CreateConsumerAddressLinkRowResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // STOP! If you want to retrieve address information of a consumer (by consumer id, address id), use GetAddressByEntity in Geo.
+  // See https://github.com/doordash/services-protobuf/blob/master/protos/geo-intelligence/address.proto#L74
+  // If you call this API today you will need to migrate to calling the API above. For details on how to migrate
+  // see https://doordash.atlassian.net/wiki/spaces/Eng/pages/2959049225/Guide+to+migrate+from+COPS+GetConsumerAddressLink+to+Geo+GRPC+API
+  rpc GetConsumerAddressLink(GetConsumerAddressLinkRequest) returns (GetConsumerAddressLinkResponse);
+
+  rpc GetConsumerAddressLinkById(GetConsumerAddressLinkByIdRequest) returns (GetConsumerAddressLinkByIdResponse);
+
+  rpc PatchConsumerAddressLink(PatchConsumerAddressLinkRequest) returns (PatchConsumerAddressLinkResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  rpc SetConsumerDefaultCountry(SetConsumerDefaultCountryRequest) returns (SetConsumerDefaultCountryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  rpc SetConsumerCateringContactEmail(SetConsumerCateringContactEmailRequest) returns (SetConsumerCateringContactEmailResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  rpc DeleteConsumerAddressLink(DeleteConsumerAddressLinkRequest) returns (DeleteConsumerAddressLinkResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  rpc SetConsumerScheduledDeliveryTime(SetConsumerScheduledDeliveryTimeRequest) returns (SetConsumerScheduledDeliveryTimeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  rpc SyncExternalConsumer(SyncExternalConsumerRequest) returns (SyncExternalConsumerResponse);
+
+  rpc RecordConsumerTermsOfServiceAcceptance(RecordConsumerTermsOfServiceAcceptanceRequest) returns (RecordConsumerTermsOfServiceAcceptanceResponse);
+
+  rpc GetPersonaVerification(GetPersonaVerificationRequest) returns (GetPersonaVerificationResponse);
+
+  rpc GetPersonaIdPhotoUrl(GetPersonaIdPhotoUrlRequest) returns (GetPersonaIdPhotoUrlResponse);
+
+  rpc TogglePersonaVerificationCaching(TogglePersonaVerificationCachingRequest) returns (TogglePersonaVerificationCachingResponse);
+
+  // This API is for RTF request
+  rpc DeletePersonaVerification(DeletePersonaVerificationRequest) returns (DeletePersonaVerificationResponse);
+
+  // This API is built for the Reviews & Ratings team
+  rpc ListReviewerInfoByConsumerIds(ListReviewerInfoByConsumerIdsRequest) returns (ListReviewerInfoByConsumerIdsResponse);
+
+  // This API is built for the Category Expansion team
+  rpc GetCxSelfExclusion(GetCxSelfExclusionRequest) returns (GetCxSelfExclusionResponse);
+
+  // This API is built for the Category Expansion team
+  rpc UpdateCxSelfExclusionBulk(UpdateCxSelfExclusionBulkRequest) returns (UpdateCxSelfExclusionBulkResponse);
+
+  // This API is built for DoorDash for Work's team-management-service
+  rpc SyncSanitizedEmail(SyncSanitizedEmailRequest) returns (SyncSanitizedEmailResponse);
+
+  // This API retrieves the unset and set default address labels along with any personal address labels a consumer may have
+  rpc ListAddressLabels(ListAddressLabelsRequest) returns (ListAddressLabelsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  rpc GetImmutableConsumer(GetImmutableConsumerRequest) returns (GetImmutableConsumerResponse) {
+    // This threshold is based on last 7 days p999 latency of 25ms. (12/26/23)
+    // Based on latency * 2 + COPS Retry time (25ms)
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 4;
+    // We want to retry the likely transient conditions.
+    // 4: DEADLINE_EXCEEDED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    // 1: CANCELLED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 1;
+    // 14: UNAVAILABLE
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 14;
+    // 2: UNKNOWN (This should not happen, but just in case)
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 2;
+    // 10: ABORTED
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 10;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+}
+
+/* Create Lite Guest */
+message CreateLiteGuestConsumerRequest {
+  ClientDeviceRequestContext request_ctx = 1;
+}
+
+message CreateLiteGuestConsumerResponse {
+  string consumer_id = 1;
+  ConsumerProfileType consumer_profile_type = 2;
+  string legacy_dsj_dd_guest_id = 3 [deprecated = true];
+}
+
+/* Get Lite Guest */
+message GetLiteGuestConsumerRequest {
+  string consumer_id = 1;
+  google.protobuf.BoolValue need_detailed_address = 2;
+  ClientDeviceRequestContext request_ctx = 3;
+  google.protobuf.BoolValue skip_creation_on_not_found = 4;
+}
+
+message GetLiteGuestConsumerResponse {
+  string consumer_id = 1;
+  google.protobuf.Timestamp scheduled_delivery_time = 2;
+  google.protobuf.StringValue address_id = 3;
+  AddressDetail address = 4;
+  google.protobuf.StringValue dasher_instructions = 5;
+  google.protobuf.StringValue subpremise = 6;
+  repeated DropOffPreference dropoff_preferences = 7;
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 8;
+  google.protobuf.BoolValue created_on_not_found = 9;
+}
+
+/* Create Full Guest */
+message CreateFullGuestConsumerRequest {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.StringValue last_name = 2;
+  google.protobuf.StringValue phone_number = 3;
+  FullGuestConsumerType full_guest_consumer_type = 4;
+  ClientDeviceRequestContext request_ctx = 5;
+  google.protobuf.StringValue password = 6;
+  google.protobuf.BoolValue receive_text_notifications = 7;
+  google.protobuf.StringValue delivery_customer_pii_id = 8;
+  google.protobuf.StringValue catering_contact_email = 9;
+  ConsumerAddressLink default_consumer_address_link = 10;
+  // User locale (e.g. "en_US", "fr_CA")
+  google.protobuf.StringValue locale = 11;
+}
+
+message CreateFullGuestConsumerResponse {
+  string consumer_id = 1;
+  ConsumerProfileType consumer_profile_type = 2;
+  FullGuestConsumerType full_guest_consumer_type = 3;
+  string legacy_dsj_sessionid = 4 [deprecated = true];
+  google.protobuf.StringValue email = 5;
+  ConsumerAddressLink default_consumer_address_link = 6;
+  google.protobuf.StringValue authorization_code = 7;
+}
+
+/* SyncExternalConsumer */
+message SyncExternalConsumerRequest {
+  google.protobuf.StringValue external_consumer_id = 1;
+  google.protobuf.Int64Value tenant_id = 2;
+  google.protobuf.StringValue catering_contact_email = 3;
+  google.protobuf.StringValue phone_number = 4;
+  AddressToCreate address_to_create = 5;
+  FullGuestConsumerType full_guest_consumer_type = 6;
+  google.protobuf.BoolValue receive_text_notifications = 7;
+  google.protobuf.StringValue first_name = 8;
+  google.protobuf.StringValue last_name = 9;
+  google.protobuf.StringValue consumer_id = 10; // DoorDash consumer id
+  google.protobuf.StringValue user_locale_preference = 11;
+  /*
+     tenant ids are created based on the experience such as storefront, doordash, caviar and prefix is what drives it.
+     for example in case of storefront this is what can happen.
+     1. storefront tenant with business -> storefront:<business_id>
+     2. storefront tenant with business group -> storefront:businessgroup-<business_group_id>
+     3. storefront GFO tenant google_storefront:${business_id}
+     business_id and business_group_id are acting as tenant id here and we need a way to pass tenant_prefix too.
+     adding tenant prefix field will help separating out the logic of how to calculate it and storefront consumer
+     can be created accordingly as per this prefix.
+     after adding this field, actual tenant id for a storefront consumer would be
+     {tenant_id_prefix}{tenant_id}
+  */
+  google.protobuf.StringValue tenant_id_prefix = 12;
+  google.protobuf.StringValue dasher_instructions = 13;
+  google.protobuf.StringValue subpremise = 14;
+}
+
+message SyncExternalConsumerResponse {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+/* Convert Lite Guest to Full Guest */
+message ConvertToFullGuestConsumerRequest {
+  string lite_guest_consumer_id = 1;
+  FullGuestConsumerType converted_to_full_guest_consumer_type = 2;
+  ClientDeviceRequestContext request_ctx = 3;
+}
+
+message ConvertToFullGuestConsumerResponse {
+  string consumer_id = 1;
+  ConsumerProfileType consumer_profile_type = 2;
+  FullGuestConsumerType converted_to_full_guest_consumer_type = 3;
+  string legacy_dsj_sessionid = 4 [deprecated = true];
+  google.protobuf.StringValue authorization_code = 5;
+}
+
+/* Update Lite Guest */
+message UpdateLiteGuestConsumerRequest {
+  string consumer_id = 1; // this is from cookie: dd_guest_id for lite guests (UUID)
+  google.protobuf.StringValue default_address_id = 2;
+  ClientDeviceRequestContext request_ctx = 3;
+}
+
+message UpdateLiteGuestConsumerResponse {
+  string consumer_id = 1; // this is from cookie: dd_guest_id for lite guests (UUID)
+  ConsumerProfileType consumer_profile_type = 2; // can we define a constant here? guest_type = ProfileType.LITE_GUEST 2?
+  google.protobuf.StringValue default_address_id = 3;
+}
+
+message UpdateLiteGuestConsumerAddressRequest {
+  reserved 5;
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue subpremise = 3;
+  repeated DropOffPreference dropoff_preferences = 4;
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 7;
+  LiteGuestAddressToCreate address_to_create = 6;
+}
+
+message UpdateLiteGuestConsumerAddressResponse {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue subpremise = 3;
+  google.protobuf.StringValue address_id = 4;
+  repeated DropOffPreference dropoff_preferences = 5;
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 7;
+  AddressDetail address = 6;
+}
+
+enum ConvertGuestToAuthenticatedConsumerEvent {
+  UNKNOWN_EVENT = 0;
+  LOGIN_EVENT = 1;
+  SIGNUP_EVENT = 2;
+}
+
+/* Convert Lite or Full Guest to Authenticated Consumer */
+message ConvertGuestToAuthenticatedConsumerRequest {
+  string guest_consumer_id = 1;
+  ConsumerProfileType consumer_profile_type = 2;
+  string authenticated_user_id = 3;
+  ConvertGuestToAuthenticatedConsumerEvent event = 4;
+  ClientDeviceRequestContext request_ctx = 5;
+}
+
+message ConvertGuestToAuthenticatedConsumerResponse {
+  string consumer_id = 1;
+}
+
+message UpdateFullGuestToAuthenticatedConsumerRequest {
+  string guest_consumer_id = 1;
+  string authenticated_user_id = 2;
+  string email = 3;
+}
+
+message UpdateFullGuestToAuthenticatedConsumerResponse {
+  string consumer_id = 1;
+}
+
+message GetConsumerByIdRequest {
+  string id = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+}
+
+message GetConsumerByIdResponse {
+  Consumer consumer = 1;
+}
+
+message GetConsumerRequest {
+  ConsumerIdentifier identifier = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+  google.protobuf.BoolValue need_default_address_link = 3;
+  google.protobuf.BoolValue need_detailed_address = 4;
+  google.protobuf.BoolValue need_metadata = 5;
+  google.protobuf.BoolValue need_self_exclusion = 6;
+}
+
+message GetConsumerResponse {
+  Consumer consumer = 1;
+  ConsumerAddressLink default_address_link = 2;
+  ConsumerMetadata metadata = 3;
+  repeated BlockedItemType blocked_item_type = 4;
+}
+
+message GetFullGuestConsumerRequest {
+  FullGuestConsumerIdentifier identifier = 1;
+  google.protobuf.BoolValue need_default_address_link = 2;
+  google.protobuf.BoolValue need_detailed_address = 3;
+}
+
+message GetFullGuestConsumerResponse {
+  FullGuestConsumer consumer = 1;
+  ConsumerAddressLink default_address_link = 2;
+}
+
+message SetConsumerDefaultAddressRequest {
+  ConsumerIdentifier consumer_identifier = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+  AddressIdOrAddressLinkId default_address_identifier = 3;
+  google.protobuf.BoolValue need_detailed_address = 4;
+}
+
+message SetConsumerDefaultAddressResponse {
+  ConsumerAddressLink default_address_link = 1;
+  Consumer consumer = 2;
+}
+
+message ListConsumersByUserIDRequest {
+  string user_id = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+}
+
+message ListConsumersByIDsRequest {
+  /* List of consumer ids to be queried */
+  repeated string ids = 1;
+  /* if of queried x consumers, y are not found, do you want COPS to throw Not Found operation and fail */
+  google.protobuf.BoolValue throw_consumer_not_found = 2;
+  /* Request context */
+  ClientDeviceRequestContext request_ctx = 3;
+}
+
+message ListConsumersByIDsResponse {
+  repeated Consumer consumers = 1;
+  /* List of consumers not found in COPS */
+  repeated string consumers_not_found = 2;
+}
+
+message BatchedListConsumersByUserIDRequest {
+  repeated ListConsumersByUserIDRequest list_consumers_by_user_id_requests = 1;
+}
+
+message ListConsumersByUserIDResponse {
+  repeated Consumer consumers = 1;
+}
+
+message BatchedListConsumersByUserIDResponse {
+  map<string, ListConsumersByUserIDResponse> list_consumers_by_user_id_responses = 1;
+}
+
+message ListConsumersBySanitizedEmailRequest {
+  string sanitized_email = 1;
+}
+
+message ListConsumersBySanitizedEmailResponse {
+  repeated Consumer consumers = 1;
+}
+
+message QueryConsumerRequest {
+  google.protobuf.Int32Value max_row_count = 1;
+  repeated string referral_codes = 2;
+}
+
+message QueryConsumerResponse {
+  repeated Consumer consumers = 1;
+}
+
+/*
+ * Used for sign-up/sign-in flows
+ * Note a Consumer is uniquely identified by (user_id, experience)
+ */
+message GetOrCreateAuthenticatedConsumerRequest {
+  // Numeric in practice, string by convention
+  string user_id = 1;
+  ConsumerExperience experience = 2;
+  // Used when creating a Consumer.
+  // Because this endpoint is intended to be used in tandem with identity,
+  // we ask for the email in the payload to to save a network request.
+  google.protobuf.StringValue email = 3;
+}
+
+message GetOrCreateAuthenticatedConsumerResponse {
+  Consumer consumer = 1;
+}
+
+/* List all of ConsumerAddressLink given a consumer identifier. */
+message ListConsumerAddressLinksRequest {
+  ConsumerIdentifier identifier = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+  google.protobuf.BoolValue need_detailed_address = 3;
+  google.protobuf.BoolValue need_personal_address_labels = 4;
+  // This flag decides whether to return drop-off locations with the list call, false by default
+  google.protobuf.BoolValue need_drop_off_locations = 5;
+}
+
+message ListConsumerAddressLinksResponse {
+  repeated ConsumerAddressLink consumer_address_links = 1;
+}
+
+/* Create a ConsumerAddressLink. */
+message CreateConsumerAddressLinkRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue subpremise = 3;
+  google.protobuf.StringValue entry_code = 4;
+  google.protobuf.StringValue parking_instructions = 5;
+  repeated DropOffPreference dropoff_preferences = 6;
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 13;
+  AddressToCreate address_to_create = 7;
+  google.protobuf.BoolValue validate_address = 8;
+  google.protobuf.BoolValue set_default = 9; // default to True
+  LatLng manual_point = 10;
+  google.protobuf.StringValue building_name = 11;
+  AddressLinkType address_link_type = 12;
+  // location_preference is a drop-off location preference that a Cx can specify - currently it is only being used for qualified hotels
+  LocationPreference location_preference = 14;
+}
+
+message CreateConsumerAddressLinkResponse {
+  ConsumerAddressLink consumer_address_link = 1;
+  Consumer consumer = 2;
+}
+
+message CreateConsumerAddressLinkRowRequest {
+  ConsumerAddressLinkRowToCreate consumer_address_link_to_create = 1;
+}
+
+message CreateConsumerAddressLinkRowResponse {
+  ConsumerAddressLink consumer_address_link = 1;
+}
+
+/* Get a ConsumerAddressLink. */
+message GetConsumerAddressLinkRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue address_id = 2;
+  google.protobuf.BoolValue need_detailed_address = 3;
+  google.protobuf.BoolValue need_personal_address_label = 4;
+  // This flag decides whether to return drop-off locations with the Get call, false by default
+  google.protobuf.BoolValue need_drop_off_locations = 5;
+}
+
+message GetConsumerAddressLinkResponse {
+  ConsumerAddressLink consumer_address_link = 1;
+}
+
+/* Get a ConsumerAddressLink by ConsumerAddressLink Id. */
+message GetConsumerAddressLinkByIdRequest {
+  int64 consumer_address_link_id = 1;
+  google.protobuf.BoolValue need_detailed_address = 2;
+  google.protobuf.BoolValue need_personal_address_label = 3;
+  // This flag decides whether to return drop-off locations with the Get call, false by default
+  google.protobuf.BoolValue need_drop_off_locations = 4;
+  // consumer_address_link_string_id is a string based id for a ConsumerAddressLink
+  // All clients would be expected to move to a string based by EOY 24
+  google.protobuf.StringValue consumer_address_link_string_id = 5;
+}
+
+message GetConsumerAddressLinkByIdResponse {
+  ConsumerAddressLink consumer_address_link = 1;
+}
+
+/* Patch a ConsumerAddressLink. */
+message PatchConsumerAddressLinkRequest {
+  ConsumerAddressLinkIdentifier identifier = 1;
+  PatchableConsumerAddressLink consumer_address_link = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  ConsumerIdentifier consumer_identifier = 4;
+  google.protobuf.BoolValue skip_manual_pin_distance_check = 5;
+}
+
+message PatchConsumerAddressLinkResponse {}
+
+/* Set Consumer Default Country */
+message SetConsumerDefaultCountryRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue default_country = 2;
+}
+
+message SetConsumerDefaultCountryResponse {}
+
+/* Set Consumer Catering Contact Email */
+message SetConsumerCateringContactEmailRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue catering_contact_email = 2;
+}
+
+message SetConsumerCateringContactEmailResponse {}
+
+/* Delete ConsumerAddressLink. */
+message DeleteConsumerAddressLinkRequest {
+  ConsumerAddressLinkIdentifier identifier = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+  ConsumerIdentifier consumer_identifier = 3;
+}
+
+message DeleteConsumerAddressLinkResponse {}
+
+message SetConsumerScheduledDeliveryTimeRequest {
+  string consumer_id = 1;
+  google.protobuf.Timestamp scheduled_delivery_time = 2;
+}
+
+message SetConsumerScheduledDeliveryTimeResponse {}
+
+message RecordConsumerTermsOfServiceAcceptanceRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue version = 2; // optional : if not present, "latest" version will be used
+}
+
+message RecordConsumerTermsOfServiceAcceptanceResponse {
+  ConsumerTOSLink tos_link = 1;
+}
+
+message GetPersonaVerificationRequest {
+  string consumer_id = 1;
+
+  // This is a flag to force fetching latest cx_id_info from Persona side instead of reading from db.
+  //
+  // If min_age_requirement is not passed in the request, this uses the currently stored min_age_requirement in the db
+  // to validate the force fetch result against (returns invalid status if force fetched verification age < stored min age).
+  //
+  // If there is no currently store min_age_requirement in the db and min_age_requirement is not passed in the request,
+  // an invalid verification status will be returned.
+  bool force_update = 2;
+
+  // Required in (almost) all cases to ensure the verification meets age requirements. If the verification does not
+  // meet age requirements, a status of invalid will be returned. Not required if force updating an existing
+  // verification (see above).
+  google.protobuf.Int32Value min_age_requirement = 3;
+}
+
+message GetPersonaIdPhotoUrlRequest {
+  string reference_id = 1;
+}
+
+message GetPersonaVerificationResponse {
+  string persona_account_id = 1;
+  PersonaVerificationStatus status = 2;
+  string id_photo_url = 3;
+}
+
+message GetPersonaIdPhotoUrlResponse {
+  PersonaVerificationStatus status = 1;
+  string id_photo_url = 2;
+}
+
+message TogglePersonaVerificationCachingRequest {
+  string consumer_id = 1;
+  google.protobuf.BoolValue caching_enabled = 2;
+}
+
+message TogglePersonaVerificationCachingResponse {
+  PersonaVerificationStatus status = 1;
+}
+
+message DeletePersonaVerificationRequest {
+  string consumer_id = 1;
+}
+
+message DeletePersonaVerificationResponse {}
+
+enum PersonaVerificationStatus {
+  PERSONA_STATUS_UNKNOWN = 0;
+  PERSONA_STATUS_NOT_SUBMITTED = 1;
+  PERSONA_STATUS_VALID = 2;
+  PERSONA_STATUS_NOT_VALID = 3;
+  PERSONA_STATUS_EXPIRED = 4;
+  PERSONA_STATUS_NO_CACHE = 5;
+}
+
+message Reviewer {
+  string consumer_id = 1;
+  ConsumerExperience experience = 2;
+  google.protobuf.StringValue first_name = 3;
+  google.protobuf.StringValue last_name = 4;
+  google.protobuf.StringValue email = 5;
+}
+
+message ListReviewerInfoByConsumerIdsRequest {
+  repeated string consumer_ids = 1;
+}
+
+message ListReviewerInfoByConsumerIdsResponse {
+  repeated Reviewer reviewers = 1;
+}
+
+enum BlockedItemType {
+  UNKNOWN_TYPE = 0;
+  ALCOHOL_TYPE = 1;
+}
+
+message GetCxSelfExclusionRequest {
+  string consumer_id = 1;
+}
+
+message GetCxSelfExclusionResponse {
+  repeated BlockedItemType blocked_item_type = 1;
+}
+
+message CxBlockedItemsSetting {
+  string consumer_id = 1;
+  repeated BlockedItemType blocked_item_type = 2;
+}
+
+message UpdateCxSelfExclusionBulkRequest {
+  repeated CxBlockedItemsSetting consumer_blocked_items_setting = 1;
+  string created_by = 2; // user_id of person who ran the update
+}
+
+message UpdateCxSelfExclusionBulkResponse {}
+
+message SyncSanitizedEmailRequest {
+  string user_id = 1;
+}
+
+/**
+ * List of all consumers that were updated.
+ *  This response will include the Consumer.sanitized_email field.
+ */
+message SyncSanitizedEmailResponse {
+  repeated Consumer consumers = 1;
+}
+
+message ListAddressLabelsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  // User locale (e.g. "en_US", "fr_CA")
+  google.protobuf.StringValue locale = 2;
+}
+
+message ListAddressLabelsResponse {
+  repeated AddressLabelRecord address_label_records = 1;
+}
+
+message AddressLabelRecord {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue label_name = 2;
+  personal_address_label.v1.PersonalAddressLabel.LabelIcon label_icon = 3;
+  google.protobuf.StringValue consumer_id = 4;
+  // This field is the id field in the CAL table
+  google.protobuf.Int64Value consumer_address_link_id = 5;
+  google.protobuf.StringValue address_id = 6;
+  // consumer_address_link_string_id is a string based id for a ConsumerAddressLink
+  // All clients would be expected to move to a string based by EOY 24
+  google.protobuf.StringValue consumer_address_link_string_id = 7;
+}
+
+message GetImmutableConsumerRequest {
+  ConsumerIdentifier identifier = 1;
+}
+
+message GetImmutableConsumerResponse {
+  ImmutableConsumer consumer = 1;
+}

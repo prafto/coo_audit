@@ -1,0 +1,231 @@
+syntax = "proto3";
+
+package postal_service.v1;
+
+import "common/code.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "postal_service/postal_service_common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/postal_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.postal_service";
+
+// Service for handling masking session
+service MaskingService {
+  // Timeout after 1500 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 1500;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Create or Get a masking session
+  rpc GetMaskingNumber(GetMaskingNumberRequest) returns (GetMaskingNumberResponse);
+
+  // Create or Get a masking session with new endpoint
+  rpc GetPhoneMaskingNumber(GetPhoneMaskingNumberRequest) returns (GetPhoneMaskingNumberResponse);
+
+  // end masking sessions
+  rpc EndMaskingSessions(EndMaskingSessionsRequest) returns (EndMaskingSessionsResponse);
+
+  // mark the participant in masking sessions as temporarily deactivated
+  rpc DeactivateMaskingSessions(DeactivateMaskingSessionsRequest) returns (DeactivateMaskingSessionsResponse);
+
+  // update masking sessions
+  rpc UpdateParticipantInMaskingSessions(UpdateParticipantInMaskingSessionsRequest) returns (UpdateParticipantInMaskingSessionsResponse);
+
+  // verify text eligibility
+  rpc VerifyTextEligibility(VerifyTextEligibilityRequest) returns (VerifyTextEligibilityResponse);
+}
+
+// participant
+message Participant {
+  // participant phone number, optional
+  google.protobuf.StringValue phone_number = 1;
+
+  // participant profile type, optional
+  ProfileType profile_type = 2;
+}
+
+// get masking number request
+message GetMaskingNumberRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // delivery uuid
+  string delivery_uuid = 2;
+
+  // source
+  Participant source = 3;
+
+  // destination
+  Participant destination = 4;
+
+  // is textable
+  bool is_textable = 5;
+
+  // country shortname
+  string country_shortname = 6;
+
+  // experience
+  Experience experience = 7;
+
+  // consumer id
+  int64 consumer_id = 8;
+
+  // moderation strategy
+  repeated MaskingCapability masking_capabilities = 9;
+}
+
+// masking capability
+enum MaskingCapability {
+  // unspecified
+  MASKING_CAPABILITY_UNSPECIFIED = 0;
+
+  // moderate calls
+  MASKING_CAPABILITY_MODERATE_CALL = 1;
+}
+
+// get masking number response
+message GetMaskingNumberResponse {
+  // masking number
+  string masking_number = 1;
+
+  // is the phone number textable
+  bool is_textable = 2;
+
+  // fallback phone number
+  string fallback_number = 3;
+
+  // fallback reason
+  string fallback_reason = 4;
+
+  // DEPRECATED(notification-service is deprecated)
+  // decide whether fallback to call notification service during migration
+  bool call_notification_service = 5 [deprecated = true];
+}
+
+// get phone masking number request to replace get masking number
+message GetPhoneMaskingNumberRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // source
+  Participant source = 2;
+
+  // destination
+  Participant destination = 3;
+}
+
+// get phone masking number response to replace get masking number
+message GetPhoneMaskingNumberResponse {
+  // masking number
+  string masking_number = 1;
+
+  // is the phone number textable
+  bool is_textable = 2;
+
+  // fallback phone number
+  string fallback_number = 3;
+
+  // fallback reason
+  string fallback_reason = 4;
+}
+
+// end masking sessions request
+message EndMaskingSessionsRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // delivery uuid
+  string delivery_uuid = 2;
+
+  // DEPRECATED(masking session will end immediately at API call)
+  // time at which to actually end the masking session
+  google.protobuf.Timestamp execution_time = 3 [deprecated = true];
+
+  // optional (profile_type_1, profile_type_2) - profile types to end masking session for
+  // if specified, will ONLY end masking session between profile_type_1 <> profile_type_2,
+  //               must have exactly 2 profile types specified
+  // if not specified, will end masking session between all participants
+  ProfileType profile_type_1 = 4;
+
+  // optional (profile_type_1, profile_type_2) - profile types to end masking session for
+  ProfileType profile_type_2 = 5;
+}
+
+// end masking sessions response
+message EndMaskingSessionsResponse {
+  /// DEPRECATED(notification-service is deprecated)
+  // decide whether fallback to call notification service during migration
+  bool call_notification_service = 1 [deprecated = true];
+}
+
+// update participant in masking sessions request
+message UpdateParticipantInMaskingSessionsRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // delivery uuid
+  string delivery_uuid = 2;
+
+  // profile type
+  ProfileType profile_type = 3;
+
+  // old participant phone number
+  string old_participant_phone_number = 4;
+
+  // new participant phone number
+  string new_participant_phone_number = 5;
+}
+
+// update participant in masking sessions response
+message UpdateParticipantInMaskingSessionsResponse {
+  // DEPRECATED(notification-service is deprecated)
+  // decide whether fallback to call notification service during migration
+  bool call_notification_service = 1 [deprecated = true];
+}
+
+// deactivate masking sessions request
+message DeactivateMaskingSessionsRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // delivery uuid
+  string delivery_uuid = 2;
+
+  // profile type
+  ProfileType profile_type = 3;
+}
+
+// verify text eligibility request
+message VerifyTextEligibilityRequest {
+  // delivery id
+  int64 delivery_id = 1;
+
+  // source participant
+  Participant source = 2;
+
+  // destination participant
+  Participant destination = 3;
+}
+
+// verify text eligibility response
+message VerifyTextEligibilityResponse {
+  // is textable
+  bool is_textable = 1;
+}
+
+// deactivate masking sessions response
+message DeactivateMaskingSessionsResponse {
+  // DEPRECATED(notification-service is deprecated)
+  // decide whether fallback to call notification service during migration
+  bool call_notification_service = 1 [deprecated = true];
+}

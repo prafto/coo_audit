@@ -1,0 +1,286 @@
+syntax = "proto3";
+
+package risk_data_flow.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.riskdataflow";
+
+// GetBlocklistedEntitiesRequest batch entities to query
+message GetBlocklistedEntitiesRequest {
+  // EntityRequest contains entity_id (identifier, pk)
+  // and entity type to identity which entity / table
+  // to retrieve the data from
+  message EntityRequest {
+    // BlocklistedEntityType
+    enum BlocklistedEntityType {
+      // BlocklistedEntityType unspecified
+      BLOCKLISTED_ENTITY_TYPE_UNSPECIFIED = 0;
+      // BlocklistedEntityType user
+      BLOCKLISTED_ENTITY_TYPE_USER = 1;
+    }
+    // entity_id string
+    string entity_id = 1;
+    // blocklisted_entity_type, enum type per entity type
+    BlocklistedEntityType blocklisted_entity_type = 2;
+  }
+  // list of entities to retrieve
+  repeated EntityRequest entity_requests = 1;
+}
+
+// GetBlocklistedEntitiesResponse batch response
+// For the entities to be queried
+message GetBlocklistedEntitiesResponse {
+  // EntityResponse
+  message EntityResponse {
+    // blocklisted_user, user type
+    BlocklistedUser blocklisted_user = 1;
+  }
+  // list of entity responses
+  repeated EntityResponse entity_responses = 1;
+  // list of errors
+  repeated BlocklistError blocklist_errors = 2;
+}
+
+// GetBlocklistedAttributesRequest
+message GetBlocklistedAttributesRequest {
+  // EntityAttributeRequest contains the attribute_id (identifier, pk)
+  // and attribute type to identify which attribute / table
+  // to retreve the data from
+  message EntityAttributeRequest {
+    // BlocklistedAttributeType
+    enum BlocklistedAttributeType {
+      // BlocklistedEntityType unspecified
+      BLOCKLISTED_ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+      // BlocklistedEntityType payment card
+      BLOCKLISTED_ATTRIBUTE_TYPE_PAYMENT_CARD = 1;
+      // BlocklistedAttributeType address (consuemr or else)
+      BLOCKLISTED_ATTRIBUTE_TYPE_ADDRESS = 2 [deprecated = true];
+      // BlocklistedAttributeType phone number
+      BLOCKLISTED_ATTRIBUTE_TYPE_PHONE_NUMBER = 3;
+      // BlocklistedAttributeType email
+      BLOCKLISTED_ATTRIBUTE_TYPE_EMAIL = 4;
+      // BlocklistedAttributeType device
+      BLOCKLISTED_ATTRIBUTE_TYPE_DEVICE = 5;
+    }
+
+    // attribute_id
+    string attribute_id = 1;
+    // blocklisted_attribute_type
+    BlocklistedAttributeType blocklisted_attribute_type = 2;
+    // device_type
+    string device_type = 3;
+  }
+  // entity_attribute_requests
+  repeated EntityAttributeRequest entity_attribute_requests = 1;
+}
+
+// GetBlocklistedAttributesResponse
+message GetBlocklistedAttributesResponse {
+  // EntityAttributeResponse
+  message EntityAttributeResponse {
+    // payment_card
+    PaymentCard payment_card = 1;
+    // phone_number
+    PhoneNumber phone_number = 2;
+    // email
+    Email email = 3;
+    // consumer_address
+    ConsumerAddress consumer_address = 4 [deprecated = true];
+    // device
+    Device device = 5;
+  }
+
+  // entity_attribute_response
+  repeated EntityAttributeResponse entity_attribute_response = 1;
+  // list of errors
+  repeated BlocklistError blocklist_errors = 2;
+}
+
+/* Support retrive blocklisted address
+ * by lat, lng (previous index -> PK) with
+ * some other filters. The consumer_address
+ * though belongs to 'blocklisted-attributes'
+ * category, but its retrival key is built-in
+ * POSIS geometry key based on lat & lng thus not
+ * able to send through grpc requests as one key (string) value
+ * fork out another API instead of adding hacks on top of the previous ones
+ */
+message GetBlocklistedAddressRequest {
+  // ConsumerAddressRequest, in which lat and lng
+  // mube be present for the key while the rest
+  // can be filtering keys
+  message ConsumerAddressRequest {
+    // geo lat
+    double lat = 1;
+    // geo lng
+    double lng = 2;
+    // sub_premise, one of the filters
+    google.protobuf.StringValue sub_premise = 3;
+    // more filters
+  }
+
+  // list of address requests, this one so the filters
+  // are bounded with each of the 'key' (lat & lng)
+  repeated ConsumerAddressRequest address_requests = 4;
+}
+
+// GetBlocklistedAddressResponse
+message GetBlocklistedAddressResponse {
+  // list of address, but latlng is deprecated
+  repeated ConsumerAddress address = 1;
+  // list of errors
+  repeated BlocklistError blocklist_errors = 2;
+}
+
+// BlocklistedUser
+message BlocklistedUser {
+  // user_id
+  string user_id = 1;
+  // blocklisted_by
+  string blocklisted_by = 2;
+  // blocklisted_at
+  google.protobuf.Timestamp blocklisted_at = 3;
+  // deactivation_source
+  string deactivation_source = 4;
+  // reason, use protobuf value since nullable
+  google.protobuf.StringValue reason = 5;
+  // notes, use protobuf value since nullable
+  google.protobuf.StringValue notes = 6;
+}
+
+// PaymentCard
+message PaymentCard {
+  // finger_print
+  string finger_print = 1;
+  // user_id
+  string user_id = 2;
+  // is_blocklisted, google protobuf since nullable
+  google.protobuf.BoolValue is_blocklisted = 3;
+  // blocklisted_reason, protobuf since nullable
+  google.protobuf.StringValue blocklisted_reason = 4;
+  // requester_email, nullable
+  google.protobuf.StringValue requester_email = 5;
+  // notes, nullable
+  google.protobuf.StringValue notes = 6;
+  // ttl_days, nullable
+  google.protobuf.Int32Value ttl_days = 7;
+  // is_proxy_ban_enabled, nullable
+  google.protobuf.BoolValue is_proxy_ban_enabled = 8;
+  // created_at
+  google.protobuf.Timestamp created_at = 9;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// PhoneNumber
+message PhoneNumber {
+  // phone_number
+  string phone_number = 1;
+  // user_id
+  google.protobuf.StringValue user_id = 2;
+  // is_blocklisted
+  google.protobuf.BoolValue is_blocklisted = 3;
+  // blocklis_reason
+  google.protobuf.StringValue blocklist_reason = 4;
+  // requester_email, nullable
+  google.protobuf.StringValue requester_email = 5;
+  // ttl_days
+  google.protobuf.Int32Value ttl_days = 6;
+  // notes
+  google.protobuf.StringValue notes = 7;
+
+  // created_at
+  google.protobuf.Timestamp created_at = 8;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// Email
+message Email {
+  // email
+  string email = 1;
+  // user_id
+  google.protobuf.StringValue user_id = 2;
+  // is_blocklisted
+  google.protobuf.BoolValue is_blocklisted = 3;
+  // blocklis_reason
+  google.protobuf.StringValue blocklist_reason = 4;
+  // requester_email, nullable
+  google.protobuf.StringValue requester_email = 5;
+  // ttl_days
+  google.protobuf.Int32Value ttl_days = 6;
+  // notes
+  google.protobuf.StringValue notes = 7;
+  // created_at
+  google.protobuf.Timestamp created_at = 8;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// ConsumerAddress
+message ConsumerAddress {
+  // address_lat_lng_key
+  string address_lat_lng_key = 1 [deprecated = true];
+  // lag
+  double lat = 2;
+  // lng
+  double lng = 3;
+  // is_blocklisted
+  bool is_blocklisted = 4;
+  // address
+  google.protobuf.StringValue address = 5;
+  // user_id
+  google.protobuf.StringValue user_id = 6;
+  // sub_premise
+  google.protobuf.StringValue sub_premise = 7;
+  // requester_email
+  google.protobuf.StringValue requester_email = 8;
+  // ttl_days
+  google.protobuf.Int32Value ttl_days = 9;
+  // notes
+  google.protobuf.StringValue notes = 10;
+  // created_at
+  google.protobuf.Timestamp created_at = 11;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// Device
+message Device {
+  // fingerprint
+  string fingerprint = 1;
+  // fingerprint_type
+  string fingerprint_type = 2;
+  // user_id
+  google.protobuf.StringValue user_id = 3;
+  // is_blocklisted
+  google.protobuf.BoolValue is_blocklisted = 4;
+  // blocklist_reason
+  google.protobuf.StringValue blocklist_reason = 5;
+  // requester_email, nullable
+  google.protobuf.StringValue requester_email = 6;
+  // ttl_days
+  google.protobuf.Int32Value ttl_days = 7;
+  // notes
+  google.protobuf.StringValue notes = 8;
+  // created_at
+  google.protobuf.Timestamp created_at = 9;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 10;
+  // is_attestation_blocklisted
+  google.protobuf.BoolValue is_attestation_blocklisted = 11;
+}
+
+// error to surface if certain/or all table quries failed
+message BlocklistError {
+  // error status code, can be changed to
+  // more specified enum code based on
+  // service agreements
+  int32 code = 1;
+  // error message populated by the system
+  string error_message = 2;
+}

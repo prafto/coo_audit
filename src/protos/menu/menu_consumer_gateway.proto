@@ -1,0 +1,387 @@
+syntax = "proto3";
+
+package menuconsumergateway;
+
+import "common/common.proto";
+import "common/inventory.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menuconsumergateway/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menuconsumergateway.grpc";
+
+service ConsumerGateway {
+  // more details about hermes client option definition:
+  // https://github.com/doordash/dd-util-java/wiki/Hermes#service-definition
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 40;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 12000;
+
+  rpc GetMenu(GetMenuRequest) returns (GetMenuResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc GetEntities(GetEntitiesRequest) returns (GetEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc GetRetailEntities(GetEntitiesRequest) returns (GetEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // This endpoint will be used for fetching entities for ValidateEntities API in MPG
+  // Why do we need this endpoint instead of GetEntities or GetRetailEntities?
+  // Because we can't differentiate if an item is a retail item or not in MPG before RPS V2
+  // So we need a "generic" GetEntities endpoint during this transition in MPG for the ValidateEntities API
+  rpc GetEntitiesForValidation(GetEntitiesForValidationRequest) returns (GetEntitiesForValidationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc OrderEntityValidation(OrderEntityValidationRequest) returns (OrderEntityValidationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // API to validate if the Cx selected items / options dont' violate any of the rule (item available,
+  // min/max quantity) and also get all items' and options' information. This API was designed and
+  // optimized specifically for Order Service.
+  rpc OrderEntityEntityTraverseWithValidation(OrderEntityEntityTraverseWithValidationRequest) returns (OrderEntityEntityTraverseWithValidationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Menu Dynamic Properties APIs
+  rpc GetResolvedMenu(GetResolvedMenuRequest) returns (GetResolvedMenuResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc GetResolvedEntities(GetResolvedEntitiesRequest) returns (GetResolvedEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+}
+
+/**
+ * Store menu level fetch options
+ */
+message FetchOptions {
+  bool meta = 1;
+  bool structure = 2;
+  bool dag = 3;
+  bool entities = 4 [deprecated = true];
+  bool menus = 5;
+  bool categories = 6;
+}
+
+// RecursionMode to decide how deep of nested structure of entity to be fetched
+enum RecursionMode {
+  // unknown
+  RECURSION_MODE_UNSPECIFIED = 0;
+  // no recursion, just base entity
+  RECURSION_MODE_NO_RECURSION = 1;
+  // base entity and all children
+  RECURSION_MODE_DEEP_RECURSION = 2;
+  // base entity and immediate children
+  RECURSION_MODE_RECURSION_ONE = 3;
+  // base entity and immediate children + 1 more level
+  RECURSION_MODE_RECURSION_TWO = 4;
+}
+
+// OrderabilityMode to decide which level of orderability to apply
+//
+// Orderability (or availability) can be affected by below factors
+// 1. Activeness, including menu.is_active, category.is_active, item.isArchived
+// 2. Suspension, including menu/category/item suspensions
+// 3. Hours, including store special hours, menu normal hours and special hours, item visibilty hours
+//
+// Orderability is determined in a top-down way, in the order of menu, category, item
+enum OrderabilityMode {
+  // unknown
+  ORDERABILITY_MODE_UNSPECIFIED = 0;
+  // do not check orderability
+  ORDERABILITY_MODE_NONE = 1;
+  // check everything from ORDERABILITY_MODE_ACTIVENESS_ONLY + Item Visibility Hours, and return a boolean
+  ORDERABILITY_MODE_ACTIVENESS_AND_TIME = 2;
+  // check Menu Hours + Activeness + Suspension, and return a boolean
+  ORDERABILITY_MODE_ACTIVENESS_ONLY = 3;
+  // check Activeness + Suspension + Hours, and return the available ranges in ItemAggregatedInfo
+  ORDERABILITY_MODE_HOURS_RANGE = 4;
+}
+
+// Request to get menu structure and selected menu items
+message GetMenuRequest {
+  // Render entities (e.g. suspension, avaliability) on a given serve time (in epoch millis).
+  // When unset, menu service uses the current system time.
+  int64 serve_time = 1;
+  string store_menu_id = 2;
+  // Filter menu ids based on the given list. if not set or set empty, returns all menus.
+  repeated string selected_menu_ids = 3;
+  // Use fetch_options.structure instead.
+  bool include_menu_structure_only = 4 [deprecated = true];
+  // Use recursion_mode instead.
+  bool do_recursion = 5 [deprecated = true];
+  // When do_assembly = true
+  // 1) if fetchOptions.entities = false populate CategoryEntity.category in the categories field of the menu in the structure of the response
+  // 2) if fetchOptions.entities = true (a deprecated option) populate ItemEntity.item in the item field of the menu in the structure of the response, this saves clients from visiting entity maps.
+  // When do_assembly = false
+  // 1) if fetchOptions.entities = false populate CategoryEntity.id in the categories field of the menu in the structure of the response, and provide category info in categoryMap
+  // 2) if fetchOptions.entities = true (a deprecated option) only populate ItemEntity.id in the item field of the menu in the structure of the response, and provide items info in entity maps
+  bool do_assembly = 6;
+  // Global context like experience, service type etc.
+  repeated menu.Context global_contexts = 7;
+  // Use fetch_options.dag instead.
+  bool include_dag_only = 8 [deprecated = true];
+  // When true, also include archived entities in addition to active entities.
+  bool include_archived_entities = 9;
+  // How deep to fetch the entities, only effective when fetchOptions.entities = true.
+  RecursionMode recursion_mode = 10;
+  // Use orderability_mode instead. only effective when fetchOptions.entities = true.
+  bool do_orderability = 11 [deprecated = true];
+  // What parts of a menu to fetch, can select multiple fetch options.
+  FetchOptions fetch_options = 12;
+  // Which orderability level to check. only effective when fetchOptions.entities = true.
+  OrderabilityMode orderability_mode = 13;
+  common.FulfillmentType fulfillment = 14;
+  common.Experience experience = 15;
+  // if set true will skip fetch suspensions/deactivates for menu and category
+  // only activeness information will be returned
+  bool should_skip_suspension = 16;
+}
+
+/**
+ * Return of getting menu structure and selected menu items
+ * loaded_menu_ids: ids of menu with loaded items
+ * store_menu: populated store menu
+ */
+message GetMenuResponse {
+  repeated string loaded_menu_ids = 1;
+  menu.StoreMenu store_menu = 2;
+}
+
+/**
+ * Passed to select A/B experiments based DV objects bucketed on consumerId and salt hash.
+ */
+message ConsumerContext {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.BoolValue is_employee = 2;
+  google.protobuf.BoolValue is_guest = 3;
+  google.protobuf.StringValue experience = 4;
+}
+
+/**
+ * Request to get item or extra
+ * serve_time: menu serve time to render entity, e.g. schedule order. If empty, system will use current time.
+ * entity_position: position data - store_menu_id, menu_id, category_id, top_item_id, parent_id, entity_id and entity_type
+ * do_recursion: if true, returned items/extras are populated recursively with all levels of extras and options. Otherwise, returned items/extras have itself and next level only.
+ * do_assembly: if true, assembled item or extra is returned in entity maps. otherwise, un-assembled entities are returned in entity maps.
+ * include_meta: if true, include the store menu meta
+ * global_contexts: global context like experience, service type etc
+ * include_archived_entities: include soft deleted entities or not
+ * recursion_mode: recursion_mode to decide how deep to fetch
+ * do_orderability: if true, do orderability check for top items
+ * do_reverse_recursion: if true, recursion to find parents when top item is available
+ * orderability_mode: orderability_mode to decide which level to check, by default should be 1
+ */
+message GetEntityRequest {
+  int64 serve_time = 1;
+  menu.EntityPosition entity_position = 2;
+  // do_recursion deprecate using recursion_mode instead
+  bool do_recursion = 3;
+  bool do_assembly = 4;
+  bool include_meta = 5;
+  repeated menu.Context global_contexts = 6;
+  bool include_archived_entities = 7;
+  RecursionMode recursion_mode = 8;
+  // do_orderability deprecate using orderability_mode instead
+  bool do_orderability = 9;
+  bool do_reverse_recursion = 10;
+  OrderabilityMode orderability_mode = 11;
+  common.FulfillmentType fulfillment = 12;
+  common.Experience experience = 13;
+  // if set true will skip fetch suspensions/deactivates for menu entities (item/extra/option)
+  // only activeness information will be returned
+  bool should_skip_suspension = 14;
+}
+
+message GetEntitiesRequest {
+  repeated GetEntityRequest get_entities_request = 1;
+  ConsumerContext consumer_context = 2;
+}
+
+message GetEntitiesResponse {
+  repeated GetEntityResponse get_entities_response = 1;
+}
+
+/**
+ * Return of getting item or extra
+ * id: entity id
+ * status: error message
+ * entity_maps: container of items or extras
+ * meta: store menu meta data
+ */
+message GetEntityResponse {
+  string id = 1;
+  menu.Status status = 2;
+  menu.EntityMaps entity_maps = 3;
+  menu.MenuMeta meta = 4;
+}
+
+// Request for the GetEntitiesForValidation API
+message GetEntitiesForValidationRequest {
+  // store id
+  string store_id = 1;
+  // serve time; follow serving_time of ValidateEntitiesRequest in MPG
+  google.protobuf.Timestamp serve_time = 2;
+  // list of entity ids. Ids of the items or options
+  repeated string entity_ids = 3;
+}
+
+// Response for the GetEntitiesForValidation API
+message GetEntitiesForValidationResponse {
+  repeated ValidationEntitiyResponse validation_entities = 1;
+}
+
+// Entity for validation, as the response for GetEntitiesForValidation API
+message ValidationEntitiyResponse {
+  // entity id. the item id or option id
+  string entity_id = 1;
+  // status of the response
+  menu.Status status = 2;
+  // mapping from entity id -> entity info, which consists of the detailed info of the entity
+  menu.EntityMaps entity_maps = 3;
+}
+
+message ValidationItem {
+  google.protobuf.StringValue request_id = 1;
+  // the unique id associated with an item used to query it
+  google.protobuf.StringValue item_id = 2;
+  // special instruction associated with this item
+  google.protobuf.StringValue special_instruction = 3;
+  // extra options selected for this item
+  repeated ExtraOption selected_extra_options = 4;
+  // the quantity selected for this item
+  google.protobuf.Int32Value quantity = 5;
+}
+
+message ValidationEntity {
+  string store_menu_id = 1;
+  repeated ValidationItem validation_items = 2;
+  // menu_id is added for supporting shared entities in one store
+  string menu_id = 3;
+}
+
+message ExtraOption {
+  // the unique id associated with an option used to query it
+  google.protobuf.StringValue option_id = 1;
+  // the quantity selected for this option
+  google.protobuf.Int32Value quantity = 2;
+  // nested extra options under this extra option
+  repeated ExtraOption selected_extra_options = 3;
+}
+
+// Item Validation meta fields to reconstruct the error message
+message ItemValidationMetaField {
+  google.protobuf.StringValue meta_string = 1;
+  google.protobuf.Int32Value quantity_value = 2;
+  google.protobuf.StringValue entity_id = 3;
+  google.protobuf.StringValue entity_name = 4;
+}
+
+// Item Validation Error definition
+message ItemValidationError {
+  // the unique id associated with an item
+  google.protobuf.StringValue item_id = 1;
+  // details for what went wrong with this item
+  ObjectError object_error = 2;
+  google.protobuf.StringValue request_id = 3;
+
+  // list of components for consumer service localization purpose
+  repeated ItemValidationMetaField item_validation_meta_field_list = 4;
+}
+
+// Object error definition,
+// Object may be item, extra or option
+message ObjectError {
+  // the unique id associated with an object
+  google.protobuf.StringValue object_id = 1;
+  // possible types of object
+  enum ObjectType {
+    // unknown type
+    OBJECT_TYPE_UNSPECIFIED = 0;
+    // validation error at item level
+    OBJECT_TYPE_ITEM = 1;
+    // validation error at extra level
+    OBJECT_TYPE_EXTRA = 2;
+    // validation error at option level
+    OBJECT_TYPE_OPTION = 3;
+  }
+  // specific object error type
+  ObjectType object_type = 2;
+  // human readable error message explaining what went wrong
+  google.protobuf.StringValue error_message = 3;
+  // For detailed mapping from error_code to error_message,
+  // refer to https://docs.google.com/document/d/11YyNzGqbC5NKFXx-COnR9CXC4W0Oev6maVDawVBToF4/edit
+  google.protobuf.Int32Value error_code = 4;
+}
+
+message OrderEntityValidationRequest {
+  repeated ValidationEntity validation_entities = 1;
+  google.protobuf.BoolValue item_combination_check = 2;
+  google.protobuf.Timestamp time = 3;
+  google.protobuf.BoolValue item_menu_hour_check = 4;
+}
+
+message OrderEntityValidationResponse {
+  repeated ItemValidationError item_validation_error = 1;
+}
+
+message OrderEntityEntityTraverseWithValidationRequest {
+  repeated ValidationEntity validation_entities = 1;
+  google.protobuf.BoolValue item_combination_check = 2;
+  google.protobuf.Timestamp time = 3;
+  ConsumerContext consumer_context = 4;
+}
+
+message OrderEntityEntityTraverseWithValidationResponse {
+  repeated ItemValidationError item_validation_error = 1;
+  map<string, menu.Item> item_map = 2;
+  menu.EntityMaps entity_maps = 3;
+}
+
+// Context used for resolving Dynamic Properties
+message ResolutionContext {
+  SurfaceArea surface_area = 1;
+  ConsumerContext consumer_context = 2;
+}
+
+// Enum for Dynamic Properties use cases
+enum SurfaceArea {
+  // default option, do not preprocess menu data
+  SURFACE_AREA_UNSPECIFIED = 0;
+  // preprocess menu data for double dash menu
+  SURFACE_AREA_DOUBLE_DASH = 1;
+  // preprocess menu data for lunch pass menu
+  SURFACE_AREA_LUNCH_PASS = 2;
+  // preprocess menu data for dash mart menu
+  SURFACE_AREA_DASH_MART = 3;
+  // preprocess menu data for 'Did you Forget' menu
+  SURFACE_AREA_DID_YOU_FORGET = 4;
+}
+
+message GetResolvedMenuRequest {
+  GetMenuRequest get_menu_request = 1;
+  ResolutionContext resolution_context = 2;
+}
+
+message GetResolvedMenuResponse {
+  repeated string loaded_menu_ids = 1;
+  menu.StoreMenu store_menu = 2;
+}
+
+message GetResolvedEntitiesRequest {
+  repeated GetEntityRequest get_entity_request = 1;
+  ResolutionContext resolution_context = 2;
+}
+
+message GetResolvedEntitiesResponse {
+  repeated GetEntityResponse get_entities_response = 1;
+}

@@ -1,0 +1,349 @@
+syntax = "proto3";
+
+package pinot_table_manager.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/pinot_table_manager";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.pinot";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service PinotTableManagerService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Simplified version of POST /tableConfigs.
+  rpc CreateTable(CreateTableRequest) returns (CreateTableResponse);
+  // Simplified version of GET /tableConfigs.
+  rpc ReadTable(ReadTableRequest) returns (ReadTableResponse);
+  // Simplified version of PUT /tableConfigs.
+  rpc UpdateTable(UpdateTableRequest) returns (UpdateTableResponse);
+  // Simplified version of DELETE /tableConfigs.
+  rpc DeleteTable(DeleteTableRequest) returns (DeleteTableResponse);
+  // To populate dropdowns in the UI.
+  rpc GetKafkaInfo(GetKafkaInfoRequest) returns (GetKafkaInfoResponse);
+  // To infer columns for REALTIME tables.
+  rpc InferSchema(InferSchemaRequest) returns (InferSchemaResponse);
+  // To fetch Pinot tenants.
+  rpc GetPinotInfo(GetPinotInfoRequest) returns (GetPinotInfoResponse);
+  // To fetch messages from topic.
+  rpc GetKafkaMessages(GetKafkaMessagesRequest) returns (GetKafkaMessagesResponse);
+  // To get Pinot table configs JSON from Table.
+  rpc ConvertTable(ConvertTableRequest) returns (ConvertTableResponse);
+}
+
+// Table
+message Table {
+  // Table type
+  enum TableType {
+    // This should throw an error
+    TABLE_TYPE_UNSPECIFIED = 0;
+    // REALTIME
+    TABLE_TYPE_REALTIME = 1;
+    // OFFLINE APPEND
+    TABLE_TYPE_OFFLINE_APPEND = 2;
+    // OFFLINE REFRESH
+    TABLE_TYPE_OFFLINE_REFRESH = 3;
+    // Hybrid
+    TABLE_TYPE_HYBRID = 4;
+  }
+  // Table name
+  string name = 1;
+  // Table type
+  TableType table_type = 2;
+  // Table schema
+  repeated Column columns = 3;
+  // Table time column
+  string primary_timestamp = 4;
+  // Table streamConfigs
+  KafkaConfig kafka_config = 5;
+  // Table resource usage
+  ResourceConfig resource_config = 6;
+  // Ingestion filter
+  string ingestion_filter = 7;
+}
+
+// Column
+message Column {
+  // Column data type
+  enum DataType {
+    // This should throw an error
+    DATA_TYPE_UNSPECIFIED = 0;
+    // 32-bit integer
+    DATA_TYPE_INT = 1;
+    // 64-bit integer
+    DATA_TYPE_LONG = 2;
+    // 32-bit floating point number
+    DATA_TYPE_FLOAT = 3;
+    // 64-bit floating point number
+    DATA_TYPE_DOUBLE = 4;
+    // Compact type for true and false
+    DATA_TYPE_BOOLEAN = 5;
+    // String
+    DATA_TYPE_STRING = 6;
+  }
+  // Column field type
+  enum FieldType {
+    // This should throw an error
+    FIELD_TYPE_UNSPECIFIED = 0;
+    // Metric
+    FIELD_TYPE_METRIC = 1;
+    // Dimension
+    FIELD_TYPE_DIMENSION = 2;
+    // Datetime
+    FIELD_TYPE_DATETIME = 3;
+  }
+
+  // Column name
+  string name = 1;
+  // Column field type
+  FieldType field_type = 2;
+  // Column data type
+  DataType data_type = 3;
+  // Is multi-value column
+  bool is_multi_value = 4;
+  // Max string length for string types
+  uint32 max_string_length = 5;
+  // Add bloom filter
+  bool has_bloom_filter = 6;
+  // Add inverted index
+  bool has_inverted_index = 7;
+  // Add range index
+  bool has_range_index = 8;
+  // Ingestion transformation
+  string ingestion_transformation = 9;
+  // Time rollup
+  repeated TimeRollup rollups = 10;
+}
+
+// Time rollup
+message TimeRollup {
+  // Granularity
+  enum Granularity {
+    // This should throw an error
+    GRANULARITY_UNSPECIFIED = 0;
+    // Seconds
+    GRANULARITY_SECONDS = 1;
+    // Minutes
+    GRANULARITY_MINUTES = 2;
+    // Hours
+    GRANULARITY_HOURS = 3;
+    // Days
+    GRANULARITY_DAYS = 4;
+  }
+  // Granularity
+  Granularity granularity = 1;
+  // Units e.g. 5 minutes, 12 hours
+  uint32 units = 2;
+  // String or from epoch
+  bool is_str_format = 3 [deprecated = true];
+}
+
+// Kafka config
+message KafkaConfig {
+  // Message serialization format / encoding
+  enum Encoding {
+    // Default to Avro
+    ENCODING_UNSPECIFIED = 0;
+    // Avro
+    ENCODING_AVRO = 1;
+    // Protobuf
+    ENCODING_PROTOBUF = 2;
+  }
+  // Kafka cluster
+  string cluster = 1;
+  // Kafka topic
+  string topic = 2;
+  // Kafka subject
+  string subject = 3;
+  // Encoding
+  Encoding encoding = 4;
+  // Schema ID if necessary
+  uint32 schema_id = 5;
+}
+
+// Resource config
+message ResourceConfig {
+  // Tier for replication
+  enum Tier {
+    // Default to T2
+    TIER_UNSPECIFIED = 0;
+    // Customer-facing application, replication 3
+    TIER_EXTERNAL = 1;
+    // Internal application, replication 2
+    TIER_INTERNAL = 2;
+    // Ad-hoc use cases, replication 1
+    TIER_ADHOC = 3;
+  }
+  // Tier for replication
+  Tier tier = 1;
+  // Tenant
+  string tenant = 2;
+  // Retention
+  uint32 retention_days = 3;
+  // Estimated queries per second
+  float estimated_qps = 4;
+  // Estimated daily volume in GB
+  float estimated_daily_volume_gb = 5;
+  // Pinot cluster
+  string cluster = 6;
+}
+
+// Response code
+enum Code {
+  // Should never be this
+  CODE_UNSPECIFIED = 0;
+  // Success
+  CODE_SUCCESS = 1;
+  // Invalid table
+  CODE_INVALID_TABLE = 2;
+}
+
+// Request for CreateTable
+message CreateTableRequest {
+  // Table
+  Table table = 1;
+  // Owning service
+  string service = 2;
+}
+
+// Response for CreateTable
+message CreateTableResponse {
+  // Response code
+  Code code = 1;
+  // Table configs JSON
+  string table_configs_json = 2;
+  // Infra Service change request ID
+  string change_request_id = 3;
+}
+
+// Request for ReadTable
+message ReadTableRequest {
+  // Table name
+  string table_name = 1;
+}
+
+// Response for ReadTable
+message ReadTableResponse {
+  // Response code
+  Code code = 1;
+  // Table
+  Table table = 2;
+}
+
+// Request for UpdateTable
+message UpdateTableRequest {
+  // Table
+  Table table = 1;
+}
+
+// Response for UpdateTable
+message UpdateTableResponse {
+  // Respone Code
+  Code code = 1;
+  // Table configs JSON
+  string table_configs_json = 2;
+}
+
+// Request for DeleteTable
+message DeleteTableRequest {
+  // Table name
+  string table_name = 1;
+}
+
+// Request for DeleteTable
+message DeleteTableResponse {
+  // Response code
+  Code code = 1;
+}
+
+// Request for GetKafkaInfo
+message GetKafkaInfoRequest {}
+
+// Response for GetKafkaInfo
+message GetKafkaInfoResponse {
+  // Repeated fields can't be used in maps so create Message
+  message TopicList {
+    // List of topics
+    repeated string topics = 1;
+  }
+  // Kafka clusters
+  repeated string clusters = 1;
+  // Kafka topics
+  repeated string topics = 2 [deprecated = true];
+  // Kafka subjects
+  repeated string subjects = 3;
+  // Map from cluster to topics
+  map<string, TopicList> cluster_topics = 4;
+}
+
+// Request for InferSchema
+message InferSchemaRequest {
+  // Kafka subject
+  string kafka_subject = 1;
+}
+
+// Response for InferSchema
+message InferSchemaResponse {
+  // Columns
+  repeated Column columns = 1;
+  // Latest schema ID for the subject in the request
+  uint32 schema_id = 2;
+}
+
+// Request for GetPinotInfo
+message GetPinotInfoRequest {}
+
+// Response for GetPinotInfo
+message GetPinotInfoResponse {
+  // Pinot tenants
+  repeated string tenants = 1;
+}
+
+// Request for GetKafkaMessages
+message GetKafkaMessagesRequest {
+  // Kafka config
+  KafkaConfig kafka_config = 1;
+  // Limit on number of rows to fetch
+  uint32 limit = 2;
+  // Partition to look at
+  uint32 partition = 3;
+  // Offset to look at
+  int64 offset = 4;
+  // Decoder to use
+  string decoder_class = 5;
+}
+
+// Response for GetKafkaMessages
+message GetKafkaMessagesResponse {
+  // GenericRow's as JSON strings
+  repeated string rows = 1;
+}
+
+// Request for ConvertTable
+message ConvertTableRequest {
+  // Table
+  Table table = 1;
+}
+
+// Response for Convert Table
+message ConvertTableResponse {
+  // Response code
+  Code code = 1;
+  // Table configs JSON
+  string table_configs_json = 2;
+}

@@ -1,0 +1,346 @@
+syntax = "proto3";
+
+package geo_intelligence.v2;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "AddressV2";
+option java_package = "geo.intelligence.addressV2.proto";
+
+// Service which serves Address data from the Geo Intelligence team.
+service GeoIntelligenceAddressV2Service {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+  option (doordash.api.service) = {
+    name: "geo-intelligence-address-v2-service"
+    url: "geo-intelligence-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "geo-intelligence",
+      "address"
+    ]
+    api_key_name: "DOORDASH_GEO_SERVICE_KEY"
+    owner: {
+      name: "geo-intelligence"
+      id: "geo-team-default-bucket"
+      slack_channel: "#ask-geo-intel"
+      email_alias: "geo@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX,
+      MX,
+      INTERNAL
+    ]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "dd-latitude"},
+      {field: "dd-longitude"}]
+  };
+
+  // Given an address_id, return that address from the database.
+  rpc GetAddressByIdV2(GetAddressByIdV2Request) returns (GetAddressByIdV2Response);
+  // Given a fully-qualified address string, look up the address, and return with a new or existing address_id.
+  rpc GetOrCreateWithFormattedAddressV2(GetOrCreateWithFormattedAddressV2Request) returns (GetOrCreateWithFormattedAddressV2Response);
+  // Given a source-specific address identifier, look up the address, and return with a new or existing address_id.
+  rpc GetOrCreateWithSourcePlaceIdV2(GetOrCreateWithSourcePlaceIdV2Request) returns (GetOrCreateWithSourcePlaceIdV2Response);
+  // Given an address identifier, look up the address, and return it with a new or existing address_id.
+  rpc GetOrCreateAddressV2(GetOrCreateAddressV2Request) returns (GetOrCreateAddressV2Response) {
+    option (google.api.http) = {
+      post: "/geo-intelligence/v2/address/get-or-create"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER,
+        MX_USER,
+        DX_USER,
+        DD_EMPLOYEE
+      ]
+      target_products: [
+        CX,
+        MX,
+        DX,
+        INTERNAL
+      ]
+    };
+  }
+
+  // Given a list of address_ids, return those addresses from the database.
+  rpc FindByAddressIdInV2(FindByAddressIdInV2Request) returns (FindByAddressIdInV2Response);
+  // Given a lat/lng, lookup and return the closest address(es).
+  rpc FindAddressesClosestToPointV2(FindAddressesClosestToPointV2Request) returns (FindAddressesClosestToPointV2Response) {
+    option (google.api.http) = {get: "/geo-intelligence/v2/address/closest-to-point"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Given an address substring, lookup and return address suggestions that complete the string.
+  rpc AutocompleteAddressV2(AutocompleteAddressV2Request) returns (AutocompleteAddressV2Response) {
+    option (google.api.http) = {get: "/geo-intelligence/v2/address/autocomplete"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER,
+        MX_USER,
+        DX_USER,
+        DD_EMPLOYEE
+      ]
+      target_products: [
+        CX,
+        MX,
+        DX,
+        INTERNAL
+      ]
+    };
+  }
+}
+
+// Describes a specific place in the world, such as a house, or an abstract place, such as a city centroid.
+message AddressV2Response {
+  // Primary key of the address record; NOT unique per real-world address. (i.e. a particular place can have many IDs)
+  google.protobuf.StringValue id = 1;
+  // Latitude of the record.
+  google.protobuf.DoubleValue lat = 2;
+  // Longitude of the record.
+  google.protobuf.DoubleValue lng = 3;
+  // Fully-formatted address of the record, e.g. "1234 Main St., Sacramento, CA 95814"
+  google.protobuf.StringValue formatted_address = 4;
+  // Street number and name of the record, e.g. "1234 Main St."
+  google.protobuf.StringValue street_address = 5;
+  // Administrative regions of the record, often following street_address, e.g. "Sacramento, CA 95814"
+  google.protobuf.StringValue location_address = 6;
+  // Sub-area of the address, e.g. a specific building, unit, etc.
+  google.protobuf.StringValue subpremise = 7;
+  // Also known as "House Number"; e.g. "1234"
+  google.protobuf.StringValue street_number = 8;
+  // Name of the street, e.g. "Main St."
+  google.protobuf.StringValue street_name = 9;
+  // City/town/village/etc. WARNING: exactly what this means can vary depending on the country.
+  google.protobuf.StringValue locality = 10;
+  // Primary administrative division below the country; analogous to a State. e.g. "California"
+  google.protobuf.StringValue administrative_area_level1 = 11;
+  // Secondary administrative division below the country; analogous to a County, e.g. "Sacramento County"
+  google.protobuf.StringValue administrative_area_level2 = 12;
+  // Postal code of the address; NOTE THAT NOT ALL ADDRESSES HAVE POSTAL CODES! e.g. a US Zip Code, "95814".
+  google.protobuf.StringValue postal_code = 13;
+  // Postal code suffix, such as "Zip-4" in the US; e.g. "7050"
+  google.protobuf.StringValue postal_code_suffix = 14;
+  // Full name of the country, e.g. "United States"
+  google.protobuf.StringValue country = 15;
+  // ISO 3166 Alpha-2 code of the country, e.g. "US"
+  google.protobuf.StringValue country_shortname = 16;
+  // Proper name of the entity represented by the address, if applicable; e.g. "Crocker Art Museum"
+  google.protobuf.StringValue name = 17;
+  // Name of the neighborhood that the address is located in, if known; e.g. "Ballard".
+  google.protobuf.StringValue neighborhood = 18;
+  // TZ Timezone of the address; see: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+  google.protobuf.StringValue timezone = 19;
+  // Language code of the localization of the address; defaults to English (en).
+  google.protobuf.StringValue language_code = 20;
+  // If the address represents a deliverable, real-world location, is_generic=False, else, True.
+  // Examples of is_generic=False: a front door, a building centroid, an interpolated street address, etc.
+  // Examples of is_generic=True: a postal-code centroid, a city centroid, a street centroid, etc.
+  google.protobuf.BoolValue is_generic = 21;
+  // Most specific element of the address, used for displaying. Roughly: name -> street_address -> location_address
+  google.protobuf.StringValue formatted_address_short = 22;
+  // Address segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  repeated google.protobuf.StringValue formatted_address_segmented = 23;
+  // Address segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  // Only contains fields that are fixed and not editable by the user (e.g. subpremise)
+  repeated google.protobuf.StringValue formatted_address_segmented_non_user_editable_fields = 24;
+  // Timestamp that the original address record was initially created.
+  google.protobuf.Timestamp created_at = 25;
+  reserved 26;
+  reserved "source";
+  // Source-specific original identifier of the address record.
+  google.protobuf.StringValue source_place_id = 27;
+}
+
+// Request for GetAddressByIdV2
+message GetAddressByIdV2Request {
+  // Requested address_id.
+  string id = 1;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 2;
+}
+
+// Response for GetAddressByIdV2
+message GetAddressByIdV2Response {
+  // Requested address.
+  AddressV2Response address = 1;
+}
+
+// Request for GetOrCreateWithFormattedAddressV2
+message GetOrCreateWithFormattedAddressV2Request {
+  // Fully qualified address, as might be used to send a package; e.g. "1234 Main St., Sacramento, CA 95814"
+  string formatted_address = 1;
+  // ISO 3166 Alpha-2 code of the country; e.g. "US"
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 2;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 3;
+}
+
+// Response for GetOrCreateWithFormattedAddressV2
+message GetOrCreateWithFormattedAddressV2Response {
+  // New or existing address.
+  AddressV2Response address = 1;
+}
+
+// Request for GetOrCreateWithSourcePlaceIdV2
+message GetOrCreateWithSourcePlaceIdV2Request {
+  // Source-specific original identifier of the address record.
+  // This can be taken from AddressResponse, e.g. from Autocomplete or GetOrCreateWithFormattedAddress responses.
+  string source_place_id = 1;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 2;
+}
+
+// Response for GetOrCreateWithSourcePlaceId
+message GetOrCreateWithSourcePlaceIdV2Response {
+  // New or existing address.
+  AddressV2Response address = 1;
+}
+
+// Request for GetOrCreateAddressV2
+message GetOrCreateAddressV2Request {
+  // Method of identifying the address to create.
+  oneof address_identifier {
+    // Request address creation or retrieval based on the source_place_id field.
+    GetOrCreateWithSourcePlaceIdV2Request source_place_id_request = 1;
+    // Request address creation or retrieval based on a formatted_address,  e.g. "1234 Main St., Sacramento, CA 95814"
+    GetOrCreateWithFormattedAddressV2Request formatted_address_request = 2;
+  }
+}
+
+// Response for GetOrCreateAddressV2
+message GetOrCreateAddressV2Response {
+  // New or existing address.
+  AddressV2Response address = 1;
+}
+
+// Request for FindByAddressIdInV2
+message FindByAddressIdInV2Request {
+  // List of address_ids to look up.
+  repeated string id = 1;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 2;
+}
+
+// Response for FindByAddressIdInV2
+message FindByAddressIdInV2Response {
+  // List of addresses.
+  repeated AddressV2Response address = 1;
+}
+
+// Request for FindAddressesClosestToPointV2
+message FindAddressesClosestToPointV2Request {
+  // Latitude of the point to search around.
+  double lat = 1;
+  // Longitude of the point to search around.
+  double lng = 2;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 3;
+  // Optional. Maximum number of results to return.
+  google.protobuf.Int32Value max_results = 4;
+  // ISO 3166 Alpha-2 code of the country; e.g. "US"
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 5;
+}
+
+// Response for FindAddressesClosestToPointV2
+message FindAddressesClosestToPointV2Response {
+  // List of addresses.
+  repeated AddressV2Response address = 1;
+}
+
+// Request for AutocompleteAddressV2
+message AutocompleteAddressV2Request {
+  // Partial address string to autocomplete.
+  string input_address = 1;
+  // Latitude of coordinate to bias or limit results around.
+  google.protobuf.DoubleValue lat = 2;
+  // Longitude of coordinate to bias or limit results around.
+  google.protobuf.DoubleValue lng = 3;
+  // Optional translation locale; address will be translated into this language if possible.
+  google.protobuf.StringValue locale = 4;
+  // Optional. If provided, limits results to those within this radius of the given lat/lng.
+  google.protobuf.DoubleValue search_radius_meters = 5;
+  // Optional. If provided, limits results to this number of results.
+  google.protobuf.Int32Value max_results = 6;
+  // Optional. ISO 3166 Alpha-2 country code of the country origin of the client call; e.g. "US"
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 7;
+  // Optional. ISO 3166-1 alpha-2 country codes to restrict results to; e.g. ['US', 'CA']. Defaults to no restriction.
+  repeated google.protobuf.StringValue iso_3166_alpha_2_country_code_restrictions = 8;
+  // Optional; Type(s) of address to complete.  Default: Best Match.
+  repeated AutocompleteTypeV2 autocomplete_type = 12;
+}
+
+// Post-honeybee supported AutocompleteTypes
+enum AutocompleteTypeV2 {
+  // Unset; required to avoid ambiguity.
+  AUTOCOMPLETE_TYPE_V2_UNSPECIFIED = 0;
+  // Autocomplete returns only addresses which define a location, i.e. a fully-qualified street address.
+  AUTOCOMPLETE_TYPE_V2_ADDRESS = 1;
+  // Autocomplete returns only postal-code level responses.
+  AUTOCOMPLETE_TYPE_V2_POSTAL_CODE = 2;
+}
+
+// Describes a single Autocomplete prediction.
+message AutocompletePrediction {
+  // Latitude of the prediction.
+  google.protobuf.DoubleValue lat = 1;
+  // Longitude of the prediction.
+  google.protobuf.DoubleValue lng = 2;
+  // Fully-formatted address of the prediction, e.g. "1234 Main St., Sacramento, CA 95814"
+  google.protobuf.StringValue formatted_address = 3;
+  // Most specific element of the address, used for displaying. Roughly: name -> street_address -> location_address
+  google.protobuf.StringValue formatted_address_short = 4;
+  // Address segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  repeated google.protobuf.StringValue formatted_address_segmented = 5;
+  // Address segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  // Only contains fields that are fixed and not editable by the user (e.g. subpremise)
+  repeated google.protobuf.StringValue formatted_address_segmented_non_user_editable_fields = 6;
+  // ISO 3166 Alpha-2 code of the country, e.g. "US"
+  google.protobuf.StringValue country_shortname = 7;
+  reserved 8;
+  reserved "source";
+  // Source-specific original identifier of the address prediction.
+  google.protobuf.StringValue source_place_id = 9;
+  // Optional; ID of an existing geo address record which may be available for some predictions.
+  google.protobuf.StringValue geo_address_id = 10;
+  // Optional. Postal code of the address. NOTE THAT NOT ALL ADDRESSES HAVE POSTAL CODES! e.g. a US Zip Code, "95814".
+  google.protobuf.StringValue postal_code = 11;
+  // Postal code suffix, such as "Zip-4" in the US; e.g. "7050"
+  google.protobuf.StringValue postal_code_suffix = 12;
+  // Optional. Administrative Area Level 1. In US, this would be state, Canada it would be provinces/territories, Australia it would be states/territories, and New Zealand it would be regions.
+  google.protobuf.StringValue administrative_area_level1 = 13;
+  // Optional. Locality. This is commonly a city, town, village etc. WARNING: exactly what this means can vary depending on the country and area in the country
+  google.protobuf.StringValue locality = 14;
+  // Street number and name of the record, e.g. "1234 Main St."
+  google.protobuf.StringValue street_address = 15;
+}
+
+// Response for AutocompleteAddressV2
+message AutocompleteAddressV2Response {
+  // List of predictions.
+  repeated AutocompletePrediction predictions = 1;
+}

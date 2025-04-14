@@ -1,0 +1,89 @@
+syntax = "proto3";
+package order.event.v1;
+
+import "common/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/common.proto";
+import "order/consumer_domain_order.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/order/event/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.order.event.v1";
+
+// NOTE: IF YOU ARE ADDING FIELDS/COLUMNS WITH USER PERSONALLY IDENTIFIABLE INFORMATION, PLEASE FOLLOW THIS
+// DOCUMENTATION IN ORDER TO ENSURE CCPA COMPLIANCE:
+// https://doordash.atlassian.net/wiki/spaces/Eng/pages/3160834089/Making+Datalake+Table+CCPA+Compliant
+
+// Payload for consumer domain order specifically
+message ConsumerDomainOrderLifecycleEvent {
+  option (common.dataframe_transformations) = "pii_obfuscation";
+
+  google.protobuf.StringValue consumer_domain_order_uuid = 1;
+  google.protobuf.Timestamp timestamp = 2 [(common.timestamp_granularity) = "TIMESTAMP_PROTOBUF"];
+  google.protobuf.Timestamp order_created_at = 3 [(common.timestamp_granularity) = "TIMESTAMP_PROTOBUF"];
+  google.protobuf.Int64Value consumer_id = 4 [(common.pii_type) = "CONSUMER_ID"];
+  google.protobuf.BoolValue is_asap = 5;
+  order_common.v1.UserDetails user_details = 6;
+  repeated string merchant_order_uuids = 7;
+
+  // Represents the step represented by this event
+  ConsumerDomainOrderLifecycleEventType event_type = 8;
+
+  // Indicates which order operation - Checkout, Adjustment, Cancellation the event is for
+  oneof order_operation_details {
+    CheckoutOperationPayload checkout = 9;
+    UpdateOperationPayload update = 10;
+    CancellationOperationPayload cancellation = 11;
+  }
+  // Indicates if the step that this event represents was successful or failed.
+  ConsumerDomainOrderLifecycleEventStatus status = 12;
+
+  // State specific event payload
+  oneof event_payload {
+    FinalUpdatesCriticalSuccess final_updates_critical_success = 13;
+  }
+}
+
+enum ConsumerDomainOrderLifecycleEventType {
+  CONSUMER_DOMAIN_ORDER_LIFECYCLE_EVENT_TYPE_UNSPECIFIED = 0;
+  CONSUMER_DOMAIN_ORDER_PERSIST = 1;
+  CONSUMER_DOMAIN_ORDER_CREATE_MERCHANT_ORDERS = 2;
+  CONSUMER_DOMAIN_ORDER_PROCESS_MERCHANT_ORDERS = 3;
+  CONSUMER_DOMAIN_ORDER_PAUSE_PROCESSING = 4;
+  CONSUMER_DOMAIN_ORDER_RESUME_PROCESSING = 5;
+  CONSUMER_DOMAIN_ORDER_POST_SUBMISSION_PERSIST = 6;
+  CONSUMER_DOMAIN_ORDER_PROCESSED_SUCCESS = 7;
+  CONSUMER_DOMAIN_ORDER_FINAL_UPDATES_CRITICAL = 8;
+  CONSUMER_DOMAIN_ORDER_FINAL_UPDATES = 9;
+  CONSUMER_DOMAIN_ORDER_CANCEL = 10;
+  CONSUMER_DOMAIN_ORDER_CANCEL_MERCHANT_ORDERS = 11;
+  CONSUMER_DOMAIN_ORDER_REVERT_POST_SUBMISSION_PERSIST = 12;
+}
+
+// Indicates whether the step that this event represents succeeded or failed
+message ConsumerDomainOrderLifecycleEventStatus {
+  bool is_success = 1;
+}
+
+// Payload for checkout operation
+message CheckoutOperationPayload {}
+
+// Payload for update operation
+message UpdateOperationPayload {
+  int32 update_number = 1;
+  consumer_domain_order.v1.UpdateConsumerDomainOrderReason update_reason = 2;
+}
+
+// Payload for cancellation operation
+message CancellationOperationPayload {}
+
+// Payload for final_updates_critical state execution success
+message FinalUpdatesCriticalSuccess {
+  // Newly created mx order uuids
+  repeated string created_merchant_order_uuids = 1;
+  // Cancelled mx order uuids
+  repeated string cancelled_merchant_order_uuids = 2;
+}

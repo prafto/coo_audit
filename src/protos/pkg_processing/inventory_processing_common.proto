@@ -1,0 +1,384 @@
+syntax = "proto3";
+
+package pkg.processing.v1;
+
+import "common/code.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.pkg.processing";
+
+// The merchant store info
+message StoreInfo {
+  // Merchant Name, optional
+  google.protobuf.StringValue merchant_name = 1;
+  // Doordash business id, required
+  google.protobuf.Int64Value business_id = 2;
+  // Doordash store id, required
+  google.protobuf.Int64Value store_id = 3;
+  // Merchant supplied store id, aka location_id
+  // Can be mapped to the doordash store_id based on:
+  // (merchant_name, merchant_supplied_store_id) <> store_id
+  // Optional, could be empty for local grocery
+  google.protobuf.StringValue merchant_supplied_store_id = 4;
+  // Store hours, this is used for merchants to update their open hours.
+  repeated OpenHours open_hours = 5;
+}
+
+// The inventory information for an item
+message Inventory {
+  // Merchant supplied item id, usually SKU id
+  google.protobuf.StringValue merchant_supplied_item_id = 1;
+  // Merchant supplied item name or hydrated item name
+  google.protobuf.StringValue item_name = 2;
+  // Merchant supplied item category or hydrated item category
+  google.protobuf.StringValue category = 3;
+  // Comment out because potential hydration involved
+  // Purchase info of the item.
+  // common.marketplace_purchase.v1.ItemPurchaseInfo purchase_info = 9;
+  // Tax Rate
+  google.protobuf.DoubleValue tax_rate = 4;
+  // Is an alcoholic item or not
+  google.protobuf.BoolValue is_alcohol = 5;
+  // Is random weight, for reference only, Catalog.purchase_type as SOT for WI
+  google.protobuf.BoolValue is_random_weight = 6;
+  // Merchant supplied item description
+  google.protobuf.StringValue description = 7;
+  // Price of the item
+  money.MonetaryFields price = 8;
+  // Measurement price of the item, required for weighted item.
+  money.MonetaryFields measurement_price = 9;
+  // Loyalty price of the item
+  money.MonetaryFields loyalty_price = 10;
+  // Loyalty Measurement price of the item, required for weighted item.
+  money.MonetaryFields loyalty_measurement_price = 11;
+  // Non discount price of the item
+  money.MonetaryFields non_discount_price = 12;
+  // Non discount measurement price of the item, required for weighted item.
+  money.MonetaryFields non_discount_measurement_price = 13;
+  // Approximate weighted of the item, optional from merchant.
+  // For weighted item only, fallback to catalog.approximate_sold_as_quantity when not available during hydration.
+  google.protobuf.DoubleValue approximate_sold_as_quantity = 14;
+  // Bottle deposit fee of the item.
+  money.MonetaryFields bottle_deposit_fee = 15;
+  // Merchant supplied item size_modifier
+  google.protobuf.StringValue size_modifier = 16;
+  // Complex deals related promo info
+  repeated PromotionInfo promotion_info = 17;
+  // Item dd_sic_id, null if not returned from Catalog
+  google.protobuf.StringValue dd_sic_id = 18;
+  // Is an bike friendly item or not
+  google.protobuf.BoolValue is_bike_friendly = 19;
+  // availability flag at item level
+  AvailabilityFlag availability_flag = 20;
+  // location information at item level
+  LocationInfo location_info = 21;
+  // UPC
+  google.protobuf.StringValue upc = 22;
+  // Variant (eg. size, color)
+  repeated google.protobuf.StringValue variant = 23;
+  // item extra info
+  google.protobuf.StringValue item_extra_json = 24;
+  // purchase info for gift card items
+  common.marketplace_purchase.v1.DynamicPricePurchase dynamic_price_purchase_info = 25;
+  // the time when the inventory item was observed, this is used in arbitration to determine the latest inventory
+  // ex. time of order fulfillment for receipts, time of shelf scan for JETS
+  google.protobuf.Timestamp observed_at = 26;
+  // TODO: 27 is for RawInventoryFeed, deprecate after full migration of CreateOrUpdateInventory from RIS to PKG
+  // The time when the inventory item was last updated
+  google.protobuf.Timestamp updated_at = 27;
+}
+
+// Flags to decide different aspect of the item availability
+message AvailabilityFlag {
+  // Is the item visible to the customers
+  // E.g. when set as false, the item will be hidden from customer
+  google.protobuf.BoolValue is_visible = 1;
+  // Is the item orderable by the customer or not
+  // E.g. when set as false, the item can't be ordered
+  // Deprecated, please use is_in_stock
+  google.protobuf.BoolValue is_orderable = 2;
+  // Is the item in stock or not, controls whether item can be fulfiled
+  // E.g. when set as false, the item can't be fulfilled.
+  google.protobuf.BoolValue is_in_stock = 3;
+  // Quantity in stock, unit refers to the corresponding purchase info
+  google.protobuf.StringValue quantity_in_stock = 4;
+  // The open hours for this item
+  repeated OpenHours open_hours = 5;
+  // The stock level info list for this item
+  repeated StockLevelInfo stock_level_info = 6;
+  // date that item availability is sticky until.
+  // Only applies to the source of channel FEED_PROCESSING_CHANNEL_BULK_FEED_UPLOADER
+  google.protobuf.Timestamp availability_sticky_until_date = 7;
+}
+
+// PromotionInfo contains complex deals related info
+message PromotionInfo {
+  // Supported promotion types enum
+  PromotionType promotion_type = 1;
+  // Required purchase quantity qualified for promotion
+  google.protobuf.Int64Value purchase_quantity = 2;
+  // Total price after promotion
+  money.MonetaryFields total_price = 3;
+  // Qualified discounted quantity
+  google.protobuf.Int64Value discount_quantity = 4;
+  // Discount percentage off, max is 100
+  google.protobuf.DoubleValue discount_percentage = 5;
+  // Discount price off
+  money.MonetaryFields discount_price_off = 6;
+  // Limited purchasable discounted quantity
+  google.protobuf.Int64Value quantity_limit = 7;
+  // Promotion start time
+  google.protobuf.Timestamp start_date_time = 8;
+  // Promotion end time
+  google.protobuf.Timestamp end_date_time = 9;
+  // DD Internal Promotion id
+  google.protobuf.StringValue promotion_info_id = 10;
+  // Promotion terms and condition
+  google.protobuf.StringValue terms_and_conditions_content_id = 11;
+  // List of MsIds. Purchase those item will receive promotion
+  repeated google.protobuf.StringValue purchase_items = 12;
+  // List of MsIds. Apply promo on those items. Phase 1 only support promotion discounts applying on same item, this will always null for now.
+  repeated google.protobuf.StringValue discount_items = 13;
+  // internal health_status for promotion, default is active
+  HealthStatus health_status = 14;
+  // Mx provided promotion id
+  google.protobuf.StringValue mx_provided_promotion_id = 15;
+}
+
+// Internal enum for promotion health status, default is active
+enum HealthStatus {
+  // Unspecified
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  // Promotion is healthy and active
+  HEALTH_STATUS_ACTIVE = 1;
+  // Promotion is unhealthy, set to inactive
+  HEALTH_STATUS_INACTIVE = 2;
+}
+
+// PromotionType defines dd supported promotion types
+enum PromotionType {
+  // Unspecified
+  PROMOTION_TYPE_UNSPECIFIED = 0;
+  // Buy X items for total Y
+  PROMOTION_TYPE_BUY_X_FOR_Y = 1;
+  // Buy X items get Y items Z percent off
+  PROMOTION_TYPE_BUY_X_GET_Y_Z_PERCENT_OFF = 2;
+  // Buy X items save Y
+  PROMOTION_TYPE_BUY_X_SAVE_Y = 3;
+  // Buy X items for total Y for multi SKU
+  PROMOTION_TYPE_BUY_X_FOR_Y_MULTI_SKU = 4;
+  // Buy X items get Y items Z percent off for multi SKU
+  PROMOTION_TYPE_BUY_X_GET_Y_Z_PERCENT_OFF_MULTI_SKU = 5;
+  // Buy X items save Y for multi SKU
+  PROMOTION_TYPE_BUY_X_SAVE_Y_MULTI_SKU = 6;
+}
+
+// Stock level info, including badge, source and mode id related info
+message StockLevelInfo {
+  // The stock level enum
+  StockLevel stock_level = 1;
+  // The stock level source
+  StockLevelSource source = 2;
+  // The experiment key, could be used for A/B testing
+  google.protobuf.StringValue experiment = 3;
+  // When this stock level info will expire at, this is to avoid stock level info showing too long
+  google.protobuf.Timestamp expire_at = 4;
+  // The model id which predicted the OOS
+  google.protobuf.StringValue model_id = 5;
+  // The score for that OOS prediction
+  google.protobuf.StringValue score = 6;
+  // When this stock level info will become relevant, this is to support different stock levels
+  // through the day
+  google.protobuf.Timestamp start_at = 7;
+}
+
+// Stock level source
+enum StockLevelSource {
+  // Unspecified
+  STOCK_LEVEL_SOURCE_UNSPECIFIED = 0;
+  // The stock level info is from OOS classifier
+  STOCK_LEVEL_SOURCE_OOS_CLASSIFIER = 1;
+  // The stock level info is from dasher informed
+  STOCK_LEVEL_SOURCE_DASHER_INFORMED = 2;
+  // The stock level info is from merchant informed
+  STOCK_LEVEL_SOURCE_MERCHANT_INFORMED = 3;
+  // The stock level info is from operator informed
+  STOCK_LEVEL_SOURCE_OPERATOR_INFORMED = 4;
+}
+
+// The stock level enum
+enum StockLevel {
+  // Unspecified
+  STOCK_LEVEL_UNSPECIFIED = 0;
+  // The item is in stock
+  STOCK_LEVEL_IN_STOCK = 1;
+  // The item is low stock
+  STOCK_LEVEL_LOW_STOCK = 2;
+  // The item is high in stock
+  STOCK_LEVEL_HIGH_STOCK = 3;
+  // The item is out of stock
+  STOCK_LEVEL_OUT_OF_STOCK = 4;
+  // The item is going to restocking soon
+  STOCK_LEVEL_RESTOCKING_SOON = 5;
+}
+
+// The item level open hour
+message OpenHours {
+  // the day index
+  DayOfWeek day_of_week = 1;
+  // the format should be HH:MM:SS
+  string start_time = 2;
+  // the format should be HH:MM:SS
+  string end_time = 3;
+}
+
+// Day of the week
+enum DayOfWeek {
+  // Default 0
+  DAY_OF_WEEK_UNSPECIFIED = 0;
+  // Monday
+  DAY_OF_WEEK_MON = 1;
+  // Tuesday
+  DAY_OF_WEEK_TUE = 2;
+  // Wednesday
+  DAY_OF_WEEK_WED = 3;
+  // Thursday
+  DAY_OF_WEEK_THU = 4;
+  // Friday
+  DAY_OF_WEEK_FRI = 5;
+  // Saturday
+  DAY_OF_WEEK_SAT = 6;
+  // Sunday
+  DAY_OF_WEEK_SUN = 7;
+}
+
+// Feed Supply Source
+// Including the feed vendor and the processing channel
+// The two combined can be used to determine the
+message SourceOfFeed {
+  // Vendor of the feed/request, indicating where the feed/request originally comes from
+  // E.g. merchant_supplied, operator_curated
+  string vendor = 1;
+  // Indicating through which channel the feed is processed.
+  FeedProcessingChannel processing_channel = 2;
+}
+
+// Channel the original feed
+enum FeedProcessingChannel {
+  reserved 14;
+  reserved "FEED_PROCESSING_CHANNEL_PERSIST_PARTIAL_ATTRIBUTES";
+  // Default 0
+  FEED_PROCESSING_CHANNEL_UNSPECIFIED = 0;
+  // Custom pipeline
+  FEED_PROCESSING_CHANNEL_MX_CUSTOM_PROCESSOR = 1;
+  // Nexla feed processor
+  FEED_PROCESSING_CHANNEL_NEXLA_FEED_PROCESSOR = 2;
+  // Bulk feed uploader
+  FEED_PROCESSING_CHANNEL_BULK_FEED_UPLOADER = 3;
+  // SSIM
+  FEED_PROCESSING_CHANNEL_SSIM = 4;
+  // POS
+  FEED_PROCESSING_CHANNEL_POS = 5;
+  // GROUND_TRUTH
+  FEED_PROCESSING_CHANNEL_GROUND_TRUTH = 6;
+  // Data transformation processor
+  FEED_PROCESSING_CHANNEL_DATA_TRANSFORMATION_FEED_PROCESSOR = 7;
+  // DashMart processor
+  FEED_PROCESSING_CHANNEL_DASHMART_FEED_PROCESSOR = 8;
+  // Feed hydration service, for hydrated feed only
+  FEED_PROCESSING_CHANNEL_FEED_HYDRATION_SERVICE = 10;
+  // Backfill Script Update
+  FEED_PROCESSING_CHANNEL_FEED_PROCESSOR_BACKFILL_SCRIPT = 11;
+  // refresh inventory
+  FEED_PROCESSING_CHANNEL_REFRESH_INVENTORY = 12;
+  // Inventory E2E test workflow
+  FEED_PROCESSING_CHANNEL_INVENTORY_E2E_TEST = 13;
+  // Real time inflation update sync
+  FEED_PROCESSING_CHANNEL_INFLATION_UPDATE = 15;
+  // Open API ingestion workflows
+  FEED_PROCESSING_CHANNEL_OPEN_API = 16;
+  // Mx pull mode workflows
+  FEED_PROCESSING_CHANNEL_MX_ADAPTOR = 17;
+  // JETS short term OOS
+  FEED_PROCESSING_CHANNEL_JETS_ST_OOS = 18;
+  // JETS long term OOS
+  FEED_PROCESSING_CHANNEL_JETS_LT_OOS = 19;
+  // ACI Adapter
+  FEED_PROCESSING_CHANNEL_ACI_ADAPTER = 20;
+  // Open API Promotion
+  FEED_PROCESSING_CHANNEL_OPEN_API_PROMOTION = 21;
+  // Badge tool
+  FEED_PROCESSING_CHANNEL_GROUND_TRUTH_BADGE_TOOL = 22;
+  // Gift cards
+  FEED_PROCESSING_CHANNEL_GIFT_CARDS = 23;
+  // Kaizen platform for test store creation/updates
+  FEED_PROCESSING_CHANNEL_KAIZEN_PLATFORM = 24;
+  // Megatron feed
+  FEED_PROCESSING_CHANNEL_MIRDM_FEED_PROCESSOR = 25;
+  // Ground truth receipt price feedback loop
+  FEED_PROCESSING_CHANNEL_GROUND_TRUTH_RECEIPT_PRICE_FEEDBACK_LOOP = 26;
+}
+
+// location information at item level
+message LocationInfo {
+  // text-based item location e.g. "Aisle 6"
+  AisleInfo aisle_info = 1;
+  // coordinate-based item location from different providers
+  repeated HighPrecisionLocation high_precision_locations = 2;
+}
+
+// text-based item location e.g. "Aisle 6"
+message AisleInfo {
+  //the aisle the item is located at
+  google.protobuf.StringValue aisle = 1;
+  // zone the item is located at
+  google.protobuf.StringValue zone = 2;
+  // Section the item is located at
+  google.protobuf.StringValue section = 3;
+  // Shelf the item is on
+  google.protobuf.StringValue shelf = 4;
+  // Which side of the aisle the item is located
+  google.protobuf.StringValue side = 5;
+  // Unparsed raw data that comes from merchants
+  google.protobuf.StringValue raw_text = 6;
+  // A specific, distinct, human-understandable location within a store
+  google.protobuf.StringValue area = 7;
+  // Probability score of area
+  google.protobuf.FloatValue area_probability = 8;
+  // Additional details or hints for aisle information for an item
+  google.protobuf.StringValue additional_details = 9;
+}
+
+// coordinate-based item location
+message HighPrecisionLocation {
+  // Enum for the providers of High Precision Location
+  enum Provider {
+    // Default 0
+    PROVIDER_UNSPECIFIED = 0;
+    // High Precision Location Provider 3p Oriient
+    PROVIDER_ORIIENT = 1;
+    // High Precision Location Provider 1p
+    PROVIDER_DOORDASH = 2;
+  }
+  // provider of the high precision location
+  Provider provider = 1;
+  // the x coordinate of the item
+  double x_coordinate = 2;
+  // the y coordinate of the item
+  double y_coordinate = 3;
+  // the z coordinate of the item
+  double z_coordinate = 4;
+}
+
+// wrapper to hold all cleaning flags
+message InventoryCleaningFlags {
+  // Whether to clean existing openHoursInfo.
+  google.protobuf.BoolValue clean_existing_open_hours = 1;
+  // Whether to clean existing promotionInfo.
+  google.protobuf.BoolValue clean_existing_promo = 2;
+}

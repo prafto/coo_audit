@@ -1,0 +1,568 @@
+syntax = "proto3";
+
+package dasher_handoffs_service.v1;
+
+import "common/service_client_config.proto";
+import "dasher_handoffs_service/dasher_handoffs_entity.proto";
+import "geo-intelligence/address_validation.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dasher_handoffs_service/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_handoffs_service";
+
+// DasherHandoffsService using Asgard server library in a Guice environment.
+service DasherHandoffsService {
+  // Retrieve a geofence limit for allowing Dx actions within the boundaries of the address like pickup and drop-off
+  rpc GetGeofenceLimit(GetGeofenceLimitRequest) returns (GetGeofenceLimitResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Retreive the eligibility for historical delivery data this order combination
+  rpc GetIsEligibleForHistoricalDeliveryData(GetIsEligibleForHistoricalDeliveryDataRequest) returns (GetIsEligibleForHistoricalDeliveryDataResponse);
+  // Get Historical Data
+  rpc GetHistoricalDeliveryData(GetHistoricalDeliveryDataRequest) returns (GetHistoricalDeliveryDataResponse);
+
+  // Request to retrieve the list of options, if any, to help dashers deal with not being allowed to drop off their delivery.
+  // See https://docs.google.com/document/d/1k1Jhah_xVmSroKRHcnTeKR24TNyyOAJbuO2CRK5Yl6I/edit for more details
+  rpc GetDasherDropOffHelpOptions(GetDasherDropOffHelpOptionsRequest) returns (GetDasherDropOffHelpOptionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+
+  // Perform a request to retrieve the status of the drop off check
+  rpc GetDropOffCheckStatus(GetDropOffCheckStatusRequest) returns (GetDropOffCheckStatusResponse);
+
+  // Perform a request to verify delivery
+  rpc VerifyDelivery(VerifyDeliveryRequest) returns (VerifyDeliveryResponse);
+
+  // Invalidate a historical photo
+  rpc InvalidateHistoricalPhoto(InvalidateHistoricalPhotoRequest) returns (InvalidateHistoricalPhotoResponse);
+
+  // Perform a request to get drop off metadata
+  rpc GetDropOffMetadata(GetDropOffMetadataRequest) returns (GetDropOffMetadataResponse);
+
+  // Perform a request to get signed photo
+  rpc GetSignedPhoto(GetSignedPhotoRequest) returns (GetSignedPhotoResponse);
+
+  // Add HistoricDeliveryData
+  rpc AddHistoricPhoto(AddHistoricPhotoRequest) returns (AddHistoricPhotoResponse);
+}
+
+// Request status of the drop off check
+message GetDropOffCheckStatusRequest {
+  // Dx position lat
+  google.protobuf.DoubleValue dasher_lat = 1;
+  // Dx position lng
+  google.protobuf.DoubleValue dasher_lng = 2;
+  // Delivery requested dropoff lat
+  google.protobuf.DoubleValue drop_off_lat = 3;
+  // Delivery requested dropoff lng
+  google.protobuf.DoubleValue drop_off_lng = 4;
+  // Dx provided accuracy meters
+  google.protobuf.DoubleValue dasher_accuracy_meters = 5;
+  // How many lifetimes deliveries dx has
+  google.protobuf.Int64Value dasher_lifetime_deliveries_made = 7;
+  // if the delivery has pickup time
+  google.protobuf.BoolValue has_pickup_time = 8;
+  // Dx earning type
+  DropOffDasherEarningType dasher_earning_type = 9;
+  // Dx Handoffs Entity
+  dasher_handoffs_service.entity.v1.DxHandoffsEntity dx_handoffs_entity = 13;
+  // Drop Off Option
+  DropOffMethod drop_off_method = 14;
+  // Delivery Identifier Configuration
+  DeliveryIdentifierConfiguration delivery_identifier_configuration = 15;
+  // Delivery business id
+  google.protobuf.Int64Value business_id = 16;
+  // Dasher User Id
+  google.protobuf.Int64Value dasher_user_id = 17;
+  // Actual pickup time
+  google.protobuf.Timestamp actual_pickup_time = 18;
+  // Dasher Id
+  google.protobuf.StringValue dasher_id = 19;
+  // From store to us
+  google.protobuf.BoolValue is_from_store_to_us = 20;
+}
+
+// Response status of the drop off check
+message GetDropOffCheckStatusResponse {
+  // if the drop off allowed
+  google.protobuf.BoolValue allowed = 1;
+  // Actual drop off distance
+  google.protobuf.DoubleValue drop_off_distance_meters = 2;
+  // Mx drop off distance
+  google.protobuf.DoubleValue drop_off_distance_limit_meters = 3;
+  // Details about drop off result
+  DropOffCheckStatus status = 4;
+  // if the drop off was allowed due to ltd
+  google.protobuf.BoolValue disable_geofence_experiment = 5;
+}
+
+// Request for Delivery Verification
+message VerifyDeliveryRequest {
+  // delivery_uuid for Delivery Verification
+  google.protobuf.StringValue delivery_uuid = 1;
+  // delivery_id for Delivery Verification
+  google.protobuf.Int64Value delivery_id = 2;
+  // Request event Delivery Verification
+  DeliveryVerificationEvent verification_event = 3;
+}
+
+// Response for Delivery Verification
+message VerifyDeliveryResponse {
+  // is delivery verified
+  google.protobuf.BoolValue verified = 1;
+}
+
+// Request event Delivery Verification
+message DeliveryVerificationEvent {
+  // address_id of delivery event to verify
+  google.protobuf.StringValue address_id = 1;
+  // photo_url of delivery event to verify
+  google.protobuf.StringValue photo_url = 2;
+  // course of delivery event to verify
+  google.protobuf.FloatValue course = 3;
+  // horizontal_accuracy of delivery event to verify
+  google.protobuf.FloatValue horizontal_accuracy = 4;
+  // vertical_accuracy of delivery event to verify
+  google.protobuf.FloatValue vertical_accuracy = 5;
+  // timestamp of delivery event to verify
+  google.protobuf.Timestamp timestamp = 6;
+  // photo_submit_lat of delivery event to verify
+  google.protobuf.DoubleValue photo_submit_lat = 7;
+  // photo_submit_lng of delivery event to verify
+  google.protobuf.DoubleValue photo_submit_lng = 8;
+  // camera_open_lat of delivery event to verify
+  google.protobuf.DoubleValue camera_open_lat = 9;
+  // camera_open_lng of delivery event to verify
+  google.protobuf.DoubleValue camera_open_lng = 10;
+  // image_src of delivery event to verify
+  google.protobuf.StringValue image_src = 11;
+  // delivery_type of delivery event to verify
+  google.protobuf.StringValue delivery_type = 12;
+  // input_description of delivery event to verify
+  google.protobuf.StringValue input_description = 13;
+  // context of delivery event to verify
+  google.protobuf.StringValue context = 14;
+}
+
+// Dx earning type
+enum DropOffDasherEarningType {
+  // Required as per proto3 rules
+  DROP_OFF_DASHER_EARNING_TYPE_UNSPECIFIED = 0;
+  // Doordash Dasher Earning Type
+  DROP_OFF_DASHER_EARNING_TYPE_DOORDASH = 1;
+  // Dashlink Dasher Earning Type
+  DROP_OFF_DASHER_EARNING_TYPE_DASHLINK = 2;
+}
+
+// Details about drop off result
+enum DropOffCheckStatus {
+  // Required as per proto3 rules
+  DROP_OFF_CHECK_STATUS_UNSPECIFIED = 0;
+  // drop off allowed
+  DROP_OFF_CHECK_STATUS_ALLOWED = 1;
+  // drop off allowed
+  DROP_OFF_CHECK_STATUS_ALLOWED_HIGH_LTD = 2;
+  // drop off not allowed
+  DROP_OFF_CHECK_STATUS_NOT_ALLOWED = 3;
+  // drop off not allowed
+  DROP_OFF_CHECK_STATUS_NOT_ALLOWED_PARAMETERS_CHECK = 4;
+}
+
+// Delivery Identifier Configuration
+message DeliveryIdentifierConfiguration {
+  // the id of the dasher
+  google.protobuf.Int32Value dasher_id = 1;
+  // the uuid of the delivery they're trying to drop off
+  google.protobuf.StringValue delivery_uuid = 2;
+  // Address id
+  google.protobuf.StringValue address_id = 3;
+  // Consumer id
+  google.protobuf.StringValue consumer_id = 4;
+  //Delivery id
+  google.protobuf.StringValue delivery_id = 5;
+}
+
+// Context attributes of the delivery
+message DeliveryDetails {
+  // Drop-off option
+  DropOffMethod drop_off_method = 1;
+}
+
+// Get HistoricalDeliveryData Request
+message GetHistoricalDeliveryDataRequest {
+  // The configuration to get historical delivery data
+  DeliveryIdentifierConfiguration delivery_identifier_config = 1;
+}
+
+// Get HistoricalDeliveryData Response
+message GetHistoricalDeliveryDataResponse {
+  // Historical Route as polyline
+  google.protobuf.StringValue historical_route = 1;
+  // Historical Delivery photo url
+  google.protobuf.StringValue historical_photo_url = 2;
+  // source of response
+  HistoricalDeliveryDataSource historical_delivery_data_source = 3;
+  // Signed Historical Delivery photo url
+  repeated google.protobuf.StringValue signed_historical_photo_url = 4;
+  // List of historic dropoff photo objects
+  repeated dasher_handoffs_service.entity.v1.HistoricDropoffPhoto historic_dropoff_photos = 14;
+}
+
+// HistoricalDeliveryDataSource for GetHistoricalDeliveryDataResponse
+enum HistoricalDeliveryDataSource {
+  // unknown or unspecified HistoricalDeliveryDataSource
+  HISTORICAL_DELIVERY_DATA_SOURCE_UNSPECIFIED = 0;
+  // consumer - address pair
+  HISTORICAL_DELIVERY_DATA_SOURCE_CONSUMER_ADDRESS = 1;
+  // only address for residential street addresses
+  HISTORICAL_DELIVERY_DATA_SOURCE_RESIDENTIAL_STREET_ADDRESS = 2;
+}
+
+// Invalidate Historical Photo Request
+message InvalidateHistoricalPhotoRequest {
+  // The configuration to get historical delivery data
+  DeliveryIdentifierConfiguration delivery_identifier_config = 1;
+}
+
+// Invalidate Historical Photo Response
+message InvalidateHistoricalPhotoResponse {
+  // If the photo was successfully invalidated
+  google.protobuf.BoolValue success = 1;
+}
+
+// Get IsEligibleForHistoricalDeliveryData Request
+message GetIsEligibleForHistoricalDeliveryDataRequest {
+  // The configuration to check for historical deliveries
+  DeliveryIdentifierConfiguration delivery_identifier_config = 1;
+}
+
+// Get IsEligibleForHistoricalDeliveryData Response
+message GetIsEligibleForHistoricalDeliveryDataResponse {
+  // Boolean pertaining to if there is eligibility for historical data for the configuration passed
+  google.protobuf.BoolValue is_eligible = 1;
+}
+
+// Get GeofenceLimit Request
+message GetGeofenceLimitRequest {
+  // The identifier configuration to get geofence limit
+  DeliveryIdentifierConfiguration delivery_identifier_config = 1;
+  // Drop-off option
+  DeliveryDetails delivery_details = 2;
+}
+
+// Get GeofenceLimit Response
+message GetGeofenceLimitResponse {
+  // The computed geofence limit to be used for this address
+  google.protobuf.DoubleValue geofence_limit = 1;
+  // The source of the geofence computation
+  google.protobuf.StringValue geofence_source = 2;
+}
+
+// The ComputeGeofence Event for logging
+message ComputeGeofenceEvent {
+  // The full deliveryContext that was used for geofence evaluation
+  DeliveryContext delivery_context = 1;
+  // The responses generated from base and shadow models for the one request
+  repeated GetGeofenceLimitResponse get_geofence_limit_responses = 2;
+}
+
+//  The DeliveryContext for the delivery
+message DeliveryContext {
+  // The config for the delivery
+  DeliveryIdentifierConfiguration delivery_identifier_config = 1;
+  // Drop-off option
+  DeliveryDetails delivery_details = 2;
+  // Address Record type
+  AddressRecordType address_record_type = 3;
+}
+
+// Request for GetDropOffMetadata method
+message GetDropOffMetadataRequest {
+  // REQUIRED delivery id
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Response for GetDropOffMetadata method
+message GetDropOffMetadataResponse {
+  // Cx drop off instructions
+  google.protobuf.StringValue instructions = 1;
+  // Cx drop off subpremise
+  google.protobuf.StringValue subpremise = 2;
+  // Cx drop off entry code
+  google.protobuf.StringValue entry_code = 3;
+  // DropOffMethod
+  DropOffMethod drop_off_method = 4;
+}
+
+// The AddressRecordType for the delivery
+message AddressRecordType {
+  // The rdi
+  RDI rdi = 1;
+  // The record type
+  RecordType record_type = 2;
+}
+
+// Request object for getting the list of drop off help options available to the dasher for bypassing the given delivery
+message GetDasherDropOffHelpOptionsRequest {
+  // the id of the dasher
+  // REQUIRED
+  google.protobuf.Int32Value dasher_id = 1;
+  // the uuid of the delivery they're trying to drop off
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 2;
+  // whether or not the dasher was allowed to drop off; determined by Assignment Service currently
+  // REQUIRED
+  google.protobuf.BoolValue drop_off_allowed = 3;
+  // Dasher's straight line distance, in meters, from the drop off point
+  // REQUIRED
+  google.protobuf.DoubleValue drop_off_distance_meters = 4;
+  // the max drop off distance, in meters, allowed for this delivery
+  // REQUIRED
+  google.protobuf.DoubleValue drop_off_distance_limit_meters = 5;
+  // the Cx selected drop off method for the delivery
+  // REQUIRED
+  DropOffMethod drop_off_method = 6;
+  // the Dasher legal contract type
+  // REQUIRED
+  DasherContractType contract_type = 7;
+  // the number of lifetime deliveries made by dasher
+  // NULLABLE
+  google.protobuf.Int32Value lifetime_num_deliveries_made = 8;
+  // Should Disable Lifetime Deliveries Expand condition
+  // NULLABLE
+  google.protobuf.BoolValue should_disable_lifetime_deliveries_expand = 9;
+  // If this is set to true, we require the Dx to be in the geofence currently to return expanded help options.
+  // NULLABLE
+  google.protobuf.BoolValue enforce_strict_geofence_check = 10;
+}
+
+// contract type in legal terms
+enum DasherContractType {
+  // unknown or unspecified contract type
+  DASHER_CONTRACT_TYPE_UNSPECIFIED = 0;
+  // independent contractor
+  DASHER_CONTRACT_TYPE_IC = 1;
+  // w2 employee
+  DASHER_CONTRACT_TYPE_W2 = 2;
+  // robot
+  DASHER_CONTRACT_TYPE_ROBOT = 3;
+}
+
+// See https://docs.google.com/document/d/1kDcVyhbZ_rTNuT0W0Ts__W2TeUNquw4cZRWNLo34sGg/edit# for more details
+message GetDasherDropOffHelpOptionsResponse {
+  // the menu groups for this response, each containing a set of options
+  // Could be empty!
+  repeated DropOffHelpGroup help_option_groups = 1;
+}
+
+// A group of drop off help options, with a title text to group them
+message DropOffHelpGroup {
+  // The title text to display over this group of options
+  // NOT NULLABLE
+  google.protobuf.StringValue group_title = 1;
+  // The help options that belong to this group
+  // Will not be empty
+  repeated DropOffHelpOption help_options = 2;
+}
+
+// Represents a help option, which include both its text in the menu view, and also as a focused bottom sheet when the menu option is clicked
+message DropOffHelpOption {
+  // the id of this option
+  // NOT NULLABLE
+  google.protobuf.Int32Value id = 1;
+  // the type of this option
+  // NOT NULLABLE
+  DropOffHelpOptionType type = 2;
+  // the text of this option when shown as a menu item
+  // NOT NULLABLE
+  google.protobuf.StringValue menu_text = 3;
+  // the title text of the bottom sheet that shows when user clicks on the menu item
+  // NOT NULLABLE
+  google.protobuf.StringValue details_title = 4;
+  // the body text of the bottom sheet that shows when user clicks on the menu item
+  // NULLABLE
+  google.protobuf.StringValue details_text = 5;
+  // list of actions that are available for this option
+  // CAN BE EMPTY
+  repeated DropOffHelpAction actions = 6;
+}
+
+// Represents the type of a help option
+enum DropOffHelpOptionType {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_OPTION_TYPE_UNSPECIFIED = 0;
+  // an option that specifies contacting customer
+  DROP_OFF_HELP_OPTION_TYPE_CONTACT_CUSTOMER = 1;
+  // an option that specifies contacting support
+  DROP_OFF_HELP_OPTION_TYPE_CONTACT_SUPPORT = 2;
+  // an option that allows dasher to the next step of the dropoff flow
+  DROP_OFF_HELP_OPTION_TYPE_CONTINUE_TO_COMPLETE_DELIVERY = 3;
+}
+
+// Represents a button action that Dashers can click to go to the next step in the process. Includes how the button is displayed.
+message DropOffHelpAction {
+  // the id of this action
+  // NOT NULLABLE
+  google.protobuf.Int32Value id = 1;
+  // the type of this option
+  // NOT NULLABLE
+  DropOffHelpActionType type = 2;
+  // the button text for this action
+  // NOT NULLABLE
+  google.protobuf.StringValue display_text = 3;
+  // the visual style for the button of this action
+  // NOT NULLABLE
+  DropOffHelpActionStyle style = 4;
+}
+
+// Represents the type of the action
+enum DropOffHelpActionType {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_ACTION_TYPE_UNSPECIFIED = 0;
+  // An action button that just lets the Dasher bypass to the next step
+  DROP_OFF_HELP_ACTION_TYPE_CONTINUE_DELIVERY = 1;
+  // An action button that initiates support text chat flow
+  DROP_OFF_HELP_ACTION_TYPE_SUPPORT_CHAT = 2;
+  // An action button that starts a phone call with support agents
+  DROP_OFF_HELP_ACTION_TYPE_SUPPORT_CALL = 3;
+  // An action button that starts the contactless abandon delivery flow
+  DROP_OFF_HELP_ACTION_TYPE_ABANDON_CONTACTLESS_DELIVERY = 4;
+  // An action button that starts the HITM customer unavailable flow
+  DROP_OFF_HELP_ACTION_TYPE_CUSTOMER_UNAVAILABLE = 5;
+  // An action button that will simply close the flow
+  DROP_OFF_HELP_ACTION_TYPE_CLOSE = 6;
+}
+
+// Identifies how the action button should be displayed in the UI.
+enum DropOffHelpActionStyle {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_ACTION_STYLE_UNSPECIFIED = 0;
+  // By default, display this style as red
+  DROP_OFF_HELP_ACTION_STYLE_PRIMARY = 1;
+  // By default, display this style as gray
+  DROP_OFF_HELP_ACTION_STYLE_SECONDARY = 2;
+  // By default, display this style with an X
+  DROP_OFF_HELP_ACTION_STYLE_CANCEL = 3;
+}
+
+// Represents the supported delivery drop off option
+enum DropOffMethod {
+  // The default value will be treated as DROP_OFF_METHOD_CONTACTLESS
+  DROP_OFF_METHOD_UNSPECIFIED = 0;
+  // Cx delivery preference to get the order delivered directly to them
+  DROP_OFF_METHOD_HAND_IT_TO_ME = 1;
+  // Cx delivery preference to get the order delivered with no contact
+  DROP_OFF_METHOD_CONTACTLESS = 2;
+}
+
+// Drop Off Metadata Generation Event
+message DropOffMetadataGenerationEvent {
+  // delivery_id of DropOffMetadataGenerationEvent
+  google.protobuf.Int64Value delivery_id = 1;
+  // the id of the dasher
+  google.protobuf.Int64Value dasher_id = 2;
+  // Extracted structured metadata from delivery
+  google.protobuf.StringValue extracted_metadata = 3;
+  // Parsed information from different data sources
+  google.protobuf.StringValue parsed_metadata = 4;
+}
+
+// Dropoff Check Iguazu Event
+message DropoffCheckStatusEvent {
+  // Checker UUID (Used to map same check to multiple types)
+  google.protobuf.StringValue checker_uuid = 1;
+  // used for deprecated field numbers
+  reserved 2;
+  // used for deprecated field names
+  reserved "request";
+  // used for deprecated field numbers
+  reserved 3;
+  // used for deprecated field names
+  reserved "response";
+  // Was a shadow event (not used in prod)
+  google.protobuf.BoolValue shadow_event = 4;
+  // Type of Check (Normal or polygon)
+  google.protobuf.StringValue check_type = 5;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 6;
+  // Dropoff Check Request json
+  google.protobuf.StringValue dropoff_check_request_json = 7;
+  // Dropoff Check Response json
+  google.protobuf.StringValue dropoff_check_response_json = 8;
+  // Cx pin in Polygon (Only will be accurate for polygon geofences otherwise false)
+  google.protobuf.BoolValue is_cx_pin_within_polygon = 9;
+}
+
+// Argil Photo Shadow Event
+message ArgilPhotoModelEvent {
+  // Delivery UUID of the delivery
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Model Name
+  google.protobuf.StringValue model_name = 2;
+  // Model Version
+  google.protobuf.StringValue model_version = 3;
+  // Inference request
+  google.protobuf.StringValue argil_inference_request_json = 4;
+  // Inference response
+  google.protobuf.StringValue argil_inference_response_json = 5;
+  // Time for model completion
+  google.protobuf.Int64Value model_elapsed_runtime = 6;
+  // Coorelation UUID
+  google.protobuf.StringValue coorelation_uuid = 7;
+}
+
+// Request for GetSignedPhoto method
+message GetSignedPhotoRequest {
+  // Optional delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Optional bucket key
+  google.protobuf.StringValue bucket_key = 2;
+  // Optional unsigned photo url
+  google.protobuf.StringValue unsigned_photo_url = 3;
+  // Optional delivery uuids
+  repeated google.protobuf.StringValue delivery_uuids = 4;
+}
+
+// Response for GetSignedPhoto method
+message GetSignedPhotoResponse {
+  // signed photo url
+  google.protobuf.StringValue signed_photo_url = 1;
+  // repeated signed photo url
+  repeated google.protobuf.StringValue signed_photo_urls = 2;
+}
+
+// Request to add historic photo
+message AddHistoricPhotoRequest {
+  // Historic photo data
+  repeated HistoricPhotoData historic_photo_data = 1;
+}
+
+// Historic Photo Data
+message HistoricPhotoData {
+  // Address id
+  google.protobuf.StringValue address_id = 1;
+  // Consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // Unsigned photo URL
+  google.protobuf.StringValue unsigned_photo_url = 3;
+  // Is Cx provided
+  google.protobuf.BoolValue is_cx_provided = 4;
+}
+
+// Response for adding a historic photo
+message AddHistoricPhotoResponse {
+  // Success
+  google.protobuf.BoolValue success = 1;
+}

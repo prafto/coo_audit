@@ -1,0 +1,271 @@
+syntax = "proto3";
+
+package doordash.payin.payment_configs.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+import "payin/payer_v1.proto";
+import "payin/payment_method_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/payment_config/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payin.payment_configs.v1";
+
+// Payment Config V2 Service
+service PaymentConfigV2Service {
+  // Service info
+  option (service_client.client_config).service_name = "payin-platform";
+  option (service_client.client_config).service_app = "payer";
+  // Retry config
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 20;
+  // Circuit Breaker config
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 30;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 15000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 2000;
+
+  // Get payment configs - corresponds to https://payment-service-doc.doorcrawl.com/payin/api/v2/docs#/PaymentConfigV2/GetPaymentConfig
+  rpc GetPaymentConfigsV1(GetPaymentConfigsV1Request) returns (GetPaymentConfigsV1Response);
+
+  // Get payment configs v2 -- corresponds to https://payment-service-doc.doorcrawl.com/payin/api/v2/docs#/PaymentConfigV2/GetPaymentConfigWithProvider
+  rpc GetPaymentConfigsV2(GetPaymentConfigsV2Request) returns (GetPaymentConfigsV2Response);
+
+  // get public key -- corresponds to https://payment-service-doc.doorcrawl.com/payin/api/v1/docs#/tier_0_endpoint/GetPublicKey
+  rpc GetPublicKeyV1(GetPublicKeyV1Request) returns (GetPublicKeyV1Response);
+
+  // generate provider sdk client tokens
+  rpc GenerateProviderSDKClientTokensV1(GenerateProviderSDKClientTokensV1Request) returns (GenerateProviderSDKClientTokensV1Response);
+}
+
+// List of client side fraud providers
+enum FraudProvider {
+  // Unspecified fraud provider
+  FRAUD_PROVIDER_UNSPECIFIED = 0;
+
+  // Client side fraud provider should be stripe
+  FRAUD_PROVIDER_STRIPE = 1;
+
+  // Client side fraud provider should be braintree
+  FRAUD_PROVIDER_BRAINTREE = 2;
+
+  // Client side fraud provider should be jpm
+  FRAUD_PROVIDER_JPM = 3;
+}
+
+// Payment method capabilities
+enum PaymentMethodCapabilities {
+  // Unspecified
+  PAYMENT_METHOD_CAPABILITIES_UNSPECIFIED = 0;
+
+  // Can purchase alcohol
+  PAYMENT_METHOD_CAPABILITIES_CAN_PURCHASE_ALCOHOL = 1;
+}
+
+// Configuration data for instantiating fraud providers on the client side
+message FraudConfigsV1 {
+  // Fraud provider for this config
+  FraudProvider provider = 1;
+
+  // Public key to instantiate fraud provider with
+  google.protobuf.StringValue key = 2;
+}
+
+// PaymentMethodConfigV1
+message PaymentMethodConfigV1 {
+  // tokenization provider for this payment method config
+  doordash.payin.common.v1.TokenizationProvider tokenization_provider = 1;
+
+  // environment for which this tokenization data is valid
+  google.protobuf.StringValue environment = 2;
+
+  // Public key to instantiate tokenization provider with
+  google.protobuf.StringValue key = 3;
+
+  // Country for which this payment method config is valid
+  doordash.payin.common.v1.Country country = 4;
+
+  // Optional account id for which this payment method config is associated with, i.e. paypal merchant account id
+  google.protobuf.StringValue account_id = 5;
+
+  // Is collecting zip information required for this payment method config in this country
+  google.protobuf.BoolValue zip_required = 6;
+
+  // List of fraud providers to instantiate and collect as part of the this payment method config
+  repeated FraudConfigsV1 fraud_configs = 7;
+}
+
+// GetPaymentConfigsV1Request
+message GetPaymentConfigsV1Request {
+  // payer correlation ids -- currently only supporting dd_consumer_id
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // default country to fallback to if payers country can not be resolved
+  doordash.payin.common.v1.Country default_country = 2;
+
+  // is employee - defaults to false
+  google.protobuf.BoolValue is_employee = 3;
+}
+
+// GetPaymentConfigsV1Response
+message GetPaymentConfigsV1Response {
+  // Base64 encoded token meant to be opaque to client and passed back as part of create payment method calls
+  google.protobuf.StringValue payment_config_token = 1;
+
+  // Apple pay config
+  PaymentMethodConfigV1 apple_pay_config = 2;
+
+  // Credit / debit card config
+  PaymentMethodConfigV1 card_config = 3;
+
+  // Google pay config
+  PaymentMethodConfigV1 google_pay_config = 4;
+
+  // PayPal config
+  PaymentMethodConfigV1 paypal_config = 5;
+}
+
+// PaymentMethodConfigV2
+message PaymentMethodConfigV2 {
+  // tokenization provider for this payment method config
+  doordash.payin.common.v1.TokenizationProvider tokenization_provider = 1;
+
+  // Is collecting zip information required for this payment method config in this country
+  google.protobuf.BoolValue zip_required = 2;
+
+  // List of fraud providers to instantiate and collect as part of the this payment method config
+  repeated FraudConfigsV1 fraud_configs = 3;
+
+  // capabilities
+  repeated PaymentMethodCapabilities capabilities = 4;
+
+  // availability status of the payment method
+  doordash.payin.payment_method.v1.PaymentMethodAvailabilityStatus availability_status = 5;
+}
+
+// ProviderConfigs
+message ProviderConfigs {
+  // Stripe sdk config
+  common.v1.ProviderSdkConfig stripe = 1;
+
+  // Braintree sdk config
+  common.v1.ProviderSdkConfig braintree = 2;
+
+  // JPM sdk config
+  common.v1.ProviderSdkConfig jpm = 3;
+
+  // VGS sdk config
+  common.v1.ProviderSdkConfig vgs = 4;
+
+  // VGS sdk config (payment vault)
+  common.v1.ProviderSdkConfig vgs_payment = 5;
+}
+
+// PaymentFrequencyConfigs
+message PaymentFrequencyConfigV1 {
+  // payment frequency (e.g.PER_ORDER, DAILY)
+  string frequency = 1;
+}
+
+// GetPaymentConfigsV2Request
+message GetPaymentConfigsV2Request {
+  // payer correlation ids -- currently only supporting dd_consumer_id
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // default country to fallback to if payers country can not be resolved
+  doordash.payin.common.v1.Country default_country = 2;
+
+  // is employee - defaults to false
+  google.protobuf.BoolValue is_employee = 3;
+
+  // target country - when set, this will override default country
+  // with the BE respecting this assuming this is the country configs clients actually want
+  // and not the one neccessarily associated with the payer
+  doordash.payin.common.v1.Country target_country = 4;
+}
+
+// GetPaymentConfigsV2Response
+message GetPaymentConfigsV2Response {
+  // Base64 encoded token meant to be opaque to client and passed back as part of create payment method calls
+  google.protobuf.StringValue payment_config_token = 1;
+
+  // Apple pay config
+  PaymentMethodConfigV2 apple_pay_config = 2;
+
+  // Afterpay config
+  PaymentMethodConfigV2 afterpay_config = 3;
+
+  // Credit / debit card config
+  PaymentMethodConfigV2 card_config = 4;
+
+  // Google pay config
+  PaymentMethodConfigV2 google_pay_config = 5;
+
+  // PayPal config
+  PaymentMethodConfigV2 paypal_config = 6;
+
+  // Venmo config
+  PaymentMethodConfigV2 venmo_config = 7;
+
+  // provider configs
+  ProviderConfigs provider_configs = 8;
+
+  // EBT config
+  PaymentMethodConfigV2 ebt_config = 9;
+
+  // HSA FSA config
+  PaymentMethodConfigV2 hsa_fsa_config = 10;
+
+  // Klarna config
+  PaymentMethodConfigV2 klarna_config = 11;
+
+  // Payment frequency config
+  PaymentFrequencyConfigV1 payment_frequency_config = 12;
+}
+
+// GetPublicKeyV1Request
+message GetPublicKeyV1Request {
+  // payment provider
+  doordash.payin.common.v1.PgpCode payment_provider = 1;
+
+  // payer correlation ids -- currently only supporting dd_consumer_id
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 2;
+
+  // default country to fallback to if payers country can not be resolved
+  doordash.payin.common.v1.Country default_country = 3;
+}
+
+// GetPublicKeyV1Response
+message GetPublicKeyV1Response {
+  // public key
+  google.protobuf.StringValue public_key = 1;
+
+  // payment provider
+  doordash.payin.common.v1.PgpCode payment_provider = 2;
+
+  // country for public key
+  doordash.payin.common.v1.Country country = 3;
+}
+
+// GenerateProviderSDKClientTokensV1Request
+message GenerateProviderSDKClientTokensV1Request {
+  // country to specify which provider account we should be generating the client token in.
+  doordash.payin.common.v1.Country country = 1;
+}
+
+// GenerateProviderSDKClientTokensV1Response includes the client tokens from the supported providers.
+message GenerateProviderSDKClientTokensV1Response {
+  // Braintree client token.
+  ClientTokenV1 braintree = 1;
+}
+
+// ClientTokenV1 represents the client token response from each provider.
+message ClientTokenV1 {
+  // Generated client token from the provider's SDK.
+  google.protobuf.StringValue client_token = 1;
+}

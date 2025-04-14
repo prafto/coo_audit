@@ -1,0 +1,207 @@
+syntax = "proto3";
+
+package upss.v1;
+
+import "common/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "upss/attribute.proto";
+import "upss/segment.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/upss/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.upss.rpc.api";
+
+// UPSS provides various methods to fetch user attributes, segments, and interactions.
+// UPSS is an abbreviated version of User Profile and Segmentation Service, thus no need for "Service" suffix
+// buf:lint:ignore SERVICE_SUFFIX
+service UPSS {
+  // Checks if a given entity is part of specific segments.
+  rpc IsEntityInSegment(IsEntityInSegmentRequest) returns (IsEntityInSegmentResponse);
+  // Retrieves interactions of an entity with other entities.
+  rpc GetEntityInteractions(GetEntityInteractionsRequest) returns (GetEntityInteractionsResponse);
+  // Fetches attributes and segments for a single user.
+  rpc GetUserAttributesAndSegments(GetUserAttributesAndSegmentsRequest) returns (GetUserAttributesAndSegmentsResponse);
+  // Fetches attributes and segments for multiple users.
+  rpc GetUsersAttributesAndSegments(GetUsersAttributesAndSegmentsRequest) returns (GetUsersAttributesAndSegmentsResponse);
+}
+
+// Request message to check if an entity belongs to a segment.
+message IsEntityInSegmentRequest {
+  // The primary entity being evaluated.
+  Entity primary_entity = 1;
+  // List of segments to check.
+  repeated Segment segments = 2;
+  // Struct for Segment with only relevant fields
+  message Segment {
+    // Unique identifier for the segment.
+    google.protobuf.StringValue id = 1;
+    // Additional context entities for evaluation.
+    repeated Entity context = 2;
+  }
+}
+
+// Response message containing segment evaluation results.
+message IsEntityInSegmentResponse {
+  // Results for evaluated segments.
+  repeated SegmentExpressionResults segment_results = 1;
+}
+
+// Holds evaluation results for a segment.
+message SegmentExpressionResults {
+  // Identifier for the segment.
+  google.protobuf.StringValue segment_id = 1;
+  // List of results for segment evaluation.
+  repeated SegmentExpressionResult results = 2;
+}
+
+// Individual result of a segment evaluation.
+message SegmentExpressionResult {
+  // Whether the entity is in the segment.
+  google.protobuf.BoolValue result = 1;
+  // Reasons for ineligibility.
+  repeated google.protobuf.StringValue ineligibility_reasons = 2;
+  // Context used for evaluation.
+  repeated Entity context = 3;
+}
+
+// Additional metadata for request context.
+message RequestContext {
+  // Tag to track use cases for predictions.
+  string use_case = 1;
+  // Enable Iguazu logging.
+  bool enable_iguazu_logging_for_feature_set = 2;
+}
+
+// Request message for fetching a single user's attributes and segments.
+message GetUserAttributesAndSegmentsRequest {
+  // The user ID to fetch data for.
+  string target_id = 1;
+  // Type of entity being queried.
+  EntityType entity = 2;
+  // List of attributes to retrieve.
+  repeated AttributesOption attributes_options = 3;
+  // Context metadata for request.
+  RequestContext request_context = 4;
+  // Whether to retrieve all segments.
+  bool should_fetch_all_segments = 5;
+}
+
+// Request message for fetching multiple users' attributes and segments.
+message GetUsersAttributesAndSegmentsRequest {
+  // List of user IDs to fetch data for.
+  repeated string target_ids = 1;
+  // Type of entity being queried.
+  EntityType entity = 2;
+  // List of attributes to retrieve.
+  repeated AttributesOption attributes_options = 3;
+  // Context metadata for request.
+  RequestContext request_context = 4;
+  // Whether to retrieve all segments.
+  bool should_fetch_all_segments = 5;
+}
+
+// Response message containing attributes and segments for a single user.
+message GetUserAttributesAndSegmentsResponse {
+  // Flattened list of user attributes.
+  repeated ConsumerAttribute consumer_attributes = 1;
+  // List of computed segments the user belongs to.
+  repeated string segments = 2;
+}
+
+// Response message containing attributes and segments for multiple users.
+message GetUsersAttributesAndSegmentsResponse {
+  // Wrapper Struct for UserAttributesAndSegments
+  message UserAttributesAndSegments {
+    // User ID.
+    string target_id = 1;
+    // User's attributes and segments data.
+    GetUserAttributesAndSegmentsResponse attributes_and_segments = 2;
+  }
+  // List of the target ID and the GetUserAttributesAndSegmentsResponse struct
+  repeated UserAttributesAndSegments users_attributes_and_segments = 1;
+}
+
+// Request message for fetching entity interactions.
+message GetEntityInteractionsRequest {
+  // ID of the entity.
+  google.protobuf.StringValue entity_id = 1;
+  // Type of the entity.
+  EntityType entity = 2;
+  // Options for interactions to fetch.
+  repeated InteractionOptions interaction_options = 3;
+  // Metadata for request tracking.
+  RequestContext request_context = 4;
+}
+
+// Options for fetching interactions.
+message InteractionOptions {
+  // Attribute name to retrieve.
+  google.protobuf.StringValue attribute_name = 1;
+  // Related entity IDs.
+  repeated google.protobuf.StringValue secondary_entity_ids = 2;
+  // Type of secondary entity.
+  EntityType secondary_entity = 3;
+}
+
+// Response message containing interaction results.
+message GetEntityInteractionsResponse {
+  // List of interaction results.
+  repeated EntityInteractionResult entity_interaction_result = 1;
+}
+
+// Holds results of an entity interaction.
+message EntityInteractionResult {
+  // Name of the attribute.
+  google.protobuf.StringValue attribute_name = 1;
+  // Value of the Entity Interaction result
+  oneof value {
+    // String value of the attribute.
+    google.protobuf.StringValue string_value = 2;
+    // Boolean value of the attribute.
+    google.protobuf.BoolValue bool_value = 3;
+    // Float value of the attribute.
+    google.protobuf.FloatValue float_value = 4;
+    // Integer value of the attribute.
+    google.protobuf.Int64Value int_value = 5;
+    // Double attribute value
+    google.protobuf.DoubleValue double_value = 6;
+
+    // Order/visit/save history
+    EngagementHistory engagement_history_value = 7;
+    // Cx's affinity to cuisines, dietary or NV categories
+    AffinityVector affinity_vector_value = 8;
+    // Pretrained user embeddings
+    Embedding embedding_value = 9;
+    // Date attribute value
+    google.protobuf.Timestamp date_value = 10;
+    // Array of Strings attribute value
+    StringArrayAttribute string_array_value = 11;
+    // Array of Booleans attribute value
+    BoolArrayAttribute bool_array_value = 12;
+    // Array of Floats attribute value
+    FloatArrayAttribute float_array_value = 13;
+    // Array of Integers attribute value
+    IntArrayAttribute int_array_value = 14;
+    // Array of Doubles attribute value
+    DoubleArrayAttribute double_array_value = 15;
+  }
+  // ID of the related entity.
+  google.protobuf.StringValue secondary_entity_id = 21;
+  // Type of related entity.
+  EntityType secondary_entity_type = 22;
+}
+
+// proto for deserializing versioned attributes from CRDB text
+message UserAttributeValuePayload {
+  // Versioned attribute used for embeddings
+  message VersionedAttribute {
+    // attribute value stored in CRDB
+    string attribute_value = 1;
+    // version for the attribute stored in CRDB
+    google.protobuf.Int64Value attribute_version = 2;
+  }
+  // array of versioned attributes
+  repeated VersionedAttribute versioned_attributes = 1;
+}

@@ -1,0 +1,748 @@
+syntax = "proto3";
+
+package doordash.payment.payout.v2;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payment/common.proto";
+import "payout_platform/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payment.payout.v2";
+
+/*
+   Service in support of payout programs (e.g. loans)
+*/
+service PaymentProgramService {
+  // Receive payment program offers
+  rpc GetPaymentProgramOffer(GetPaymentProgramOfferRequest) returns (GetPaymentProgramOfferResponse);
+
+  // Generate payment program agreement
+  rpc GeneratePaymentProgramAgreement(GeneratePaymentProgramAgreementRequest) returns (GeneratePaymentProgramAgreementResponse);
+
+  // Get payment program schedule
+  rpc GetPaymentProgramPaymentSchedule(GetPaymentProgramPaymentScheduleRequest) returns (GetPaymentProgramPaymentScheduleResponse);
+
+  // Creates a payment program
+  rpc CreatePaymentProgram(CreatePaymentProgramRequest) returns (CreatePaymentProgramResponse);
+
+  // Returns all payment programs associated with the request
+  rpc GetPaymentPrograms(GetPaymentProgramsRequest) returns (GetPaymentProgramsResponse);
+
+  // Allows updates of certain Payment Program properties
+  rpc UpdatePaymentProgram(UpdatePaymentProgramRequest) returns (UpdatePaymentProgramResponse);
+
+  // Returns the payment program with the given identifier
+  rpc GetPaymentProgram(GetPaymentProgramRequest) returns (GetPaymentProgramResponse);
+
+  // Creates payment method which can then be used for program payment
+  rpc CreatePaymentProgramExternalPaymentMethod(CreatePaymentProgramExternalPaymentMethodRequest) returns (CreatePaymentProgramExternalPaymentMethodResponse);
+
+  // Creates a payment event towards the payment program, triggered
+  rpc CreatePaymentProgramExternalPayment(CreatePaymentProgramExternalPaymentRequest) returns (CreatePaymentProgramExternalPaymentResponse);
+
+  // Get all payment program events associated with the GetPaymentProgramEventsRequest
+  rpc GetPaymentProgramEvents(GetPaymentProgramEventsRequest) returns (GetPaymentProgramEventsResponse);
+
+  // List all participants enrolled in either
+  rpc ListActiveParticipants(ListActiveParticipantsRequest) returns (ListActiveParticipantsResponse);
+
+  // List all payment program earnings withholding
+  rpc ListPaymentProgramEarningsWithholdings(ListPaymentProgramEarningsWithholdingsRequest) returns (ListPaymentProgramEarningsWithholdingsResponse);
+}
+
+// Variables used in dasher loan payment program agreement
+message DasherLoanPaymentProgramAgreementVariables {
+  // name of borrower
+  google.protobuf.StringValue borrower_name = 1;
+
+  // email of borrower
+  google.protobuf.StringValue borrower_email = 2;
+
+  // total loan amount
+  google.protobuf.Int64Value loan_amount = 3;
+
+  // loan repayment source
+  PaymentProgramPaymentSource repayment_source = 4;
+
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 5;
+
+  // currency
+  doordash.payment.common.Currency currency = 6;
+}
+
+// Generate payment program agreement request
+message GeneratePaymentProgramAgreementRequest {
+  // Which agreement to generate
+  PaymentProgramType type = 1;
+
+  // Variables to use in agreement
+  oneof variables {
+    // dasher loan payment program agreement variables
+    DasherLoanPaymentProgramAgreementVariables dasher_loan_payment_program_agreement_variables = 2;
+  }
+}
+
+// Generate payment program agreement response
+message GeneratePaymentProgramAgreementResponse {
+  // raw agreement html
+  google.protobuf.StringValue html = 1;
+}
+
+/*
+   Model representing payment program schedule request
+*/
+message GetPaymentProgramPaymentScheduleRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+
+  // Monetary amount
+  google.protobuf.Int64Value amount = 2;
+
+  // currency of above amount
+  doordash.payment.common.Currency currency = 3;
+}
+
+/*
+   Model representing payment schedule associated with a payment program
+*/
+message GetPaymentProgramPaymentScheduleResponse {
+  // Expected amount that must be repaid
+  google.protobuf.Int64Value expected_payment_amount = 1;
+
+  // currency of all amount in this object
+  doordash.payment.common.Currency currency = 2;
+
+  // external payment
+  // external payment option duration
+  google.protobuf.Duration external_option_duration = 3;
+
+  // external payment weekly amount
+  google.protobuf.Int64Value external_option_weekly_payment_amount = 4;
+
+  // earnings payment
+  // earnings payment option duration
+  google.protobuf.Duration earnings_option_duration = 5;
+
+  // earnings payment weekly amount
+  google.protobuf.Int64Value earnings_option_weekly_payment_amount = 6;
+
+  // earnings payment withholding rate
+  google.protobuf.FloatValue earnings_option_withholding_rate = 7;
+
+  // Array of earnings payment options
+  repeated PaymentProgramEarningsPaymentOption earnings_payment_options = 8;
+
+  // Array of external payment options
+  repeated PaymentProgramExternalPaymentOption external_payment_options = 9;
+}
+
+// Represents the type of payment program event
+enum PaymentProgramEventType {
+  // not specified
+  PAYMENT_PROGRAM_EVENT_TYPE_UNSPECIFIED = 0;
+
+  // signup deposit made
+  PAYMENT_PROGRAM_EVENT_TYPE_SIGNUP_DEPOSIT_MADE = 1;
+
+  // payment against payment program made
+  PAYMENT_PROGRAM_EVENT_TYPE_PAYMENT_MADE = 2;
+}
+
+/*
+   Event which captures a external payment action associated with a payment program (e.g weekly payoff)
+*/
+message PaymentProgramEvent {
+  // Timestamp capturing when event was created
+  google.protobuf.Timestamp created_at = 1;
+
+  // Amount going towards payment program
+  google.protobuf.Int64Value amount = 2;
+
+  // Currency of payment
+  doordash.payment.common.Currency currency = 3;
+
+  // Description of payment
+  google.protobuf.StringValue description = 4;
+
+  // Type of event
+  PaymentProgramEventType type = 5;
+}
+
+/*
+   Model represents an ad hoc payment request
+*/
+message CreatePaymentProgramExternalPaymentRequest {
+  // Monetary amount associated with request
+  google.protobuf.Int64Value amount = 1;
+
+  // Unique id of associated payment program
+  google.protobuf.StringValue payment_program_id = 2;
+
+  // Idempotency key associated with payment
+  google.protobuf.StringValue idempotency_key = 3;
+}
+
+/*
+   Model represents an ad hoc payment response
+*/
+message CreatePaymentProgramExternalPaymentResponse {}
+
+/*
+   Model representing request asking for the payment program details
+*/
+message GetPaymentProgramOfferRequest {
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 1;
+
+  // Type of payment program
+  PaymentProgramType payment_program_type = 2;
+}
+
+/*
+   Model representing potential payment program details
+*/
+message GetPaymentProgramOfferResponse {
+  // Minimum amount that could be associated with the program
+  google.protobuf.Int64Value min_amount = 1;
+
+  // Maximum amount that could be associated with the program
+  google.protobuf.Int64Value max_amount = 2;
+
+  // Array representing different payment options based on earning percentiles (and their associated payment timeframes)
+  repeated PaymentProgramEarningsPaymentOption earnings_payment_options = 3;
+
+  // Currency of payment program offer
+  doordash.payment.common.Currency currency = 4;
+
+  // Estimated program completion duration
+  google.protobuf.Duration estimated_completion_duration = 5;
+
+  // Payment program offer eligibility start date
+  google.protobuf.Timestamp start_date = 6;
+
+  // Payment program offer eligibility end date
+  google.protobuf.Timestamp end_date = 7;
+}
+
+/*
+   Model representing way in which program may be paid off via earnings
+*/
+message PaymentProgramEarningsPaymentOption {
+  // Float value representing percentage that may be withheld from earnings for program payment
+  google.protobuf.FloatValue withholding_rate = 1;
+
+  // Estimated program completion duration
+  google.protobuf.Duration estimated_completion_duration = 2;
+
+  // Estimated program completion date
+  google.protobuf.Timestamp estimated_completion_date = 3;
+
+  // Payment weekly amount
+  google.protobuf.Int64Value weekly_payment_amount = 4;
+
+  // Estimated number of payments based on withholding rate and payment amount
+  repeated PaymentProgramEstimatedPayment estimated_payments = 5;
+}
+
+/*
+   Model representing way in which program may be paid off via external method
+*/
+message PaymentProgramExternalPaymentOption {
+  // Estimated program completion duration
+  google.protobuf.Duration estimated_completion_duration = 1;
+
+  // Estimated program completion date
+  google.protobuf.Timestamp estimated_completed_date = 2;
+
+  // Estimated first payment date
+  google.protobuf.Timestamp estimated_first_payment_date = 3;
+
+  // Payment weekly amount
+  google.protobuf.Int64Value weekly_payment_amount = 4;
+
+  // Estimated number of payments based on payment complete weeks and payment amount
+  repeated PaymentProgramEstimatedPayment estimated_payments = 5;
+}
+
+/*
+   Model representing estimated payment event associated with a given payment program
+*/
+message PaymentProgramEstimatedPayment {
+  // Amount to be repaid
+  google.protobuf.Int64Value amount = 1;
+
+  // Currency of payment
+  doordash.payment.common.Currency currency = 2;
+
+  // Week relative to the start of the payment program
+  google.protobuf.Int32Value week = 3;
+
+  // Timestamp of week start
+  google.protobuf.Timestamp week_start_day = 4;
+}
+
+/*
+   Model requesting payment associated with a given payment account id
+*/
+message GetPaymentProgramsRequest {
+  // Payment account id associated with the request payment programs
+  google.protobuf.Int64Value payment_account_id = 1;
+}
+
+/*
+   Model returning all payment programs associated with a payment account
+*/
+message GetPaymentProgramsResponse {
+  // Array of associated payment programs
+  repeated PaymentProgram payment_programs = 1;
+}
+
+/*
+   Model requesting payment program associated with a given payment program id
+*/
+message GetPaymentProgramRequest {
+  // Payment account id associated with the request payment programs
+  google.protobuf.StringValue payment_program_id = 1;
+}
+
+/*
+   Model response of payment program with a given payment program id
+*/
+message GetPaymentProgramResponse {
+  // Model of payment program
+  PaymentProgram payment_program = 1;
+}
+
+/*
+   Model of update request to a given payment program
+*/
+message UpdatePaymentProgramRequest {
+  // Payment account id associated with the request payment programs
+  google.protobuf.StringValue payment_program_id = 1;
+
+  // Amount of earnings to withhold for payment if earnings is the payment type
+  google.protobuf.FloatValue earnings_withholding_rate = 2;
+}
+
+/*
+   Model response of payment program after update
+*/
+message UpdatePaymentProgramResponse {
+  // Model of payment program
+  PaymentProgram payment_program = 1;
+}
+
+/*
+   Model requesting the creation of a new payment program
+*/
+message CreatePaymentProgramRequest {
+  // Payment account id to associate the new program with
+  google.protobuf.Int64Value payment_account_id = 1;
+
+  // Amount of the new payment program
+  google.protobuf.Int64Value amount = 2;
+
+  // (Optional) Amount of earnings to withhold for payment if earnings is the payment type
+  google.protobuf.FloatValue earnings_withholding_rate = 3;
+
+  // (Optional) Points to the payment method id or the payment option is not earnings
+  google.protobuf.StringValue external_payment_method_id = 4;
+
+  // Indicates how the payout program amount will be repaid
+  PaymentProgramPaymentSource automatic_payment_source = 5;
+
+  // Currency of payment program
+  doordash.payment.common.Currency currency = 6;
+
+  // Idempotency key associated with program creation
+  google.protobuf.StringValue idempotency_key = 7;
+
+  // Duration of payment program
+  google.protobuf.Duration duration = 8;
+
+  // Type of payment program
+  PaymentProgramType type = 9;
+
+  // Client metadata to attach to the payment program
+  map<string, string> metadata = 10;
+}
+
+/*
+   Model containing payment program details after request
+*/
+message CreatePaymentProgramResponse {
+  // Property containing new payment program
+  PaymentProgram payment_program = 1;
+}
+
+/*
+   Model containing payment method details for payment program
+*/
+message CreatePaymentProgramExternalPaymentMethodRequest {
+  // Field contains all information about card used for payment
+  doordash.payment.common.CardData card_data = 1;
+
+  // (Optional) Payment account id associated with payment method
+  google.protobuf.Int64Value payment_account_id = 2;
+
+  // Email to associate with the external payment method
+  google.protobuf.StringValue email = 3;
+
+  // Country code to associate with the payment method
+  doordash.payment.common.Country country_code = 4;
+}
+
+/*
+   Model contains details on the created payment method used for program payment
+*/
+message CreatePaymentProgramExternalPaymentMethodResponse {
+  // Unique identifier of this payment method
+  google.protobuf.StringValue id = 1;
+
+  // Id of the payer who owns this payment method
+  google.protobuf.StringValue payer_id = 2;
+
+  // Client reference Id of the payer who owns this payment method.
+  // Used in combination of payer_reference_id_type
+  google.protobuf.StringValue type = 3;
+
+  // Client reference Id of the payer who owns this payment method.
+  // Used in combination of payer_reference_id_type
+  google.protobuf.StringValue payer_reference_id = 4;
+
+  // Type of payer_reference_id
+  google.protobuf.StringValue payer_reference_id_type = 5;
+
+  // Timestamp of when this payment method was created and associated to corresponding payer
+  google.protobuf.Timestamp created_at = 6;
+
+  // Timestamp of when this payment method was last updated
+  google.protobuf.Timestamp updated_at = 7;
+
+  // Timestamp of when this payment method was deleted
+  google.protobuf.Timestamp deleted_at = 8;
+
+  // Underlying card object of this payment method, if the payment method is card
+  doordash.payment.payout.v2.Card card = 9;
+
+  // Billing details of this payment method
+  doordash.payment.payout.v2.BillingDetails billing_details = 10;
+
+  // Metadata associated with this payment method
+  map<string, string> metadata = 11;
+}
+
+/*
+   Enum indicating Type of payment program
+*/
+enum PaymentProgramType {
+  // Payment program type is not known
+  PAYMENT_PROGRAM_TYPE_UNSPECIFIED = 0;
+
+  // Payment program is dasher loan
+  PAYMENT_PROGRAM_TYPE_DASHER_LOAN = 1;
+
+  // Payment program is merchant capital
+  PAYMENT_PROGRAM_TYPE_MERCHANT_CAPITAL = 2;
+}
+
+/*
+   Enum indicating status of a payment program
+*/
+enum PaymentProgramStatus {
+  // Program status is not yet specified
+  PAYMENT_PROGRAM_STATUS_UNSPECIFIED = 0;
+
+  // Program status is pending
+  PAYMENT_PROGRAM_STATUS_PENDING = 1;
+
+  // Program status is active and yet to be closed
+  PAYMENT_PROGRAM_STATUS_ACTIVE = 2;
+
+  // Payment program is closed
+  PAYMENT_PROGRAM_STATUS_CLOSED = 3;
+}
+
+/*
+   Enum detailing payment method types
+*/
+enum PaymentProgramPaymentSource {
+  // Indicates program payment method is not yet defined
+  PAYMENT_PROGRAM_PAYMENT_SOURCE_UNSPECIFIED = 0;
+
+  // Indicates earnings will be used towards program payment
+  PAYMENT_PROGRAM_PAYMENT_SOURCE_EARNINGS = 1;
+
+  // Indicates an external payment method (e.g. card) will be used for payment
+  PAYMENT_PROGRAM_PAYMENT_SOURCE_EXTERNAL = 2;
+}
+
+/*
+   Model representing a request for payment program events
+*/
+message GetPaymentProgramEventsRequest {
+  // Unique identifier of payment program
+  google.protobuf.StringValue payment_program_id = 1;
+}
+
+/*
+   Model representing a events associated with the given paymetn program
+*/
+message GetPaymentProgramEventsResponse {
+  // Array of payment program events
+  repeated PaymentProgramEvent events = 1;
+}
+
+/*
+   Model containing payment program details - should confirm if still necessary
+*/
+message PaymentMethod {
+  // Unique identifier of this payment program
+  google.protobuf.StringValue id = 1;
+
+  // Last 4 numerals of payment method used
+  google.protobuf.StringValue last4 = 2;
+
+  // Description of this payment method
+  google.protobuf.StringValue description = 3;
+}
+
+// describes what triggered the payment event
+enum PaymentProgramPaymentEventTriggerType {
+  // the trigger was not specified
+  PAYMENT_PROGRAM_PAYMENT_EVENT_TRIGGER_TYPE_UNSPECIFIED = 0;
+
+  // the trigger was an automatic payment (ie. system made it)
+  PAYMENT_PROGRAM_PAYMENT_EVENT_TRIGGER_TYPE_AUTOMATIC = 1;
+
+  // the trigger was manual (ie. the user initiated this request)
+  PAYMENT_PROGRAM_PAYMENT_EVENT_TRIGGER_TYPE_MANUAL = 2;
+}
+
+// Wrapper event to send to payout_event kafka topic.
+message PayoutEvent {
+  // Unique id as well as idempotence key of this event.
+  google.protobuf.StringValue id = 1;
+
+  // Entity type of included entity in this event.
+  EntityType entity_type = 2;
+
+  // Id of included entity in this event.
+  google.protobuf.StringValue entity_id = 3;
+
+  // Type of the event.
+  EventType event_type = 4;
+
+  // Timestamp of when the originated action of this event was applied to included entity.
+  google.protobuf.Timestamp created_at = 5;
+
+  // Only of the included entity within this "oneof" block can be set for a single PayoutEvent instance.
+  oneof entity {
+    // Payment Program entity
+    PaymentProgram payment_program = 6;
+    // Payment Program payment entity
+    PaymentProgramPayment payment_program_payment = 7;
+    // Payment Program Earnings Withholding entity
+    PaymentProgramEarningsWithholding payment_program_earnings_withholding = 8;
+  }
+}
+
+/*
+   Type enums of possible included entity on a PayoutEvent.
+*/
+enum EntityType {
+  // Unknown entity
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // Payment program entity
+  ENTITY_TYPE_PAYMENT_PROGRAM = 1;
+  // Payment program payment entity
+  ENTITY_TYPE_PAYMENT_PROGRAM_PAYMENT = 2;
+  // Payment program earnings witholding entity
+  ENTITY_TYPE_PAYMENT_PROGRAM_EARNINGS_WITHHOLDING = 3;
+}
+
+/*
+   Type enums of possible event types of a PayoutEvent.
+*/
+enum EventType {
+  // Unknown event
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // Payment program created event type
+  EVENT_TYPE_PAYMENT_PROGRAM_CREATED = 1;
+  // Payment program updated event type
+  EVENT_TYPE_PAYMENT_PROGRAM_UPDATED = 2;
+  // Payment program payment created
+  EVENT_TYPE_PAYMENT_PROGRAM_PAYMENT_CREATED = 3;
+  // Earnings withholding created
+  EVENT_TYPE_PAYMENT_PROGRAM_EARNINGS_WITHHOLDING_CREATED = 4;
+}
+
+/*
+   Model providing all details about a given payment program
+*/
+message PaymentProgram {
+  // Unique identifier of this payment program
+  google.protobuf.StringValue id = 1;
+
+  // Monetary amount associated with the program
+  google.protobuf.Int64Value target_amount = 2;
+
+  // Outstanding balance yet to be paid back
+  google.protobuf.Int64Value collected_amount = 3;
+
+  // Timestamp of when this payment program was created
+  google.protobuf.Timestamp created_at = 4;
+
+  // Status of payment program indicating whether the plan is paid off, etc.
+  PaymentProgramStatus status = 5;
+
+  // (Nullable) Percentage of earnings withheld and used for program payment if payment method is earnings
+  google.protobuf.FloatValue earnings_withholding_rate = 6;
+
+  // Payment method associated with this payment if payment method is not earnings
+  PaymentMethod payment_method = 7;
+
+  // Timestamp indicated when this program matures
+  google.protobuf.Timestamp ends_at = 8;
+
+  // Timestamp indicating when program was repaid - initially null
+  google.protobuf.Timestamp ended_at = 9;
+
+  // Method used for program payment
+  PaymentProgramPaymentSource automatic_payment_source = 10;
+
+  // Type of payment program
+  PaymentProgramType type = 11;
+
+  // Currency of payment program
+  doordash.payment.common.Currency currency = 12;
+
+  // Client metadata to attach to the payment program
+  map<string, string> metadata = 13;
+
+  // Timestamp of when this payment program was updated
+  google.protobuf.Timestamp updated_at = 14;
+
+  // Payout account id to which this payment program is attached
+  google.protobuf.StringValue payout_account_id = 15;
+
+  // Payout account id to which this payment program is attached
+  google.protobuf.Int64Value signup_transaction_id = 16;
+}
+
+// Payment made to payment program
+message PaymentProgramPayment {
+  // payment program id
+  google.protobuf.StringValue payment_program_id = 1;
+
+  // type of payment -- external or earnings
+  PaymentProgramPaymentSource payment_type = 2;
+
+  // id of payment
+  google.protobuf.StringValue payment_id = 3;
+
+  // amount of payment
+  google.protobuf.Int64Value amount = 4;
+
+  // currency of payment
+  doordash.payment.common.Currency currency = 5;
+
+  // was this payment triggered automatic or manual?
+  PaymentProgramPaymentEventTriggerType trigger = 6;
+
+  // Timestamp of when this payment program was created
+  google.protobuf.Timestamp created_at = 7;
+
+  // ID of payment program payment
+  google.protobuf.StringValue id = 8;
+}
+
+// Metadata related to withholding payment
+message PaymentProgramEarningsWithholding {
+  // payment program payment id
+  google.protobuf.StringValue payment_program_payment_id = 1;
+
+  // original transaction id
+  google.protobuf.Int64Value original_transaction_id = 2;
+
+  // withholding transaction id
+  google.protobuf.Int64Value withholding_transaction_id = 3;
+
+  // withholding rate used to determine amount to withhold from transaction
+  google.protobuf.FloatValue withholding_rate = 4;
+
+  // when this record was created
+  google.protobuf.Timestamp created_at = 5;
+
+  // ID of payment program earnings withholding
+  google.protobuf.StringValue id = 6;
+
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 7;
+}
+
+// Request message to list active participants in a specified payment program.
+message ListActiveParticipantsRequest {
+  // The type of payment program for which to request active participants.
+  PaymentProgramType type = 1;
+}
+
+// Response message containing a list of detailed information about active participants.
+message ListActiveParticipantsResponse {
+  // A collection of detailed information regarding active participants.
+  DetailedInformationList detailed_information_list = 1;
+}
+
+// Contains detailed information about a participant, which can include various types of data.
+message DetailedInformation {
+  // information related to program type
+  oneof information {
+    // Information related to merchant capital.
+    MerchantCapitalInformation merchant_capital_information = 1;
+  }
+}
+
+// A list of detailed information items about active participants.
+message DetailedInformationList {
+  // A repeated field containing detailed information entries.
+  repeated DetailedInformation detail_information = 1;
+}
+
+// Contains details about the merchant's capital, including store and account identifiers.
+message MerchantCapitalInformation {
+  // The unique identifier for the store associated with the merchant.
+  google.protobuf.StringValue store_id = 1;
+  // The unique identifier for the payment account used by the merchant.
+  google.protobuf.StringValue payment_account_id = 2;
+  // The unique identifier for the payout account associated with the merchant.
+  google.protobuf.StringValue payout_account_id = 3;
+}
+
+// Request message to list payment program earnings withholding.
+message ListPaymentProgramEarningsWithholdingsRequest {
+  // Timestamp of when the payment program earnings withholding was created
+  google.protobuf.Timestamp created_after = 1;
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 2;
+  // The maximum number of results to return in a single response.
+  google.protobuf.Int64Value limit = 3;
+  // The offset for pagination, indicating the starting point for the results.
+  google.protobuf.Int64Value offset = 4;
+  // A flag indicating whether to include withholding details in the response.
+  google.protobuf.BoolValue include_withholding_details = 5;
+  // Timestamp of when the payment program earnings withholding was created
+  google.protobuf.Timestamp created_before = 6;
+}
+
+// Response message containing a list of payment program earnings withholding.
+message ListPaymentProgramEarningsWithholdingsResponse {
+  // A collection of payment program earnings withholding
+  repeated PaymentProgramEarningsWithholding payment_program_earnings_withholdings = 1;
+  // The total number of payment program earnings withholding records available.
+  repeated google.protobuf.Int64Value payment_account_ids = 2;
+}

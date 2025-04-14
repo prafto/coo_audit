@@ -1,0 +1,277 @@
+syntax = "proto3";
+
+package deltalens.v1;
+
+import "deltalens/expression.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "deltalens";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.deltalens";
+
+// Service for extracting Delta table metadata from Delta Log
+service DeltaLensService {
+  // Retrieves table snapshot
+  rpc GetTableSnapshot(GetTableSnapshotRequest) returns (GetTableSnapshotResponse);
+  // Retrieves table snapshot metadata
+  rpc GetTableSnapshotMetadata(GetTableSnapshotMetadataRequest) returns (GetTableSnapshotMetadataResponse);
+  // Retrieves table partitions based on predicate filter
+  rpc GetTablePartitions(GetTablePartitionsRequest) returns (GetTablePartitionsResponse);
+  // Retrieves table userMedata based on deltalog commit info
+  rpc GetTableUserMetadata(GetTableUserMetadataRequest) returns (GetTableUserMetadataResponse);
+  // Migrates Delta table to Iceberg table
+  rpc MigrateDeltaTableToIcebergTable(MigrateDeltaTableToIcebergTableRequest) returns (MigrateDeltaTableToIcebergTableResponse);
+  // Retrieves last updated time of a table
+  rpc GetTableLastUpdated(GetTableLastUpdatedRequest) returns (GetTableLastUpdatedResponse);
+  // Retrieves table metadata
+  rpc GetTableMetadata(GetTableMetadataRequest) returns (GetTableMetadataResponse);
+}
+
+// Defines table identifier for a given table
+message TableName {
+  // TODO: CatalogId + Region to support external Glue catalog
+
+  // Database name in Glue catalog.
+  google.protobuf.StringValue database_name = 1;
+
+  // Table name in Glue catalog.
+  google.protobuf.StringValue name = 2;
+
+  // Catalog Name in UC Catalog.
+  google.protobuf.StringValue catalog_name = 3;
+}
+
+// Request for Snapshot metadata for a given path
+message GetTableSnapshotRequest {
+  // Fully qualified table identifier to table
+  oneof table_identifier {
+    // Fully qualified S3 path to table
+    google.protobuf.StringValue path = 1;
+
+    // Fully qualified Table path to table
+    TableName table_name = 4;
+  }
+
+  // Option to include files in response
+  bool include_file_listing = 2;
+
+  // Predicate to filter files
+  Expression predicate = 3;
+
+  // request version
+  int32 request_version = 5;
+}
+
+// Request for Snapshot metadata for a given path
+message GetTableSnapshotMetadataRequest {
+  // Fully qualified table identifier to table
+  oneof table_identifier {
+    // Fully qualified S3 path to table
+    google.protobuf.StringValue path = 1;
+
+    // Fully qualified Table path to table
+    TableName table_name = 2;
+  }
+}
+
+// Defines metadata statistics for a given table
+message TableStats {
+  // Total number of files that compose this snapshot of the table
+  google.protobuf.Int64Value num_files = 1;
+
+  // Total number of bytes in the table
+  google.protobuf.Int64Value num_bytes = 2;
+}
+
+// Response object for the GetTable endpoint
+// https://github.com/delta-io/connectors/blob/master/standalone/src/main/java/io/delta/standalone/Snapshot.java
+message GetTableSnapshotResponse {
+  // Snapshot version
+  int64 version = 1;
+
+  // Metadata for the snapshot
+  SnapshotMetadata metadata = 2;
+
+  // Table stats for this snapshot
+  TableStats stats = 3;
+
+  // Files corresponding to the requested table
+  repeated google.protobuf.StringValue files = 4;
+
+  // Additional Metadata
+  // Timestamp of the last commit
+  google.protobuf.Int64Value last_updated_time = 5;
+
+  // table format
+  google.protobuf.StringValue table_format = 6;
+}
+
+// Return necessary metadata of a snapshot
+message GetTableSnapshotMetadataResponse {
+  // Snapshot version
+  int64 version = 1;
+
+  // The time when this metadata action is created, in milliseconds since the Unix epoch
+  google.protobuf.Int64Value created_time = 2;
+
+  // An array containing the names of columns by which the data should be partitioned
+  repeated google.protobuf.StringValue partition_columns = 3;
+
+  // Timestamp of the last commit
+  google.protobuf.Int64Value last_updated_time = 4;
+
+  // Schema of the table
+  repeated SchemaField schema = 5;
+}
+
+// https://github.com/delta-io/connectors/blob/master/standalone/src/main/java/io/delta/standalone/actions/Metadata.java
+message SnapshotMetadata {
+  // Unique identifier for this table
+  google.protobuf.StringValue id = 1;
+
+  // User-provided identifier for this table
+  google.protobuf.StringValue name = 2;
+
+  // User-provided description for this table
+  google.protobuf.StringValue description = 3;
+
+  // Specification of the encoding for the files stored in the table
+  google.protobuf.StringValue format = 4;
+
+  // An array containing the names of columns by which the data should be partitioned
+  repeated google.protobuf.StringValue partition_columns = 5;
+
+  // A map containing configuration options for the metadata action
+  map<string, string> configuration = 6;
+
+  // The time when this metadata action is created, in milliseconds since the Unix epoch
+  google.protobuf.Int64Value created_time = 7;
+
+  // Schema of the table
+  repeated SchemaField schema = 8;
+}
+
+// https://github.com/delta-io/connectors/blob/master/standalone/src/main/java/io/delta/standalone/types/StructField.java
+message SchemaField {
+  // Name of this (possibly nested) column
+  google.protobuf.StringValue name = 1;
+
+  // String containing the name of a primitive type, a struct definition, an array definition
+  // or a map definition
+  google.protobuf.StringValue data_type = 2;
+
+  // Boolean denoting whether this field can be null
+  google.protobuf.BoolValue nullable = 3;
+}
+
+// Table partition filer for a given table
+message TablePartitionFilter {
+  // Partition name on the table
+  google.protobuf.StringValue partition_name = 1;
+
+  // Partition filter on lower bound (inclusive). Unbound on lower end if not specified
+  google.protobuf.StringValue lower_bound = 2;
+
+  // Partition filter upper bound (inclusive). Unbound on upper end if not specified
+  google.protobuf.StringValue upper_bound = 3;
+}
+
+// Request for Table Partitions for a given path
+message GetTablePartitionsRequest {
+  // Fully qualified table identifier to table
+  oneof table_identifier {
+    // Fully qualified S3 path to table
+    google.protobuf.StringValue path = 1;
+
+    // Fully qualified Table path to table
+    TableName table_name = 2;
+  }
+
+  // PartitionFilters for filtering partitions fields
+  repeated TablePartitionFilter partition_filter = 3;
+}
+
+// Table partition values. Ref: https://books.japila.pl/delta-lake-internals/FileAction/#partition-values
+message TablePartitionValues {
+  // Partition Values in map<partition_key, partition_value>
+  map<string, string> partition_values = 1;
+}
+
+// Response object for the GetTablePartitions endpoint
+message GetTablePartitionsResponse {
+  // An array of Partition values
+  repeated TablePartitionValues partitions = 4;
+}
+
+// Request for get latest available UserMetadata from commitinfo for a given path
+message GetTableUserMetadataRequest {
+  // Fully qualified table identifier to table
+  oneof table_identifier {
+    // Fully qualified S3 path to table
+    google.protobuf.StringValue path = 1;
+
+    // Fully qualified Table path to table
+    TableName table_name = 2;
+  }
+}
+
+// Request for get latest available UserMetadata from commitinfo for a given path
+message GetTableUserMetadataResponse {
+  // An JSON blob of userMetadata
+  google.protobuf.StringValue user_metadata = 1;
+}
+
+// Request for migrating a Delta Lake table to an Iceberg table
+message MigrateDeltaTableToIcebergTableRequest {
+  // Fully qualified source Delta Lake table location, e.g., "s3://source-table-location"
+  google.protobuf.StringValue source_delta_lake_table_location = 1;
+
+  // Fully qualified destination Iceberg table location, e.g., "s3://destination-table-location"
+  google.protobuf.StringValue dest_table_location = 2;
+
+  // Fully qualified path for the Iceberg table, contains the name of the database and table
+  TableName table_name = 3;
+}
+
+// Response for the Delta Lake to Iceberg table migration
+message MigrateDeltaTableToIcebergTableResponse {
+  // Number of data files migrated from Delta Lake to the Iceberg table
+  int64 data_files_count = 1;
+}
+
+// Request for getting last data updated time of a table
+message GetTableLastUpdatedRequest {
+  // Table name
+  TableName table_name = 1;
+}
+
+// Response for getting last updated time of a table
+message GetTableLastUpdatedResponse {
+  // Timestamp of the last commit
+  google.protobuf.Int64Value last_updated_time = 1;
+
+  // Snpashot version
+  google.protobuf.Int64Value version = 2;
+}
+
+// Request for getting table metadata
+message GetTableMetadataRequest {
+  // Fully qualified table identifier to table
+  TableName table_name = 1;
+}
+
+// Response for getting table metadata
+message GetTableMetadataResponse {
+  // The time when this metadata action is created, in milliseconds since the Unix epoch
+  google.protobuf.Int64Value created_time = 1;
+
+  // Schema of the table
+  repeated SchemaField schema = 2;
+
+  // Schema partition columns
+  repeated google.protobuf.StringValue partition_columns = 3;
+
+  // Last updated time of the table
+  google.protobuf.Int64Value updated_at = 4;
+}

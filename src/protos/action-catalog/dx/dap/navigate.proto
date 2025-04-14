@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package action_catalog.dx.dap.v1;
+
+import "doordash.api/field_validate.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/action-catalog/dx/dap";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.action_catalog.dx.dap";
+
+// This is an extension needed to override an enum value
+// This is needed as we have enums followed by its name required by the lint
+// LegoPageInternal class uses the name() to print the enum values,
+// so we get the full enum values in the JSON response
+// Described here https://protobuf.dev/programming-guides/proto3/#enum-value-options
+extend google.protobuf.EnumValueOptions {
+  optional string value = 5001;
+}
+
+// Navigation Action
+message NavigateAction {
+  // Navigation metadata
+  repeated Navigation navigation = 1;
+}
+
+// Navigation Metadata needs a type plus the metadata for local/remote navigation
+message Navigation {
+  // Type for the navigation, local or remote
+  Type type = 1;
+  // Content for the navigation type, we will loose guardrails with this as different attributes can be used with different types
+  NavigationContent content = 2;
+}
+
+// An umbrella content datastructure for both Local and Remote Navigation
+message NavigationContent {
+  // The required params for the remote navigation
+  enum RequiredQueryParam {
+    // just because of buf lint :(
+    REQUIRED_QUERY_PARAM_UNSPECIFIED = 0;
+    // path parameter workflow_id
+    REQUIRED_QUERY_PARAM_WORKFLOW_ID = 1 [(value) = "workflow_id"];
+    // path parameter screen_id
+    REQUIRED_QUERY_PARAM_SCREEN_ID = 2 [(value) = "screen_id"];
+    // path parameter action_id
+    REQUIRED_QUERY_PARAM_ACTION_ID = 3 [(value) = "action_id"];
+  }
+  // Operation for the forward navigation
+  Operation operation = 1;
+  // the destination for the next screen, required for PUSH and PRESENT, optional for GOBACK
+  string target_screen_id = 2;
+  // query parameters like sub_workflow_id or any other param like LAT/LNG etc.
+  google.protobuf.Struct query_params = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // a data bag that will go into the POST payload
+  repeated string data_bag_keys = 4;
+  // a boolean to enable tokenization proxy routing for remote databag
+  bool is_tokenized = 5;
+  // to end the workflow without dismissing the contents of the running workflow. optional for CANCELLED and COMPLETED
+  google.protobuf.BoolValue skip_teardown = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Init navigation definition for the workflow response
+message LocalNavigation {
+  // Operation for the forward navigation, PUSH PRESENT EMBED only
+  Operation operation = 1;
+  // the destination for the next screen, required for PUSH and PRESENT, optional for GOBACK
+  google.protobuf.StringValue target_screen_id = 2;
+}
+
+// Navigation Type
+enum Type {
+  // unspecified is required in proto3
+  TYPE_UNSPECIFIED = 0;
+  // local navigation
+  TYPE_LOCAL = 1 [(value) = "local"];
+  // remote navigation
+  TYPE_REMOTE = 2 [(value) = "remote"];
+}
+
+// Backward navigation definition operation can only be push and present
+enum Operation {
+  // unspecified is required in proto3
+  OPERATION_UNSPECIFIED = 0;
+  // cancel the workflow
+  OPERATION_CANCELLED = 1 [(value) = "cancelled"];
+  // complete the workflow
+  OPERATION_COMPLETED = 2 [(value) = "completed"];
+  // push non-modal
+  OPERATION_PUSH = 3 [(value) = "push"];
+  // present modal
+  OPERATION_PRESENT = 4 [(value) = "present"];
+  // go back
+  OPERATION_GOBACK = 5 [(value) = "goback"];
+  // embed the workflow modal as the root view
+  OPERATION_EMBED = 6 [(value) = "embed"];
+}

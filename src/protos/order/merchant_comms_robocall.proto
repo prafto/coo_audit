@@ -1,0 +1,241 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package merchant_comms_robocall.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "common/dayparts.proto";
+import "common/date.proto";
+
+option java_package = "com.doordash.rpc.merchant_comms_robocall";
+option go_package = "merchant_comms_robocall";
+
+/*
+ * MerchantCommsRobocallService service contains functions related robocall tool used to check store's status
+ */
+service MerchantCommsRobocallService {
+    // schedule a robocall job taking the job configurations and store lists as the input
+    rpc ScheduleRobocallJob(ScheduleRobocallJobRequest) returns (ScheduleRobocallJobResponse);
+
+    // cancels an ongoing robocall job
+    rpc CancelRobocallJob(CancelRobocallJobRequest) returns (CancelRobocallJobResponse);
+
+    // gets the most n recent robocall jobs
+    rpc GetRecentRobocallJobs(GetRecentRobocallJobsRequest) returns (GetRecentRobocallJobsResponse);
+
+    // gets results of a robocall job
+    rpc GetRobocallJobResult(GetRobocallJobResultRequest) returns (GetRobocallJobResultResponse);
+
+    // updates robocall status (called from webhook endpoints)
+    rpc UpdateRobocallStatus(UpdateRobocallStatusRequest) returns (UpdateRobocallStatusResponse);
+
+    // gets the greeting script for a robocall (called from webhook endpoints)
+    rpc GetRobocallGreetingScript(GetRobocallGreetingScriptRequest) returns (GetRobocallGreetingScriptResponse);
+}
+
+// request to get most recent robocall jobs
+message GetRecentRobocallJobsRequest {
+    // number of jobs to be returned
+    google.protobuf.Int32Value job_count = 1;
+}
+
+// response getting most recent robocall jobs
+message GetRecentRobocallJobsResponse {
+    // robocall job configuration
+    repeated RobocallJobConfig configurations = 1;
+}
+
+// request to get robocall job result
+message GetRobocallJobResultRequest {
+    // the id of the job
+    string job_id = 1;
+}
+
+// response of robocall job result consisting results for all inputs
+message GetRobocallJobResultResponse {
+    // results of robocalls
+    repeated RobocallResult results = 1;
+}
+
+// request to cancel a robocall job
+message CancelRobocallJobRequest {
+    // the id of the job
+    string job_id = 1;
+}
+
+// response for cancel robocall job
+message CancelRobocallJobResponse {
+    // no response
+    google.protobuf.Empty empty = 1;
+}
+
+
+// request message to get
+message GetRobocallGreetingScriptRequest {
+    // twilio's call id
+    string sid = 1;
+}
+
+// response of getting greeting script for a robocall
+message GetRobocallGreetingScriptResponse {
+    // twilio voice response (text)
+    google.protobuf.StringValue twiml = 1;
+}
+
+// update robocall status request
+message UpdateRobocallStatusRequest {
+    // twilio's call id
+    string sid = 1;
+
+    // store's status
+    string status = 2;
+
+    // merchant's response
+    string merchant_response = 3;
+
+    // asnwered by the answering machine or not
+    bool answered_by_machine = 4;
+}
+
+// update robocall status response
+message UpdateRobocallStatusResponse {
+    // twilio voice response
+    google.protobuf.StringValue twiml = 1;
+}
+
+// message consisting of robocall job configuration and stores input
+message ScheduleRobocallJobRequest {
+    // job configuration i.e. script, type of call, etc.
+    RobocallJobConfig configuration = 1;
+
+    // inputs consisting of stores and call_time
+    repeated RobocallInput inputs = 2;
+}
+
+// response for schedule robocall job
+message ScheduleRobocallJobResponse {
+    // no response
+    google.protobuf.Empty empty = 1;
+}
+
+// Robocall input for a store
+message RobocallInput {
+    // store id
+    string store_id = 1;
+
+    // the time call has to be made in store's local time
+    google.protobuf.Timestamp local_call_time = 2;
+
+    /*
+     * number the call has to be made. If this is set, the call would be made to the provided number.
+     * Else, we call the number persisted in store's records.
+     */
+    string phone_number = 3;
+}
+
+// robocall job configurations such as scripting, call mode, title, actions, etc.
+message RobocallJobConfig {
+    // type of the robocall.
+    RobocallRoutine routine = 1;
+
+    /*
+     * default to lenient mode if not provided, where we think the store is open as long as they pick up the phone.
+     * Otherwise, if set to 'strict', we would treat a store as open only if they pick up the phone and press the
+     * corresponding button(s).
+     */
+    RobocallMode mode = 2;
+
+    // true to run a reverse robocall where we lift temp deactivations if store confirms that they are open
+    bool is_reverse = 3;
+
+    // only collects response without deactivating any merchants.
+    bool inquiry_only = 4;
+
+    // uses Twilio Automatic Machine Detection feature to find out if phone is picked up by voice machine.
+    bool machine_detection = 5;
+
+    /*
+     * skip stores that would be benefit from a robocall, for regular robocall,
+     * this means skip already deactivated stores, and for reverse robocall, skip already opened stores
+     */
+    bool skip_invalid_stores = 6;
+
+    // skip calls for active stores
+    bool skip_active_stores = 7;
+
+    // skip all the stores that are in the do-not-call black list.
+    bool skip_blacklist_stores = 8;
+
+    // number of minutes to wait before placing a follow up call (when they don't pick up the first one)
+    google.protobuf.Int32Value minutes_between_call = 9;
+
+    // max number of calls that can be placed to merchant (in case they don't pick)
+    google.protobuf.Int32Value max_attempts = 10;
+
+    // notes that explains the reason of temp deactivation when merchants confirmed store closure.
+    string deactivation_notes_confirm_close = 11;
+
+    // notes that explains the reason of temp deactivation when merchants ignored our robocall.
+    string deactivation_notes_no_response = 12;
+
+    // the greeting message that will be played when merchants pick up the phone.
+    string greeting_script = 13;
+
+    // short text that identifies the purpose of this robocall, e.g. Christmas Eve 5PM robocall for holiday hours
+    string description = 14;
+
+    // created at time
+    google.protobuf.Timestamp created_at = 15;
+
+    // country code
+    string country_code = 16;
+}
+
+// the type of robocall
+enum RobocallRoutine {
+    // unspecified
+    ROBOCALL_ROUTINE_UNSPECIFIED = 0;
+
+    // robocall type for holidays
+    ROBOCALL_ROUTINE_HOLIDAY = 1;
+
+    // robocall type for bad weather situations
+    ROBOCALL_ROUTINE_WEATHER = 2;
+
+    // robocall type for inquires
+    ROBOCALL_ROUTINE_INQUIRY = 3;
+}
+
+// robocall mode
+enum RobocallMode {
+    // unspecified
+    ROBOCALL_MODE_UNSPECIFIED = 0;
+
+    // the lenient mode where we don't deactivate the store if merchant doesn't pick up the phone
+    ROBOCALL_MODE_LENIENT = 1;
+
+    // the strict mode where we deactivate the store if merchant doesn't pick up the phone
+    ROBOCALL_MODE_STRICT = 2;
+}
+
+// result of a robocall
+message RobocallResult {
+    // store_id
+    string store_id = 1;
+
+    // number of attempts made
+    google.protobuf.Int32Value attempts = 2;
+
+    // merchant's response
+    string merchant_response = 3;
+
+    // result of the call
+    string result = 4;
+
+    // status of the call
+    string status = 5;
+
+    // twilio's call id
+    string sid = 6;
+}

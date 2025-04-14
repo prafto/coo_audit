@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package attestation;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.attestation.pg";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Attest helps to attest client devices
+service Attest {
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    url: "attestation-attest-client.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["identity-intelligence"]
+    owner: {
+      id: "attestation-service"
+      name: "attestation-service"
+      slack_channel: "#identity-intelligence"
+      email_alias: "identity-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Client attests the clients device given an attest token and its type
+  rpc Client(ClientRequest) returns (ClientResponse) {
+    option (google.api.http) = {
+      post: "/identity-intelligence/v1/attest",
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+  }
+}
+
+// DeviceInfo information about a mobile device
+message DeviceInfo {
+  // dd device id
+  string device_id = 1;
+  // os name
+  string os_name = 2;
+  // os version
+  string os_version = 3;
+  // device model
+  string device_model = 4;
+  // app name
+  string app_name = 5;
+  // app version
+  string app_version = 6;
+  // finger prints
+  repeated Fingerprint finger_prints = 7;
+}
+
+// finger print
+message Fingerprint {
+  // finger print type
+  int32 type = 1;
+  // finger print value
+  string value = 2;
+}
+
+// ClientRequest request an attestation
+message ClientRequest {
+  // INJECTED HEADERS
+  // The user ID.
+  string user_id = 1 [(doordash.api.inject_id) = USER_ID];
+
+  // information about the device
+  DeviceInfo device_info = 2;
+  // type of attestation message
+  int32 message_type = 3;
+  // session id for when attestation is collected
+  string session_id = 4;
+  // event where collection is triggered
+  string event_type = 5;
+  // attestation message itself
+  string message = 6;
+  // optional timestamp of collection
+  google.protobuf.Int64Value timestamp = 7;
+  // client error
+  string error = 8;
+}
+
+// ClientResponse tells the client a refresh policy
+message ClientResponse {
+  // Refresh in timestamp
+  int32 refresh_in = 1;
+}

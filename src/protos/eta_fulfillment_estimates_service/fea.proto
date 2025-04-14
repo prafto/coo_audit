@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package eta_fulfillment_estimates_service.v1;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/eta_fulfillment_estimates_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.eta_fulfillment_estimates_service.rpc.api";
+
+// Service for providing fulfillment estimates
+service FulfillmentEstimatesService {
+  option (service_client.client_config).service_name = "eta-fulfillment-estimates-service";
+  option (service_client.client_config).service_app = "api";
+
+  // RPC to get annotated fulfillment actions
+  rpc GetDxEtaAnnotatedActions(GetDxEtaAnnotatedActionsRequest) returns (GetDxEtaAnnotatedActionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 30000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+// Fulfillment Identifier
+message FulfillmentIdentifier {
+  // ID of the delivery
+  google.protobuf.StringValue delivery_id = 1;
+  // ID of the task group
+  google.protobuf.StringValue task_group_id = 2;
+  // UUID of the delivery
+  google.protobuf.StringValue delivery_uuid = 3;
+}
+
+// Type of vehicle
+enum VehicleType {
+  // Unknown
+  VEHICLE_TYPE_UNSPECIFIED = 0;
+  // Car
+  VEHICLE_TYPE_CAR = 1;
+  // Scooter
+  VEHICLE_TYPE_SCOOTER = 2;
+  // Bicycle
+  VEHICLE_TYPE_BICYCLE = 3;
+  // Motorcycle
+  VEHICLE_TYPE_MOTORCYCLE = 4;
+  // Walking
+  VEHICLE_TYPE_WALKING = 5;
+  // Pmd
+  VEHICLE_TYPE_PMD = 6;
+  // Robot
+  VEHICLE_TYPE_ROBOT = 7;
+  // E-bike
+  VEHICLE_TYPE_EBIKE = 8;
+  // Pizza bike
+  VEHICLE_TYPE_PIZZA_BIKE = 9;
+  // Zippy
+  VEHICLE_TYPE_ZIPPY = 10;
+  // Kiwi Bot
+  VEHICLE_TYPE_KIWI_BOT = 11;
+  // Adv
+  VEHICLE_TYPE_ADV = 12;
+}
+
+// Context for the assignment
+message AssignmentContext {
+  // Supply state ("fleeting load factor")
+  google.protobuf.DoubleValue flf = 1;
+  // Indicates if the route of this assignment is batched
+  google.protobuf.BoolValue is_batched = 2;
+}
+
+// Context for the dasher
+message DasherContext {
+  // ID of the shift
+  google.protobuf.StringValue shift_id = 1;
+  // ID of the dasher
+  google.protobuf.StringValue dasher_id = 2;
+  // Location of the dasher on assignment
+  common.Location dx_location_on_assignment = 3;
+  // Vehicle type dasher is using for the current shift
+  VehicleType vehicle_type = 4;
+  // Time when the dasher's location was last updated
+  google.protobuf.Timestamp dx_last_location_updated_time = 5;
+}
+
+// Represents an action
+message Action {
+  // Fulfillment ID
+  FulfillmentIdentifier fulfillment_id = 1;
+  // Location of the action
+  common.Location location = 2;
+  // Context of the order
+  OrderContext order_context = 3;
+  // Type of action
+  ActionType action_type = 4;
+  // Estimates for the action
+  ActionEstimates action_estimates = 5;
+}
+
+// Type of order protocol
+enum OrderProtocol {
+  // Unknown
+  ORDER_PROTOCOL_UNSPECIFIED = 0;
+  // Dasher must place order at Rx themselves
+  ORDER_PROTOCOL_DASHER_PLACE = 1;
+}
+
+// Context for the order
+message OrderContext {
+  // UUID of the order
+  google.protobuf.StringValue order_uuid = 1;
+  // ID of the starting point
+  google.protobuf.StringValue starting_point_id = 2;
+  // ID of the store
+  google.protobuf.StringValue store_id = 3;
+  // How the order was placed
+  OrderProtocol order_protocol = 4;
+  // Indicates if it is a DSD ("Dasher Shop Delivery") order
+  google.protobuf.BoolValue is_dsd = 5;
+  // Subtotal of the order in cents
+  google.protobuf.Int64Value order_subtotal_cents = 6;
+  // Number of distinct items in order
+  google.protobuf.Int32Value num_distinct_items = 7;
+  // Indicates if its a asap or scheduled order
+  google.protobuf.BoolValue is_asap = 8;
+  // Indicates if the order was placed with CashOnDelivery payment protocol
+  google.protobuf.BoolValue is_cash_on_delivery = 9;
+  // Indicates if it is a grocery order
+  google.protobuf.BoolValue is_grocery = 10;
+  // Indicates if it is a parcel order
+  google.protobuf.BoolValue is_parcel = 11;
+  // Number of times this delivery was assigned
+  google.protobuf.Int32Value delivery_assignment_count = 12;
+  // Shortname of the market
+  google.protobuf.StringValue market_shortname = 13;
+}
+
+// Types of actions
+enum ActionType {
+  // Unspecified action type
+  ACTION_TYPE_UNSPECIFIED = 0;
+  // Pickup action
+  ACTION_TYPE_PICKUP = 1;
+  // Dropoff action
+  ACTION_TYPE_DROPOFF = 2;
+}
+
+// Estimates for actions
+message ActionEstimates {
+  // Estimates for the action, either pickup or dropoff
+  oneof action_estimates {
+    // Estimates for pickup
+    PickupEstimates pickup_estimates = 1;
+    // Estimates for dropoff
+    DropOffEstimates dropoff_estimates = 2;
+  }
+}
+
+// Estimates for pickup actions
+message PickupEstimates {
+  // Duration of parking in seconds
+  google.protobuf.Int64Value parking_duration_in_seconds = 1;
+  // Duration of pickup logistics for Non-DSD / Dasher-placed orders in seconds
+  google.protobuf.Int64Value pickup_lx_duration_in_seconds = 2;
+  // Duration of pickup logistics for DSD orders in seconds
+  google.protobuf.Int64Value dsd_pickup_lx_duration_in_seconds = 3;
+  // Duration of food preparation in seconds
+  google.protobuf.Int64Value prep_duration_in_seconds = 4;
+  // Duration of going back to the car (eg. store-to-car) in seconds
+  google.protobuf.Int64Value back_to_car_duration_in_seconds = 5;
+  // Time when the order is ready to be picked up by Dasher
+  google.protobuf.Timestamp order_ready_time = 6;
+  // Time when the store opens
+  google.protobuf.Timestamp store_open_time = 7;
+}
+
+// Estimates for dropoff actions
+message DropOffEstimates {
+  // Duration of parking in seconds
+  google.protobuf.Int64Value parking_duration_in_seconds = 1;
+  // Duration of going back to the car (eg. store-to-car) in seconds
+  google.protobuf.Int64Value back_to_car_duration_in_seconds = 2;
+}
+
+// Request for getting annotated fulfillment actions
+message GetDxEtaAnnotatedActionsRequest {
+  // Context of the assignment
+  AssignmentContext assignment_context = 1;
+  // Context of the dasher
+  DasherContext dasher_context = 2;
+  // ID of the request
+  google.protobuf.StringValue request_id = 3;
+  // List of actions
+  repeated Action actions = 4;
+}
+
+// Sources of travel estimate
+enum TravelEstimationSource {
+  // Unspecified source
+  TRAVEL_ESTIMATION_SOURCE_UNSPECIFIED = 0;
+  // Straight-line source
+  TRAVEL_ESTIMATION_SOURCE_STRAIGHTLINE = 1;
+  // Travel service source
+  TRAVEL_ESTIMATION_SOURCE_TRAVEL_SERVICE = 2;
+}
+
+// Travel estimate details
+message TravelEstimate {
+  // Duration in seconds
+  google.protobuf.Int64Value duration_in_seconds = 1;
+  // Distance in meters
+  google.protobuf.Int64Value distance_in_meters = 2;
+  // Source of the travel estimate
+  TravelEstimationSource estimation_source = 3;
+}
+
+// Annotated estimates
+message AnnotatedEstimates {
+  // Travel estimate
+  TravelEstimate travel_estimate = 1;
+  // Timestamp of action completion
+  google.protobuf.Timestamp action_completion_timestamp = 2;
+}
+
+// Annotated action details
+message AnnotatedAction {
+  // Fulfillment ID
+  FulfillmentIdentifier fulfillment_id = 1;
+  // Type of action
+  ActionType action_type = 2;
+  // Annotated estimates for the action
+  AnnotatedEstimates annotated_estimates = 3;
+}
+
+// Response for getting Dasher ETA annotated fulfillment actions
+message GetDxEtaAnnotatedActionsResponse {
+  // List of annotated actions
+  repeated AnnotatedAction actions = 1;
+}

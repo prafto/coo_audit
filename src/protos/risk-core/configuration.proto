@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package risk_core.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "risk-core/risk-evaluation-service/common.proto";
+import "risk-core/risk-evaluation-service/dimension.proto";
+import "risk-core/risk-evaluation-service/risk_configuration_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "RiskConfigurationProtos";
+option java_package = "com.doordash.rpc.risk_core";
+
+// A reference to a version of configuration that already exists.
+message ConfigurationVersionReference {
+  // Base version of the checkpoint (which includes dimensions, profiles, configuration extensions, etc.).
+  VersionReference checkpoint_version = 1;
+  // Base versions of all rules in the checkpoint. Ideally the version of the checkpoint should also tell us the
+  // versions of all of the rules, but apparently that isn't possible in today's system.
+  repeated VersionReference rule_versions = 2;
+}
+
+// A change to existing checkpoint configuration.
+message ConfigurationChange {
+  // Base version of the checkpoint.
+  ConfigurationVersionReference base = 1;
+  // Changes on top of the base versions.
+  repeated Change changes = 3;
+}
+
+// Everything needed to evaluate a checkpoint: Rules, decisions, dimensions, profiles, configuration extensions, etc.
+message Configuration {
+  // Checkpoint configuration excluding rules
+  BacktestCheckpointConfig checkpoint = 1;
+  // Rule configurations
+  map<string, risk_core.v1.risk_evaluation_service.v1.RuleConfig> rules = 2;
+}
+
+// Checkpoint configuration. This
+message ConfigurationReference {
+  // How configuration is defined.
+  oneof definition {
+    // If set, a snapshot of configuration will be created by fetching the base versions, then
+    // applying changes on top.
+    ConfigurationChange change = 1;
+    // A reference to a version of configuration that already exists.
+    ConfigurationVersionReference reference = 2;
+    // Checkpoint configuration.
+    Configuration configuration = 3;
+  }
+}
+
+// A kind of entity that can be versioned.
+enum VersionedEntityType {
+  // No type specified.
+  VERSIONED_ENTITY_TYPE_UNSPECIFIED = 0;
+  // A checkpoint.
+  VERSIONED_ENTITY_TYPE_CHECKPOINT = 1;
+  // A rule within a checkpoint.
+  VERSIONED_ENTITY_TYPE_RULE = 2;
+}
+
+// A reference to a version of a version-able entity (currently, checkpoint or rule).
+message VersionReference {
+  // Entity type.
+  VersionedEntityType type = 1;
+  // Name of the entity.
+  string name = 2;
+  // Version of the entity.
+  uint64 version = 3;
+}
+
+// A change to something in the checkpoint.
+message Change {
+  // Content of the change.
+  oneof content {
+    // Create an entity within the checkpoint.
+    Create create = 1;
+    // Update an existing entity within the checkpoint.
+    Update update = 2;
+    // Delete an entity within the checkpoint.
+    Delete delete = 3;
+  }
+}
+
+// Create an entity within a checkpoint.
+message Create {
+  // The entity bring created.
+  oneof entity {
+    // Information needed to create a rule.
+    Rule rule = 1;
+    // Information needed to create a decision. imported risk_configuration_service.proto
+    risk_core.v1.risk_evaluation_service.v1.Decision decision = 2;
+    // Information needed to create a dimension.
+    risk_core.v1.risk_evaluation_service.v1.DimensionFilter dimension_filter = 3 [deprecated = true];
+    // Information needed to create a DimensionProfile. imported risk_configuration_service.proto
+    risk_core.v1.risk_evaluation_service.v1.DimensionProfile dimension_profile = 4;
+    // Information needed to create a configuration extension.
+    BacktestConfigurationExtension config_extension = 5;
+  }
+}
+
+// Update an entity within a checkpoint.
+message Update {
+  // The entity being updated.
+  oneof entity {
+    // Information needed to create a rule.
+    Rule rule = 1;
+    // Information needed to create a decision.
+    risk_core.v1.risk_evaluation_service.v1.Decision decision = 2;
+    // Information needed to create a dimension.
+    risk_core.v1.risk_evaluation_service.v1.DimensionFilter dimension_filter = 3 [deprecated = true];
+    // Information needed to create a profile.
+    risk_core.v1.risk_evaluation_service.v1.DimensionProfile dimension_profile = 4;
+    // Information needed to create a configuration extension.
+    BacktestConfigurationExtension config_extension = 5;
+  }
+}
+
+// Delete an entity within a checkpoint.
+message Delete {
+  // Description of a rule to delete.
+  message Rule {
+    // Name of the rule.
+    string name = 1;
+  }
+  // Description of a decision to delete.
+  message Decision {
+    // Name of the decision.
+    string name = 1;
+  }
+  // Description of a dimension to delete.
+  message Dimension {
+    // Name of the dimension.
+    string name = 1;
+  }
+  // Description of a profile to delete.
+  message Profile {
+    // Name of the profile.
+    string name = 1;
+  }
+  // Description of a configuration extension to delete.
+  message ConfigurationExtension {
+    // Name of the configuration extension.
+    string name = 1;
+  }
+  // Entity to delete
+  oneof entity {
+    // Rule to delete
+    Rule rule = 1;
+    // Decision to delete
+    Decision decision = 2;
+    // Dimension to delete
+    Dimension dimension = 3;
+    // Profile to delete
+    Profile profile = 4;
+    // Configuration extension to delete
+    ConfigurationExtension configuration_extension = 5;
+  }
+}
+
+// Fields needed to update or create a rule for backtesting. Similar to `CreateRuleConfigRequest` and
+// `UpdateRuleConfigRequest` in package `risk_core.v1.risk_evaluation_service.v1`.
+message Rule {
+  // Name of the checkpoint containing the rule
+  string checkpoint_name = 1;
+  // Name of the rule
+  string rule_name = 2;
+  // Output type of the rule (the type of decision it makes)
+  string decision_name = 3;
+  // Rule expression
+  string expression = 4;
+  // Dimension profiles used by the rule
+  repeated string dimension_profile_uuids = 5;
+}
+
+// A checkpoint configuration extension
+message ConfigurationExtension {
+  // Name of the configuration extension
+  string name = 1;
+  // Value of the configuration extension
+  google.protobuf.Value value = 2;
+}
+
+// ConfigurationExtension
+// UG compliant version of risk_core.v1.risk_evaluation_service.v1.ConfigurationExtension
+// TODO: remove this message once the UG compliant version is available
+message BacktestConfigurationExtension {
+  // Name of the configuration extension.
+  string name = 1;
+  // List of strings
+  message StringList {
+    // String values in the list
+    repeated string values = 1;
+  }
+  // List of doubles
+  message DoubleList {
+    // Double values in the list
+    repeated double values = 1;
+  }
+  // List of booleans
+  message BoolList {
+    // Boolean values in the list
+    repeated bool values = 1;
+  }
+  // Value of the configuration extension
+  oneof config {
+    // List of strings
+    StringList string_list = 2;
+    // List of doubles
+    DoubleList double_list = 3;
+    // List of booleans
+    BoolList bool_list = 4;
+  }
+}
+
+// Checkpoint config used for defining a checkpoint for backtesting
+// Separate from risk_core.v1.risk_evaluation_service.v1.CheckpointConfig to be UG compliant
+// TODO: remove this message once the UG compliant version is available
+message BacktestCheckpointConfig {
+  // Checkpoint name
+  string checkpoint_name = 1;
+  // version
+  string version = 2;
+  // Checkpoint description
+  string description = 3;
+  // state
+  risk_core.v1.risk_evaluation_service.v1.ConfigState state = 4;
+  // Dimensions
+  repeated risk_core.v1.risk_evaluation_service.v1.CheckpointDimension checkpoint_dimensions = 5;
+  // Shared Dimension Profiles
+  repeated risk_core.v1.risk_evaluation_service.v1.DimensionProfile checkpoint_dimension_profiles = 6;
+  // Global Dimension Profiles
+  repeated risk_core.v1.risk_evaluation_service.v1.DimensionProfile global_dimension_profiles = 7;
+  // action reducer
+  risk_core.v1.risk_evaluation_service.v1.ActionReducer action_reducer = 8;
+  // The decisions that may be made by the checkpoint. Not every decision may be in use by live rules.
+  repeated risk_core.v1.risk_evaluation_service.v1.Decision decisions = 9;
+  // The experiments can be used in rule expression for bucketing logic
+  repeated risk_core.v1.risk_evaluation_service.v1.Experiment experiments = 10;
+  // The life cycle of the checkpoint
+  risk_core.v1.risk_evaluation_service.v1.CheckpointLifeCycle life_cycle = 11;
+}

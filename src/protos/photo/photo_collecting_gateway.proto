@@ -1,0 +1,518 @@
+syntax = "proto3";
+
+package photocollectinggateway;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "photo/photo.proto";
+
+option go_package = "photocollectinggateway";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.photocollectinggateway.grpc";
+
+service PhotoCollectingGateway {
+  rpc CreateAndUploadPhoto(CreateAndUploadPhotoRequest) returns (CreateAndUploadPhotoResponse);
+  rpc CreateAndUploadCnGItemScanPhoto(CreateAndUploadCnGItemScanPhotoRequest) returns (CreateAndUploadCnGItemScanPhotoResponse);
+  rpc BatchEntityAutoLinkPhoto(BatchEntityAutoLinkPhotoRequest) returns (BatchEntityAutoLinkPhotoResponse);
+  rpc ProcessCnGPhoto(ProcessCnGPhotoRequest) returns (ProcessCnGPhotoResponse);
+  rpc ProcessCnGPhotos(ProcessCnGPhotosRequest) returns (ProcessCnGPhotosResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+  }
+  rpc UpsertPhotoAssignment(UpsertPhotoAssignmentRequest) returns (UpsertPhotoAssignmentResponse);
+  rpc UpsertPhoto(UpsertPhotoRequest) returns (UpsertPhotoResponse);
+  rpc RemovePhotoAssignment(RemovePhotoAssignmentRequest) returns (RemovePhotoAssignmentResponse);
+  rpc DeletePhoto(DeletePhotoRequest) returns (DeletePhotoResponse);
+  rpc UpsertPhotoShoot(UpsertPhotoShootRequest) returns (UpsertPhotoShootResponse);
+  rpc UpsertPhotoShootTask(UpsertPhotoShootTaskRequest) returns (UpsertPhotoShootTaskResponse);
+  rpc MovePhoto(MovePhotoRequest) returns (MovePhotoResponse);
+  rpc RemovePhotoModerationsByPhotoUuids(RemovePhotoModerationsByPhotoUuidsRequest) returns (RemovePhotoModerationsByPhotoUuidsResponse);
+  rpc ReingestPhoto(ReingestPhotoRequest) returns (ReingestPhotoResponse);
+  rpc StartYelpProcessWorkflow(StartYelpProcessWorkflowRequest) returns (StartYelpProcessWorkflowResponse);
+  rpc CreateAndUploadPhotoVariant(CreateAndUploadPhotoVariantRequest) returns (CreateAndUploadPhotoVariantResponse);
+
+  // Deprecated endpoints.
+  rpc ProcessAutoLinkPhoto(ProcessAutoLinkPhotoRequest) returns (ProcessAutoLinkPhotoResponse) {
+    option deprecated = true;
+  }
+  rpc CreateAndUploadPhotoFromUrl(CreateAndUploadPhotoFromUrlRequest) returns (CreateAndUploadPhotoFromUrlResponse) {
+    option deprecated = true;
+  }
+}
+
+/**
+ * ReingestPhotoRequest
+ */
+message ReingestPhotoRequest {
+  string photo_uuid = 1;
+  bool auto_approve = 2;
+}
+
+/**
+ * ReingestPhotoResponse
+ */
+message ReingestPhotoResponse {
+  string workflow_id = 1;
+}
+
+/**
+ * Subfield of BatchEntityAutoLinkPhotoRequest
+ * entity_id: internal entity id (e.g. item id) or external entity id (e.g. merchant supplied id)
+ * entity_type: entity type (e.g. Item, Option, External_Item, External_Option, etc.)
+ */
+message EntityAutoLinkPhotoRequest {
+  string original_image_url = 1;
+  string entity_id = 2;
+}
+
+/**
+ * Batch entity photo auto linking request
+ * business_id: business id
+ * store_id: store id (optional)
+ * auto_approve: check if the new photo can be auto approve or not
+ * fan_out: check if photo service should fan out to all entity_id under business_id
+ */
+message BatchEntityAutoLinkPhotoRequest {
+  string business_id = 1;
+  string store_id = 2;
+  string entity_type = 3;
+  bool auto_approve = 4;
+  bool fan_out = 5;
+  repeated EntityAutoLinkPhotoRequest requests = 6;
+  string provider_type = 7;
+}
+
+/**
+ * Subfield of BatchEntityAutoLinkPhotoResponse
+ * photo_url: photo image URL (CDN path of S3)
+ * photo_uuid: photo's uuid
+ * origin_photo_id: origin photo's integer id
+ */
+message EntityAutoLinkPhotoResponse {
+  string photo_url = 1;
+  string photo_uuid = 2;
+  int64 origin_photo_id = 3;
+}
+
+/**
+ * Return of batch photo auto link request
+ * Returns a map of msid -> auto link response
+ */
+message BatchEntityAutoLinkPhotoResponse {
+  map<string, EntityAutoLinkPhotoResponse> responses = 1;
+}
+
+/**
+ * Request to process auto link photo
+ * original_image_url: photo image original url
+ * business_id: business id
+ * store_id: store id (optional)
+ * entity_id: internal entity id (e.g. item id) or external entity id (e.g. merchant supplied id)
+ * entity_type: entity type (e.g. Item, Option, External_Item, External_Option, etc.)
+ * auto_approve: check if the new photo can be auto approve or not
+ * fan_out: check if photo service should fan out to all entity_id under business_id
+ */
+message ProcessAutoLinkPhotoRequest {
+  string original_image_url = 1;
+  string business_id = 2;
+  string store_id = 3;
+  string entity_id = 4;
+  string entity_type = 5;
+  bool auto_approve = 6;
+  bool fan_out = 7;
+}
+
+/**
+ * Return of processing auto link photo
+ * photo_url: photo image URL (CDN path of S3)
+ * photo_uuid: photo's uuid
+ * origin_photo_id: origin photo's integer id
+ */
+message ProcessAutoLinkPhotoResponse {
+  string photo_url = 1;
+  string photo_uuid = 2;
+  int64 origin_photo_id = 3;
+}
+
+/**
+ * Request to process CnG photo
+ * original_image_url: photo image original url (Http or S3 Path)
+ * business_id: business id
+ * auto_approve: check if the photo need to be auto approve or not
+ * auto_resize: check if the photo need to be auto resize or not
+ * auto_enhance: check if the photo need to be auto enhance or not
+ * photo_use_case: check if the use case is from cng or drive
+ */
+message ProcessCnGPhotoRequest {
+  string original_image_url = 1;
+  string business_id = 2;
+  bool auto_approve = 3;
+  bool auto_resize = 4;
+  bool auto_enhance = 5;
+  PhotoUseCase photo_use_case = 6;
+  string entity_id = 7;
+  bool dedupe_override = 8;
+}
+
+// Request object of ProcessCngPhotosRequest batch endpoint
+message ProcessCnGPhotosRequest {
+  // List of requests of the photos to be ingested and associated information
+  repeated CnGPhotoIngestionRequest requests = 1;
+}
+
+// Response object that contains photo processing result of each photo
+message ProcessCnGPhotosResponse {
+  // List of processed CNG photos
+  repeated ProcessCnGPhotoResponse processed_photos = 1;
+}
+
+// Object that represents a Cng photo to be ingested as well as
+// its associated information
+message CnGPhotoIngestionRequest {
+  // URL (Http or S3 path) of the photo to be ingested
+  string original_image_url = 1;
+  // Id of the business that the ingested photo is under
+  google.protobuf.StringValue business_id = 2;
+  // Pass-through data for enriched_sku_id, gets sent in result event
+  google.protobuf.StringValue entity_id = 3;
+  // Ingestion operations for current batch of photos
+  PhotoIngestionOptions photo_ingestion_options = 4;
+  // Client specific data that will be included in the photo processing result event
+  google.protobuf.StringValue context = 5;
+  // Photo usecase
+  PhotoUseCase photo_use_case = 6;
+}
+
+// Object that holds different configurations for ingestion
+message PhotoIngestionOptions {
+  // If ingested photos can be auto approved
+  google.protobuf.BoolValue auto_approve = 1;
+  // If ingested photos need to be resized
+  google.protobuf.BoolValue auto_resize = 2;
+  // If ingested photos need to be enhanced
+  google.protobuf.BoolValue auto_enhance = 3;
+  // If disable dedupe logic
+  google.protobuf.BoolValue disable_dedupe = 4;
+}
+
+/**
+ * Return of processing CnG photo
+ * photo_url: photo image URL (CDN path of S3)
+ * photo_uuid: photo's uuid
+ * origin_photo_id: origin photo's integer id
+ */
+message ProcessCnGPhotoResponse {
+  string photo_url = 1;
+  string photo_uuid = 2;
+  int64 origin_photo_id = 3;
+  CngPhotoStatus status = 4;
+}
+
+/**
+ * The status of processed CngPhotos
+ */
+enum CngPhotoStatus {
+  // Unspecified
+  CNG_PHOTO_STATUS_UNSPECIFIED = 0;
+  // Approved existing photo
+  CNG_PHOTO_STATUS_APPROVED = 1;
+  // Pending existing photo
+  CNG_PHOTO_STATUS_PENDING = 2;
+  // New photo
+  CNG_PHOTO_STATUS_NEW = 3;
+  // Invalid URL
+  CNG_PHOTO_STATUS_INVALID_URL = 4;
+}
+
+/**
+ * Request to upsert photo assignment
+ */
+message UpsertPhotoAssignmentRequest {
+  photo.PhotoAssignment photo_assignment = 1;
+}
+
+/**
+ * Return of upserting photo assignment
+ */
+message UpsertPhotoAssignmentResponse {}
+
+/**
+ * Request to upsert photo
+ */
+message UpsertPhotoRequest {
+  photo.Photo photo = 1;
+}
+
+/**
+ * Return of upserting photo
+ */
+message UpsertPhotoResponse {
+  string photo_uuid = 1;
+  int64 origin_photo_id = 2;
+}
+
+/**
+ * Request to remove photo assignment
+ */
+message RemovePhotoAssignmentRequest {
+  photo.PhotoAssignment photo_assignment = 1;
+}
+
+/**
+ * Return of remove photo assignment
+ */
+message RemovePhotoAssignmentResponse {}
+
+/**
+ * Request to Delete Photo By Origin Photo Id/Photo Uuid
+ */
+message DeletePhotoRequest {
+  string photo_uuid = 1;
+  int64 origin_photo_id = 2;
+  bool delete_from_storage = 3;
+}
+
+/**
+ * Return of Deleting Photo By Origin Photo Id/Photo Uuid
+ */
+message DeletePhotoResponse {}
+
+/**
+ * Request to move a Photo in storage from one bucket to another
+ */
+message MovePhotoRequest {
+  string photo_uuid = 1;
+  string destination_location = 3;
+}
+
+/**
+ * Response to move a Photo in storage from one bucket to another
+ */
+message MovePhotoResponse {}
+
+/**
+ * Request to Create And Upload Photo
+ */
+message CreateAndUploadPhotoRequest {
+  bytes photo_image_file = 1;
+  string file_name_with_extension = 2;
+  PhotoUseCase use_case = 3;
+  // reach out to #eng-photo-service to be onboarded to photo enhancement
+  bool enhance_photo = 4;
+  // reach out to #eng-photo-service to be onboarded to photo auto qa
+  bool auto_review_photo = 5;
+  string business_id = 6;
+}
+
+/**
+ * Supported use cases
+ */
+enum PhotoUseCase {
+  // Unspecified
+  PHOTO_USE_CASE_UNSPECIFIED = 0;
+  // Self-Serve Menu Editor
+  PHOTO_USE_CASE_SSME = 1;
+  // Doordash Internal Menu Editor
+  PHOTO_USE_CASE_DIME = 2;
+  // User generated content
+  PHOTO_USE_CASE_UGC = 3;
+  // POS provider which is from MIS
+  PHOTO_USE_CASE_POS = 4;
+  // Convenience and Grocery
+  PHOTO_USE_CASE_CNG = 5;
+  // photos from https://admin-gateway.doordash.com/tools/mhub
+  PHOTO_USE_CASE_MARKETPLACE_HUB = 6;
+  // https://docs.google.com/document/d/1pGplFB1lKKUnyPqdishS-KRxTvGCRJjJKZKNFIpLcXA/edit#heading=h.pensnth0f7q8
+  PHOTO_USE_CASE_FRAUD_WORKFLOW = 7;
+  // https://docs.google.com/document/d/1DJE-dYZo9a_SFPW9jvwd6P5vR-tcmQm2z6IMzpSF5PA/edit#heading=h.1sb1gho3h0z3
+  PHOTO_USE_CASE_CNR_PHOTO_PROOF = 8;
+  // CPG Digital End Cap https://docs.google.com/document/d/1CjSGeig724vP1mwo7hXhaiX__444eMqDrjB60c-TyeI
+  PHOTO_USE_CASE_DIGITAL_END_CAP = 9;
+  // Catalog Drive
+  PHOTO_USE_CASE_CATALOG_DRIVE = 10;
+  // Bulk Service
+  PHOTO_USE_CASE_BULK_SERVICE = 11;
+  // Mx Crm Announcements
+  PHOTO_USE_CASE_MX_CRM_ANNOUNCEMENTS = 12;
+  // Yelp
+  PHOTO_USE_CASE_YELP = 13;
+  // DashChat conversation
+  PHOTO_USE_CASE_DASH_CHAT = 14;
+  // Dine-Out Verification https://docs.google.com/document/d/1QAtNrJ45x56A-IqymB0bCilSYrZxIKHl1DGxCyL3RrA/edit
+  PHOTO_USE_CASE_DINE_OUT = 15;
+  // NV Catalog URPC from third party https://docs.google.com/document/d/1QAtNrJ45x56A-IqymB0bCilSYrZxIKHl1DGxCyL3RrA/edit#heading=h.pwqe3oir8zb2
+  PHOTO_USE_CASE_URPC_FROM_THIRD_PARTY = 16;
+  // T&S Safety Report https://docs.google.com/document/d/1JV5LUee3LDtpRGZp81sdF5VTCECE1g3A62ucboSrvn8/edit
+  PHOTO_USE_CASE_SAFETY_REPORT = 17;
+  // Mx portal business photo (header & logo) upload
+  PHOTO_USE_CASE_BUSINESS_PHOTO_UPLOAD = 18;
+  // Teammate Headquarters (THQ)
+  PHOTO_USE_CASE_THQ = 19;
+  // CnG Checkout Receipt upload https://docs.google.com/document/d/1eRJzCka-hTrK9FJ8xKGKDwGNnvESQu4AzAqc36qwbNk/
+  PHOTO_USE_CASE_CNG_CHECKOUT_RECEIPT = 20;
+  // Map Viz screenshot upload
+  PHOTO_USE_CASE_MAP_VIZ_SCREEN_SHOT = 21;
+  // Catalog Builder Pipelines
+  PHOTO_USE_CASE_CATALOG_BUILD_PIPELINE = 22;
+  // Storefront CRM Announcements Cover Image
+  PHOTO_USE_CASE_STOREFRONT_CRM = 23;
+  // NV fulfillment community photo upload
+  PHOTO_USE_CASE_CNG_COMMUNITY_PHOTO = 24;
+  // Cx Profile Photo: https://docs.google.com/document/d/1sBpwhhDUmIN-sKU_t6o62TzeF1p5RkBjyS4GcorGI3w/edit#heading=h.g6tsj5f4jc5z
+  PHOTO_USE_CASE_CX_PROFILE_PHOTO = 25;
+  // Dx Profile Photo: https://docs.google.com/document/d/1BpBEBQdXs2aF6q8GMpclnVFUxsVRT2q7q_2IiXlayjY/edit?tab=t.0
+  PHOTO_USE_CASE_DX_PROFILE_PHOTO = 26;
+  // Self-serve kiosk photo upload: https://docs.google.com/document/d/1xlMX5N_y4enGwTAJDbfjwvMXghDlHg60Q0M8PmTOlls/edit?tab=t.0
+  PHOTO_USE_CASE_KIOSK_PHOTO_UPLOAD = 27;
+  // Dx INF flow photos https://docs.google.com/document/d/1hBgqU4pvtY9XOYfLr5-s_EV4nI4Ut9AuBg2quK5zP_A/edit?usp=sharing
+  PHOTO_USE_CASE_DX_INF_FLOW = 28;
+  // Dx perishable item photos
+  PHOTO_USE_CASE_DX_PERISHABLE_ITEM = 29;
+  // Area Overview photo [in-store JOBS]
+  PHOTO_USE_CASE_AREA_OVERVIEW = 30;
+}
+
+/**
+ * Return of Creating And Uploading Photo
+ */
+message CreateAndUploadPhotoResponse {
+  photo.PhotoEntity photo_entity = 1;
+}
+
+/**
+ * Request to Create And Upload CnG Item Scan Photo
+ */
+message CreateAndUploadCnGItemScanPhotoRequest {
+  bytes photo_image_file = 1;
+  string file_name_with_extension = 2;
+}
+
+/**
+ * Return of Creating And Uploading CnG Item Scan Photo
+ */
+message CreateAndUploadCnGItemScanPhotoResponse {
+  photo.PhotoEntity photo_entity = 1;
+}
+
+/**
+ * Request to Upserting Photo Shoot
+ */
+message UpsertPhotoShootRequest {
+  photo.PhotoShoot photo_shoot = 1;
+}
+
+/**
+ * Return of Upserting Photo Shoot
+ */
+message UpsertPhotoShootResponse {
+  string photo_shoot_uuid = 1;
+  int64 origin_photo_shoot_id = 2;
+}
+
+/**
+ * Request to Upsert Photo Shoot Task
+ */
+message UpsertPhotoShootTaskRequest {
+  photo.PhotoShootTask photo_shoot_task = 1;
+}
+
+/**
+ * Return of Upserting Photo Shoot Task
+ */
+message UpsertPhotoShootTaskResponse {
+  string photo_shoot_task_uuid = 1;
+  int64 origin_photo_shoot_task_id = 2;
+}
+
+/**
+ * Request of removing Photo moderations
+ */
+message RemovePhotoModerationsByPhotoUuidsRequest {
+  repeated string photo_uuids = 1;
+  string feature = 2;
+  string model_name = 3;
+}
+
+/**
+ * Response of removing Photo moderations
+ */
+message RemovePhotoModerationsByPhotoUuidsResponse {}
+
+/**
+ * Request to Create And Upload Photo from URL
+ */
+message CreateAndUploadPhotoFromUrlRequest {
+  string item_id = 1;
+  string original_image_url = 2;
+  string file_name_with_extension = 3;
+  PhotoUseCase photo_use_case = 4;
+  int64 expiration_time = 5;
+}
+
+/**
+ * Return of Creating And Uploading Photo from URL
+ */
+message CreateAndUploadPhotoFromUrlResponse {
+  string photo_uuid = 1;
+  int64 origin_photo_id = 2;
+  string photo_url = 3;
+}
+
+/**
+ * Request to Manually Start the Yelp Workflow
+ */
+message StartYelpProcessWorkflowRequest {
+  string file_date = 1;
+  StartYelpProcessWorkflowType workflow_type = 2;
+  // boolean flag to indicate whether to execute workflow without threshold checking
+  // Currently this flag only applies to START_YELP_PROCESS_WORKFLOW_TYPE_V3
+  google.protobuf.BoolValue ignore_threshold = 3;
+}
+
+/**
+ * Response of Manually Starting the Yelp Workflow
+ */
+message StartYelpProcessWorkflowResponse {
+  string workflow_id = 1;
+}
+
+/**
+ * Request to create and upload a photo variant
+ */
+message CreateAndUploadPhotoVariantRequest {
+  // The original photo uuid that was enhanced from
+  string parent_photo_uuid = 1;
+  // The photo variant image url
+  // This or photo_image_file below must be provided
+  string variant_image_url = 2;
+  // Image byte of the variant photo
+  // This or variant_image_url above must be provided
+  bytes variant_image_file = 3;
+  // File extension for variant_image_file
+  string file_name_with_extension = 4;
+  // Type of rescue performed
+  repeated photo.RescueType rescue_types = 5;
+}
+
+/**
+ * Response of the created And uploaded Photo
+ */
+message CreateAndUploadPhotoVariantResponse {
+  // The photo variant object
+  photo.PhotoEntity photo_entity = 1;
+}
+
+/**
+ * Yelp workflows type
+ */
+enum StartYelpProcessWorkflowType {
+  // Unspecified
+  START_YELP_PROCESS_WORKFLOW_TYPE_UNSPECIFIED = 0;
+  // Workflow type v1 based on nested workflows
+  START_YELP_PROCESS_WORKFLOW_TYPE_V1 = 1;
+  // Workflow type v2 based on kafka messages
+  START_YELP_PROCESS_WORKFLOW_TYPE_V2 = 2;
+  // Workflow type v3 for mark expiration
+  START_YELP_PROCESS_WORKFLOW_TYPE_V3 = 3;
+}

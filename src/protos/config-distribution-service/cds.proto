@@ -1,0 +1,938 @@
+syntax = "proto3";
+package config_distribution_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/config-distribution-service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.config_distribution_service.v1";
+
+// Interface exported by the service.
+service ConfigDistributionService {
+  // `GetTenantInfo` allows a tenant to obtain their own settings, almost like `whoami` cmd.
+  rpc GetTenantInfo(GetTenantInfoRequest) returns (GetTenantInfoResponse) {}
+  // `CreateTenant` allows an admin to create a new tenant in the system
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse) {}
+  // `UpdateTenantPubState` allows an admin to change the `PubState` of a tenant
+  rpc UpdateTenantPubState(UpdateTenantPubStateRequest) returns (UpdateTenantPubStateResponse) {}
+
+  // `DescribeCells` allows to list all cells and their respective informations
+  rpc DescribeCells(DescribeCellsRequest) returns (DescribeCellsResponse) {}
+  // `CreateCell` allows an admin to create a new Cell in the system
+  rpc CreateCell(CreateCellRequest) returns (CreateCellResponse) {}
+  // `UpdateCellState` allows an admin to change the `CellState` of a cell
+  rpc UpdateCellState(UpdateCellStateRequest) returns (UpdateCellStateResponse) {}
+
+  // `DescribeNamespaces` allows a tenant to list/describe the namespace they own
+  rpc DescribeNamespaces(DescribeNamespacesRequest) returns (DescribeNamespacesResponse) {}
+  // `CreateNamespace` allows a tenant to create a new `Namespace` resource
+  rpc CreateNamespace(CreateNamespaceRequest) returns (CreateNamespaceResponse) {}
+  // `UpdateNamespace` allows a tenant to update Namespace metadata
+  rpc UpdateNamespace(UpdateNamespaceRequest) returns (UpdateNamespaceResponse) {}
+  // `DeleteNamespace` allows a tenant to delete a `Namespace` resource.
+  // Deletion is accepted only when the namespace is empty.
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (DeleteNamespaceResponse) {}
+
+  // `DescribeDocuments` allows a tenant to describe a Document(s) in a particular Namespace
+  rpc DescribeDocuments(DescribeDocumentsRequest) returns (DescribeDocumentsResponse) {}
+  // `CreateDocuments` allows a tenant to create a Document(s) resource in a Namespace
+  rpc CreateDocuments(CreateDocumentsRequest) returns (CreateDocumentsResponse) {}
+  // `UpdateDocuments` allows a tenant to update a Document(s) resource in a Namespace
+  // Documents can be updated only if there are no Publications associated with them.
+  rpc UpdateDocuments(UpdateDocumentsRequest) returns (UpdateDocumentsResponse) {}
+  // `DeleteDocuments` allows a tenant to delete a Document(s) resource from a Namespace.
+  // Documents deletion is allowed only if there are no `Publications` associated to the Documents.
+  rpc DeleteDocuments(DeleteDocumentsRequest) returns (DeleteDocumentsResponse) {}
+
+  // `DescribeDocumentVersions` allows a tenant to describe all `DocumentVersions` associated with a `Document`
+  rpc DescribeDocumentVersions(DescribeDocumentVersionsRequest) returns (DescribeDocumentVersionsResponse) {}
+  // `UpdateDocumentVersion` allows a tenant to update a DocumentVersion metadata
+  rpc UpdateDocumentVersion(UpdateDocumentVersionRequest) returns (UpdateDocumentVersionResponse) {}
+  // `CreateDocumentVersion` allows a tenant to create a new `DocumentVersion` for a `Document`
+  rpc CreateDocumentVersion(CreateDocumentVersionRequest) returns (CreateDocumentVersionResponse) {}
+  // `DeleteDocumentVersion` allows a tenant to delete an unpublished `DocumentVersion`
+  rpc DeleteDocumentVersion(DeleteDocumentVersionRequest) returns (DeleteDocumentVersionResponse) {}
+
+  // `DescribeDocumentPublications` allows a tenant to describe all Publications associated with a Document.
+  rpc DescribeDocumentPublications(DescribeDocumentPublicationsRequest) returns (DescribeDocumentPublicationsResponse) {}
+  // `CreateDocumentPublications` allows a tenant to create a new Publication(s) (deploy the file to a cell)
+  rpc CreateDocumentPublications(CreateDocumentPublicationsRequest) returns (CreateDocumentPublicationsResponse) {}
+  // `DeleteDocumentPublications` allows a tenant to delete a Publication(s) (undeploy a file from a cell)
+  rpc DeleteDocumentPublications(DeleteDocumentPublicationsRequest) returns (DeleteDocumentPublicationsResponse) {}
+
+  // `DescribeDocumentSchemas` allows a tenant to describe all `DocumentSchemas` associated with a `Namespace` or a specific docSchemaID
+  rpc DescribeDocumentSchemas(DescribeDocumentSchemasRequest) returns (DescribeDocumentSchemasResponse) {}
+  // `UpdateDocumentSchema` allows a tenant to update a `DocumentSchema` into a `Namespace`
+  rpc UpdateDocumentSchema(UpdateDocumentSchemaRequest) returns (UpdateDocumentSchemaResponse) {}
+  // `CreateDocumentSchema` allows a tenant to create a `DocumentSchema` into a `Namespace`
+  rpc CreateDocumentSchema(CreateDocumentSchemaRequest) returns (CreateDocumentSchemaResponse) {}
+  // `DeleteDocumentSchema` allows a tenant to delete a `DocumentSchema` from a `Namespace`
+  rpc DeleteDocumentSchema(DeleteDocumentSchemaRequest) returns (DeleteDocumentSchemaResponse) {}
+  // `DescribePerCellRolloutStatus` allows an admin to identify document versions that have been deployed to some but not all cells
+  rpc DescribePerCellRolloutStatus(DescribePerCellRolloutStatusRequest) returns (DescribePerCellRolloutStatusResponse) {}
+}
+
+/*
+   Implementation Details:
+   Reserved protobuf positions
+   - created_at = 20
+   - updated_at = 21
+   - published_at = 22
+   - unpublished_at = 23
+*/
+
+// `TenantConfig` represent the platform tenant configuration
+message TenantConfig {
+  // tenant new cell bootstrap preference
+  enum CellBootstrapPreference {
+    // unspecified bootstrap preference
+    CELL_BOOTSTRAP_PREFERENCE_UNSPECIFIED = 0;
+    // do not bootstrap
+    CELL_BOOTSTRAP_PREFERENCE_NO_BOOTSTRAP = 1;
+    // bootstrap new cell using the most used value
+    CELL_BOOTSTRAP_PREFERENCE_MOST_USED_VALUED = 2;
+    // bootstrap new cell using the least used value
+    CELL_BOOTSTRAP_PREFERENCE_LEAST_USED_VALUED = 3;
+  }
+
+  // tenant rate limit configuration
+  int64 max_request_per_seconds = 1;
+  // tenant file quota
+  int64 max_files = 2;
+  // tenant root path: ex: /srv/runtime/, /srv/dynamic-values/
+  string tenant_fs_root_path = 3;
+  // tenant cell boot strap preference
+  CellBootstrapPreference bootstrap_preference = 4;
+}
+
+/*
+   The idea behind TenantPubState is to make the API declarative rather than imperative
+   the admin can create an user in TENANT_PUB_STATE_ENABLED or TENANT_PUB_STATE_DISABLED
+   the api will create a new tenant in TENANT_PUB_STATE_PENDING_PUBLISH or TENANT_PUB_STATE_PENDING_UNPUBLISH
+   the worker will process the prior states and set the tenant pubState in TENANT_PUB_STATE_PUBLISHED or TENANT_PUB_STATE_UNPUBLISHED
+*/
+
+// `TenantPubState` describe if the tenant's documents are published or not by the workers
+enum TenantPubState {
+  // [INTERNAL] a tenant in unspecified publication state
+  TENANT_PUB_STATE_UNSPECIFIED = 0;
+  // [INTERNAL] all possible tenant publication states
+  TENANT_PUB_STATE_ALL = 1;
+  // [INTERNAL] error tenant state
+  TENANT_PUB_STATE_ERROR = 2;
+  // [PUBLIC] state to drive tenant creation and update
+  TENANT_PUB_STATE_ENABLED = 3;
+  // [INTERNAL] a tenant in pending publish state
+  TENANT_PUB_STATE_PENDING_PUBLISH = 4;
+  // [INTERNAL] a published tenant
+  TENANT_PUB_STATE_PUBLISHED = 5;
+  // [PUBLIC] state to drive tenant creation and update
+  TENANT_PUB_STATE_DISABLED = 6;
+  // [INTERNAL] an tenant in pending unpublish state
+  TENANT_PUB_STATE_PENDING_UNPUBLISH = 7;
+  // [INTERNAL] a tenant that's been unpublished
+  TENANT_PUB_STATE_UNPUBLISHED = 8;
+}
+
+// `Tenant` represents the platform tenant eg: runtime, dynamic-values, tenants, envoy-config
+message Tenant {
+  // tenant unique ID
+  string id = 1;
+  // tenant name
+  string name = 2;
+  // tenant configuration
+  TenantConfig config = 3;
+  // tenant publication state
+  TenantPubState pub_state = 4;
+
+  // the tenant creation time
+  google.protobuf.Timestamp created_at = 20;
+  // the tenant update time
+  google.protobuf.Timestamp updated_at = 21;
+  // the tenant published timestamp
+  google.protobuf.Timestamp published_at = 22;
+  // the tenant unpublished timestamp
+  google.protobuf.Timestamp unpublished_at = 23;
+}
+
+// `GetTenantInfoRequest` request proto for GetTenantInfo
+message GetTenantInfoRequest {}
+
+// `GetTenantInfoResponse` response proto for GetTenantInfo
+message GetTenantInfoResponse {
+  // the tenant info
+  Tenant tenant = 1;
+}
+
+// `CreateTenantRequest` request proto for CreateTenant
+message CreateTenantRequest {
+  // the tenant to create
+  Tenant tenant = 1;
+}
+
+// `CreateTenantResponse` response proto for CreateTenant
+message CreateTenantResponse {
+  // the created tenant
+  Tenant tenant = 1;
+}
+
+// `UpdateTenantPubStateRequest` request proto for UpdateTenantPubState
+message UpdateTenantPubStateRequest {
+  // ID of the tenant to update the state
+  string tenant_id = 1;
+  // the new cell state
+  TenantPubState pub_state = 2;
+}
+
+// `UpdateTenantPubStateResponse` response proto for UpdateTenantPubState
+message UpdateTenantPubStateResponse {
+  // the updated tenant
+  Tenant tenant = 1;
+}
+
+// `Env` describes a possible environment for a cell
+enum Env {
+  // unspecified environment
+  ENV_UNSPECIFIED = 0;
+  // represents all possible environments
+  ENV_ALL = 1;
+  // development environment
+  ENV_DEV = 2;
+  // staging environment
+  ENV_STAGING = 3;
+  // production environment
+  ENV_PROD = 4;
+}
+
+// `CellState` describe a possible state for a cell
+enum CellState {
+  // unspecified cell state
+  CELL_STATE_UNSPECIFIED = 0;
+  // all possible cell states
+  CELL_STATE_ALL = 1;
+  // an enabled cell
+  CELL_STATE_ENABLED = 2;
+  // a disabled cell
+  CELL_STATE_DISABLED = 3;
+}
+
+// `Region` describe a possible region for a cell
+enum Region {
+  // unspecificed region
+  REGION_UNSPECIFIED = 0;
+  // all regions
+  REGION_ALL = 1;
+  // the AWS us-west-2 region
+  REGION_AWS_US_WEST_2 = 2;
+  // the AWS us-east-1 region
+  REGION_AWS_US_EAST_1 = 3;
+  // the AWS us-east-2 region
+  REGION_AWS_US_EAST_2 = 4;
+  // the AWS eu-west-1 region
+  REGION_AWS_EU_WEST_1 = 5;
+}
+
+// `Cell` describe a cell, a base unit deployment for a configuration file
+message Cell {
+  // cell unique id
+  string id = 1;
+  // cell name
+  string name = 2;
+  // cell environment
+  Env env = 3;
+  // cell region
+  Region region = 4;
+  // cell state
+  CellState state = 5;
+  // the cell creation time
+  google.protobuf.Timestamp created_at = 20;
+  // the cell update time
+  google.protobuf.Timestamp updated_at = 21;
+}
+
+// `DescribeCellsRequest` request proto for DescribeCells
+message DescribeCellsRequest {
+  // filter for the request
+  oneof filter {
+    // return only cells in a specific region
+    Region region = 1;
+    // return only cells in a specific state
+    CellState state = 2;
+  }
+}
+
+// `DescribeCellsResponse` response proto for DescribeCells
+message DescribeCellsResponse {
+  // the requested cells
+  repeated Cell cells = 1;
+}
+
+// `CreateCellRequest` request proto for CreateCell
+message CreateCellRequest {
+  // the cell to create
+  Cell cell = 1;
+}
+
+// `CreateCellResponse` response proto for CreateCell
+message CreateCellResponse {
+  // the created cell
+  Cell cell = 1;
+}
+
+// `UpdateCellStateRequest` request proto for UpdateCellState
+message UpdateCellStateRequest {
+  // ID of the cell to update the state
+  string cell_id = 1;
+  // the new cell state
+  CellState cell_state = 2;
+}
+
+// `UpdateCellStateResponse` response proto for UpdateCellState
+message UpdateCellStateResponse {
+  // the updated cell
+  Cell cell = 1;
+}
+
+// A `Namespace` contains Documents, like a folder
+message Namespace {
+  // the namespace unique ID
+  string id = 1;
+  // the namespace name
+  string name = 2;
+  // namespace metadata
+  google.protobuf.Struct metadata = 3;
+  // the namespace creation time
+  google.protobuf.Timestamp created_at = 20;
+  // the namespace deletion time
+  google.protobuf.Timestamp deleted_at = 21;
+}
+
+// `DescribeNamespacesRequest` request proto for DescribeNamespaces
+message DescribeNamespacesRequest {
+  // field enum
+  enum Field {
+    // unspecified
+    FIELD_UNSPECIFIED = 0;
+    // name
+    FIELD_NAME = 1;
+  }
+
+  // filter
+  message Filter {
+    // field type
+    Field field = 1;
+    // field value
+    string value = 2;
+  }
+
+  // if namespace_id is specified a single namespace is returned
+  string namespace_id = 1;
+
+  // A page token, received from a previous `DescribeNamespaces` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `DescribeNamespaces` must match
+  // the call that provided the page token.
+  string page_token = 2;
+
+  // The maximum number of namespaces to return. The service may return fewer than this value.
+  // If unspecified, at most 35 Namespaces will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 3;
+
+  // fields to filter on
+  repeated Filter filters = 100;
+}
+
+// `DescribeNamespacesResponse` response proto for DescribeNamespaces
+message DescribeNamespacesResponse {
+  // the namespaces object requests
+  repeated Namespace namespaces = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// `CreateNamespaceRequest` request proto for CreateNamespace
+message CreateNamespaceRequest {
+  // name of the namespace to create
+  string name = 1;
+  // namespace metadata
+  google.protobuf.Struct metadata = 2;
+}
+
+// `CreateNamespaceResponse` response proto for CreateNamespace
+message CreateNamespaceResponse {
+  // the created namespace object
+  Namespace namespace = 1;
+}
+
+// `UpdateNamespaceRequest` request proto for UpdateNamespace
+message UpdateNamespaceRequest {
+  // ID of the namespace to update the metadata
+  string namespace_id = 1;
+  // the new metadata
+  google.protobuf.Struct metadata = 2;
+}
+
+// `UpdateNamespaceResponse` response proto for UpdateNamespace
+message UpdateNamespaceResponse {
+  // the updated namespace
+  Namespace namespace = 1;
+}
+
+// `DeleteNamespaceRequest` request proto for DeleteNamespace
+message DeleteNamespaceRequest {
+  // the namespace ID to delete
+  string namespace_id = 1;
+}
+
+// `DeleteNamespaceResponse` response proto for DeleteNamespace
+message DeleteNamespaceResponse {}
+
+// `DocType` represents the supported document format
+enum DocType {
+  // unspecified document type
+  DOC_TYPE_UNSPECIFIED = 0;
+  // all document types
+  DOC_TYPE_ALL = 1;
+  // integer document type
+  DOC_TYPE_INT = 2;
+  // long document type
+  DOC_TYPE_LONG = 3;
+  // string document type
+  DOC_TYPE_STR = 4;
+  // json document type
+  DOC_TYPE_JSON = 5;
+  // float document type
+  DOC_TYPE_FLOAT = 6;
+  // double document type
+  DOC_TYPE_DOUBLE = 7;
+  // yaml documet type
+  DOC_TYPE_YAML = 8;
+  // yml document type
+  DOC_TYPE_YML = 9;
+  // properties document type
+  DOC_TYPE_PROPERTIES = 10;
+  // boolean document type
+  DOC_TYPE_BOOLEAN = 11;
+  // bool document type
+  DOC_TYPE_BOOL = 12;
+  // hcl document type
+  DOC_TYPE_HCL = 13;
+  // sql document type
+  DOC_TYPE_SQL = 14;
+  // dynamic value document type
+  DOC_TYPE_DV = 15;
+  // conf document type
+  DOC_TYPE_CONF = 16;
+  // markdown document type
+  DOC_TYPE_MD = 17;
+}
+
+/*
+   A `Document` represents a configuration file.
+
+   A `Document` final FS path is the join of:
+     TenantConfig.tenant_fs_root_path + Namespace.name + Document.path + Document.name + Document.doc_type
+
+   For example:
+   - TenantConfig.tenant_fs_root_path : `/srv/runtime`
+     Namespace.name: `identity-service`
+     Document.path: `""`
+     Document.name: `db_batch_size`
+     Document.doc_type: `int`
+     Will produce the following file on disk: `/srv/runtime/identity-service/db_batch_size.int`
+
+   - TenantConfig.tenant_fs_root_path : `/srv/runtime`
+     Namespace.name: `dasher-service`
+     Document.path: `ts/redis/dasher_datastore_cluster/bulkGetFromCache`
+     Document.name: `use_lettuce_client`
+     Document.doc_type: `float`
+     Will produce the following file on disk: `/srv/runtime/dasher-service/ts/redis/dasher_datastore_cluster/bulkGetFromCache/use_lettuce_client.float`
+
+*/
+message Document {
+  // unique ID of the Document
+  string id = 1;
+  // name of the Document
+  string name = 2;
+  // namespace ID for the Document
+  string namespace_id = 3;
+  // path of the Document
+  string path = 4;
+  // document type
+  DocType doc_type = 5;
+  // document metadata
+  google.protobuf.Struct metadata = 6;
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 20;
+  // Update timestamp
+  google.protobuf.Timestamp updated_at = 21;
+  // Delete timestamp
+  google.protobuf.Timestamp deleted_at = 22;
+}
+
+// `DescribeDocumentsRequest` request proto for DescribeDocuments
+message DescribeDocumentsRequest {
+  // field enum
+  enum Field {
+    // unspecified
+    FIELD_UNSPECIFIED = 0;
+    // filename
+    FIELD_FILENAME = 1;
+    // path
+    FIELD_PATH = 2;
+    // type
+    FIELD_TYPE = 3;
+  }
+
+  // filter
+  message Filter {
+    // field type
+    Field field = 1;
+    // field value
+    string value = 2;
+  }
+
+  // if document_id is specified a single document is returned
+  string document_id = 1;
+
+  // Namespace of the documents files
+  string namespace_id = 2;
+
+  // A page token, received from a previous `DescribeDocuments` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `DescribeDocuments` must match
+  // the call that provided the page token.
+  string page_token = 3;
+
+  // The maximum number of documents to return. The service may return fewer than this value.
+  // If unspecified, at most 35 Documents will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 4;
+
+  // fields to filter on
+  repeated Filter filters = 100;
+}
+
+// `DescribeDocumentsResponse` response proto for DescribeDocuments
+message DescribeDocumentsResponse {
+  // the Document(s) belonging to a particular tenant and namespace
+  repeated Document documents = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// `CreateDocumentsRequest` request proto for CreateDocuments
+message CreateDocumentsRequest {
+  // The document to create
+  // The maximum number of documents supported is 35, request with more than 35 documents
+  // will be rejected.
+  repeated Document documents = 1;
+}
+
+// `CreateDocumentsResponse` response proto for CreateDocuments
+message CreateDocumentsResponse {
+  // the created documents
+  repeated Document documents = 1;
+}
+
+// `UpdateDocumentsRequest` request proto for UpdateDocuments
+message UpdateDocumentsRequest {
+  // the document to update
+  repeated Document documents = 1;
+}
+
+// `UpdateDocumentsResponse` response proto for UpdateDocuments
+message UpdateDocumentsResponse {
+  // tthe updated documents
+  repeated Document documents = 1;
+}
+
+// `DeleteDocumentsRequest` request proto for DeleteDocuments
+message DeleteDocumentsRequest {
+  // the document IDs to delete from the system
+  repeated string document_id = 1;
+}
+
+// `DeleteDocumentsResponse` response proto for DeleteDocuments
+message DeleteDocumentsResponse {}
+
+// `DocumentVersion` represent the version and content of a Document
+message DocumentVersion {
+  // unique documentVersion ID
+  string id = 1;
+  // the document ID associated with the DocumentVersion
+  string document_id = 2;
+  // comment to associated to a document version, like a commit message
+  string comment = 3;
+  // content of the document.
+  // string type is UTF-8 encoded.
+  string content = 4;
+  // documentVersion metadata
+  google.protobuf.Struct metadata = 5;
+  // optional documentVersion schema ID
+  string schema_id = 6;
+  // ID of the tenant this document version belong to
+  string tenant_id = 7;
+  // ancestor ID, version ID of the version from which this new version has been created.
+  // If present it will be used for conflict version resolution during publication.
+  string ancestor_id = 8;
+  // creation timestamp
+  google.protobuf.Timestamp created_at = 20;
+}
+
+// `DescribeDocumentVersionsRequest` request proto for DescribeDocumentVersions
+message DescribeDocumentVersionsRequest {
+  // field enum
+  enum Field {
+    // unspecified
+    FIELD_UNSPECIFIED = 0;
+    // publication status
+    FIELD_PUB_STATE = 1;
+  }
+
+  // filter
+  message Filter {
+    // field type
+    Field field = 1;
+    // field value
+    string value = 2;
+  }
+
+  // if document_version_id is specified a single document version is returned
+  string document_version_id = 1;
+
+  // the document ID associated with the DocumentVersion to retrieve
+  string document_id = 2;
+
+  // A page token, received from a previous `DesribeDocumentsVersions` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `DesribeDocumentsVersions` must match
+  // the call that provided the page token.
+  string page_token = 3;
+
+  // The maximum number of DocumentVersions to return. The service may return fewer than this value.
+  // If unspecified, at most 35 DocumentVersions will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 4;
+
+  // fields to filter on
+  repeated Filter filters = 100;
+}
+
+// `DescribeDocumentVersionsResponse` response proto for DescribeDocumentVersions
+message DescribeDocumentVersionsResponse {
+  // the documentVersion requested
+  repeated DocumentVersion document_versions = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// PerCellRolloutStatus represents a document version that is in a partial deployment state (deployed to some but not all available cells)
+message PerCellRolloutStatus {
+  // Document unique identifier
+  string document_id = 1;
+  // Document version unique identifier
+  string document_version_id = 2;
+  // Name of the tenant owning the document
+  string tenant_name = 3;
+  // Email of the user who deployed the document version
+  string user_email = 4;
+  // Slack ID of the user who deployed the document version
+  string slack_id = 5;
+  // Deployment status (currently always "PARTIALLY_DEPLOYED")
+  string deployment_status = 6;
+  // Creation timestamp of the document version
+  google.protobuf.Timestamp created_at = 7;
+  // Number of cells this document version is deployed to
+  int64 deployed_cell_count = 8;
+  // Total number of available cells in the system
+  int64 total_cell_count = 9;
+  // IDs of cells this document version is deployed to
+  repeated string deployed_cell_ids = 10;
+  // Names of cells this document version is deployed to
+  repeated string deployed_cell_names = 11;
+  // IDs of cells this document version is not yet deployed to
+  repeated string missing_cell_ids = 12;
+  // Names of cells this document version is not yet deployed to
+  repeated string missing_cell_names = 13;
+  // Namespace ID for the document
+  string namespace_id = 14;
+  // Namespace name for the document
+  string namespace_name = 15;
+  // Document name
+  string document_name = 16;
+}
+
+// DescribePerCellRolloutStatusRequest request proto for DescribePerCellRolloutStatus
+message DescribePerCellRolloutStatusRequest {
+  // The maximum number of results to return. The service may return fewer than this value.
+  // If unspecified, at most 35 results will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 1;
+}
+
+// DescribePerCellRolloutStatusResponse response proto for DescribePerCellRolloutStatus
+message DescribePerCellRolloutStatusResponse {
+  // List of document versions with partial cell deployments
+  repeated PerCellRolloutStatus rollout_status = 1;
+}
+
+// `UpdateDocumentVersionRequest` request proto for UpdateDocumentVersion
+message UpdateDocumentVersionRequest {
+  // ID of the document version to update the metadata
+  string document_version_id = 1;
+  // the new metadata
+  google.protobuf.Struct metadata = 2;
+}
+
+// `UpdateDocumentVersionResponse` response proto for UpdateDocumentVersion
+message UpdateDocumentVersionResponse {
+  // the updated document version
+  DocumentVersion document_version = 1;
+}
+
+// `CreateDocumentVersionRequest` request proto for CreateDocumentVersion
+message CreateDocumentVersionRequest {
+  // the document version to create
+  DocumentVersion document_version = 1;
+}
+
+// `CreateDocumentVersionResponse` response proto for CreateDocumentVersion
+message CreateDocumentVersionResponse {
+  // The created document version
+  DocumentVersion document_version = 1;
+}
+
+// `DeleteDocumentVersionRequest` request proto for DeleteDocumentVersion
+message DeleteDocumentVersionRequest {
+  // the ID of the documentVersion to remove from the system
+  string document_version_id = 1;
+}
+
+// `DeleteDocumentVersionResponse` response proto for DeleteDocumentVersion
+message DeleteDocumentVersionResponse {}
+
+// Publication is the object that represents the deploy of a Document Version in a Cell
+message Publication {
+  // `PublicationState` describes a possible state for a publication
+  enum State {
+    // unspecified publication state
+    STATE_UNSPECIFIED = 0;
+    // all possible states of a publication
+    STATE_ALL = 1;
+    // a publication that the system can't process
+    STATE_ERROR = 2;
+    // a publication published with no errors
+    STATE_PUBLISHED = 3;
+    // a publication in pending publish state
+    STATE_PENDING_PUBLISH = 4;
+    // a publication in pending unpublish state
+    STATE_PENDING_UNPUBLISH = 5;
+    // a publication that has been unpublished
+    STATE_UNPUBLISHED = 6;
+  }
+
+  // unique publication ID
+  string id = 1;
+  // document ID to publish
+  string document_id = 2;
+  // version of the document to publish
+  string version_id = 3;
+  // publication cell
+  string cell_id = 4;
+  // the state of the publication
+  State state = 5;
+  // publication metadata
+  google.protobuf.Struct metadata = 6;
+  // namespace ID of the (un)published Document
+  string namespace_id = 7;
+  // publication timestamp
+  google.protobuf.Timestamp created_at = 20;
+  // deployed timestamp
+  google.protobuf.Timestamp published_at = 22;
+  // withheld timestamp
+  google.protobuf.Timestamp unpublished_at = 23;
+  // unpublish timestamp
+  google.protobuf.Timestamp deleted_at = 24;
+}
+
+// `DescribeDocumentPublicationsRequest` request proto for DescribeDocumentPublications
+message DescribeDocumentPublicationsRequest {
+  // response sort option
+  enum Sort {
+    // Default value. SORT_ASC will be enforced by the API.
+    SORT_UNSPECIFIED = 0;
+    // Sorting in ascending order. From the oldest to the newest.
+    SORT_ASC = 1;
+    // Sorting in descending order. From the newest to the oldest.
+    SORT_DESC = 2;
+  }
+
+  // if publication_ids are specified the other request fields are ignored
+  repeated string publication_ids = 1;
+
+  // document ID to describe
+  string document_id = 2;
+
+  // A page token, received from a previous `DescribePublications` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `DescribePublications` must match
+  // the call that provided the page token.
+  string page_token = 3;
+
+  // The maximum number of Publications to return. The service may return fewer than this value.
+  // If unspecified, at most 35 Publications will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 4;
+
+  // Optional, specify the sorting of the Publications.
+  Sort sort_option = 5;
+
+  // filter for the request
+  oneof filter {
+    // return only publication in a specific state
+    Publication.State state = 100;
+    // return only publication with a specific document version_id
+    string version_id = 101;
+  }
+
+  // Optional flag to align all publications for the last document version in the results.
+  // When enabled, if the last publication in the paginated results belongs to a specific
+  // document version, all other publications for that same document version will be included
+  // in the response, potentially exceeding the max_results limit.
+  // Default is false if not specified.
+  bool align_last_document_version = 102;
+}
+
+// `DescribeDocumentPublicationsResponse` response proto for DescribeDocumentPublications
+message DescribeDocumentPublicationsResponse {
+  // the publications of the document
+  repeated Publication publications = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// `CreateDocumentPublicationsRequest` request proto for CreateDocumentPublications
+message CreateDocumentPublicationsRequest {
+  // publication to create
+  repeated Publication publications = 1;
+}
+
+// `CreateDocumentPublicationsResponse` response proto for CreateDocumentPublications
+message CreateDocumentPublicationsResponse {
+  // the created publications
+  // the order of the returned IDs matches the order of the received publications
+  repeated Publication publications = 1;
+}
+
+// `DeleteDocumentPublicationsRequest` request proto for DeleteDocumentPublications
+message DeleteDocumentPublicationsRequest {
+  // the IDs of the publications to remove from the system
+  repeated string publication_ids = 1;
+}
+
+// `DeleteDocumentPublicationsResponse` response proto for DeleteDocumentPublications
+message DeleteDocumentPublicationsResponse {}
+
+// DocumentSchema is the object that represents schema or URL to use to validate a DocumentVersion
+message DocumentSchema {
+  // unique ID of the DocumentSchema
+  string id = 1;
+  // unique name of the DocumentSchema
+  string name = 2;
+  // namespace ID for the DocumentSchema
+  string namespace_id = 3;
+  // schema to use for validation
+  string schema = 4;
+  // url to use for validation
+  string url = 5;
+  // DocumentSchema metadata
+  google.protobuf.Struct metadata = 6;
+  // DocumentSchema version
+  int64 version = 7;
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 20;
+  // Update timestamp
+  google.protobuf.Timestamp updated_at = 21;
+}
+
+// `DescribeDocumentSchemasRequest` request proto for DescribeDocumentSchemas
+message DescribeDocumentSchemasRequest {
+  // if schema_ids are specified the other request fields are ignored
+  repeated string schema_ids = 1;
+
+  // namespace of the documentSchemas to describe
+  string namespace_id = 2;
+
+  // A page token, received from a previous `DescribeDocumentSchemasRequest` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `DescribeDocumenSchemas` must match
+  // the call that provided the page token.
+  string page_token = 3;
+
+  // The maximum number of namespaces to return. The service may return fewer than this value.
+  // If unspecified, at most 35 Namespaces will be returned.
+  // The maximum value is 35; values above 35 will be coerced to 35.
+  int32 max_results = 4;
+}
+
+// `DescribeDocumentSchemasResponse` response proto for DescribeDocumentSchemas
+message DescribeDocumentSchemasResponse {
+  // the namespaces object requests
+  repeated DocumentSchema schemas = 1;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  // If this field is omitted, there are no subsequent pages.
+  string next_page_token = 2;
+}
+
+// `UpdateDocumentSchemaRequest` request proto for UpdateDocumentSchema
+message UpdateDocumentSchemaRequest {
+  // the schema to update
+  DocumentSchema schema = 1;
+}
+
+// `UpdateDocumentSchemaResponse` response proto for UpdateDocumentSchema
+message UpdateDocumentSchemaResponse {
+  // the updated schema object
+  DocumentSchema schema = 1;
+}
+
+// `CreateDocumentSchemaRequest` request proto for CreateDocumentSchema
+message CreateDocumentSchemaRequest {
+  // schema to create
+  DocumentSchema schema = 1;
+}
+
+// `CreateDocumentSchemaResponse` response proto for CreateDocumentSchema
+message CreateDocumentSchemaResponse {
+  // the created schema
+  DocumentSchema schema = 1;
+}
+
+// `DeleteDocumentSchemaRequest` request proto for DeleteDocumentSchema
+message DeleteDocumentSchemaRequest {
+  // the ID of the schemas to remove from the system
+  string schema_id = 1;
+}
+
+// `DeleteDocumentSchemaResponse` response proto for DeleteDocumentSchema
+message DeleteDocumentSchemaResponse {}

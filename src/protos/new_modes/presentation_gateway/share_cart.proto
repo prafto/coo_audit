@@ -1,0 +1,203 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package new_modes;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.new_modes.pg";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// APIs for ShareCart Service
+service ShareCart {
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 6000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 7000;
+
+  option (doordash.api.service) = {
+    port: 50051
+    name_spaces: [
+      "new-modes",
+      "cart"
+    ]
+    owner: {
+      name: "eng-pickup"
+      id: "pick-up-service"
+      slack_channel: "#new-modes-eng"
+      email_alias: "new-modes-engineering@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // endpoint to allow Cx to request a shareable link to the selected cart
+  rpc GetCartShareLink(GetCartShareLinkRequest) returns (GetCartShareLinkResponse) {
+    option (google.api.http) = {get: "/cart/v1/share/{cart_uuid}/url"};
+    option (doordash.api.endpoint) = {
+      hostname: "new-modes-share-cart-get-cart-share-link.service.prod.ddsd"
+      port: 50051
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Gets a shared cart info for the current Cx,
+  rpc GetSharedCartInfo(GetSharedCartInfoRequest) returns (GetSharedCartInfoResponse) {
+    // TODO: @will.willsey to clarify this endpoint
+    option (google.api.http) = {get: "/cart/v1/share/{code}"};
+    option (doordash.api.endpoint) = {
+      hostname: "new-modes-share-cart-get-shared-cart-info.service.prod.ddsd"
+      port: 50051
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Applies a shared cart URL for the current Cx, creating a cart that copies the contents of the cart shared
+  rpc ApplySharedCartCode(ApplySharedCartCodeRequest) returns (ApplySharedCartCodeResponse) {
+    // TODO: @will.willsey to clarify this endpoint
+    option (google.api.http) = {post: "/cart/v1/share/{code}"};
+    option (doordash.api.endpoint) = {
+      hostname: "new-modes-share-cart-apply-shared-cart-code.service.prod.ddsd"
+      port: 50051
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+}
+
+// Request info for creating a shareable link that when used will create a copy of the provided cart
+message GetCartShareLinkRequest {
+  // Cx who is making request to get a sharable link for a cart
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // cart UUID they are attempting to share
+  google.protobuf.StringValue cart_uuid = 2;
+  // consumer address link id to be shared alongside the cart
+  google.protobuf.StringValue consumer_address_link_id = 3;
+}
+
+// Info regarding the link created to share a cart
+message GetCartShareLinkResponse {
+  // clickable link to be shown to cx to share the cart, ie www.doordash.com/cart/share/123kjasd123
+  google.protobuf.StringValue share_url = 1;
+  // text to be shared when Cx follows the sharing prompt, includes the clickable share_url containing share cart code
+  google.protobuf.StringValue share_text = 2;
+}
+
+// Request info regarding a shared cart
+message GetSharedCartInfoRequest {
+  // Cx who is making request for info regarding sharable link for a shared cart
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // sharing code used to share cart info, just the code portion of the shared URL
+  google.protobuf.StringValue code = 2;
+}
+
+// Response info regarding Cx click of a shared cart link
+message GetSharedCartInfoResponse {
+  // cart UUID of the cart shared to this Cx
+  // this is only used for analytics purposes, as without creator Cx_id, this UUID is safe to share
+  google.protobuf.StringValue shared_cart_uuid = 1;
+  // Title for prompt to apply shared link
+  google.protobuf.StringValue title = 2;
+  // info pertaining to conflict resolution if there is a conflicting cart, null if not conflicting
+  ShareCartConflictInfo conflict_info = 4;
+}
+
+// defines conflict resolution for shared cart, ie if the Cx has an existing cart that would conflict with shared
+message ShareCartConflictInfo {
+  // Title for prompt to apply shared cart link if Cx has existing cart for same store
+  google.protobuf.StringValue title = 1;
+  // Subtitle
+  google.protobuf.StringValue subtitle = 2;
+  // list of options for Cx to select regarding conflict resolution strategies if there is a conflicting cart
+  repeated ConflictResolutionAction resolution_strategies = 3;
+}
+
+// Describes an action Cx can select to resolve a shared cart conflict
+message ConflictResolutionAction {
+  // selected conflict resolution strategy for shared cart, for if there is a conflicting cart
+  ShareCartConflictResolutionStrategy resolution_strategy = 1;
+  // Title for action prompt
+  google.protobuf.StringValue title = 2;
+}
+
+// defines the resolution strategies for shared cart conflicts
+// buf:lint:ignore ENUM_VALUE_PREFIX
+// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+enum ShareCartConflictResolutionStrategy {
+  // default strategy, will merge the shared cart with the current cart
+  UNSPECIFIED = 0;
+  // will replace the current cart with the shared cart
+  REPLACE = 1;
+  // will merge the current cart with the shared cart, adding all items from the shared cart to the existing cart
+  ADD = 2;
+}
+
+// Request to apply a shared cart link to create a new cart and copy the contents of the shared cart
+message ApplySharedCartCodeRequest {
+  // Cx who is making request for info regarding sharable link for a shared cart
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // sharing code (from short URL) used to share cart info
+  google.protobuf.StringValue code = 2;
+  // selected conflict resolution strategy for shared cart, for if there is a conflicting cart
+  ShareCartConflictResolutionStrategy conflict_resolution = 3 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+}
+
+// Response info regarding Cx application of a shared link to create a cart
+message ApplySharedCartCodeResponse {
+  // new cart UUID
+  google.protobuf.StringValue cart_uuid = 1;
+  // cart UUID of the cart shared to this Cx
+  // this is only used for analytics purposes, as without creator Cx_id, this UUID is safe to share
+  google.protobuf.StringValue shared_cart_uuid = 2;
+  // flag to FE to describe if Cx had their default address adjusted per sharer's request
+  // accidentally set this to 5, should be 3, but its a breaking change to update, and its not hurting, so Ill leave it
+  google.protobuf.BoolValue address_updated = 5;
+  // store ID corresponding to the cart
+  google.protobuf.StringValue store_id = 3;
+}

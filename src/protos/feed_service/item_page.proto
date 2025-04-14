@@ -1,0 +1,543 @@
+syntax = "proto3";
+package feed_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "feed_service/common.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/menu.proto";
+import "feed_service/store_page.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/consumer_rating.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "ItemPageFeedApi";
+option java_package = "com.doordash.rpc.feed_service.item_page";
+
+service ItemPageFeedService {
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 20;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+  option (service_client.client_config).response_attempt_timeout_millis = 1500;
+  rpc GetItemPage(GetItemPageRequest) returns (GetItemPageResponse);
+}
+
+message GetItemPageRequest {
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.StringValue item_id = 2;
+  // menu_id is now a required id for fetching item, and will be enforced for getEntities call to Menu Data Service
+  // https://docs.google.com/document/d/1vj-ueM4SGr2ZVpp9NSEgZywnczRDZu_P_rRZBxRYlPo/edit?usp=sharing
+  google.protobuf.Int64Value menu_id = 15;
+  google.protobuf.Int64Value consumer_id = 10;
+  google.protobuf.StringValue cursor = 3;
+  common.FulfillmentType fulfillment_type = 4;
+  // Used by merchants to preview their stores and menus
+  google.protobuf.BoolValue is_merchant_preview = 9;
+  google.protobuf.Int64Value submarket_id = 11;
+  // this is an option field for lunchpass use case
+  ItemResolutionContext item_resolution_context = 12;
+  google.protobuf.DoubleValue delivery_lat = 13;
+  google.protobuf.DoubleValue delivery_lng = 14;
+  // [optional] scheduled min/max time are params to specify loading the store page for a specific time window rather
+  // than current time
+  google.protobuf.Timestamp scheduled_min_time_utc = 16;
+  google.protobuf.Timestamp scheduled_max_time_utc = 17;
+}
+
+message GetItemPageResponse {
+  ItemHeaderDM item_header = 1;
+  repeated OptionListDM option_lists = 2;
+  repeated PresetCarouselDM preset_carousels = 3;
+  repeated RestaurantItemList item_lists = 4;
+  repeated RestaurantItemCarousel item_carousels = 5;
+  UserPreferencesDM preferences = 6; // power user preferences modal
+  repeated AdditionalItemDescriptionsDM additional_descriptions = 7;
+  ItemFooterDM item_footer = 8;
+  repeated OptionListCollectionDM option_lists_collections = 9;
+  repeated OptionHeaderDM option_header_dm = 10;
+}
+
+message UserPreferencesDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    SpecialInstructions special_instructions = 2;
+    SoldOutSubstitution substitution_preferences = 3;
+  }
+
+  message SpecialInstructions {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue placeholder_text = 2;
+    google.protobuf.UInt32Value character_max_length = 3;
+    google.protobuf.BoolValue is_enabled = 4;
+  }
+
+  message SoldOutSubstitution {
+    google.protobuf.StringValue title = 1;
+    repeated SubstitutionOption substitute_option_list = 2;
+    message SubstitutionOption {
+      OptionType id = 1;
+      google.protobuf.StringValue display_string = 2;
+      google.protobuf.StringValue value = 3;
+      google.protobuf.BoolValue is_default = 4;
+
+      // Safe guard purpose
+      enum OptionType {
+        // unknown type
+        OPTION_TYPE_UNSPECIFIED = 0;
+        // substitute with merchant recommendation
+        OPTION_TYPE_SUBSTITUTE = 1;
+        // refund current item
+        OPTION_TYPE_REFUND = 2;
+        // contact the consumer
+        OPTION_TYPE_CONTACT = 3;
+        // cancel the entire order
+        OPTION_TYPE_CANCEL = 4;
+      }
+    }
+  }
+}
+
+message ItemHeaderDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue name = 1;
+    Image img_url = 2;
+    google.protobuf.StringValue description = 3;
+    money.MonetaryFields price = 4;
+    repeated google.protobuf.Empty content = 5;
+    reserved 6; // do not use
+    google.protobuf.UInt32Value special_instructions_max_length = 7;
+    google.protobuf.Int64Value menu_id = 8;
+    // will also show ratings callout string such as Most liked if present
+    google.protobuf.StringValue callout_display_string = 9;
+    google.protobuf.StringValue secondary_callout_display_string = 59;
+    google.protobuf.UInt32Value min_age_requirement = 10;
+    google.protobuf.BoolValue is_menu_v2 = 11;
+    google.protobuf.BoolValue dashpass_exclusive_item_disabled = 12;
+    repeated Banner banners = 13;
+    google.protobuf.StringValue caloric_info_display_string = 14;
+    repeated common.DietaryTag dietary_tags = 15;
+    google.protobuf.BoolValue is_dashpass_exclusive = 16;
+    google.protobuf.StringValue price_match_guarantee_display_string = 37;
+    google.protobuf.StringValue dashpass_promo_display_string = 38;
+    common.AlcoholFoodConstraintItemLevel alcohol_food_constraint_item_level = 39;
+    // To display store information when item page is visited from item carousel
+    StoreLiteData store_lite_data = 40;
+    // Serving size one pager - https://docs.google.com/document/d/1kGfOjbZZUokasLeXjO1MFmJ68hdYB1RusEVwpQjBF2g/edit#
+    google.protobuf.StringValue serving_size_display_string = 41;
+    // Item Ratings calculations and Labels
+    ReviewData review_data = 42;
+    repeated Savelist savelists = 43;
+    repeated Image img_url_list = 44;
+    MenuMessageLayout delivery_fee_layout = 45; // We'll put the popup content here
+    MenuMessageLayout delivery_time_layout = 46;
+    // currently associated fulfillment type associated with this item page load (i.e. pickup, delivery, shipping, etc.)
+    common.FulfillmentType selected_fulfillment_type = 47;
+    // photo_count
+    google.protobuf.StringValue photo_count_text = 48;
+    // list of prices and corresponding discounts
+    repeated PriceWithDiscount discount_prices = 49;
+    google.protobuf.StringValue insight_string = 50;
+    // Terms and Conditions
+    TermsAndConditions terms = 51;
+    // Secondary description for item page
+    google.protobuf.StringValue secondary_description = 52;
+    reserved 53;
+    reserved "badge"; // Deprecated in favor of badges below.
+    repeated Badge badges = 54;
+    // the minimum amount of time this item needs to be ordered in advance
+    // if populated, it will signify that item is an ss catering item
+    google.protobuf.Int32Value ss_min_lead_time = 56;
+    ItemPageLockStatus lock_status = 57;
+    DishType dish_type = 58;
+  }
+
+  // Specify type of item page to help client determine which UI to show
+  enum DishType {
+    // Regular item page
+    UNSPECIFIED = 0;
+    // Pizza item page
+    PIZZA = 1;
+  }
+}
+
+// This enum is used to determine the "locked" status of the page. For example, if an item
+// is gated behind a subscription, the user will not be able to add the item, we will clear
+// all options/modifiers/preferences, and will see a subscription upsell
+enum ItemPageLockStatus {
+  // Item is not locked
+  ITEM_PAGE_LOCK_STATUS_UNLOCKED = 0;
+  // Item is gated behind a subscription
+  ITEM_PAGE_LOCK_STATUS_SUBSCRIPTION_GATED = 1;
+}
+
+message TermsAndConditions {
+  google.protobuf.StringValue title = 1;
+  ItemDisclaimer disclaimer = 3;
+}
+
+message ItemDisclaimer {
+  google.protobuf.StringValue text = 1;
+  google.protobuf.StringValue type = 2;
+  repeated google.protobuf.StringValue description = 3;
+  ConfigurableButton close_action = 4;
+}
+
+// For populating the total price with item-based promotions
+// This data structure is indicates `discount` amount that is available
+// if `quality` amount of items is added
+// Example:
+// { quantity: 2, discount: { amount: 10, currency: "USD" } }
+// Indicates that if 2 items are added, there will be a $10 discount
+message PriceWithDiscount {
+  // total price of the current quantity
+  google.protobuf.UInt32Value quantity = 1;
+  // total discount available for the current quantity
+  money.MonetaryFields discount = 2;
+  // repeated options discount for item+options
+  repeated OptionsWithDiscount options_with_discount = 3;
+}
+
+// This field is only to be used for BOGO item+options campaigns
+message OptionsWithDiscount {
+  // option Id
+  google.protobuf.StringValue option_id = 1;
+  // total discount available for the current quantity
+  money.MonetaryFields discount = 2;
+}
+
+message Banner {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue text = 2;
+  Button button = 3;
+  BannerType type = 4;
+  Image background_image = 5;
+
+  // Represents the Banner Type
+  enum BannerType {
+    // unknown banner type
+    BANNER_TYPE_UNSPECIFIED = 0;
+    // dasspass subscriber banner type for exclusive items
+    BANNER_TYPE_DASHPASS_EXCLUSIVE_SUBSCRIBER = 1;
+    // dasspass non subscriber banner type for exclusive items
+    BANNER_TYPE_DASHPASS_EXCLUSIVE_NON_SUBSCRIBER = 2;
+    // user generated photos banner type for pre-checkout incentive eligible items
+    BANNER_TYPE_UG_PHOTOS_PRE_CHECKOUT_INCENTIVE = 3;
+    // affordability banner type for affordable items
+    BANNER_TYPE_AFFORDABILITY = 4;
+    // banner type for dashi generative AI taste match
+    BANNER_TYPE_DASHI_TASTE_MATCH = 5;
+  }
+}
+
+// Object representing store information to be displayed on item page
+message StoreLiteData {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+  // Name of the store
+  google.protobuf.StringValue store_name = 2;
+  // Number of ratings to be shown for the store
+  google.protobuf.StringValue number_of_ratings_display_string = 3;
+  // Average ratings of the store
+  google.protobuf.DoubleValue average_rating = 4;
+  // Store logo image url. This is also known as cover_square_image
+  Image store_logo_url = 5;
+  // Is the store dashpass or not - to show dashpass badge
+  google.protobuf.BoolValue is_dashpass_partner = 6;
+  // Delivery fee string to display for the store
+  google.protobuf.StringValue display_delivery_fee = 7;
+  // DEPRECATED: Total number of ratings for the store
+  google.protobuf.Int64Value number_of_ratings = 8;
+  // Total number of ratings for the store
+  google.protobuf.Int32Value number_of_ratings_int = 9;
+  // Delivery ETA
+  google.protobuf.StringValue eta_display_string = 10;
+  // New line of highlight string
+  google.protobuf.StringValue highlight_string = 11;
+  // Highlight string text color
+  TextAttributes highlight_text_attributes = 12;
+  // Badges information
+  repeated Badge badges = 13;
+}
+
+// item ratings metadata
+message ReviewData {
+  reserved 2;
+  reserved "consumer_rating";
+  // rating display string (rating calculation and count)
+  google.protobuf.StringValue rating_display_string = 1;
+  // number of reviews for an item. String due to GraphQL overflow limitation.
+  // https://doordash.atlassian.net/browse/SPF-1499
+  google.protobuf.StringValue review_count = 3;
+  //Item rating type and value
+  ratings_service.ConsumerItemRating consumer_item_rating = 4;
+  // item review ranking count
+  google.protobuf.Int32Value item_review_ranking_count = 5;
+}
+
+message OptionListCollectionDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue icon_name = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.BoolValue is_optional = 3;
+    repeated OptionListDM display_modules = 4;
+    google.protobuf.StringValue section_number = 5;
+  }
+}
+
+message OptionListDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue name = 1;
+    google.protobuf.StringValue subtitle = 2;
+    google.protobuf.StringValue selection_mode = 3;
+    google.protobuf.UInt32Value min_num_options = 4;
+    google.protobuf.UInt32Value max_num_options = 5;
+    google.protobuf.UInt32Value min_aggregate_options_quantity = 6;
+    google.protobuf.UInt32Value max_aggregate_options_quantity = 7;
+    google.protobuf.UInt32Value min_option_choice_quantity = 8;
+    google.protobuf.UInt32Value max_option_choice_quantity = 9;
+    google.protobuf.UInt32Value num_free_options = 10;
+    repeated Option default_options = 11;
+    repeated Option content = 12;
+    google.protobuf.BoolValue is_optional = 13;
+    google.protobuf.StringValue id = 14;
+    google.protobuf.StringValue type = 15;
+    MessageLayout title_layout = 16;
+    repeated Button buttons = 17;
+    google.protobuf.StringValue store_id = 18;
+    OptionListValidationType validation_type = 19;
+    google.protobuf.UInt32Value collapse_display_count = 20;
+    SelectionModeDisplayType selection_mode_display_type = 21;
+    OptionListLayoutType layout_type = 22;
+    google.protobuf.StringValue option_list_collection_id = 23;
+  }
+
+  // how users can select the options within the extra
+  enum SelectionModeDisplayType {
+    // default existing display types are shown to users (e.g. radio button, checkbox)
+    SELECTION_MODE_DISPLAY_TYPE_DEFAULT = 0;
+    // circular sector (i.e. left half of circle, full circle, right half of circle) is displayed for users to select
+    SELECTION_MODE_DISPLAY_TYPE_CIRCULAR_SECTOR = 1;
+    // toggle is displayed for users to select
+    SELECTION_MODE_DISPLAY_TYPE_TOGGLE = 2;
+    // cards are displayed for users to select
+    SELECTION_MODE_DISPLAY_TYPE_CARD = 3;
+    // options are listed within a container that enables visual option selections
+    SELECTION_MODE_DISPLAY_TYPE_VISUAL_CONTAINER = 4;
+    // nested option listed on one page
+    SELECTION_MODE_DISPLAY_TYPE_FLATTENED = 5;
+    // nested combo item flattened to one page
+    SELECTION_MODE_DISPLAY_TYPE_FLATTENED_COMBO = 6;
+    // standalone horizontal selector (i.e. portion size as options)
+    SELECTION_MODE_DISPLAY_TYPE_HORIZONTAL_SELECTOR = 7;
+    // inline horizontal selector (i.e. portion size nested under an option)
+    SELECTION_MODE_DISPLAY_TYPE_HORIZONTAL_SELECTOR_INLINE = 8;
+  }
+
+  // how item page options are displayed
+  enum OptionListLayoutType {
+    // option list layout type when type is unspecified
+    UNSPECIFIED = 0;
+    // vertical option list layout type
+    VERTICAL = 1;
+    // horizontal option list layout type
+    HORIZONTAL = 2;
+  }
+
+  message Option {
+    google.protobuf.Int64Value id = 1;
+    google.protobuf.StringValue name = 2;
+    money.MonetaryFields price = 3;
+    DMNext next_cursor = 4;
+    google.protobuf.UInt32Value sort_order = 5;
+    reserved 6; // do not use
+    repeated Data default_option_lists = 7;
+    // Explicitly sets quantity of option to specific value (i.e. reorder presets). Overrides default_quantity
+    google.protobuf.UInt32Value selected_quantity = 8;
+    // Metadata attribute of option. Indicates what the mx-provided default quantity for option is
+    google.protobuf.UInt32Value default_quantity = 13;
+    Image img_url = 9;
+    ImageDisplayType image_display_type = 18;
+    google.protobuf.StringValue caloric_info_display_string = 10;
+    repeated common.DietaryTag dietary_tags = 11;
+    // quantity of the specified option, and overrides num_free_options when present
+    google.protobuf.Int32Value charge_above = 12;
+    // display string that discloses incremental cost of the option when quantity is charge_above units
+    google.protobuf.StringValue charge_above_display_string = 14;
+
+    repeated OptionTag option_tags = 15;
+
+    // minimum required quantity for an option
+    google.protobuf.UInt32Value min_option_choice_quantity = 16;
+
+    // maximum required quantity for an option
+    google.protobuf.UInt32Value max_option_choice_quantity = 17;
+
+    // identifier used to identify the same options across different extras, e.g. merchant_supplied_id
+    google.protobuf.StringValue external_id = 19;
+
+    // nested extras to display all levels of extras and options living within an item in the item page
+    repeated Data nested_extras = 20;
+
+    reserved 21;
+    reserved "display_strikethrough_price";
+    google.protobuf.StringValue rating_display_string = 22;
+    google.protobuf.Struct logging = 23;
+    // display option strikethrough price behind the display_price
+    money.MonetaryFields strikethrough_price = 24;
+
+    // display string for combo value upsell
+    google.protobuf.StringValue value_upsell_string = 25;
+
+    google.protobuf.BoolValue is_required_for_option_promo = 26;
+
+    message DMNext {
+      google.protobuf.StringValue cursor = 1;
+    }
+  }
+
+  // classifies what type of image needs to be displayed, for example in case the image url is not set
+  enum ImageDisplayType {
+    // image display type when unspecified
+    IMAGE_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // image display type for displaying left half of a circle
+    IMAGE_DISPLAY_TYPE_LEFT_HALF_CIRCLE = 1;
+    // image display type for displaying a whole circle
+    IMAGE_DISPLAY_TYPE_WHOLE_CIRCLE = 2;
+    // image display type for displaying right half of a circle
+    IMAGE_DISPLAY_TYPE_RIGHT_HALF_CIRCLE = 3;
+  }
+}
+
+message OptionHeaderDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+  }
+}
+
+message PresetCarouselDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue name = 1;
+    google.protobuf.StringValue description = 2;
+    google.protobuf.UInt32Value selected_preset_index = 4;
+    repeated Preset presets = 3;
+  }
+}
+
+message AdditionalItemDescriptionsDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+    repeated google.protobuf.StringValue bullet_copy = 5;
+  }
+}
+
+message Preset {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue description = 4;
+  google.protobuf.StringValue display_price = 5;
+  repeated OptionListDM.Data selected_item_option_lists = 2;
+  google.protobuf.StringValue special_instructions = 3;
+  repeated common.DietaryTag dietary_tags = 6;
+  google.protobuf.StringValue subtitle = 7;
+  google.protobuf.StringValue display_price_color = 8;
+  google.protobuf.StringValue strikethrough_price = 9;
+  PresetType preset_type = 10;
+}
+
+// Preset card type for item accelerators
+enum PresetType {
+  // unknown preset type
+  PRESET_TYPE_UNKNOWN = 0;
+
+  // reorder card
+  PRESET_TYPE_REORDER = 1;
+
+  // popular options card
+  PRESET_TYPE_POPULAR = 2;
+
+  // promo card
+  PRESET_TYPE_PROMO = 3;
+
+  // AI recommendation card
+  PRESET_TYPE_SUGGESTED_FOR_YOU = 4;
+}
+
+message Button {
+  google.protobuf.StringValue text = 1;
+  google.protobuf.StringValue action = 2;
+}
+
+message ItemResolutionContext {
+  SurfaceArea item_surface_area = 1;
+}
+
+// Indicate the validation state for an option list
+enum OptionListValidationType {
+  // Shows “required” text w/ warning icon as default for unhandled cases
+  DEFAULT = 0;
+  // Shows “required” warning w/ alert on the default option if the customer
+  // needs to select an extra for the option.
+  DEFAULT_OPTION_REQUIRES_NESTED_OPTION_SELECTION = 1;
+}
+
+message ItemFooterDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    ConfigurableButton override_button = 2;
+    google.protobuf.Struct placements_footer = 3;
+  }
+}

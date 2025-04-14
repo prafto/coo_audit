@@ -1,0 +1,403 @@
+syntax = "proto3";
+
+package dasher_service.earnings;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "logistics_pay_service/logistics_pay_earnings_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.earnings";
+
+// Earnings Endpoints For Dasher
+service DasherEarningsService {
+  rpc GetDasherEarnings(GetDasherEarningsRequest) returns (GetDasherEarningsResponse);
+  rpc GetDasherEarningsWeekView(GetDasherEarningsWeekViewRequest) returns (GetDasherEarningsWeekViewResponse);
+  rpc HandleDasherPayAdjustment(HandleDasherPayAdjustmentRequest) returns (HandleDasherPayAdjustmentResponse);
+
+  // get aggregated hourly pay by submarket id
+  rpc GetAggregatedHourlyPayBySubmarketId(GetAggregatedHourlyPayBySubmarketIdRequest) returns (GetAggregatedHourlyPayBySubmarketIdResponse);
+
+  // GetStaticShiftMetadata fetches metadata fields that are able to be cached for an extended period of time.
+  rpc GetStaticShiftMetadata(GetStaticShiftMetadataRequest) returns (GetStaticShiftMetadataResponse);
+}
+
+// Request for GetDasherEarnings
+message GetDasherEarningsRequest {
+  // dasher id
+  int64 dasher_id = 1;
+
+  // start time of query
+  google.protobuf.Timestamp start_time = 2;
+
+  // end time of query
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response for GetDasherEarnings
+message GetDasherEarningsResponse {
+  // list of shifts
+  repeated Shift shifts = 1;
+
+  // list of jobs
+  repeated Job jobs = 2;
+
+  // weekly data
+  WeeklyData weekly_data = 3;
+
+  // earnings potential data
+  EarningsPotentialData earnings_potential_data = 4;
+
+  // delivery history
+  repeated logistics_pay_service.earnings.Section sections = 5;
+}
+
+// Request for GetDasherEarningsWeekView
+message GetDasherEarningsWeekViewRequest {
+  // dasher id
+  int64 dasher_id = 1;
+
+  // week start time
+  google.protobuf.Timestamp week_start_time = 2;
+
+  // week end time
+  google.protobuf.Timestamp week_end_time = 3;
+}
+
+message GetDasherEarningsWeekViewResponse {
+  // list of shifts
+  repeated Shift shifts = 1;
+
+  // week overview
+  WeekOverview week_overview = 2;
+
+  // list of jobs
+  repeated Job jobs = 3;
+  // timezone string
+  string timezone = 4;
+}
+
+// EarningsPotentialData
+message EarningsPotentialData {
+  // EarningsPotentialDataPoints
+  repeated EarningsPotentialDataPoint earnings_potential_data_point = 1;
+}
+
+// EarningsPotentialDataPoint
+message EarningsPotentialDataPoint {
+  // week start date
+  google.protobuf.Timestamp week_start_date = 1;
+  // week end date
+  google.protobuf.Timestamp week_end_date = 2;
+  // amount of earnings adjustments
+  money.MonetaryFields week_earning_adjustment_amount_monetary_fields = 3;
+  // amount over min earning potential
+  money.MonetaryFields week_over_min_earning_potential_amount_monetary_fields = 4;
+  // minimum guaranteed amount this week
+  money.MonetaryFields week_minimum_earning_potential_monetary_fields = 5;
+  // text
+  google.protobuf.StringValue min_earning_potential_text = 6;
+}
+
+// WeeklyData
+message WeeklyData {
+  // monthy data points
+  repeated MonthlyDataPoints monthly_data_points = 1;
+}
+
+// MonthlyDataPoints
+message MonthlyDataPoints {
+  // month
+  string month = 1;
+  // list of weekly data points
+  repeated WeeklyDataPoints weekly_data_points = 2;
+}
+
+// WeeklyDataPoints
+message WeeklyDataPoints {
+  // seconds dashed in week
+  int32 week_shift_seconds = 1;
+  // week start date
+  google.protobuf.Timestamp week_start_date = 2;
+  // week end date
+  google.protobuf.Timestamp week_end_date = 3;
+  // amount over min earning potential
+  money.MonetaryFields week_over_min_earning_potential_amount_monetary_fields = 4;
+  // amount earned this week
+  money.MonetaryFields week_total_pay_monetary_fields = 5;
+  // minimum guaranteed amount this week
+  money.MonetaryFields week_minimum_earning_potential_monetary_fields = 6;
+  // amount of earnings adjustments
+  money.MonetaryFields week_earning_adjustment_amount_monetary_fields = 7;
+}
+
+// Request to handle dasher pay adjustment
+message HandleDasherPayAdjustmentRequest {
+  // delivery id for adjusting the pay
+  google.protobuf.Int64Value delivery_id = 1;
+
+  // Enum to represent the context for pay adjustment
+  enum PayAdjustmentContext {
+    // post-delivery tip
+    PAY_ADJUSTMENT_CONTEXT_POST_TIP_UNSPECIFIED = 0;
+
+    // pre-delivery tip
+    PAY_ADJUSTMENT_CONTEXT_PRE_TIP = 1;
+
+    // post-fraud-review adjustment
+    PAY_ADJUSTMENT_CONTEXT_POST_FRAUD_REVIEW = 2;
+  }
+
+  // context for adjusting the pay
+  PayAdjustmentContext pay_adjustment_context = 2;
+
+  /* (Optional) shift id for adjusting the pay
+   * This can be used temporarily as an easy way of recalculating pay for
+   * a given (delivery, shift), since this endpoint is already hooked to Bulk UI
+   */
+  google.protobuf.Int64Value shift_id = 3;
+  // to indicate is this request if for an unassigned delivery
+  google.protobuf.BoolValue is_unassign = 4;
+  // task group id for adjusting the pay
+  google.protobuf.StringValue task_group_id = 5;
+}
+
+// Response after handling the dasher pay adjustment.
+message HandleDasherPayAdjustmentResponse {
+  // success flag
+  bool success = 1;
+
+  // A developer-facing human-readable error message in English.
+  // It should explain the error and offer an actionable resolution to it.
+  google.protobuf.StringValue error_message = 2;
+
+  // A simple error code that can be easily handled by the client.
+  // The actual error code is defined by `google.rpc.Code`.
+  google.protobuf.Int32Value error_code = 3;
+}
+
+message Shift {
+  // shift id
+  int64 id = 1;
+
+  // total_pay
+  money.MonetaryFields total_pay_monetary_fields = 2;
+  // reimbusement amount
+  money.MonetaryFields reimbursement_amount_monetary_fields = 3;
+  // amount deducted
+  money.MonetaryFields amount_deducted_monetary_fields = 4;
+  // cash withholding
+  money.MonetaryFields cash_withholding_monetary_fields = 5;
+  // cash advance
+  money.MonetaryFields cash_advance_monetary_fields = 6;
+  // rate_per_delivery
+  money.MonetaryFields rate_per_delivery_monetary_fields = 7;
+  // extra_amount_owed
+  money.MonetaryFields extra_amount_owed_monetary_fields = 8;
+  // pending_post_tips_delivery_pay
+  money.MonetaryFields pending_post_tips_delivery_pay_monetary_fields = 9;
+  // delivery_pay
+  money.MonetaryFields delivery_pay_monetary_fields = 10;
+  // tip amount
+  money.MonetaryFields tip_amount_monetary_fields = 11;
+  // boost pay
+  money.MonetaryFields boost_pay_monetary_fields = 12;
+
+  // scheduled start time
+  google.protobuf.Timestamp scheduled_start_time = 13;
+  // scheduled end time
+  google.protobuf.Timestamp scheduled_end_time = 14;
+  // check in time
+  google.protobuf.Timestamp check_in_time = 15;
+  // check out time
+  google.protobuf.Timestamp check_out_time = 16;
+
+  // shift starting point
+  int64 starting_point_id = 17;
+
+  // is_on_dynamic_pay_model
+  bool is_on_dynamic_pay_model = 18;
+  // has_pre_tippable_deliveries
+  bool has_pre_tippable_deliveries = 19;
+
+  // num deliveries for shift
+  int32 num_deliveries = 20;
+  // active time in seconds
+  float total_active_time = 21;
+
+  // doordash_delivery_pay
+  money.MonetaryFields doordash_delivery_pay_monetary_fields = 22;
+  // doordash tip amount
+  money.MonetaryFields doordash_tip_amount_monetary_fields = 23;
+  // dashlink_delivery_pay
+  money.MonetaryFields dashlink_delivery_pay_monetary_fields = 24;
+  // dashlink tip amount
+  money.MonetaryFields dashlink_tip_amount_monetary_fields = 25;
+
+  // close out time
+  google.protobuf.Timestamp close_out_time = 26;
+}
+
+message Job {
+  // job id
+  int64 id = 1;
+  // total pay
+  money.MonetaryFields total_pay_monetary_fields = 2;
+  // job reason
+  google.protobuf.StringValue reason = 3;
+  // job description
+  google.protobuf.StringValue description = 4;
+  // created at
+  google.protobuf.Timestamp created_at = 5;
+  // completed at
+  google.protobuf.Timestamp completed_at = 6;
+  // tag enum for additional details
+  repeated JobTags job_tags = 7;
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 8;
+  // task group id
+  google.protobuf.StringValue task_group_id = 9;
+  // job metadata
+  JobMetadata job_metadata = 10;
+}
+
+message JobMetadata {
+  // delivery business name
+  google.protobuf.StringValue task_business_name = 1;
+}
+
+// JobTags enumerates the different conditions, statuses that can be applied to a dasher job
+enum JobTags {
+  // Default unspecified value
+  JOB_TAGS_UNSPECIFIED = 0;
+
+  // Indicates that the delivery was unassigned
+  JOB_TAGS_FOR_UNASSIGNED_DELIVERY = 1; // Added prefix
+}
+
+message WeekOverview {
+  message InfoAction {
+    // action text
+    google.protobuf.StringValue text = 1;
+    // action link
+    google.protobuf.StringValue link = 2;
+  }
+
+  message Info {
+    // info title
+    google.protobuf.StringValue title = 1;
+    // info body, list of strings
+    repeated string body = 2;
+    // action
+    InfoAction action = 3;
+  }
+
+  message CTAInfo {
+    // call to action text
+    google.protobuf.StringValue text = 1;
+    // call to action type
+    google.protobuf.StringValue type = 2;
+    // call to action action
+    InfoAction action = 3;
+  }
+
+  // DAT in seconds
+  google.protobuf.Int32Value active_time = 1;
+  // number of deliveries
+  google.protobuf.Int32Value deliveries = 2;
+  // total shift time in seconds
+  google.protobuf.Int32Value dash_time = 3;
+
+  // customer tip
+  money.MonetaryFields customer_tip_monetary_fields = 4;
+  // total pay
+  money.MonetaryFields week_total_pay_monetary_fields = 5;
+  // earnings adjustment
+  money.MonetaryFields earnings_adjustment_monetary_fields = 6;
+  // other pay
+  money.MonetaryFields other_pay_monetary_fields = 7;
+  // doordash pay
+  money.MonetaryFields doordash_pay_monetary_fields = 8;
+
+  // doordash pay info
+  Info doordash_pay_info = 9;
+  // earnings adjustment info
+  Info earnings_adjustment_info = 10;
+  // other pay info
+  Info other_pay_info = 11;
+  // earnings adjustment call to action
+  CTAInfo earnings_adjustment_cta = 12;
+  // doordash pay which doesn't count dashlink pay
+  money.MonetaryFields doordash_pay_without_dashlink_monetary_fields = 13;
+  // doordash customer tip
+  money.MonetaryFields doordash_customer_tip_monetary_fields = 14;
+  // dashlink pay
+  money.MonetaryFields dashlink_pay_monetary_fields = 15;
+  // dashlink customer tip
+  money.MonetaryFields dashlink_customer_tip_monetary_fields = 16;
+  // dashlink pay info
+  Info dashlink_pay_info = 17;
+  // number of task groups
+  google.protobuf.Int32Value task_groups = 18;
+}
+
+// GetAggregatedHourlyPayBySubmarketIdRequest
+message GetAggregatedHourlyPayBySubmarketIdRequest {
+  // submarket id
+  google.protobuf.StringValue submarket_id = 1;
+
+  // market id
+  google.protobuf.StringValue market_id = 2;
+
+  // target date - retrieves the hourly pay range that is inclusive of this date
+  google.protobuf.Timestamp target_date = 3;
+}
+
+// aggregated hourly pay
+message AggregratedHourlyPay {
+  // monetary fields for hourly pay
+  money.MonetaryFields hourly_pay_monetary_fields = 1;
+
+  // submarket id
+  google.protobuf.StringValue submarket_id = 2;
+
+  // market id
+  google.protobuf.StringValue market_id = 3;
+
+  // start date for pay range
+  google.protobuf.Timestamp range_start_date = 4;
+
+  // end date for pay range
+  google.protobuf.Timestamp range_end_date = 5;
+}
+
+// GetAggregatedHourlyPayBySubmarketIdResponse
+message GetAggregatedHourlyPayBySubmarketIdResponse {
+  // aggregated hourly pay
+  repeated AggregratedHourlyPay aggregrated_hourly_pay = 1;
+}
+
+// StaticGetShiftMetadataRequest, for shift_id
+message GetStaticShiftMetadataRequest {
+  // shift id of requested metadata
+  int64 shift_id = 1;
+}
+
+// Static Shift metadata -- fields that aren't changed frequently
+message StaticShiftMetadata {
+  // shift_id
+  int64 id = 1;
+  // time mode status of shift, determined at shift check-in
+  google.protobuf.BoolValue is_time_mode = 2;
+  // dasher_id is immutable and set at creation
+  int64 dasher_id = 3;
+}
+
+// GetStaticShiftMetadataResponse
+message GetStaticShiftMetadataResponse {
+  // shift_metadata -- see above definition
+  StaticShiftMetadata shift_metadata = 1;
+}

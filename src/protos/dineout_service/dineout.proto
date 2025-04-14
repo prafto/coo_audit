@@ -1,0 +1,1875 @@
+syntax = "proto3";
+
+package dineout_service.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "component-catalog.cx/promo/badge.proto";
+import "dineout_service/common.proto";
+import "dineout_service/display_module.proto";
+import "dineout_service/order.proto";
+import "dineout_service/reward.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/store_page.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dineout_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dineout";
+
+// Service for all Dine Out related logic
+service DineOutService {
+  option (doordash.api.service) = {
+    url: "dineout-service-web.service.prod.ddsd"
+    name: "dineout-service"
+    port: 50051
+    name_spaces: ["dine_out"]
+    owner: {
+      id: "dineout"
+      name: "dine-out"
+      slack_channel: "#eng-instore"
+      email_alias: "verano-eng@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "dd-client-ip"}]
+  };
+
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // List all rewards including always on and hero deals
+  rpc ListRewards(ListRewardsRequest) returns (ListRewardsResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/rewards"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  // Returns a lightweight mosaic layout + additional values to
+  // display rewards and map pins on the DineOut dashboard
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/dashboard"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Returns the mosaic layout for the My Stuff page
+  rpc GetMyStuff(GetMyStuffRequest) returns (GetMyStuffResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/my-stuff/tab/{tab_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Create a reward resource and mark it as claimed
+  rpc ClaimRewardV2(ClaimRewardV2Request) returns (ClaimRewardV2Response) {
+    option (google.api.http) = {
+      post: "/dine_out/v2/rewards"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Create a reward resource and mark it as claimed
+  rpc ClaimRewardV3(ClaimRewardV3Request) returns (ClaimRewardV3Response) {
+    option (google.api.http) = {
+      post: "/dine_out/v3/rewards"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Purchase a reward resource and mark it as claimed
+  rpc PurchaseReward(PurchaseRewardRequest) returns (PurchaseRewardResponse) {
+    option (google.api.http) = {
+      post: "/dine_out/v2/rewards/{id}/purchase"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEPRECATED
+      authorization: [CX_USER]
+    };
+  }
+
+  // In V2, redemptions can occur by checking in at the store to get credit (v1),
+  // showing a digital coupon to the staff, or uploading a receipt of their purchase at the store to get credit
+  rpc RedeemRewardV2(RedeemRewardV2Request) returns (RedeemRewardV2Response) {
+    option (google.api.http) = {
+      post: "/dine_out/v2/rewards/{id}/redeem"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Redeem a reward to get a discount applied on your in person order
+  // V3 API returns the full reward details display module so we can control transitions from the BE
+  rpc RedeemRewardV3(RedeemRewardV3Request) returns (RedeemRewardV3Response) {
+    option (google.api.http) = {
+      post: "/dine_out/v3/rewards/{id}/redeem"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Create reminder for an upcoming dine out reward
+  rpc CreateReminderForReward(CreateReminderForRewardRequest) returns (CreateReminderForRewardResponse) {
+    option (google.api.http) = {
+      post: "/dine_out/v1/reminders"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEPRECATED
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Create reminder for an upcoming dine out reward
+  rpc CreateReminderForRewardV2(CreateReminderForRewardV2Request) returns (CreateReminderForRewardV2Response) {
+    option (google.api.http) = {
+      post: "/dine_out/v2/reminders"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Delete a reward
+  rpc DeleteReward(DeleteRewardRequest) returns (DeleteRewardResponse) {
+    option (google.api.http) = {delete: "/dine_out/v1/rewards/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+  }
+
+  // Delete a reward using Cx ID + reward UUID (from rewards CRDB table)
+  rpc DeleteRewardV2(DeleteRewardV2Request) returns (DeleteRewardV2Response);
+
+  // Delete a reward using Cx ID + EITHER (reward UUID or base64 precursor reward ID)
+  rpc DeleteRewardV3(DeleteRewardV3Request) returns (DeleteRewardV3Response);
+
+  // Delete a reminder for a dine out reward
+  rpc DeleteReminderForReward(DeleteReminderForRewardRequest) returns (DeleteReminderForRewardResponse) {
+    option (google.api.http) = {delete: "/dine_out/v1/reminders/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+  }
+
+  // Get details for a dine out reward
+  rpc GetReward(GetRewardRequest) returns (GetRewardResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/rewards/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Get details for a dine out reward with support for glowup
+  rpc GetRewardV2(GetRewardV2Request) returns (GetRewardV2Response) {
+    option (google.api.http) = {get: "/dine_out/v2/rewards/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Get a consumer's valid rewards for a store
+  rpc GetQualifiedRewards(GetQualifiedRewardsRequest) returns (GetQualifiedRewardsResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/rewards/qualified/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Create a dineout order for an instore payment
+  rpc CreateOrderFromDineoutTab(CreateOrderFromDineoutTabRequest) returns (CreateOrderFromDineoutTabResponse) {
+    option (google.api.http) = {
+      post: "/dine_out/v1/orders"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // GetDineOutHomePageCarouselData returns the necessary data bindings to contructs a Dine Out home page carousel
+  //
+  // NOTE: Even though this is a get endpoint, this endpoint increment a counter to track the number of visits to this page
+  // This is done to help calculate the ConsumerStatus based on the number of visits
+  // This is called by Feed Service
+  rpc GetDineOutHomePageCarousel(GetDineOutHomePageCarouselRequest) returns (GetDineOutHomePageCarouselResponse) {}
+
+  // Create a dineout refund for an instore payment
+  rpc RefundDineoutOrder(RefundDineoutOrderRequest) returns (RefundDineoutOrderResponse) {}
+
+  // Create a dineout refund for an instore payment using CnR instead of mx-mobile-bff
+  rpc RefundDineoutOrderV2(RefundDineoutOrderV2Request) returns (RefundDineoutOrderV2Response) {}
+
+  // getAnnouncements endpoint that retrieves any announcements to show the Cx
+  // e.g. Full Screen FTUX experience
+  rpc GetAnnouncementsV1(GetAnnouncementsV1Request) returns (GetAnnouncementsV1Response) {
+    option (google.api.http) = {get: "/dine_out/v1/announcements"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // GetFilter endpoint retrieves the mosaic layout for the filter sheet
+  rpc GetFilter(GetFilterRequest) returns (GetFilterResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/filter"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // getEyebrow endpoint that retrieves the eyebrow to show the Cx (couldn't rename Eyebrow to GetEyebrowResponse)
+  rpc GetEyebrow(GetEyebrowRequest) returns (GetEyebrowResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/eyebrow"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Update or insert merchant extended data in CRDB table
+  rpc UpsertMerchantExtendedData(UpsertMerchantExtendedDataRequest) returns (UpsertMerchantExtendedDataResponse) {}
+
+  // Delete merchant extended data by id from CRDB table
+  rpc DeleteMerchantExtendedData(DeleteMerchantExtendedDataRequest) returns (DeleteMerchantExtendedDataResponse) {}
+
+  // Update or insert campaign in CRDB table
+  rpc UpsertCampaign(UpsertCampaignRequest) returns (UpsertCampaignResponse) {}
+
+  // GetMerchantDetails returns the mosaic layout for our mx detail pages (replaces getRewardV2)
+  rpc GetMerchantDetails(GetMerchantDetailsRequest) returns (GetMerchantDetailsResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/merchant/details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // GetCheckin returns the mosaic layout for checkin half sheet
+  rpc GetCheckin(GetCheckinRequest) returns (GetCheckinResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/merchant/checkin"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Checkin for an dine in activity (with or without a reward to redeem)
+  rpc SubmitCheckin(SubmitCheckinRequest) returns (SubmitCheckinResponse) {
+    option (google.api.http) = {
+      post: "/dine_out/v1/merchant/checkin"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Fetches the active check etails on the matching POS device
+  rpc FetchPosOrder(FetchPosOrderRequest) returns (FetchPosOrderResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/orders"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Fetches the active check etails on the matching POS device
+  rpc PayPosOrder(PayPosOrderRequest) returns (PayPosOrderResponse) {}
+
+  // Final updates to the order, including payment, reward redemption, etc.
+  rpc CloseDineoutOrder(CloseDineoutOrderRequest) returns (CloseDineoutOrderResponse) {}
+
+  // Takes in search parameters and returns search results
+  rpc GetSearchResults(GetSearchResultsRequest) returns (GetSearchResultsResponse) {
+    option (google.api.http) = {get: "/dine_out/v1/search"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Migrates GO redemptions to Store Rewards points
+  // NOTE: This will only be called by Verano eng to migrate GO redemptions to Store Rewards points
+  rpc MigrateDineoutRedemptionsToStoreRewards(MigrateDineoutRedemptionsToStoreRewardsRequest) returns (MigrateDineoutRedemptionsToStoreRewardsResponse) {}
+
+  // Returns marketplace store page information relevant to Going Out
+  // From GO on Store project: https://docs.google.com/document/d/1uMdtLcKKSuWFPIUayOrDqZrHDYBtpojpfrxuft28UMY/edit?tab=t.4mflb5faf6bf#heading=h.23n7nyy6uq0z
+  rpc GetDineoutStorePage(GetDineoutStorePageRequest) returns (GetDineoutStorePageResponse) {}
+}
+
+// Use this to access common Unified Gateway injected fields that we need across most of our UG APIs
+message CommonInjectedFields {
+  // consumer_id from UG injection
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // device lat from UG injection
+  double device_lat = 2 [(doordash.api.inject) = {
+    field: "cx_geo_lat",
+    injection_rule: {cast_type: "double"}
+  }];
+
+  // device lng from UG injection
+  double device_lng = 3 [(doordash.api.inject) = {
+    field: "cx_geo_lng",
+    injection_rule: {cast_type: "double"}
+  }];
+
+  // cx submarket_id from UG injection
+  int64 submarket_id = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+
+  // cx timezone from UG injection
+  google.protobuf.StringValue cx_time_zone = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.timezone",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {field: "cx_geo_time_zone"}
+  ];
+}
+
+// Get Rewards info
+message ListRewardsRequest {
+  // Lat of device location. Used for proximity sorting of rewards.
+  google.protobuf.DoubleValue lat = 1;
+
+  // Lng of device location.  Used for proximity sorting of rewards.
+  google.protobuf.DoubleValue lng = 2;
+
+  // Optional: Filter by this state (Jeff: Currently unused as of 2023-11-08)
+  dineout_service.v1.Reward.RewardState state = 3;
+
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.au5o3cx5nn5y
+  // Eventually we'll deprecate this on the BE and always assume true
+  google.protobuf.BoolValue enable_business_level_deals = 4;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 5;
+}
+
+// Rewards response
+message ListRewardsResponse {
+  // list of always on rewards
+  repeated dineout_service.v1.Reward rewards = 1;
+
+  // list of hero rewards
+  repeated dineout_service.v1.Reward hero_rewards = 2;
+
+  // Content for reward lists
+  RewardListsContent content = 3;
+}
+
+// Get Dashboard Request
+message GetDashboardRequest {
+  // Lat of device location. Used for proximity sorting of rewards.
+  double lat = 1;
+
+  // Lng of device location.  Used for proximity sorting of rewards.
+  double lng = 2;
+
+  // Tab to filter rewards on, ex: deals, prix-fixe, etc.
+  google.protobuf.StringValue tab = 3;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 4;
+
+  // DEPRECATED please use the sort field in the filter_query
+  SortingMethod sort = 5;
+
+  // Optional. Filter deals based on the following criteria
+  FilterQuery filter_query = 6;
+
+  // Map bounding box of the viewport
+  MapBoundingBox map_bounding_box = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Sorting methods for everyday rewards, defaults to our ranker algorithm
+  enum SortingMethod {
+    // Default sort by ranker algorithm
+    SORTING_METHOD_RANKER_UNSPECIFIED = 0;
+
+    // Sort by distance
+    SORTING_METHOD_DISTANCE = 1;
+  }
+
+  // Optional filters to be applied on rewards in the dashboard
+  message FilterQuery {
+    // Optional. Filters deals based on current store availability
+    google.protobuf.BoolValue open_now = 1;
+
+    // Optional. Filter deals whose business tags match any of the cuisine types in the list
+    // e.g. ["Italian", "Mexican"]
+    repeated string cuisine = 2;
+
+    // Optional. Filter deals whose stores match any of the selected price ranges
+    // list of ints (1 -> 4), e.g. [1, 2, 3, 4] = [$, $$, $$$, $$$$]
+    repeated int32 price = 3;
+
+    // Optional. Sorting method for rewards, either distance or "best" according to Ranker algorithm
+    SortingMethod sort = 4;
+
+    // Optional. Filters deals based on if they have 0 minumum spend
+    google.protobuf.BoolValue no_min_spend = 5;
+
+    // Optional. search query. e.g. pizza
+    string query = 6;
+
+    // Optional. Filters deals based tag defining them as newly added
+    google.protobuf.BoolValue new_deals = 7;
+  }
+
+  // Bounding box of a map viewport
+  message MapBoundingBox {
+    // Latitude of the northern bound
+    google.protobuf.DoubleValue north = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+    // Latitude of the southern bound
+    google.protobuf.DoubleValue south = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+    // Longitude of the western bound
+    google.protobuf.DoubleValue west = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+    // Longitude of the eastern bound
+    google.protobuf.DoubleValue east = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  }
+}
+
+// Get Dashboard Response
+message GetDashboardResponse {
+  // Header of the dashboard page
+  Header header = 1;
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 2;
+  // map pins to be displayed on the map
+  repeated MapPin map_pins = 3;
+  // rewards to be displayed on the dashboard
+  repeated RewardV2 rewards = 4;
+  // banner at the top of the map
+  MapBanner map_banner = 5;
+  // eyebrow to display on dashboard feed
+  Eyebrow eyebrow = 6;
+}
+
+// Get My Stuff Request
+message GetMyStuffRequest {
+  // Tab to filter on, ex: ready-to-use, past
+  string tab_id = 1;
+  // Optional device lat to sort rewards by proximity
+  google.protobuf.DoubleValue lat = 2;
+  // Optional device lng to sort rewards by proximity
+  google.protobuf.DoubleValue lng = 3;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 4;
+}
+
+// Get My Stuff Response
+message GetMyStuffResponse {
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 1;
+}
+
+// Claim Reward
+message ClaimRewardRequest {
+  // Campaign id
+  string campaign_id = 1;
+
+  // Store id
+  int64 store_id = 2;
+}
+
+// Claim Reward response
+message ClaimRewardResponse {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Claim Reward V2 request
+message ClaimRewardV2Request {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+
+  // Device location lat. MUST be device location, should NOT use address location.
+  double device_lat = 2;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  double device_lng = 3;
+
+  // Time window for redeeming a reward, required for SCHEDULED redemption method
+  dineout_service.v1.RedeemTimeWindow redeem_window = 4;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 5;
+}
+
+// Claim Reward V2 response
+message ClaimRewardV2Response {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Claim Reward V3 request
+message ClaimRewardV3Request {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+
+  // Device location lat. MUST be device location, should NOT use address location.
+  double device_lat = 2;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  double device_lng = 3;
+
+  // Time window for redeeming a reward, required for SCHEDULED redemption method
+  dineout_service.v1.RedeemTimeWindow redeem_window = 4;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 5;
+}
+
+// Claim Reward V3 response
+message ClaimRewardV3Response {
+  // Header content (such as store images)
+  repeated dineout_service.v1.DisplayModule header = 1;
+
+  // Body content (Deal details, store details, etc.)
+  repeated dineout_service.v1.DisplayModule body = 2;
+
+  // Footer content (CTA)
+  repeated dineout_service.v1.DisplayModule footer = 3;
+
+  // Reward
+  dineout_service.v1.Reward reward = 4;
+}
+
+// Redeem Reward
+message RedeemRewardRequest {
+  // Reward id
+  string id = 1;
+
+  // Device location lat. MUST be device location, should NOT use address location.
+  double device_lat = 2;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  double device_lng = 3;
+}
+
+// Redeem Reward V2
+message RedeemRewardV2Request {
+  // Reward id
+  string id = 1;
+
+  // Redemption method
+  dineout_service.v1.RedemptionMethod redemption_method = 2;
+
+  // Params for check in redemption
+  CheckInRedemptionParams check_in_params = 3;
+
+  // Params for coupon redemption
+  CouponRedemptionParams coupon_params = 4;
+
+  // Params for receipt redemption
+  ReceiptRedemptionParams receipt_params = 5;
+
+  // Params for Pay 2 Redeem redemption
+  PayRedemptionParams pay_params = 6;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 7;
+}
+
+// Redeem Reward V3 request
+message RedeemRewardV3Request {
+  // Reward id
+  string id = 1;
+
+  // Redemption method
+  dineout_service.v1.RedemptionMethod redemption_method = 2;
+
+  // Params for check in redemption
+  CheckInRedemptionParams check_in_params = 3;
+
+  // Params for coupon redemption
+  CouponRedemptionParams coupon_params = 4;
+
+  // Params for receipt redemption
+  ReceiptRedemptionParams receipt_params = 5;
+
+  // Params for Pay 2 Redeem redemption
+  PayRedemptionParams pay_params = 6;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 7;
+}
+
+// Redeem Reward V3 response
+message RedeemRewardV3Response {
+  // Header content (such as store images)
+  repeated dineout_service.v1.DisplayModule header = 1;
+
+  // Body content (Deal details, store details, etc.)
+  repeated dineout_service.v1.DisplayModule body = 2;
+
+  // Footer content (CTA)
+  repeated dineout_service.v1.DisplayModule footer = 3;
+
+  // Reward
+  dineout_service.v1.Reward reward = 4;
+}
+
+// Purchase Reward request
+message PurchaseRewardRequest {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+
+  // payment method id for credit/debit paymenyt methods
+  google.protobuf.StringValue payment_method_id = 2;
+
+  // payment method token for digital payment methods (Apple pay)
+  google.protobuf.StringValue payment_method_token = 3;
+}
+
+// Purchase Reward response
+message PurchaseRewardResponse {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Params for Check In redemption method
+message CheckInRedemptionParams {
+  // Device location lat. MUST be device location, should NOT use address location.
+  double device_lat = 1;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  double device_lng = 2;
+}
+
+// Params for Coupon redemption method
+message CouponRedemptionParams {
+  // Device location lat. MUST be device location, should NOT use address location.
+  double device_lat = 1;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  double device_lng = 2;
+}
+
+// Params for Receipt redemption method
+message ReceiptRedemptionParams {
+  // Receipt. Base64 encoded version of the image file
+  bytes data = 1;
+
+  // MIME Type, e.g. image/jpeg
+  string type = 2;
+
+  // Device location lat. MUST be device location, should NOT use address location.
+  // Leaving as optional in case in store redemption not required
+  google.protobuf.DoubleValue device_lat = 3;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  // Leaving as optional in case in store redemption not required
+  google.protobuf.DoubleValue device_lng = 4;
+}
+
+// Params for Pay 2 Redeem redemptions
+message PayRedemptionParams {
+  // order_uuid for Pay 2 Redeem order
+  string order_uuid = 1;
+}
+
+// Redeem Reward response
+message RedeemRewardResponse {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Redeem Reward V2 response
+message RedeemRewardV2Response {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Create Reminder
+message CreateReminderForRewardRequest {
+  // Campaign id. Used to uniquely identify a reward.
+  string campaign_id = 1;
+
+  // Store id. Used to uniquely identify a reward.
+  string store_id = 2;
+}
+
+// Create Reminder Response
+message CreateReminderForRewardResponse {
+  // Details about a reward reminder
+  dineout_service.v1.RewardReminder reward_reminder = 1;
+}
+
+// Create Reminder V2
+message CreateReminderForRewardV2Request {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+}
+
+// Create Reminder Response V2
+message CreateReminderForRewardV2Response {
+  // Details about a reward reminder
+  dineout_service.v1.RewardReminder reward_reminder = 1;
+}
+
+// Delete Reward
+message DeleteRewardRequest {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+}
+
+// Delete Reward Response
+message DeleteRewardResponse {
+  // status of deletion
+  string status = 1;
+}
+
+// Delete Reward v2
+message DeleteRewardV2Request {
+  // Reward uuid (crdb uuid)
+  string reward_uuid = 1;
+  // Consumer id
+  string consumer_id = 2;
+}
+
+// Delete Reward v2 Response
+message DeleteRewardV2Response {
+  // status of deletion
+  string status = 1;
+}
+
+// Delete Reward v3 Request
+message DeleteRewardV3Request {
+  // Consumer id
+  string consumer_id = 1;
+
+  // Choose either precursor_id or uuid
+  oneof reward_id {
+    // Reward precursor ID (base64 encoded)
+    string precursor_id = 2;
+    // Reward uuid (crdb uuid)
+    string uuid = 3;
+  }
+}
+
+// Delete Reward v3 Response
+message DeleteRewardV3Response {
+  // status of deletion
+  string status = 1;
+}
+
+// Delete Reminder
+message DeleteReminderForRewardRequest {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+}
+
+// Delete Reminder For Reward Response
+message DeleteReminderForRewardResponse {
+  // status of deletion
+  string status = 1;
+}
+
+// Get Reward
+message GetRewardRequest {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+}
+
+// Get Reward response
+message GetRewardResponse {
+  // Reward
+  dineout_service.v1.Reward reward = 1;
+}
+
+// Get Reward V2
+message GetRewardV2Request {
+  // This is the precursor reward id
+  // See https://docs.google.com/document/d/1fPJBro5Zf8aaVR6h0jzrzynr4ouSHwh28BayYFMDZcA/edit#bookmark=id.cyj6ruf2pnnu
+  string id = 1;
+
+  // lat of the user's location (device or address)
+  double lat = 2;
+
+  // lng of the user's location (device or address)
+  double lng = 3;
+
+  // ID of the store linked to the reward
+  google.protobuf.StringValue store_id = 4;
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 5;
+}
+
+// Get Reward V2 response
+message GetRewardV2Response {
+  // Header content (such as store images)
+  repeated dineout_service.v1.DisplayModule header = 1;
+
+  // Body content (Deal details, store details, etc.)
+  repeated dineout_service.v1.DisplayModule body = 2;
+
+  // Footer content (CTA)
+  repeated dineout_service.v1.DisplayModule footer = 3;
+
+  // Reward
+  dineout_service.v1.Reward reward = 4;
+}
+
+// Get Reward
+message GetQualifiedRewardsRequest {
+  // Store ID of the store to get rewards for
+  string store_id = 1;
+  // User_id for the cx to get rewards for
+  google.protobuf.StringValue user_id = 2;
+}
+
+// Get Reward response
+message GetQualifiedRewardsResponse {
+  // Rewards
+  repeated dineout_service.v1.Reward rewards = 1;
+}
+
+// Additional information for reward sections
+message RewardListsContent {
+  // Text content for reward sections
+  message RewardListContent {
+    // Text content to appear as the reward section title
+    google.protobuf.StringValue title = 1;
+
+    // Text content to appear as the reward section subtitle
+    google.protobuf.StringValue subtitle = 2;
+  }
+
+  // Text content to appear as the reward section title
+  RewardListContent hero_rewards = 1;
+
+  // Text content to appear as the reward section subtitle
+  RewardListContent rewards = 2;
+}
+
+// Create dineout order request
+message CreateOrderFromDineoutTabRequest {
+  reserved 12;
+  reserved "order_fees";
+
+  // MDS store_id
+  google.protobuf.StringValue store_id = 1;
+
+  // Stripe token for apple pay
+  google.protobuf.StringValue stripe_token = 2;
+
+  // Payment method for non-apple pay
+  // leading . is intentional so that we don't use the relative path common.proto file
+  .common.PaymentMethod payment_method = 3;
+
+  // Client context
+  // leading . is intentional so that we don't use the relative path common.proto file
+  .common.ClientDeviceCtx request_ctx = 4;
+
+  // User locale
+  google.protobuf.StringValue locale = 5;
+
+  // Tip amounts for in person order
+  repeated money.TipAmount tip_amounts = 6;
+
+  // is payment with credit card
+  google.protobuf.BoolValue is_card_payment = 7;
+
+  // Transaction level fraud data from client side providers
+  money.ClientFraudContext client_fraud_context = 8;
+
+  // Tab total for in person order
+  money.MonetaryFields tab_total = 9;
+
+  /*
+   * Pay V2 (Project Bagel fields):
+   */
+
+  // Subtotal from POS
+  money.MonetaryFields subtotal = 10;
+
+  // POS tax calculation
+  money.MonetaryFields tax = 11;
+
+  // POS order fees
+  repeated dineout_service.v1.PosOrderFee pos_order_fees = 13;
+
+  // POS order id
+  google.protobuf.StringValue pos_order_id = 14;
+
+  // POS check id
+  google.protobuf.StringValue pos_check_id = 15;
+
+  // POS provider id (i.e. toast)
+  dineout_service.v1.PosProvider pos_provider_id = 16;
+
+  // POS order items
+  repeated dineout_service.v1.PosOrderItem pos_order_items = 17;
+
+  // Precursor id of the reward selected by Cx
+  google.protobuf.StringValue reward_id = 18;
+
+  // Total before tip, i.e. subtotal + fees + tax - discount
+  money.MonetaryFields total_before_tip = 19;
+
+  // Grand total, i.e. subtotal + fees + tax - discount + tip
+  money.MonetaryFields grand_total = 20;
+}
+
+// Create dineout order response
+message CreateOrderFromDineoutTabResponse {
+  // order_uuid for created order
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+// Text header with title and subtitle
+message Header {
+  // Title of the header
+  string title = 1;
+
+  // Subtitle of the header
+  google.protobuf.StringValue subtitle = 2;
+}
+
+// Banner at the top of the map
+message MapBanner {
+  // banner message
+  string message = 1;
+}
+
+// Lightweight reward details for the dashboard
+message RewardV2 {
+  // precursor reward id
+  string id = 1;
+  // state of the reward
+  dineout_service.v1.Reward.RewardState state = 2;
+  // timestamp of when the reward is redeemed
+  google.protobuf.Timestamp redeemed_at = 3;
+}
+
+// Request for Dine Out's Home Page Carousel
+message GetDineOutHomePageCarouselRequest {
+  // lat of physical device that the user is at
+  google.protobuf.DoubleValue lat = 1;
+
+  // long of physical device that the user is at
+  google.protobuf.DoubleValue lng = 2;
+
+  // Cx ID of the requestor
+  google.protobuf.StringValue consumer_id = 3;
+
+  // Submarket of the requestor
+  // NOTE: Technically we can get submarket from lat/lng but since feed already has this, we can avoid an extra data fetch.
+  google.protobuf.StringValue submarket_id = 4;
+
+  // client version of requestor
+  google.protobuf.StringValue client_version = 5;
+
+  // device display context from feed (screen width, height, etc.)
+  DeviceDisplayContext device_display_context = 6;
+}
+
+// Response for Dine Out's Home Page Carousel
+message GetDineOutHomePageCarouselResponse {
+  // ConsumerStatus is used to help convey the necessary information to vertically rank the dineout home page carousel in feed-service
+  ConsumerStatus consumer_status = 1;
+
+  // title is the title of this carousel
+  google.protobuf.StringValue title = 2;
+
+  // subtitle is the subtitle of this carousel
+  google.protobuf.StringValue subtitle = 3;
+
+  // action_url is the link to the Going Out dashboard page
+  google.protobuf.StringValue action_url = 4;
+
+  // reward_tiems contains the necessary information construct the horizontal scroll view of Dine Out rewards
+  repeated RewardItem reward_items = 5;
+
+  // Lego page for the homepage carousel in GO on Home V2.
+  // If set, the feed-service adapter will serialize this Lego page into the Mosaic Widget.
+  // If unset, the legacy Lego 1 carousel will be built using other fields in the response.
+  lego.response.v1.LegoPageResponse mosaic = 6;
+
+  // enum defining the status of the Cxs dine out interactions
+  enum ConsumerStatus {
+    // N/A
+    CONSUMER_STATUS_UNSPECIFIED = 0;
+
+    // Within 3 visits and not interacted with any reward,, rank carousel in position #1
+    CONSUMER_STATUS_NEVER_CLAIMED_HIGH_PRIORITY = 1;
+
+    // Within 3 - 9 visits and not interacted with any reward,, rank carousel between position #1 - 8
+    CONSUMER_STATUS_NEVER_CLAIMED_MEDIUM_PRIORITY = 2;
+
+    // After 9 visits and not interacted with any reward, just rank carousel normally
+    CONSUMER_STATUS_NEVER_CLAIMED_LOW_PRIORITY = 3;
+
+    // If the user has claimed 1+ rewards, rank carousel within top 3 positions
+    CONSUMER_STATUS_CLAIMED_BEFORE = 4;
+
+    // If the user has redeemed 1+ rewards, rank carousel within top 2 positions
+    CONSUMER_STATUS_REDEEMED_BEFORE = 5;
+  }
+
+  // represents a Reward to be shown in the carousel
+  message RewardItem {
+    // action_url is the link to the Going Out reward details page
+    google.protobuf.StringValue action_url = 1;
+
+    // store_name is the name of the store or business for where to redeem this deal
+    google.protobuf.StringValue store_name = 2;
+
+    // title is the primary text to use to convey the deal information
+    google.protobuf.StringValue title = 3;
+
+    // subtitle is the secondary text to use to convey the deal information
+    google.protobuf.StringValue subtitle = 4;
+
+    // rating_average is used to configure RatingView's rating value
+    google.protobuf.DoubleValue rating_average = 5;
+
+    // rating_count_display_string is used to configure RatingView's count
+    google.protobuf.StringValue rating_count_display_string = 6;
+
+    // image_url is the image to show in the cell
+    google.protobuf.StringValue image_url = 7;
+
+    // badges are the badges to set on square.card
+    // from https://github.com/doordash/services-protobuf/blob/ac2e5241960c15a091dfa394b793164083465468/protos/component-catalog.cx/promo/badge.proto#L12
+    repeated component_catalog.cx.promo.v1.Badge badges = 8;
+  }
+}
+
+// Refund Dineout order request
+message RefundDineoutOrderRequest {
+  // Delivery_uuid for order
+  string delivery_uuid = 1;
+  // User id for user asssociated with order
+  google.protobuf.StringValue user_id = 2;
+}
+
+// Refund Dineout order V2 request
+message RefundDineoutOrderV2Request {
+  // POS order id
+  google.protobuf.StringValue pos_order_id = 1;
+
+  // POS check id
+  google.protobuf.StringValue pos_check_id = 2;
+
+  // optional, will default to "Toast"
+  dineout_service.v1.PosProvider pos_provider = 3;
+}
+
+// Refund Dineout order response
+message RefundDineoutOrderResponse {
+  // Grand total to refund to cx
+  money.MonetaryFields grand_total = 1;
+}
+
+// Refund Dineout order V2 response
+message RefundDineoutOrderV2Response {
+  // is success
+  google.protobuf.BoolValue success = 1;
+}
+
+// Get Announcements V1 request
+message GetAnnouncementsV1Request {
+  // Caller source
+  enum Source {
+    // UNSPECIFIED
+    SOURCE_UNSPECIFIED = 0;
+    // Caller is dashboard
+    SOURCE_DASHBOARD = 1;
+    // Caller is deeplink handler
+    SOURCE_DEEPLINK = 2;
+  }
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // caller for fetching announcement so that we can
+  // always show when deeplinked but hide after X impressions
+  // when calling from dashboard
+  Source source = 2;
+}
+
+// Content type for fullscreen media
+message FullscreenVideoMedia {
+  // unique id for content
+  google.protobuf.StringValue id = 1;
+  // title to display on content
+  google.protobuf.StringValue title = 2;
+  // subtitle to display on content
+  google.protobuf.StringValue subtitle = 3;
+  // description to display on content
+  google.protobuf.StringValue description = 4;
+  // icon to display on content
+  google.protobuf.StringValue icon = 5;
+  // video url
+  google.protobuf.StringValue video_url = 6;
+  // cta button text
+  google.protobuf.StringValue cta_button_title = 7;
+  // url to redirect to when clicking cta
+  google.protobuf.StringValue cta_url = 8;
+}
+
+// Response with announcement data
+message GetAnnouncementsV1Response {
+  // Enum for different announcement types
+  enum AnnouncementType {
+    // UNSPECIFIED
+    ANNOUNCEMENT_TYPE_UNSPECIFIED = 0;
+
+    // The announcement type is for a full screen video
+    // This type points to MerchantAnnouncementResponse
+    ANNOUNCEMENT_TYPE_FULL_SCREEN_VIDEO_MEDIA = 1;
+  }
+
+  // AnnouncementType to return
+  AnnouncementType type = 1;
+
+  // content to display in announcement
+  oneof content {
+    // Full screen video content
+    FullscreenVideoMedia fullscreen_video_content = 2;
+  }
+}
+
+// request data for GetEyebrow
+message GetEyebrowRequest {
+  // enum for the source of the request
+  enum EyebrowRequestSource {
+    // unspecified source
+    EYEBROW_REQUEST_SOURCE_UNSPECIFIED = 0;
+    // eyebrow update request from claiming a reward
+    EYEBROW_REQUEST_SOURCE_CLAIM_REWARD = 1;
+    // eyebrow update request from redeeming a reward
+    EYEBROW_REQUEST_SOURCE_REDEEM_REWARD = 2;
+    // eyebrow update request from the dashboard
+    EYEBROW_REQUEST_SOURCE_DASHBOARD = 3;
+  }
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // the source of the request
+  EyebrowRequestSource source = 2;
+}
+
+// response for GetEyebrow (wrapped to allow for reusability with getDashboard)
+message GetEyebrowResponse {
+  // the eyebrow to display
+  Eyebrow eyebrow = 1;
+}
+
+// Response data for the Eyebrow (also embedded in GetDashboard)
+// Can't rename to GetEyebrowResponse as it's a breaking change, so duping below
+message Eyebrow {
+  // Add Id in here to power multiple eybrows in the futurew
+  google.protobuf.StringValue id = 1;
+
+  // Icon for the Eyebrow
+  google.protobuf.StringValue icon = 2;
+
+  // Text for the header, can include hyperlink
+  google.protobuf.StringValue markdown_text = 3;
+
+  // Action URL that client will use to redirect user when clicking eyebrow
+  google.protobuf.StringValue action_url = 4;
+
+  // Foreground color as a string (e.g. "USAGE_COLOR_TEXT_DEFAULT")
+  google.protobuf.StringValue foreground_color = 5;
+
+  // Background color as a string (.e.g "USAGE_COLOR_BACKGROUND_DEFAULT")
+  google.protobuf.StringValue background_color = 6;
+}
+
+// Get Filter request
+message GetFilterRequest {
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+  // id of the filter to get, e.g. "cuisine"
+  string id = 2;
+  // currently selected filter options for visual state, e.g. ["mexican", "italian"]
+  repeated string selected = 3;
+}
+
+// Get Filter response
+message GetFilterResponse {
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 1;
+}
+
+// Extended data for a business or store
+message MerchantExtendedData {
+  // business_id if the entity_type is business, store_id if the entity_type is store
+  string entity_id = 1;
+
+  // business or store
+  string entity_type = 2;
+
+  // list of image urls
+  repeated string image_urls = 3;
+
+  // neighborhood of the store
+  string neighborhood = 4;
+
+  // JSON format string containing payout metadata
+  google.protobuf.StringValue payout_metadata = 5;
+
+  // marketing fee unit amount. value in USD cents
+  google.protobuf.Int64Value marketing_fee_unit_amount = 6;
+}
+
+// Request for updating or inserting merchant extended data
+message UpsertMerchantExtendedDataRequest {
+  // merchant extended data
+  MerchantExtendedData data = 1;
+}
+
+// Response for updating or inserting merchant extended data
+message UpsertMerchantExtendedDataResponse {
+  // is success
+  bool success = 1;
+
+  // error message when failed
+  string message = 2;
+}
+
+// Request for deleting merchant extended data
+message DeleteMerchantExtendedDataRequest {
+  // business_id if the entity_type is business, store_id if the entity_type is store
+  string entity_id = 1;
+
+  // business or store
+  string entity_type = 2;
+}
+
+// Response for deleting merchant extended data
+message DeleteMerchantExtendedDataResponse {
+  // is success
+  bool success = 1;
+
+  // error message when failed
+  string message = 2;
+}
+
+// Request for updating or inserting a campaign in the database
+message UpsertCampaignRequest {
+  // The campaign to be updated or inserted
+  Campaign campaign = 1;
+}
+
+// Response for updating or inserting a campaign in the database
+message UpsertCampaignResponse {
+  // is success
+  bool success = 1;
+
+  // error message when failed
+  string message = 2;
+}
+
+// All fields for a campaign
+message Campaign {
+  // unique campaign id
+  google.protobuf.StringValue id = 1;
+
+  // start time of the campaign (when it becomes visible in app)
+  google.protobuf.Timestamp start_time = 2;
+
+  // end time of the campaign (when it stops being visible in app)
+  google.protobuf.Timestamp end_time = 3;
+
+  // type of the campaign (ALWAYS_ON, HERO, PACKAGE, etc.)
+  google.protobuf.StringValue type = 4;
+
+  // redemption method of the campaign (COUPON, PAY, etc.)
+  google.protobuf.StringValue redemption_method = 5;
+
+  // redemption level of the campaign (STORE, BUSINESS, etc.)
+  google.protobuf.StringValue redemption_level = 6;
+
+  // business ids associated with the campaign
+  repeated google.protobuf.StringValue business_ids = 7;
+
+  // store ids associated with the campaign
+  repeated google.protobuf.StringValue store_ids = 8;
+
+  // submarket id of the campaign
+  google.protobuf.StringValue submarket_id = 9;
+
+  // prerequisite campaign id
+  google.protobuf.StringValue prerequisite_campaign_id = 10;
+
+  // 3-letter currency code of the campaign
+  google.protobuf.StringValue currency = 11;
+
+  // marketing fee unit amount. value in USD cents
+  google.protobuf.Int64Value marketing_fee_unit_amount = 12;
+
+  // offer for coupon campaign (e.g. "$10 off", "Free Burrito")
+  google.protobuf.StringValue coupon_offer_display_string = 13;
+
+  // Value in cents for the minimum required spend before the coupon can be applied
+  google.protobuf.Int64Value subtotal_minimum_unit_amount = 14;
+
+  // freeform text subtitle under the coupon_offer. overrides subtotal_minimum_usd_cents above
+  google.protobuf.StringValue coupon_offer_subtitle_display_string = 15;
+
+  // JSON format mapping of start dates to promo codes used in the coupon offer
+  google.protobuf.StringValue promo_text = 16;
+
+  // id for the menu that contains packages. required if type is PACKAGE
+  google.protobuf.StringValue menu_id = 17;
+
+  // id for the item on the menu that defines a single package. required if type is PACKAGE
+  google.protobuf.StringValue item_id = 18;
+
+  // Freeform text that describes when a campaign is available to be used (e.g. "Weekdays, 3-6pm")
+  google.protobuf.StringValue redeem_window_availability = 19;
+
+  // If a deal can be used multiple times
+  google.protobuf.BoolValue recurring = 20;
+
+  // how many days until a deal is redeemable again
+  google.protobuf.Int64Value frequency = 21;
+
+  // vertical type, used to separate new types of deals
+  google.protobuf.StringValue vertical_type = 22;
+
+  // Value in cents for the amount to discount a user using Pay to Redeem
+  google.protobuf.Int64Value credit_unit_amount = 23;
+
+  // Maximum number of redemptions allowed for this campaign
+  google.protobuf.Int64Value redeem_limit = 24;
+
+  // Image on merchant detail pages for the campaign reward
+  google.protobuf.StringValue image_url = 25;
+
+  // JSON format string containing a list of prerequisite rules
+  google.protobuf.StringValue prerequisite_requirements = 26;
+
+  // If a deal is a test deal or not
+  google.protobuf.BoolValue is_test = 27;
+
+  // Value in cents for the DoorDash co-funding amount for this campaign
+  google.protobuf.Int64Value dd_cofund_unit_amount = 28;
+
+  // Start time of the campaign (non-utc). We automatically convert this to the local timezone for the store
+  // We use string here instead of timestamp so that we can support a flexible set of time values:
+  // "2025-01-29T09:45:00": recognized as 9:45am local time
+  // "2025-01-29": recognized as "2025-01-29T00:00:00" in local time
+  google.protobuf.StringValue start_time_local = 29;
+
+  // Start time of the campaign (non-utc). We automatically convert this to the local timezone for the store
+  // We use string here instead of timestamp so that we can support a flexible set of time values:
+  // "2025-01-29T09:45:00": recognized as 9:45am (local)
+  // "2025-01-29": If datetime not provided, we'll fallback to using store closing time on 1/29 (local)
+  google.protobuf.StringValue end_time_local = 30;
+}
+
+// Common response payload to render Merchant Details
+message MerchantDetails {
+  reserved 1;
+  reserved "header";
+  reserved 4;
+  reserved "header_images_list";
+
+  // Content for Share button
+  dineout_service.v1.ShareButton share_button = 2;
+
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 3;
+
+  // Header content (such as store images)
+  dineout_service.v1.MerchantHeader page_header = 5;
+}
+
+// Request for GetMerchantDetails
+message GetMerchantDetailsRequest {
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // MDS business_id
+  string business_id = 2;
+
+  // Optional MDS store_id (passed when selecting store via map pin)
+  google.protobuf.StringValue store_id = 3;
+
+  // Device location lat. MUST be device location, should NOT use address location. Optional.
+  google.protobuf.DoubleValue device_lat = 4;
+
+  // Device location lng. MUST be device location, should NOT use address location. Optional.
+  google.protobuf.DoubleValue device_lng = 5;
+}
+
+// Response for GetMerchantDetails
+message GetMerchantDetailsResponse {
+  // Data needed to render merchant details page
+  MerchantDetails merchant_details = 1;
+
+  // Flag indicating to the client to skip the check in step
+  // This allows us to auto-check the Cx in, such as in cases where there are no rewards to redeem
+  google.protobuf.BoolValue should_skip_check_in_step = 2;
+}
+
+// Request for GetCheckin
+message GetCheckinRequest {
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // MDS business_id
+  string business_id = 2;
+
+  // Optional MDS store_id (passed when selecting store via map pin)
+  google.protobuf.StringValue store_id = 3;
+
+  // Device location lat. MUST be device location, should NOT use address location.
+  // Required. Should show error if value is not provided.
+  google.protobuf.DoubleValue device_lat = 4;
+
+  // Device location lng. MUST be device location, should NOT use address location.
+  // Required. Should show error if value is not provided.
+  google.protobuf.DoubleValue device_lng = 5;
+}
+
+// Response for GetCheckin
+message GetCheckinResponse {
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 1;
+}
+
+// Request for Checkin
+message SubmitCheckinRequest {
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // MDS store_id
+  string store_id = 2;
+
+  // Optional precusor_id for reward to be redeemed with check-in
+  google.protobuf.StringValue reward_id = 3;
+
+  // Device location lat. MUST be device location, should NOT use address location. Optional.
+  // Required. Should show error if value is not provided.
+  google.protobuf.DoubleValue device_lat = 4;
+
+  // Device location lng. MUST be device location, should NOT use address location. Optional.
+  // Required. Should show error if value is not provided.
+  google.protobuf.DoubleValue device_lng = 5;
+}
+
+// Response for Checkin
+message SubmitCheckinResponse {
+  // Data needed to render merchant details page
+  MerchantDetails merchant_details = 1;
+}
+
+// Request for FetchPosOrder
+message FetchPosOrderRequest {
+  reserved 4;
+  reserved "reward_id";
+
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // Store id (MDS) for fetching order info
+  string store_id = 2;
+
+  // Device id for fetching order info from POS
+  string device_id = 3;
+
+  // Optional provider id (Toast, etc..)
+  dineout_service.v1.PosProvider provider = 5;
+
+  // Optional reward_id (precursor) for selected reward_id to be used for Pay
+  google.protobuf.StringValue selected_reward_id = 6;
+}
+
+// Response for FetchPosOrder
+message FetchPosOrderResponse {
+  // Pos orders
+  repeated dineout_service.v1.PosOrder pos_orders = 1;
+}
+
+// Request for PayPosOrder
+message PayPosOrderRequest {
+  // DD order uuid
+  google.protobuf.StringValue order_uuid = 1;
+
+  // payment_amount
+  money.MonetaryFields payment_amount = 2;
+
+  // tip_amount
+  money.MonetaryFields tip_amount = 3;
+
+  // check_discount_amount
+  money.MonetaryFields check_discount_amount = 4;
+}
+
+// Response for PayPosOrder
+message PayPosOrderResponse {
+  // payment_success
+  google.protobuf.BoolValue payment_success = 1;
+
+  // order_closed
+  google.protobuf.BoolValue order_closed = 2;
+}
+
+// Request for CloseDineoutOrder
+message CloseDineoutOrderRequest {
+  // DD order uuid
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+// Response for CloseDineoutOrder
+message CloseDineoutOrderResponse {
+  // is success
+  google.protobuf.BoolValue success = 1;
+}
+
+// Request for GetSearchResults
+message GetSearchResultsRequest {
+  // UG Injected fields
+  CommonInjectedFields common_injected_fields = 1;
+
+  // search parameters. today it's just e.g. "query": "tacos"
+  map<string, string> search_parameters = 2;
+}
+
+// Response for GetSearchResults
+message GetSearchResultsResponse {
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse mosaic = 1;
+}
+
+// Request for MigrateDineoutRedemptionsToStoreRewards
+message MigrateDineoutRedemptionsToStoreRewardsRequest {
+  // MDS business_id
+  string business_id = 1;
+  // MDS store_id
+  string store_id = 2;
+}
+
+// Response for MigrateDineoutRedemptionsToStoreRewards
+message MigrateDineoutRedemptionsToStoreRewardsResponse {
+  // is success
+  google.protobuf.BoolValue success = 1;
+  // error message when failed
+  google.protobuf.StringValue message = 2;
+}
+
+// Request for GetDineoutStorePage
+message GetDineoutStorePageRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+
+  // business id
+  google.protobuf.StringValue business_id = 2;
+
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+
+  // client version
+  google.protobuf.StringValue client_version = 4;
+
+  // submarket id
+  google.protobuf.StringValue submarket_id = 5;
+
+  // device display context from feed (screen width, height, etc.)
+  DeviceDisplayContext device_display_context = 6;
+
+  // include_display_modules is true if current fulfillment type is DINEOUT
+  google.protobuf.BoolValue include_display_modules = 7;
+}
+
+// Response for GetDineoutStorePage
+message GetDineoutStorePageResponse {
+  // Returned if include_display_modules in the request is true.
+  feed_service.DineoutDM dineout_display_module = 1;
+
+  // Number of available rewards. For the badge on the store header button toggle (delivery/pickup/dineout)
+  google.protobuf.Int64Value available_rewards_count = 2;
+
+  // Whether a Cx can check in at the store today. If true, the sticky footer button will be disabled.
+  google.protobuf.BoolValue can_check_in = 3;
+
+  // Whether a Cx has an active deal now. If true, the sticky footer button should be "show your active deal" and
+  // should link to the reward page / Mx details page.
+  google.protobuf.BoolValue has_active_deal = 4;
+}

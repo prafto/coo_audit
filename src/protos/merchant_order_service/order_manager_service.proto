@@ -1,0 +1,419 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package com.doordash.rpc.merchant_order_service.v1;
+
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_order_service/merchant_order_management.proto";
+import "merchant_order_service/store_model.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "OrderManagerClientProto";
+option java_package = "com.doordash.rpc.merchant_order_service";
+
+// Service backing up the order client
+service OrderManagerService {
+  // Send a notification to the order client
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse) {}
+  // getStore
+  rpc GetStore(GetStoreRequest) returns (GetStoreResponse) {}
+  // Update tablet order info
+  rpc UpsertMxTabletOrderInfo(UpsertMxTabletOrderInfoRequest) returns (UpsertMxTabletOrderInfoResponse) {}
+  // Get tablet order info by delivery uuids
+  rpc GetMxTabletOrderInfoByDeliveryUuids(GetMxTabletOrderInfoByDeliveryUuidsRequest) returns (GetMxTabletOrderInfoByDeliveryUuidsResponse) {}
+  // Upsert busy kitchen info
+  rpc UpsertBusyKitchenInfo(UpsertBusyKitchenInfoRequest) returns (UpsertBusyKitchenInfoResponse) {}
+  // Get store busy kitchen info by storeIds
+  rpc GetBusyKitchenInfoByStoreId(GetBusyKitchenInfoByStoreIdRequest) returns (GetBusyKitchenInfoByStoreIdResponse) {}
+  // start Mx Cx chat
+  rpc StartMxCxChat(StartMxCxChatRequest) returns (StartMxCxChatResponse) {}
+  // Update the table of mapping tablet IMEI, store_id, and MDM
+  rpc UpdateMxTabletDeviceInfo(UpdateMxTabletDeviceInfoRequest) returns (UpdateMxTabletDeviceInfoResponse) {}
+  // Relaunch the Mx tablet
+  rpc RelaunchMxTablet(RelaunchMxTabletRequest) returns (RelaunchMxTabletResponse) {}
+}
+
+// request to upsert tablet order info on Mx tablet
+message UpsertMxTabletOrderInfoRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // the action to perform
+  oneof action {
+    // move to history
+    google.protobuf.BoolValue move_to_history = 2;
+    // mx confirmed prep duration
+    google.protobuf.Int64Value mx_confirmed_prep_duration_secs = 3;
+    // pre confirm estimated order ready time
+    google.protobuf.Timestamp pre_confirm_estimated_order_ready_time = 4;
+    // mark picked up
+    google.protobuf.BoolValue mark_picked_up = 5;
+  }
+  // store id
+  google.protobuf.Int64Value store_id = 6;
+}
+
+// response for move an order to history on Mx tablet
+message UpsertMxTabletOrderInfoResponse {}
+
+// request for get Mx tablet order info by delivery uuids
+message GetMxTabletOrderInfoByDeliveryUuidsRequest {
+  // delivery uuid
+  repeated google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// response for get Mx tablet order info by delivery uuids
+message GetMxTabletOrderInfoByDeliveryUuidsResponse {
+  // list of Mx tablet order info
+  repeated MxTabletOrderInfo mx_tablet_order_info = 1;
+}
+
+// Mx Tablet Order Info
+message MxTabletOrderInfo {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // archived at
+  google.protobuf.Timestamp archived_at = 2;
+  // mx confirmed prep duration
+  google.protobuf.Int64Value mx_confirmed_prep_duration_secs = 3;
+  // pre confirm estimated order ready time
+  google.protobuf.Timestamp pre_confirm_estimated_order_ready_time = 4;
+  // mark picked up at
+  google.protobuf.Timestamp mark_picked_up_at = 5;
+}
+
+// request to upsert busy kitchen info on Mx tablet
+message UpsertBusyKitchenInfoRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // busy kitchen expire at timestamp
+  google.protobuf.Timestamp expire_at = 2;
+  // additional prep duration in seconds added to order
+  google.protobuf.Int64Value additional_prep_duration = 3;
+  // client source
+  ClientSource client_source = 4;
+
+  // caller client source
+  enum ClientSource {
+    // Unrecognized
+    CLIENT_SOURCE_UNSPECIFIED = 0;
+    // Order Manager App
+    CLIENT_SOURCE_ORDER_MANAGER_APP = 1;
+    // Mx Portal
+    CLIENT_SOURCE_MX_PORTAL = 2;
+    // Async Platform
+    CLIENT_SOURCE_ASYNC_PLATFORM = 3;
+  }
+}
+
+// response for move an order to history on Mx tablet
+message UpsertBusyKitchenInfoResponse {}
+
+// request for get store busy kitchen info by store id
+message GetBusyKitchenInfoByStoreIdRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+}
+
+// response for get store busy kitchen info by store id
+message GetBusyKitchenInfoByStoreIdResponse {
+  // busy kitchen info
+  BusyKitchenInfo busy_kitchen_info = 1;
+}
+
+// request to send a push notification to the order manager client
+message SendNotificationRequest {
+  // store id, needed to resolve device tokens for push
+  google.protobuf.Int64Value store_id = 1;
+  // could be store id, menu id, depending on the event type enum
+  google.protobuf.StringValue entity_id = 2;
+  // entity type of the entity id, eg: store, menu, order
+  EntityType entity_type = 3;
+  // if set to true, goes through the business logic but does not enqueue the event and send the push
+  google.protobuf.BoolValue skip_notification_send = 4;
+  // a complex object where we can pass down info into the push notification if required
+  // additionally acts as an enum
+  NotificationType notification_type = 5;
+  // timestamp of the emitting service kafka event
+  // used in updating the events tables for tablet
+  google.protobuf.Timestamp event_timestamp = 6;
+}
+
+// complex object holding all the notification events
+message NotificationType {
+  // we can only send one notification type at a time
+  // below acts as an enum and also passes down data if needed
+  oneof event {
+    // order transmission is successful and order is ready for MX to confirm
+    OrderSuccess order_success = 6;
+    // order has been cancelled
+    OrderCancel order_cancel = 7;
+    // order has been altered
+    OrderAdjust order_adjust = 8;
+    // mx has marked order as ready
+    MarkReady mark_ready = 9;
+    // dasher has confirmed they will pick up the order
+    DasherConfirmed dasher_confirmed = 10;
+    // dasher has picked up the order
+    DasherPickUp dasher_pick_up = 11;
+    // dasher has arrived at the store
+    DasherArrivedMx dasher_arrived_mx = 12;
+    // dasher has arrived at the customer
+    DasherArrivedCx dasher_arrived_cx = 13;
+    // dasher has been unassigned from the order
+    DasherUnassigned dasher_unassigned = 14;
+    // CX has adjusted drop off time
+    CustomerReschedule customer_reschedule = 15;
+    // MX has confirmed they received the order
+    MerchantConfirmed merchant_confirmed = 16;
+    // Store has been temp deactivated
+    StoreTempDeactivated store_temp_deactivated = 17;
+    // Store has released the temp deactivation
+    StoreTempActivated store_temp_activated = 18;
+    // Menu hours changed
+    MenuHoursChange menu_hours_change = 19;
+    // Menu special hours changed
+    MenuSpecialHoursChange menu_special_hours_change = 20;
+    // Store special hours changed
+    StoreSpecialHoursChange store_special_hours_change = 21;
+    // Other Menu update change, including item suspension, menu category change, etc.
+    MenuUpdate menu_update = 22;
+    // Store payment confirmation for Dineout orders
+    InstoreOrderPaymentConfirmation instore_order_payment_confirmation = 23;
+    // Consumer pickup, the cx has picked up the order from the store
+    ConsumerPickup consumer_pickup = 24;
+    // pickup status of an order has been reset
+    RevertPickupStatus revert_pickup_status = 25;
+    // Sends a signal to the device on whether to turn debug mode on or off
+    DebugDevice debug_device = 26;
+    // Store Busy Kitchen Status changed
+    BusyKitchenStatusChange busy_kitchen_status_change = 27;
+    // Move To History
+    MoveToHistory move_to_history = 28;
+    // Mx Confirmed Prep Duration changed
+    MxConfirmedPrepDurationChange mx_confirmed_prep_duration_change = 29;
+    // Pre Confirm Estimated Order Ready Time changed
+    PreConfirmEstimatedOrderReadyTimeChange pre_confirm_estimated_order_ready_time_change = 30;
+    // Mark Picked Up
+    MarkPickedUp mark_picked_up = 31;
+  }
+}
+
+// response
+message SendNotificationResponse {
+  // store id, needed to resolve device tokens for push
+  google.protobuf.Int64Value store_id = 1;
+  // could be order_uuid, store id, menu id, depending on the event type enum
+  google.protobuf.StringValue entity_id = 2;
+  // entity type of the entity id, eg: store, menu, order
+  EntityType entity_type = 3;
+  // notification type, whatever we sent out
+  NotificationType notification_type = 4;
+  // notification status, whether we sent a message or not
+  NotificationStatus notification_status = 5;
+}
+
+// Notification type
+enum NotificationStatus {
+  // Unrecognized
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  // success push
+  NOTIFICATION_STATUS_SENT = 1;
+  // not sent due to skip_notification_send being set to true
+  NOTIFICATION_STATUS_NOT_SENT = 2;
+}
+
+// Entity type
+enum EntityType {
+  // Unrecognized
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // order, id is order_uuid
+  ENTITY_TYPE_ORDER = 1;
+  // store, id is store_id
+  ENTITY_TYPE_STORE = 2;
+  // id is delivery_uuid
+  ENTITY_TYPE_DELIVERY = 3;
+}
+
+// order transmission is successful and order is ready for MX to confirm
+message OrderSuccess {}
+
+// order has been cancelled
+message OrderCancel {}
+
+// order has been altered
+message OrderAdjust {}
+
+// mx has marked order as ready
+message MarkReady {}
+
+// dasher has confirmed they will pick up the order
+message DasherConfirmed {}
+
+// dasher has picked up the order
+message DasherPickUp {}
+
+// dasher has arrived at the store
+message DasherArrivedMx {}
+
+// dasher has arrived at the customer
+message DasherArrivedCx {}
+
+// dasher has been unassigned from the order
+message DasherUnassigned {}
+
+// CX has adjusted drop off time
+message CustomerReschedule {}
+
+// MX has confirmed they received the order
+message MerchantConfirmed {}
+
+// Store has been temp deactivated
+message StoreTempDeactivated {
+  // scheduledEndAt timestamp if store has a temporary deactivation
+  google.protobuf.Timestamp temp_deactivation_scheduled_end_at = 1;
+}
+
+// Mx has released the temp deactivated
+message StoreTempActivated {}
+
+// Menu hours changed
+message MenuHoursChange {}
+
+// Menu special hours changed
+message MenuSpecialHoursChange {}
+
+// Store special hours changed
+message StoreSpecialHoursChange {}
+
+// Store Busy Kitchen Status changed
+message BusyKitchenStatusChange {}
+
+// Move To History
+message MoveToHistory {}
+
+// Mx Confirmed Prep Duration changed
+message MxConfirmedPrepDurationChange {}
+
+// Pre Confirm Estimated Order Ready Time changed
+message PreConfirmEstimatedOrderReadyTimeChange {}
+
+// Mark Picked Up
+message MarkPickedUp {}
+
+// Other Menu update change
+message MenuUpdate {}
+
+// Debug Notification
+message DebugDevice {
+  // turn debug mode on or off
+  google.protobuf.BoolValue debug_mode = 1;
+}
+
+// request to get store
+message GetStoreRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // user id, for rbac
+  google.protobuf.Int64Value user_id = 2;
+}
+
+// CX has picked up order from the store
+message ConsumerPickup {}
+
+// pickup status of an order has been reset
+message RevertPickupStatus {}
+
+// get store response
+message GetStoreResponse {
+  // store
+  Store store = 1;
+}
+
+// Store has been temp deactivated
+message InstoreOrderPaymentConfirmation {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // consumer first name
+  google.protobuf.StringValue consumer_first_name = 2;
+  // Total paid by cx (pre-tip)
+  money.MonetaryFields payment_total = 3;
+  // business_id
+  google.protobuf.Int64Value business_id = 4;
+}
+
+// request to start Mx Cx chat
+message StartMxCxChatRequest {
+  // order uuid
+  google.protobuf.StringValue order_uuid = 1;
+  // mx user id
+  google.protobuf.Int64Value mx_user_id = 2;
+  // channel url
+  google.protobuf.StringValue channel_url = 3;
+  // adjusted order item
+  AdjustedOrderItem adjusted_order_item = 4;
+  // new item details
+  NewItemDetails new_item_details = 5;
+  // item price difference. The calculation considers modifiers, quantity but excludes taxes or other factors
+  money.MonetaryFields item_price_difference = 6;
+}
+
+// response for start Mx Cx chat
+message StartMxCxChatResponse {
+  // recommendation id
+  google.protobuf.StringValue recommendation_id = 1;
+}
+
+// new item details not covered in AdjustedOrderItem
+message NewItemDetails {
+  // name
+  google.protobuf.StringValue name = 1;
+  // image url
+  google.protobuf.StringValue image_url = 2;
+  // description
+  google.protobuf.StringValue description = 3;
+}
+
+// request for update table of MxTabletDeviceInfo
+message UpdateMxTabletDeviceInfoRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // mdm type, soti or mambo
+  MDM mdm = 2;
+  // IMEI number
+  google.protobuf.StringValue imei = 3;
+  // mdm device id
+  google.protobuf.StringValue mdm_device_id = 4;
+}
+
+// response for update table of MxTabletDeviceInfo
+message UpdateMxTabletDeviceInfoResponse {}
+
+// MDM type
+enum MDM {
+  // unspecified
+  MDM_UNSPECIFIED = 0;
+  // Soti
+  MDM_SOTI = 1;
+  // Mambo
+  MDM_MAMBO = 2;
+}
+
+// request for relaunch Mx Tablet
+message RelaunchMxTabletRequest {
+  // list of MxTabletRelaunchInfo that needs to be relaunched
+  repeated MxTabletRelaunchInfo mx_tablet_relaunch_info = 1;
+}
+
+// Mx Tablet Relaunch Info
+message MxTabletRelaunchInfo {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // last heartbeat Time
+  google.protobuf.Timestamp last_heartbeat = 2;
+}
+
+// response for relaunch Mx Tablet
+message RelaunchMxTabletResponse {}

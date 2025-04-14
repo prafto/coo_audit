@@ -1,0 +1,631 @@
+syntax = "proto3";
+
+package sjem_service.v1;
+
+import "common/date.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.datalake.compute.sjem.v1";
+
+// Service for spark job execution for data platform in a cloud provider agnostic manner
+service SJEMService {
+  // Submit a new Spark Job
+  rpc SubmitSparkJob(SubmitSparkJobRequest) returns (SubmitSparkJobResponse);
+  // Check current processing status of a spark job by its job_id
+  rpc CheckJobStatus(CheckJobStatusRequest) returns (CheckJobStatusResponse);
+  // Cancel a Spark Job
+  rpc CancelSparkJob(CancelSparkJobRequest) returns (CancelSparkJobResponse);
+  // [Internal] Update Spark job cost rate
+  rpc UpdateSparkCostRate(UpdateSparkCostRateRequest) returns (UpdateSparkCostRateResponse);
+  // List Spark jobs.
+  // select * from sjem_spark_job
+  // where name = {name} and version = {version} and created_at >= {created_at.start} and created <= {created_at.end}
+  // order by created_at desc limit {limit} offset {offset}
+  rpc ListSparkJobs(ListSparkJobsRequest) returns (ListSparkJobsResponse);
+  // Onboard a team to SJEM. If the team is already onboarded, an upsert operation will be performed.
+  rpc OnboardTeam(OnboardTeamRequest) returns (OnboardTeamResponse);
+  // Get supported node types for SJEM spark job submission
+  rpc GetSupportedNodeTypes(GetSupportedNodeTypesRequest) returns (GetSupportedNodeTypesResponse);
+  // Deactivate recommendations such as APS, RUN_ALLOWED etc for job name and version combination
+  rpc DeactivateRecommendations(DeactivateRecommendationsRequest) returns (DeactivateRecommendationsResponse);
+  // Get current maximum version for job name seen by (S)JEM
+  rpc GetCurrentMaximumVersion(GetCurrentMaximumVersionRequest) returns (GetCurrentMaximumVersionResponse);
+}
+
+// Request to GetCurrentMaximumVersion
+message GetCurrentMaximumVersionRequest {
+  // REQUIRED. Name of the job to deactivate recommendations for
+  google.protobuf.StringValue name = 1;
+}
+
+// Response to GetCurrentMaximumVersion
+message GetCurrentMaximumVersionResponse {
+  // REQUIRED. The current maximum version for the GetCurrentMaximumVersionRequest.name
+  google.protobuf.Int32Value version = 1;
+}
+
+// Reqquest to Deactivate SJEM APS and other Recommendations by job name and version
+message DeactivateRecommendationsRequest {
+  // REQUIRED. Name of the job to deactivate recommendations for
+  google.protobuf.StringValue name = 1;
+  // OPTIONAL. Version of the job to deactivate recommendations for. If not specified then the latest version for the job name is used and it's recommendations will be deactivated
+  google.protobuf.Int32Value version = 2;
+}
+
+// Response to DeactivateRecommendations
+message DeactivateRecommendationsResponse {}
+
+// Spark job submission request
+message SubmitSparkJobRequest {
+  // REQUIRED. A user-provided name for the Spark job. It serves as a human-readable identifier for the job. Only alphanumeric, - and _ characters are permitted.
+  google.protobuf.StringValue name = 1;
+  // REQUIRED. DD team owning the spark job and cost will be attribute to the team. Team must be onboarded first.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3140256639/SJEM+User+Guide#Team-Onboarding) for details.
+  google.protobuf.StringValue team = 2;
+  // REQUIRED. Onboarding user email of the spark job
+  google.protobuf.StringValue onboarding_user = 3;
+  // REQUIRED. Flavor of spark job - java_scala or pyspark
+  SparkFlavor flavor = 4;
+  // OPTIONAL. Equivalent to the --jars option in spark-submit and should contain a comma-separated list of paths to the additional JAR files.
+  google.protobuf.StringValue additional_jars = 5;
+  // DEPRECATED. Equivalent to '--files' in spark-submit
+  google.protobuf.StringValue files = 6 [deprecated = true];
+  // REQUIRED for JAVA_SCALA job. The path to the main JAR file for the Spark job
+  google.protobuf.StringValue jar_path = 7;
+  // REQUIRED for JAVA_SCALA job. Main class for the Spark job. Equivalent to '--class' in spark-submit
+  google.protobuf.StringValue main_class_name = 8;
+  // OPTIONAL. Arguments to main spark class
+  repeated google.protobuf.StringValue args = 9;
+  // DEPRECATED. Equivalent to '--py-files' in spark-submit
+  google.protobuf.StringValue py_files = 10 [deprecated = true];
+  // REQUIRED for PySpark job. main python file path for pyspark job
+  google.protobuf.StringValue main_python_file = 11;
+  // OPTIONAL. Equivalent to '--conf' in spark-submit
+  map<string, string> spark_params = 12;
+  // REQUIRED. Compute spec string for spark cluster, e.g. 'executorCapacity=M,cloudProvider=DBR'.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3468460215/SJEM+API+Document) for details.
+  google.protobuf.StringValue cc_spec_str = 13;
+  // OPTIONAL. Estimated runtime for the job expressed as a Duration string, e.g. 'PT1H', 'PT3H30M'.
+  // Default: 1 hour
+  google.protobuf.StringValue expected_runtime = 14;
+  // OPTIONAL. Timeout for the job expressed as a Duration string, e.g. 'PT1H', 'PT3H30M'. Job running exceeds timeout will be cancelled.
+  // Default: 4 hours.
+  google.protobuf.StringValue timeout = 15;
+  // OPTIONAL. Timestamp in future when SLA of job will expire.
+  // Default: 8 hours after submission.
+  google.protobuf.Timestamp sla_breach_time = 16;
+  // REQUIRED. Whether a job is batch or streaming
+  JobType type = 17;
+  // OPTIONAL. Partners like USF, Fabricator, Curator and etc. Please work with dev team for onboarding.
+  google.protobuf.StringValue partner_platform = 18;
+  // RESTRICTED. Libraries for Databricks jobs. Only available for specific use cases
+  Libraries libraries = 19;
+  // OPTIONAL. StreamingMetrics is a struct of information on what metrics to collect for auto remediation. This is required for Structured Streaming jobs.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3468460215/SJEM+API+Document) for details.
+  StreamingMetrics streaming_metrics = 20 [deprecated = true];
+  // OPTIONAL. Generic configurations for users to enable/disable SJEM default behavior like auto_param_selection.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3468460215/SJEM+API+Document) for details.
+  map<string, bool> user_controls = 21;
+  // REQUIRED. User provided version of job monotonically increasing from 1
+  google.protobuf.Int32Value version = 22;
+  // OPTIONAL for streaming job. Actions for streaming submission - new or restart.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3468460215/SJEM+API+Document) for details.
+  StreamingSubmissionAction streaming_submission_action = 23;
+  // OPTIONAL. Custom tags for job.
+  map<string, string> custom_tags = 24;
+  // OPTIONAL for Streaming Job; N/A for batch jobs; Defaults are populated and documented by SJEM.
+  DynamicClusterResizingControls dynamic_cluster_resizing_controls = 25;
+  // OPTIONAL. Environment variables
+  EnvironmentVariables environment_variables = 26;
+  // OPTIONAL. Required for critical jobs. Slack Handle to tag in #data-control-notifier updates
+  google.protobuf.StringValue slack_team_handle = 27;
+  // OPTIONAL. User provided init scripts for the job
+  map<string, string> init_scripts = 28;
+}
+
+// Different Algorithms available for DCR
+enum DynamicClusterResizingAlgorithm {
+  // Unsepcified
+  DYNAMIC_CLUSTER_RESIZING_ALGORITHM_ALGORITHM_UNSPECIFIED = 0;
+  // Determine DCR action based on most recent trigger interval metrics; this one has a typo in the name
+  DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USER_MOST_RECENT_QUERY_EVENT = 1 [deprecated = true];
+  // Determine DCR action based on most recent trigger interval metrics
+  DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MOST_RECENT_QUERY_EVENT = 2;
+  // Determine DCR action based on last N intervals and only when N intervals are available; this one has typo in the name
+  DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INERVALS = 3 [deprecated = true];
+  // Determine DCR action based on last N intervals and only when N intervals are available
+  DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INTERVALS = 4;
+}
+
+// What to do when there are no signals available for a streaming job. SJEM is not able to find the query events required
+enum DynamicClusterResizingActionOnNoSignal {
+  // Same as DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_NO_ACTION. Default behavior
+  DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_UNSPECIFIED = 0;
+
+  // Do nothing; wait for query events to appear on S3. Default Behavior
+  DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_NO_ACTION = 1;
+
+  // Scale to user given cc_spec; this is the initial value
+  DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_SCALE_TO_DEFAULT_CC_SPEC = 2;
+
+  // Scale up exponentially from current cluster size
+  DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_SCALE_UP_EXPONENTIALLY = 3;
+
+  // Scale up linearly from current cluster size
+  DYNAMIC_CLUSTER_RESIZING_ACTION_ON_NO_SIGNAL_SCALE_UP_LINEARLY = 4;
+}
+
+// DynamicClusterResizingControls class
+message DynamicClusterResizingControls {
+  // Should DCR happpen?
+  google.protobuf.BoolValue enabled = 1;
+  // Deprecated not used
+  google.protobuf.UInt32Value configured_period_seconds = 2 [deprecated = true];
+  // The minimum number of executors needed; scale downs do not go below this number
+  google.protobuf.UInt32Value min_executors = 3;
+  // Time to wait after a job starts running before scaling up linearly
+  google.protobuf.UInt32Value linear_scale_up_cooldown_seconds = 4;
+  // Time to wait after a job starts running before scaling up exponentially
+  google.protobuf.UInt32Value exponential_scale_up_cooldown_seconds = 5;
+  // Time to wait after a job starts running before scaling down. Scale downs are always linear
+  google.protobuf.UInt32Value scale_down_cooldown_seconds = 6;
+  // Percentage of trigger interval to be consumed before scaling up linearly
+  google.protobuf.UInt32Value scale_up_linear_trigger_interval_threshold_percentage = 7;
+  // Percentage of trigger interval to be consumed before scaling up exponentially
+  google.protobuf.UInt32Value scale_up_exponential_trigger_interval_threshold_percentage = 8;
+  // Percentage of trigger interval to be consumed before scaling up exponentially
+  google.protobuf.UInt32Value scale_down_trigger_interval_threshold_percentage = 9;
+  // Number of executors to add when scaling up linearly. This is always a postive number
+  google.protobuf.UInt32Value scale_up_linear_executors_delta = 10;
+  // Number of executors to add when sacling down linearly. Yes add. As this is always a negative number.
+  google.protobuf.UInt32Value scale_down_executors_delta = 11;
+  // Pluggable stratergy; In the future we may have different algorithms to auto-scale differently.
+  DynamicClusterResizingAlgorithm algorithm = 12;
+  // The maximum number of executors needed; scale ups do not go below this number
+  google.protobuf.UInt32Value max_executors = 13;
+  // Configured trigger interval in seconds
+  google.protobuf.UInt32Value configured_trigger_interval_seconds = 14 [deprecated = true];
+  // Intervals to Consider; applicable for DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INERVALS
+  google.protobuf.UInt32Value number_of_trigger_intervals_to_consider = 15 [deprecated = true];
+  // Acceptable trigger interval in seconds. Configured trigger interval can be a lower value. It’s common for Pepto and USF jobs to configure trigger interval as a lower value but be okay as long as each trigger completes in desired_trigger_interval
+  google.protobuf.UInt32Value acceptable_trigger_interval_seconds = 16;
+  // Pluggable stratergy on what to do when no query events are seen
+  DynamicClusterResizingActionOnNoSignal action_on_no_signal = 17;
+  // Number of trigger intervals to ignore after the last resize operation to skip spikes in processing when job is-scaled.
+  google.protobuf.UInt32Value number_of_trigger_intervals_to_ignore_after_last_resize_operation = 18;
+  // Minimum number of intervals neeaded for scale_up_linear decision; applicable for DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INERVALS
+  google.protobuf.UInt32Value scale_up_linear_minimum_number_of_trigger_intervals_to_consider = 19;
+  // Minimum number of intervals neeaded for scale_up_exponential decision; applicable for DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INERVALS
+  google.protobuf.UInt32Value scale_up_exponential_minimum_number_of_trigger_intervals_to_consider = 20;
+  // Minimum number of intervals neeaded for scale_down decision; applicable for DYNAMIC_CLUSTER_RESIZING_ALGORITHM_USE_MEAN_OF_N_INERVALS
+  google.protobuf.UInt32Value scale_down_minimum_number_of_trigger_intervals_to_consider = 21;
+}
+
+// Metrics struct; type of the REQUIRED field `metrics` in SubmitSparkJobRequest
+message StreamingMetrics {
+  // For all below metrics, the need to emitted with required labels of `environment` and `jobName`
+  google.protobuf.UInt32Value configured_period_seconds = 1 [deprecated = true];
+  // This is the either batch interval in vanilla stream processing or trigger interval in structured query.
+  // Metric Name
+  google.protobuf.StringValue observed_period_seconds_name = 2 [deprecated = true];
+  // [Prom. Gauge]
+  // This is the either the observed batch interval in vanilla stream processing or the observed trigger interval in structured query. This is true time taken to complete a batch/trigger.
+  // Metric name
+  google.protobuf.StringValue num_input_rows_name = 3 [deprecated = true];
+  // [Prom. Gauge]
+  // Name of the emitted Prometheus metric for QueryProgressEvent.progress.numInputRows. This is the number of rows in a particular trigger.
+  // Metric name
+  google.protobuf.StringValue input_rows_per_second_name = 4 [deprecated = true];
+  // [Prom. Gauge] OPTIONAL
+  // Name of the emitted Prometheus metric for QueryProgressEvent.progress.inputRowsPerSecond.
+  // Metric name
+  google.protobuf.StringValue processed_rows_per_second_name = 5 [deprecated = true];
+  // [Prom. Gauge] OPTIONAL
+  // Name of the emitted Prometheus metric for QueryProgressEvent.progress.processedRowsPerSecond
+  // Metric name
+
+  // What percentage of configured trigger interval does observed trigger interval have to be for a simple linear scale up.
+  google.protobuf.Int32Value scale_up_threshold_percentage = 6 [deprecated = true];
+
+  // What percentage of configured trigger interval does observed trigger interval have to be for a non-linear/exponential scale up.
+  google.protobuf.Int32Value scale_up_exponential_threshold_percentage = 7 [deprecated = true];
+
+  // What percentage of configured trigger interval does observed trigger interval have to be for a simple linear scale down.
+  google.protobuf.Int32Value scale_down_threshold_percentage = 8 [deprecated = true];
+
+  // scale_down_threshold_percentage < scale_up_threshold_percentage < scale_up_exponential_threshold_percentage
+
+  // In the above metrics, rates can be emitted multiple times within a trigger with different values.
+  // But metrics that are specifc to a trigger (non rates) e.g. observed_period_seconds_name and input_rows_per_second_name stay the same throught out the trigger window/
+  // Non-rates are emitted with the same value throughout the period of the trigger.
+}
+
+// Spark job submission response
+message SubmitSparkJobResponse {
+  // Spark job status
+  SparkJobStatus spark_job_status = 1;
+}
+
+// Spark job status check request
+message CheckJobStatusRequest {
+  // REQUIRED. spark job id
+  google.protobuf.StringValue job_id = 1;
+  // OPTIONAL. if cost info is needed. Default false
+  google.protobuf.BoolValue include_cost = 2;
+}
+
+// Spark job status check response
+message CheckJobStatusResponse {
+  // Spark job status
+  SparkJobStatus spark_job_status = 1;
+}
+
+// Cancel Spark job request
+message CancelSparkJobRequest {
+  // REQUIRED. spark job id
+  google.protobuf.StringValue job_id = 1;
+  // REQUIRED. owner team of the job
+  google.protobuf.StringValue team = 2;
+}
+
+// Cancel Spark job response
+message CancelSparkJobResponse {
+  // Spark job status
+  SparkJobStatus spark_job_status = 1;
+}
+
+// [Internal Use Only] Update Spark cost rate request
+message UpdateSparkCostRateRequest {
+  // Required. End date of the cost period to calculate the rate.
+  // Should be at lease 2 days before current date given CloudZero report delay
+  date.Date end_date = 1;
+  // Optional. Start date of the cost period to calculate the rate
+  // Recommend to leave it empty so it will default to the last calculation date.
+  date.Date start_date = 2;
+}
+
+// Update Spark cost rate response
+message UpdateSparkCostRateResponse {
+  // List of EC2 cost rate change
+  repeated CostRateChange ec2_cost_rate_change = 1;
+}
+
+// Detail of cost rate change
+message CostRateChange {
+  // Node type
+  google.protobuf.StringValue node_type = 1;
+  // Old cost rate. Could be null if this is a new node type.
+  CostRate old_cost_rate = 2;
+  // New cost rate
+  CostRate new_cost_rate = 3;
+}
+
+// Detail of cost rate
+message CostRate {
+  // Cost rate (EC2 dollar cost per instance hour)
+  google.protobuf.DoubleValue cost_rate = 1;
+  // Start date of the cost period to calculate the rate
+  date.Date start_date = 2;
+  // End date of the cost period to calculate the rate.
+  date.Date end_date = 3;
+}
+
+// Information of spark job status
+message SparkJobStatus {
+  // Spark job id
+  google.protobuf.StringValue job_id = 1;
+  // Status of spark job
+  JobStatus job_status = 2;
+  // Job id from cloud provider
+  google.protobuf.StringValue cloud_provider_job_id = 3;
+  // Spark cloud provider url of the job
+  google.protobuf.StringValue cloud_provider_job_url = 4;
+  // Job error code if there is
+  google.protobuf.StringValue error_code = 5;
+  // Job error message if there is
+  google.protobuf.StringValue error_message = 6;
+  // If under PSW this value is true; else false
+  bool is_under_param_selection_workflow = 7;
+  // Recommneded params for PSW; this value is non-null if is_under_param_selection_workflow is true.
+  //   or if PSW is completed, it will show the final recommended_params value.
+  // Otherwise this value is empty
+  // This is a JSON serialized string
+  map<string, string> recommended_parms = 8;
+  // Static & descriptive information about the Spark job
+  SparkJobBasics spark_job_basics = 9;
+  // Allocated compute cluster ID
+  google.protobuf.StringValue allocated_cc_id = 10;
+  // Start time of the job
+  google.protobuf.Timestamp start_time = 11;
+  // End time of the job
+  google.protobuf.Timestamp end_time = 12;
+  // Job cost details
+  JobCost job_cost = 13;
+  // Details of each spark job run attempt
+  repeated SparkJobRun job_run = 14;
+  // OPTIONAL for Streaming Job; N/A (NULL) for batch jobs; Defaults are populated and documented by SJEM.
+  DynamicClusterResizingControls dynamic_cluster_resizing_controls = 15;
+
+  // OPTIONAL. Required for critical jobs. Slack Handle to tag in #data-control-notifier updates
+  google.protobuf.StringValue slack_team_handle = 16;
+}
+
+// Static & descriptive information about the Spark job, most of which come from user input.
+message SparkJobBasics {
+  // Spark job id
+  google.protobuf.StringValue job_id = 1;
+  // User provided name for spark job
+  google.protobuf.StringValue name = 2;
+  // User provided version of job monotonically increasing from 1
+  google.protobuf.Int32Value version = 3;
+  // Whether a job is batch or streaming (enum JobType)
+  JobType type = 4;
+  // Flavor of spark job - java_scala or pyspark (enum SparkFlavor)
+  SparkFlavor flavor = 5;
+  // Partners like USF, Fabricator, Curator and etc
+  google.protobuf.StringValue partner_platform = 6;
+  // DD team owning the spark job
+  google.protobuf.StringValue team = 7;
+  // DD vertical owning the spark job
+  google.protobuf.StringValue vertical = 8;
+  // Onboarding user email of the spark job
+  google.protobuf.StringValue onboarding_user = 9;
+  // Equivalent to '--jars' in spark-submit (comma separated jar paths)
+  google.protobuf.StringValue additional_jars = 10;
+  // Main jar for spark-submit
+  google.protobuf.StringValue jar_path = 11;
+  // Equivalent to '--class' in spark-submit
+  google.protobuf.StringValue main_class_name = 12;
+  // Main python file path for pyspark job
+  google.protobuf.StringValue main_python_file = 13;
+  // Equivalent to '--conf' in spark-submit
+  map<string, string> spark_params = 14;
+  // Arguments to main spark class
+  repeated google.protobuf.StringValue args = 15;
+  // Compute spec string for spark cluster, e.g. 'executorCapacity=M,cloudProvider=DBR'
+  google.protobuf.StringValue cc_spec_str = 16;
+  // Expected runtime for the job in mills
+  google.protobuf.StringValue expected_runtime = 17;
+  // Timeout for the job in mills
+  google.protobuf.StringValue timeout = 18;
+  // Timestamp in future when SLA of job will expire
+  google.protobuf.Timestamp sla_breach_time = 19;
+  // Generic configurations for users to enable/disable SJEM default behavior like auto_param_selection
+  map<string, bool> user_controls = 20;
+  // SJEM controls.
+  // Check [wiki](https://doordash.atlassian.net/wiki/spaces/Eng/pages/3468460215/SJEM+API+Document) for details.
+  map<string, string> sjem_controls = 21;
+  // Custom tags for job.
+  map<string, string> custom_tags = 22;
+  // Environment variables
+  EnvironmentVariables environment_variables = 23;
+  // Init scripts
+  map<string, string> init_scripts = 24;
+}
+
+// Details of each execution attempt of a Spark job
+message SparkJobRun {
+  // Unique identifier for the execution attempt
+  google.protobuf.Int32Value attempt_id = 1;
+  // Status of the Spark job at this attempt
+  JobStatus job_status = 2;
+  // ID of the compute cluster allocated for the job
+  google.protobuf.StringValue allocated_cc_id = 3;
+  // ID assigned by the cloud provider for the job
+  google.protobuf.StringValue cloud_provider_job_id = 4;
+  // URL provided by the cloud provider for accessing job details
+  google.protobuf.StringValue cloud_provider_job_url = 5;
+  // Job start time
+  google.protobuf.Timestamp start_time = 6;
+  // Job end time
+  google.protobuf.Timestamp end_time = 7;
+  // Job error code if any
+  google.protobuf.StringValue error_code = 8;
+  // Job error message if any
+  google.protobuf.StringValue error_message = 9;
+  // Cost details associated with the run attempt
+  JobCost job_cost = 10;
+}
+
+// Cost details associated with a Spark job execution attempt
+message JobCost {
+  // Overall cost incurred including EC2 and spark vendor cost
+  google.protobuf.DoubleValue overall_cost = 1;
+  // EC2 instance hour used during the execution attempt
+  google.protobuf.DoubleValue ec2_instance_hour = 2;
+  // EC2 instances dollar cost during the execution attempt
+  google.protobuf.DoubleValue ec2_instance_cost = 3;
+  // Vendor cost incurred during the execution attempt
+  google.protobuf.DoubleValue spark_service_cost = 4;
+}
+
+// Databricks job libraries
+message Libraries {
+  // Databricks Jar library
+  repeated Jar jar = 1;
+  // Databricks Egg library
+  repeated Egg egg = 2;
+  // Databricks PyPi library
+  repeated Pypi pypi = 3;
+  // Databricks Maven library
+  repeated Maven maven = 4;
+  // Databricks CRAN library
+  repeated Cran cran = 5;
+  //Databricks Wheel library
+  repeated Whl whl = 6;
+}
+
+// Databricks Jar library
+message Jar {
+  // S3 or DBFS URI of the jar to be installed
+  google.protobuf.StringValue uri = 1;
+}
+
+// Databricks Egg library
+message Egg {
+  // S3 or DBFS URI of the egg to be installed
+  google.protobuf.StringValue uri = 1;
+}
+
+// Databricks PyPi library
+message Pypi {
+  // The name of the pypi package to install like "simplejson==3.8.0"
+  google.protobuf.StringValue package = 1;
+  // The repository where the package can be found. If not specified, the default pip index is used
+  google.protobuf.StringValue repo = 2;
+}
+
+// Databricks Maven library
+message Maven {
+  // Gradle-style maven coordinates like "org.jsoup:jsoup:1.7.2"
+  google.protobuf.StringValue coordinates = 1;
+  // Maven repo to install the Maven package from. If omitted, both Maven Central Repository and Spark Packages are searched.
+  google.protobuf.StringValue repo = 2;
+  // List of dependencies to exclude separated by comma.
+  repeated google.protobuf.StringValue exclusions = 3;
+}
+
+// Databricks CRAN library
+message Cran {
+  // The name of the CRAN package to install.
+  google.protobuf.StringValue package = 1;
+  // The repository where the package can be found. If not specified, the default CRAN repo is used.
+  google.protobuf.StringValue repo = 2;
+}
+
+//Databricks Wheel library
+message Whl {
+  // S3 or DBFS URI of the wheel to be installed
+  google.protobuf.StringValue uri = 1;
+}
+
+// Request proto for `ListSparkJobs`
+message ListSparkJobsRequest {
+  // REQUIRED. job name
+  google.protobuf.StringValue name = 1;
+  // OPTIONAL. job version.
+  google.protobuf.Int32Value version = 2;
+  // OPTIONAL. job creation time range
+  TimeRange created_at = 3;
+  // OPTIONAL. offset for pagination. default 0 if not set
+  google.protobuf.Int32Value offset = 4;
+  // OPTIONAL. the maximum number of records to include on each page. default 10 if not set
+  google.protobuf.Int32Value limit = 5;
+  // OPTIONAL. if cost info is needed. Default false
+  google.protobuf.BoolValue include_cost = 6;
+}
+
+// Response proto for `ListJobs`
+message ListSparkJobsResponse {
+  // List of matching Spark job statuses
+  repeated SparkJobStatus spark_job_statuses = 1;
+}
+
+// Represents a time range
+message TimeRange {
+  // Start of the time range
+  google.protobuf.Timestamp start = 1;
+  // End of the time range
+  google.protobuf.Timestamp end = 2;
+}
+
+// Request proto for `OnboardTeam`
+message OnboardTeamRequest {
+  // REQUIRED. team name
+  google.protobuf.StringValue team = 1;
+  // REQUIRED. vertical name must be in https://docs.google.com/spreadsheets/d/1yCFToVt1EKhZRK5kyTCGLuP4hvQoFDBJjEUK8CXltIE/edit?gid=756313317#gid=756313317&range=A:A
+  google.protobuf.StringValue vertical = 2;
+}
+
+// Response proto for `OnboardTeam`
+message OnboardTeamResponse {}
+
+// Request proto for `GetSupportedNodeTypes`
+// Intentionally empty message in case we decide to pass in arguments later
+message GetSupportedNodeTypesRequest {}
+
+// Response proto for `GetSupportedNodeTypes`
+//{
+//  "masterNodeEC2Type": []
+//  "coreNodeEC2Type": []
+//}
+message GetSupportedNodeTypesResponse {
+  // List of supported node types
+  message NodeTypes {
+    // Node type like r6gd.4xlarge
+    repeated string value = 1;
+  }
+  // Supported node types per masterNodeEC2Type and coreNodeEC2Type
+  map<string, NodeTypes> supported_node_types = 1;
+}
+
+// Environment variables
+message EnvironmentVariables {
+  // User defined environment variable like APP_ROLE_ID
+  map<string, string> user_defined_env_vars = 1;
+  // Overwritten system environment variable like JNAME, JAVA_HOME.
+  repeated OverwrittenSystemEnvironmentVariable overwritten_system_env_vars = 2;
+}
+
+// For user to overwrite system environment variable like JNAME, JAVA_HOME. Names may vary based on the cloud provider
+message OverwrittenSystemEnvironmentVariable {
+  // Cloud provider names like emr, dbr. SJEM will use fuzzy key matching to find the right cloud provider.
+  google.protobuf.StringValue cloud_provider = 1;
+  // System environment variable key value pairs
+  map<string, string> env_vars = 2;
+}
+
+// ----------------------- Below is enums used in SJEM API -----------------------
+
+// Flavor of spark job - java_scala or pyspark
+enum SparkFlavor {
+  // Unspecified
+  SPARK_FLAVOR_UNSPECIFIED = 0;
+  // Spark job written in java or scala (jar)
+  SPARK_FLAVOR_JAVA_SCALA = 1;
+  // Spark job written in pyspark
+  SPARK_FLAVOR_PYSPARK = 2;
+  // RESTRICTED. Databricks notebook for temporary use. Only support workspace as source.
+  SPARK_FLAVOR_NOTEBOOK = 3;
+}
+
+// Status of spark job after submission
+enum JobStatus {
+  // Unspecified
+  JOB_STATUS_UNSPECIFIED = 0;
+  // Job requested for run
+  JOB_STATUS_REQUESTED = 1;
+  // Job still in request queue
+  JOB_STATUS_SUBMITTED = 2;
+  // Job running (allocated to spark compute-container)
+  JOB_STATUS_RUNNING = 3;
+  // Job completed
+  JOB_STATUS_COMPLETED = 4;
+  // Job failed
+  JOB_STATUS_FAILED = 5;
+  // Job cancelled
+  JOB_STATUS_CANCELLED = 6;
+}
+
+// Spark job type
+enum JobType {
+  // Unspecified
+  JOB_TYPE_UNSPECIFIED = 0;
+  // Job type batch
+  JOB_TYPE_BATCH = 1;
+  // Job type streaming
+  JOB_TYPE_STREAMING = 2;
+}
+
+// Enum defining actions for streaming submission.
+enum StreamingSubmissionAction {
+  // Required default value. Will be treated as STREAMING_SUBMISSION_ACTION_NEW
+  STREAMING_SUBMISSION_ACTION_UNSPECIFIED = 0;
+  // Default action for new submission. Throws a client error if a conflicting job with the same name is running.
+  STREAMING_SUBMISSION_ACTION_NEW = 1;
+  // Restart action for submission. Restarts the job if there is a conflicting job with the same name.
+  STREAMING_SUBMISSION_ACTION_RESTART = 2;
+}

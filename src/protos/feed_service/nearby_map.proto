@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package feed_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "feed_service/common.proto";
+import "feed_service/home_page.proto";
+
+option java_package = "com.doordash.rpc.feed_service.nearby_map";
+option java_multiple_files = true;
+option java_generic_services = true;
+
+// NearbyMapService powers the nearby map
+service NearbyMapService {
+    option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 200;
+    option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+    option (service_client.client_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_config).retry_config.max_attempts = 3;
+    option (service_client.client_config).retry_config.wait_multiplier = 2;
+
+    // GetNearbyMapCards returns a store list given a list of store_ids
+    rpc GetNearbyMapCards (GetNearbyMapCardsRequest) returns (GetNearbyMapCardsResponse);
+
+    // GetNearbyMapFeed returns a store list for the map page
+    rpc GetNearbyMapFeed (GetNearbyMapFeedRequest) returns (GetNearbyMapFeedResponse);
+
+    // GetListiclePage returns a Listicle content with store information for the listicle page
+    rpc GetListiclePage (GetListiclePageRequest) returns (GetListiclePageResponse);
+}
+
+// GetNearbyMapFeedRequest is the request to the GetNearbyMapFeed call
+message GetNearbyMapFeedRequest {
+    // Center of map lat
+    google.protobuf.DoubleValue lat = 1;
+    // Center of map lng
+    google.protobuf.DoubleValue lng = 2;
+    // Consumer_id of the consumer
+    google.protobuf.Int64Value consumer_id = 3;
+    // Submarket_id of center of map location
+    google.protobuf.Int64Value submarket_id = 4;
+    // District_id of center of map location
+    google.protobuf.Int64Value district_id = 5;
+    // Timezone of center of map location
+    google.protobuf.StringValue time_zone = 6;
+    // Consumer location lat (device location if available, otherwise it's the delivery address)
+    google.protobuf.DoubleValue consumer_lat = 7;
+    // Consumer location lng (device location if available, otherwise it's the delivery address)
+    google.protobuf.DoubleValue consumer_lng = 8;
+    // Bounding box of the search to represent the search area. The value is converted to a
+    // search radius before fed into elastic search.
+    MapBoundingBox map_bounding_box = 9;
+    // SearchUseCase for this call
+    SearchUseCase search_use_case = 10;
+    // NearbyMapDeliveryInfo for this call
+    NearbyMapDeliveryInfo nearby_map_delivery_info = 11;
+    // EFS filters applied to this call
+    repeated EFSFilter efs_filters = 12;
+    // Offset used for reservations search to paginate through stores with reservations
+    // Pagination is required at this point because external vendor is slow so we need to
+    // break our requests into small chunks.
+    google.protobuf.Int64Value reservations_index = 13;
+}
+
+// Specification of the height of the bottom sheet on the nearby map.
+enum BottomSheetHeight {
+    // Unspecified
+    BOTTOM_SHEET_HEIGHT_UNSPECIFIED = 0;
+    // Full height
+    BOTTOM_SHEET_HEIGHT_FULLY_EXPANDED = 1;
+}
+
+// GetNearbyMapFeedResponse is the response to the GetNearbyMapFeed call
+message GetNearbyMapFeedResponse {
+    // List of containers for Lego components to be included in the bottom sheet of the pickup/nearby tab. For example,
+    // the reorder Lego carousel will be returned here.
+    repeated FacetDM facets = 4;
+
+    // DEPRECATED List of containers for Lego carousels to be included in the bottom sheet of the pickup/nearby tab. For
+    // example, the reorder Lego carousel will be returned here.
+    repeated StoreCarouselDM store_carousels = 3 [deprecated = true];
+
+    // List of stores being returned
+    repeated StoreListDM store_lists = 1;
+    // Total number of stores returned
+    google.protobuf.UInt32Value total_stores = 2;
+    // Eyebrow on top of the bottom sheet
+    EyebrowDetails eyebrow_details = 5;
+
+    // Index for the next page in reservation pagination.
+    // If this is empty, that means there are no more pages available
+    google.protobuf.Int64Value next_reservations_index = 6;
+
+    // The height of the bottom sheet on the map.
+    BottomSheetHeight bottom_sheet_height = 7;
+}
+
+// GetNearbyMapCardsRequest is the request object for GetNearbyMapCards
+message GetNearbyMapCardsRequest {
+    // Center of map lat
+    google.protobuf.DoubleValue lat = 1;
+    // Center of map lng
+    google.protobuf.DoubleValue lng = 2;
+    // Consumer_id of the consumer
+    google.protobuf.Int64Value consumer_id = 3;
+    // Store_ids being requested
+    repeated google.protobuf.Int64Value store_ids = 4;
+    // Submarket_id of center of map location
+    google.protobuf.Int64Value submarket_id = 5;
+    // District_id of center of map location
+    google.protobuf.Int64Value district_id = 6;
+    // Timezone of center of map location
+    google.protobuf.StringValue time_zone = 7;
+    // SearchUseCase
+    SearchUseCase search_use_case = 8;
+    // Consumer location lat (device location if available, otherwise it's the delivery address)
+    google.protobuf.DoubleValue consumer_lat = 9;
+    // Consumer location lng (device location if available, otherwise it's the delivery address)
+    google.protobuf.DoubleValue consumer_lng = 10;
+    // Information needed to calculate delivery availability and ETAs
+    NearbyMapDeliveryInfo nearby_map_delivery_info = 11;
+    // Business_group_ids being requested
+    repeated google.protobuf.Int64Value business_group_ids = 12;
+}
+
+// GetNearbyMapCardsRequest is the response object for GetNearbyMapCards
+message GetNearbyMapCardsResponse {
+    // List of stores being returned
+    repeated StoreListDM store_lists = 1;
+    // Total number of stores returned
+    google.protobuf.UInt32Value total_stores = 2;
+    // Eyebrow on top of the bottom sheet
+    EyebrowDetails eyebrow_details = 3;
+}
+
+// GetListiclePageRequest is the request object for GetListiclePage
+message GetListiclePageRequest {
+    // Center of map lat
+    google.protobuf.DoubleValue lat = 1;
+    // Center of map lng
+    google.protobuf.DoubleValue lng = 2;
+    // Consumer_id of the consumer
+    google.protobuf.Int64Value consumer_id = 3;
+    // URI usually includes a cursor that contains embed data of vertical id, offsets, page_type, etc
+    google.protobuf.StringValue uri = 4;
+    // Contentful Post Id
+    google.protobuf.StringValue contentful_post_id = 5;
+    // Submarket_id of center of map location
+    google.protobuf.Int64Value submarket_id = 6;
+    // District_id of center of map location
+    google.protobuf.Int64Value district_id = 7;
+}
+
+// GetListiclePageResponse the response object for GetListiclePage
+message GetListiclePageResponse {
+    // Slug returned by Contentful
+    google.protobuf.StringValue slug = 1;
+    // Title of Listicle Article
+    google.protobuf.StringValue title = 2;
+    // SEO Title returned by Contentful
+    google.protobuf.StringValue seo_title = 3;
+    // Article description returned by Contentful
+    google.protobuf.StringValue description = 4;
+    // Meta_description returned by Contentful
+    google.protobuf.StringValue meta_description = 5;
+    // Author
+    google.protobuf.StringValue author = 6;
+    // Feature image url
+    google.protobuf.StringValue feature_image_url = 7;
+    // Read time of article
+    double read_time_minutes = 8;
+    // Publish date of article
+    google.protobuf.StringValue publish_date = 9;
+    // [Deprecated, will remove after testing] - Contents of article
+    repeated ListicleContent contents = 10;
+    // Author photo
+    google.protobuf.StringValue author_photo_uri = 11; 
+    // Listicle Content information
+    repeated google.protobuf.StringValue content = 12;
+    // Contents of each Mx
+    repeated ListicleContent stores = 13;
+}
+
+// Content for listicle
+message ListicleContent {
+    // Store name
+    google.protobuf.StringValue store_name = 1;
+    // Store Id
+    google.protobuf.StringValue store_id = 2;
+    // Store URI
+    google.protobuf.StringValue store_uri = 3;
+    // [Deprecated, replace by content filed] Store's Content information
+    repeated google.protobuf.StringValue text = 4;
+    // Store's driving time
+    google.protobuf.StringValue display_travel_time_driving = 5;
+    // Store's walking time
+    google.protobuf.StringValue display_travel_time_walking = 6;
+    // Store's image url, avatar
+    google.protobuf.StringValue store_image_uri = 7;
+    // Store's average rating
+    google.protobuf.FloatValue average_rating = 8;
+    // Store's price range display string
+    google.protobuf.StringValue price_range_display_string = 9;
+    // Store's header image
+    google.protobuf.StringValue store_header_image_uri = 10;
+    // Store's Content information
+    repeated google.protobuf.StringValue content = 11;
+    // Store's display status
+    google.protobuf.StringValue store_display_status = 12;
+    // Store's like status (by the consumer)
+    google.protobuf.BoolValue is_liked_by_consumer = 13;
+}

@@ -1,0 +1,291 @@
+syntax = "proto3";
+
+package menu;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menu.grpc";
+
+service MenuDataService {
+  // more details about hermes client option definition:
+  // https://github.com/doordash/dd-util-java/wiki/Hermes#service-definition
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 40;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 12000;
+
+  rpc PutStoreMenu(PutStoreMenuRequest) returns (PutStoreMenuResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  rpc PutChannelBasedMenus(PutChannelBasedMenusRequest) returns (PutChannelBasedMenusResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  rpc DeleteDerivedMenus(DeleteDerivedMenusRequest) returns (DeleteDerivedMenusResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  rpc GetStoreMenu(GetStoreMenuRequest) returns (GetStoreMenuResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc GetMenuEntities(GetMenuEntitiesRequest) returns (GetMenuEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc PutStoreMenuVersioning(PutStoreMenuVersioningRequest) returns (PutStoreMenuVersioningResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  rpc GetStoreMenuVersioningHistory(GetStoreMenuVersioningHistoryRequest) returns (GetStoreMenuVersioningHistoryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc GetEntityIdGraph(GetEntityIdGraphRequest) returns (GetEntityIdGraphResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+}
+
+/**
+ * Request to upsert menu structure and partial or all entities
+ * store_menu_id: store menu id
+ * menu_structure: menu structure including store_menu, menus, categories
+ * menu_meta: menu meta
+ * upserted_entities: upserted entities
+ * deleted_entities: removed entities
+ * read_time: menu last update time, which is used to handle read write race condition.
+ * ingest_invalid_menu: allow ingest invalid menu or not
+ */
+message PutStoreMenuRequest {
+  string store_menu_id = 1;
+  menu.MenuStructure menu_structure = 2;
+  menu.MenuMeta menu_meta = 3;
+  menu.EntityMaps upserted_entities = 4;
+  menu.EntityMaps deleted_entities = 5;
+  int64 read_time = 6;
+  bool ingest_invalid_menu = 7;
+  bool enable_shared_entities = 8;
+}
+
+/**
+ * Return of upserting menu structure and partial or all entities
+ */
+message PutStoreMenuResponse {}
+
+/**
+ * Request to upsert menu into menu_table.
+ * It is only used for inserting channel-based menus now.
+ * store_menu: the union menu
+ * overrides: the overrides to derive the channel-based menus
+ * read_time: menu last update time, which is used to handle read write race condition.
+ */
+message PutChannelBasedMenusRequest {
+  string store_menu_id = 1;
+  menu.StoreMenu store_menu = 2;
+  repeated menu.MenuEntityOverrides overrides = 3;
+  int64 read_time = 4;
+}
+
+/**
+ * PutChannelBasedMenus response
+ */
+message PutChannelBasedMenusResponse {}
+
+/**
+ * Request to delete the channel-based derived menus
+ * store_menu_id: store menu id
+ * menu_ids: menus to be deleted
+ * read_time: read time lock
+ */
+message DeleteDerivedMenusRequest {
+  string store_menu_id = 1;
+  repeated string menu_ids = 2;
+  int64 read_time = 3;
+}
+
+/**
+ * DeleteDerivedMenus response
+ */
+message DeleteDerivedMenusResponse {}
+
+/**
+ * Request to upsert menu structure and partial or all entities in menu versioning table
+ * store_menu_id: store menu id
+ * menu_structure: menu structure including store_menu, menus, categories
+ * menu_meta: menu meta
+ * upserted_entities: upserted entities
+ * deleted_entities: removed entities
+ * read_time: menu last update time, which is used to handle read write race condition.
+ * ingest_invalid_menu: allow ingest invalid menu or not
+ */
+message PutStoreMenuVersioningRequest {
+  string store_menu_id = 1;
+  menu.MenuStructure menu_structure = 2;
+  menu.MenuMeta menu_meta = 3;
+  menu.EntityMaps upserted_entities = 4;
+}
+
+/**
+ * Return of upserting menu structure and partial or all entities in menu versioning table
+ */
+message PutStoreMenuVersioningResponse {}
+
+/**
+ * Request to get store menu versioning history
+ */
+message GetStoreMenuVersioningHistoryRequest {
+  string store_menu_id = 1;
+}
+
+/**
+ * Return of get store menu versioning history
+ */
+message GetStoreMenuVersioningHistoryResponse {
+  repeated int64 versions = 1;
+}
+
+/**
+ * Store menu level fetch options
+ */
+message FetchOptions {
+  bool meta = 1;
+  bool structure = 2;
+  bool dag = 3;
+  bool entities = 4;
+  bool index = 5;
+  bool validation = 6;
+  bool menus = 7;
+  bool categories = 8;
+  bool checksum = 9;
+  bool ddsic_index = 10;
+  bool sticky = 89;
+}
+
+// add MenuFetchOptions for channel-based menus
+message MenuFetchOptions {
+  /*
+   * The default value of include_union_menus = false, it will only return the normal menus and the channel-based menus, not return the union menus.
+   * If include_union_menus = true, it will return all the menus, including the normal menus, the channel-based menus and the union menus.
+   * -- In this case, the top items of a shared category will be the union of the top items of this category in different menus.
+   */
+  bool include_union_menus = 1;
+}
+
+// specify the source you want to fetch the data from
+enum ServingSource {
+  // unknown will default to reading from menu cassandra
+  SERVING_SOURCE_UNSPECIFIED = 0;
+  // the current serving/processing SOT
+  SERVING_SOURCE_MENU_CASSANDRA = 1;
+  // the new serving SOT which gets populated by MKG
+  SERVING_SOURCE_MKG_GES = 2;
+  // the fallback storage layer in-case MKG is behind in execution; populated by menu C*
+  SERVING_SOURCE_NON_MKG_GES = 3;
+  // RX PES serving source in PKG
+  SERVING_SOURCE_RX_PES = 4;
+  // CRDB serving source
+  SERVING_SOURCE_CRDB = 5;
+}
+
+/**
+ * Request to get store menu
+ * store_menu_id: store menu id
+ * fetch_options: data types to fetch
+ * version: menu version, if not set, current one
+ * serving_source: select what layer you want to retrieve data from
+ */
+message GetStoreMenuRequest {
+  string store_menu_id = 1;
+  FetchOptions fetch_options = 2;
+  google.protobuf.Int64Value version = 3;
+  ServingSource serving_source = 4;
+  MenuFetchOptions menu_fetch_options = 5;
+}
+
+/**
+ * Return of getting store menu
+ * store_menu: store menu
+ * dag: menu DAG
+ */
+message GetStoreMenuResponse {
+  menu.StoreMenu store_menu = 1;
+}
+
+/**
+ * Request to get entity
+ * store_menu_id: store_menu_id
+ * entity_type: entity type
+ * entity_id: entity id
+ * include_entity_dag: if true, return menu DAG with entity
+ * menu_id: which menu having this entity
+ */
+message GetMenuEntityRequest {
+  string store_menu_id = 1;
+  menu.EntityType entity_type = 2;
+  string entity_id = 3;
+  bool include_entity_dag = 4;
+  // added for the shared entities
+  google.protobuf.StringValue menu_id = 5;
+  repeated menu.Context contexts = 6;
+}
+
+/**
+ * Request to batch fetch entities
+ * serving_source: select what layer you want to retrieve data from
+ */
+message GetMenuEntitiesRequest {
+  repeated GetMenuEntityRequest get_menu_entity_requests = 1;
+  FetchOptions fetch_options = 2;
+  google.protobuf.Int64Value version = 3;
+  ServingSource serving_source = 4;
+}
+
+/**
+ * Response to batch fetch entities
+ */
+message GetMenuEntitiesResponse {
+  repeated GetMenuEntityResponse get_menu_entity_responses = 1;
+  menu.StoreMenu store_menu = 2;
+}
+
+/**
+ * Response of getting entity
+ * entity: item or extra
+ * dag: menu DAG
+ */
+message GetMenuEntityResponse {
+  oneof entity {
+    menu.Item item = 1;
+    menu.Extra extra = 2;
+  }
+  menu.MenuDAG dag = 3;
+}
+
+/**
+ * request to get entity id graph
+ */
+message GetEntityIdGraphRequest {
+  // list of entity id graph id
+  repeated EntityIdGraphId ids = 1;
+  // if true, return all categories' entityIdGraph under the menuId / storeId specified in ids field
+  bool should_return_all_category_entity_id_graphs = 2;
+}
+
+/**
+ * response to get entity id graph
+ */
+message GetEntityIdGraphResponse {
+  // entity id graphs
+  repeated EntityIdGraph entity_id_graphs = 1;
+}

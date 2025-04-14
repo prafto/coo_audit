@@ -1,0 +1,378 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/ad_group.proto";
+import "promotion/budget.proto";
+import "promotion/campaign.proto";
+import "promotion/common.proto";
+import "promotion/limitation.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+// part of the new campapign_crud_service initiative
+service SelfServeCampaignV2Service {
+  option (service_client.client_config).service_name = "promotion-service";
+  option (service_client.client_config).service_app = "web-campaign-service";
+
+  option (service_client.client_config).retry_config.max_attempts = 1;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  rpc CreateSelfServeCampaignV2(CreateSelfServeCampaignV2Request) returns (CreateSelfServeCampaignV2Response);
+  rpc CreateSelfServeAdCampaign(CreateSelfServeAdCampaignRequest) returns (CreateSelfServeAdCampaignResponse);
+
+  rpc UpdateSelfServeAdCampaign(UpdateSelfServeAdCampaignRequest) returns (UpdateSelfServeAdCampaignResponse);
+
+  // Ends a self-serve campaign for a given list of stores.
+  // And in "doordash-etl", it also sends emails for deactivated stores within the campaign to the creator with the campaign information
+  rpc DeactivateSelfServeCampaignV2(DeactivateSelfServeCampaignV2Request) returns (DeactivateSelfServeCampaignV2Response) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+  // Ends a self-serve Ad campaign for a given list of stores.
+  rpc DeactivateSelfServeAdCampaignV2(DeactivateSelfServeAdCampaignV2Request) returns (DeactivateSelfServeAdCampaignV2Response) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc GetSelfServeUserConfig(GetSelfServeUserConfigRequest) returns (GetSelfServeUserConfigResponse);
+  rpc UpdateSelfServeUserConfig(UpdateSelfServeUserConfigRequest) returns (UpdateSelfServeUserConfigResponse);
+
+  // Given store id and template id / list of template ids, return the set of store ids and their available credit
+  rpc GetFreeTrialEligibilityForStores(GetFreeTrialEligibilityForStoresRequest) returns (GetFreeTrialEligibilityForStoresResponse);
+
+  // Given list of storeIds and template id, return list of eligible storeIds and start date for campaign
+  rpc GetTemplateEligibilityForStores(GetTemplateEligibilityForStoresRequest) returns (GetTemplateEligibilityForStoresResponse);
+
+  // ML based recommendation for budget caps and creation flow endpoint
+  rpc GetEstimatedRedemptionsAndSalesForTemplate(GetEstimatedRedemptionsAndSalesForTemplateRequest) returns (GetEstimatedRedemptionsAndSalesForTemplateResponse);
+}
+
+message GetEstimatedRedemptionsAndSalesForTemplateRequest {
+  repeated google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue template_id = 2;
+  money.MonetaryFields min_order_cart_subtotal = 3;
+  Audience audience = 4;
+  google.protobuf.StringValue discount_type = 5;
+  money.MonetaryFields customer_discount_amount = 6;
+  DayParts day_parts = 7;
+}
+
+message GetEstimatedRedemptionsAndSalesForTemplateResponse {
+  google.protobuf.Int32Value est_daily_redemptions = 1; // will be used by frontend to calculate budget recommendation
+  google.protobuf.Int32Value est_rounded_monthly_redemptions = 2;
+  google.protobuf.Int32Value est_monthly_promo_sales = 3;
+  google.protobuf.BoolValue is_campaign_schedule_insufficient = 4; // whether daypart configurations will cause low estimated campaign sales
+  google.protobuf.FloatValue est_day_parting_volume_ratio = 5;
+  repeated RawSalesMetricWithoutPromo raw_sales_metric_without_promo = 6;
+}
+
+message RawSalesMetricWithoutPromo {
+  google.protobuf.Int32Value store_id = 1;
+  google.protobuf.Int32Value weekly_sales_without_promo = 2;
+  google.protobuf.Int32Value percentage_decrease_in_sales_without_promo = 3;
+}
+
+message GetFreeTrialEligibilityForStoresRequest {
+  repeated string store_ids = 1;
+  string template_id = 2;
+  google.protobuf.StringValue currency = 3;
+  repeated google.protobuf.StringValue template_ids = 4;
+}
+
+message GetFreeTrialEligibilityForStoresResponse {
+  repeated FreeTrialStore free_trial_stores = 1;
+}
+
+message GetTemplateEligibilityForStoresRequest {
+  repeated google.protobuf.StringValue store_ids = 1;
+  repeated string template_ids = 2;
+  google.protobuf.StringValue business_id = 3;
+}
+
+message TemplateEligibilityForStore {
+  string template_id = 1;
+  string store_id = 2;
+  google.protobuf.Timestamp start_time = 3;
+}
+
+message GetTemplateEligibilityForStoresResponse {
+  repeated TemplateEligibilityForStore template_eligibility_for_stores = 1;
+}
+
+message FreeTrialStore {
+  enum CreditType {
+    UNSPECIFIED = 0;
+    FREE_TRIAL_NEW = 1; // Default is New to match with existing Free Trials
+    FREE_TRIAL_LAPSED = 2;
+    LIMITED_TIME_FREE_TRIAL_NEW = 3;
+    LIMITED_TIME_FREE_TRIAL_LAPSED = 4;
+    FREE_TRIAL_OVERRIDE = 5;
+  }
+
+  string store_id = 1;
+  money.MonetaryFields credit_amount = 2;
+  google.protobuf.StringValue template_id = 3;
+
+  CreditType credit_type = 4;
+  // Only populated for LIMITED_TIME_NEW LIMITED_TIME_LAPSED and OVERRIDE type
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  // override Id if free_trial_type is FREE_TRIAL_OVERRIDE
+  google.protobuf.StringValue override_id = 7;
+}
+
+message CreateSelfServeCampaignV2Request {
+  SelfServeCampaign self_serve_campaign = 1;
+}
+
+message CreateSelfServeCampaignV2Response {
+  google.protobuf.StringValue campaign_id = 1;
+  PreconditionFailureV2 precondition_failure = 2;
+}
+
+message PreconditionFailureV2 {
+  // A message type used to describe a single precondition failure.
+  message Violation {
+    string type = 1;
+    string subject = 2;
+    string description = 3;
+  }
+
+  // Describes all precondition violations.
+  repeated Violation violations = 1;
+}
+
+// Determines what users see the campaign
+message Audience {
+  // Users that see the campaign, maps indirectly to UserCriterion
+  enum AudienceType {
+    INVALID = 0;
+    ALL_USERS = 1;
+    NEW_CX_TO_MX = 2;
+    EXISTING_CX_TO_MX = 3;
+    CX_CHURNED_FROM_MX = 4;
+    SMART_TARGETING = 5;
+  }
+  AudienceType type = 1;
+  google.protobuf.StringValue name = 2;
+  oneof property {
+    google.protobuf.Int32Value winback_days = 4;
+  }
+}
+
+message SelfServePromoIncentive {
+  oneof value {
+    google.protobuf.Int32Value flat_amount_off = 1;
+    google.protobuf.Int32Value percent_off = 2;
+    google.protobuf.Int32Value set_specific_value = 3;
+  }
+  google.protobuf.Int32Value maximum_percent_discount = 4;
+  google.protobuf.Int32Value delivery_fee = 5;
+  google.protobuf.StringValue items_audience_name = 6; // We will save all the items to audience_service for item-promotion
+  ProductIds product_ids = 7;
+}
+
+message SelfServePromoConfig {
+  repeated google.protobuf.StringValue code = 1;
+  google.protobuf.StringValue title_override = 2;
+  google.protobuf.StringValue description_override = 3;
+}
+
+message SelfServePromoConditions {
+  google.protobuf.Int32Value minimum_subtotal = 4;
+  google.protobuf.StringValue currency = 5;
+  google.protobuf.Int32Value max_redemption_count = 6;
+  money.MonetaryFields daily_budget = 7;
+}
+
+message SelfServeCampaign {
+  google.protobuf.StringValue template_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  repeated google.protobuf.StringValue store_ids = 4;
+  repeated Audience audiences = 5;
+
+  SelfServePromoConfig promo_config = 6;
+  SelfServePromoIncentive promo_incentive = 7;
+  SelfServePromoConditions promo_conditions = 8;
+  repeated common.Experience experiences = 9;
+
+  google.protobuf.StringValue user_email = 10;
+  google.protobuf.StringValue contract_download_url = 11;
+  // UI will send the campaign name since it is a dynamic string
+  // and Backend cannot handle interpolated translations
+  google.protobuf.StringValue campaign_name = 12;
+
+  google.protobuf.BoolValue is_free_trial = 13;
+
+  SelfServeInvoiceConfig invoice_config = 14;
+  // metadata
+  map<string, string> metadata = 15;
+
+  DayParts day_parts = 16;
+
+  // Metadata regarding owner of campaign
+  AdvertiserEntity advertiser_entity = 17;
+}
+
+message CreateSelfServeAdCampaignRequest {
+  SelfServeAdCampaign self_serve_ad_campaign = 1;
+}
+
+message CreateSelfServeAdCampaignResponse {
+  Campaign campaign = 1;
+  PreconditionFailureV2 precondition_failure = 2;
+}
+
+message SelfServeAdCampaign {
+  // id is used for edit. It is ignored on create.
+  google.protobuf.StringValue id = 1;
+
+  // "sl" for "sponsored listing".
+  google.protobuf.StringValue template_id = 2;
+
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+
+  // Always DOORDASH
+  repeated common.Experience experiences = 5;
+
+  // Will be a single ad group until Portal adds support probably in 2022.
+  repeated SelfServeAdGroup ad_groups = 6;
+
+  // Email of Portal user.
+  google.protobuf.StringValue user_email = 7;
+
+  // UI will send the campaign name since it is a dynamic string
+  // and Backend cannot handle interpolated translations
+  google.protobuf.StringValue campaign_name = 8;
+
+  // Always OBJECTIVE_TYPE_CONVERSION
+  Objective objective = 9;
+
+  // Not used currently.
+  // Campaign level budget will be added to promo campaigns soon and may be added to ad campaigns later.
+  Budget budget = 10;
+  // free trial flag
+  google.protobuf.BoolValue is_free_trial = 11;
+
+  SelfServeInvoiceConfig invoice_config = 12;
+  // metadata
+  map<string, string> metadata = 13;
+
+  // Metadata regarding owner of campaign
+  AdvertiserEntity advertiser_entity = 14;
+
+  // Persisted campaign status in the DB
+  State campaign_state = 15;
+
+  // when the state of the entity is changed, this field will be populated
+  StateChangeInfo state_change_info = 16;
+}
+
+message SelfServeAdGroup {
+  // id is used for edit. It is ignored on create.
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  repeated Audience audiences = 4;
+
+  // Always DOORDASH
+  repeated common.Experience experiences = 5;
+  repeated google.protobuf.StringValue store_ids = 6;
+  Budget budget = 7;
+
+  // Optional: Mx can set custom bid.
+  Bid bid = 8;
+
+  DayParts day_parts = 9;
+}
+
+message UpdateSelfServeAdCampaignRequest {
+  SelfServeAdCampaign self_serve_ad_campaign = 1;
+}
+
+message UpdateSelfServeAdCampaignResponse {
+  Campaign campaign = 1;
+  PreconditionFailureV2 precondition_failure = 2;
+}
+
+message DeactivateSelfServeCampaignV2Request {
+  google.protobuf.StringValue campaign_id = 1;
+  repeated google.protobuf.StringValue store_ids = 2;
+}
+
+message DeactivateSelfServeCampaignV2Response {
+  google.protobuf.BoolValue success = 1;
+  google.protobuf.StringValue payload = 2;
+  repeated UnprocessedMessage unprocessed_messages = 3;
+}
+
+message DeactivateSelfServeAdCampaignV2Request {
+  google.protobuf.StringValue campaign_id = 1;
+  repeated google.protobuf.StringValue store_ids = 2;
+}
+
+message DeactivateSelfServeAdCampaignV2Response {
+  google.protobuf.BoolValue success = 1;
+  google.protobuf.StringValue payload = 2;
+  repeated UnprocessedMessage unprocessed_messages = 3;
+}
+
+message UnprocessedMessage {
+  google.protobuf.StringValue store_id = 1;
+  ErrorType error_type = 2;
+}
+
+enum ErrorType {
+  UNKNOWN_ERROR = 0;
+  STORE_NOT_IN_CAMPAIGN = 1;
+}
+
+message GetSelfServeUserConfigRequest {
+  // clustering key
+  string user_id = 1;
+  // partition key
+  string business_id = 2;
+}
+
+message GetSelfServeUserConfigResponse {
+  SelfServeUserConfig self_serve_user_config = 1;
+}
+
+message UpdateSelfServeUserConfigRequest {
+  SelfServeUserConfig self_serve_user_config = 1;
+}
+
+message UpdateSelfServeUserConfigResponse {
+  SelfServeUserConfig self_serve_user_config = 1;
+}
+
+message SelfServeUserConfig {
+  string user_id = 1;
+  string business_id = 2;
+  repeated SelfServeUserAdConfig user_ad_config = 3;
+  map<string, string> custom_config = 4;
+}
+
+message SelfServeUserAdConfig {
+  repeated string store_ids = 1;
+  string pactsafe_url = 2;
+  string pactsafe_version = 3;
+  string pactsafe_group_id = 4;
+  google.protobuf.Timestamp accepted_date = 5;
+}
+
+message SelfServeInvoiceConfig {
+  google.protobuf.BoolValue is_invoiced = 1;
+  google.protobuf.StringValue netsuite_entity_id = 2;
+  google.protobuf.StringValue salesforce_opportunity = 3;
+  AdvertiserEntity advertiser_entity = 4;
+}

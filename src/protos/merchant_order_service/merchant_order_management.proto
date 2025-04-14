@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package com.doordash.rpc.merchant_order_service.v1;
+
+import "common/code.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_order_service/order_model.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "MerchantOrderManagementServiceProto";
+option java_package = "com.doordash.rpc.merchant_order_service";
+
+// MerchantOrderManagementService
+service MerchantOrderManagementService {
+  // rpc: to get mx confirmed prep durations for a list of delivery uuids
+  rpc GetMxConfirmedOrderPrepDurations(GetMxConfirmedOrderPrepDurationsRequest) returns (GetMxConfirmedOrderPrepDurationsResponse) {
+    option deprecated = true;
+  }
+  // rpc: to get list of active orders by store id and quoted delivery start time
+  rpc GetActiveOrders(GetActiveOrdersRequest) returns (GetActiveOrdersResponse);
+  // rpc: to get list of orders details by deliveryUuids
+  rpc GetOrdersDetail(GetOrdersDetailRequest) returns (GetOrdersDetailResponse);
+  // rpc: adjust order for items change or future other use cases such as tip etc
+  rpc AdjustOrder(AdjustOrderRequest) returns (AdjustOrderResponse);
+}
+
+// GetMxConfirmedDurationsRequest
+message GetMxConfirmedOrderPrepDurationsRequest {
+  // list of delivery uuids
+  repeated google.protobuf.StringValue delivery_uuids = 1;
+}
+
+// MxConfirmedOrderPrepDuration
+message MxConfirmedOrderPrepDuration {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // merchant confirmed prep duration
+  google.protobuf.UInt64Value mx_confirmed_prep_duration = 2;
+}
+
+// GetMxConfirmedDurationsResponse
+message GetMxConfirmedOrderPrepDurationsResponse {
+  // list of mapping from delivery uuid to merchant confirmed prep duration
+  repeated MxConfirmedOrderPrepDuration mx_confirmed_order_prep_durations = 1;
+}
+
+// GetActiveOrders Request
+message GetActiveOrdersRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // quoted delivery start time
+  google.protobuf.Timestamp quoted_delivery_start_time = 2;
+  // include untransmitted
+  google.protobuf.BoolValue include_untransmitted = 3;
+  // list of active orders query params
+  repeated OrdersQueryParam orders_query_param = 4;
+  // user id
+  google.protobuf.Int64Value user_id = 5;
+}
+
+// GetActiveOrders Response
+message GetActiveOrdersResponse {
+  // orders
+  repeated Order orders = 1;
+}
+
+// GetOrdersDetail Request
+message GetOrdersDetailRequest {
+  // list of orders detail query params
+  repeated OrdersQueryParam orders_detail_query_param = 1;
+  // user id
+  google.protobuf.Int64Value user_id = 2;
+}
+
+// GetOrdersDetail Response
+message GetOrdersDetailResponse {
+  // order
+  repeated Order orders = 1;
+}
+
+// Orders query params
+message OrdersQueryParam {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // last updated at timestamp in epoch milliseconds
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+// AdjustOrderRequest
+message AdjustOrderRequest {
+  // id
+  oneof order_identifier {
+    // delivery uuid
+    google.protobuf.StringValue delivery_uuid = 1;
+    // order uuid
+    google.protobuf.StringValue order_uuid = 6;
+    // leave space for supporting order uuid etc
+  }
+  // adjust order type
+  AdjustOrderType adjust_order_type = 2;
+  // adjust order source
+  AdjustOrderSource adjust_order_source = 3;
+  // list of adjusted order items
+  repeated AdjustedOrderItem adjusted_order_items = 4;
+  // request user id
+  google.protobuf.StringValue request_user_id = 5;
+}
+
+// OrderItemAdjustmentType
+enum AdjustOrderType {
+  // adjust order type unspecified
+  ADJUST_ORDER_TYPE_UNSPECIFIED = 0;
+  // Order update: change items of current order
+  ADJUST_ORDER_TYPE_ORDER_UPDATE = 1;
+  // leave space of tip, etc adjustment
+}
+
+// OrderAdjustmentSource
+enum AdjustOrderSource {
+  // adjust order source unspecified
+  ADJUST_ORDER_SOURCE_UNSPECIFIED = 0;
+  // adjust order source: tablet
+  ADJUST_ORDER_SOURCE_ORDER_MANAGER_APP = 1;
+  // adjust order source: live order management plugin
+  ADJUST_ORDER_SOURCE_LIVE_ORDER_MANAGEMENT_PLUGIN = 2;
+}
+
+// AdjustedOrderItem
+/**
+ * use cases we can support:
+ * 1) item removal: remove the existing item from order, needs below params
+ *   - adjust_order_item_type = ITEM_REMOVE
+ *   - order_item_id
+ * 2) item substitution: replace the existing item with a new item, needs below params
+ *   - adjust_order_item_type = ITEM_SUBSTITUTE
+ *   - order_item_id
+ *   - menu_item_id
+ *   - new_quantity
+ *   - new_extra_options
+ * 3) item update: update item quantity or extra options, needs below params
+ *   - adjust_order_item_type = ITEM_UPDATE
+ *   - order_item_id
+ *   - menu_item_id: it has to be the menu item id of the existing item
+ *   - new_quantity
+ *   - new_extra_options
+ *   - additional_cost (carry over the existing additional cost)
+ *   - special_instructions (carry over the existing special instructions)
+ */
+message AdjustedOrderItem {
+  // adjust order item type
+  AdjustOrderItemType adjust_order_item_type = 1;
+  // original order item id to adjust
+  google.protobuf.StringValue order_item_id = 2;
+  // new menu item id to substitute
+  google.protobuf.StringValue menu_item_id = 3;
+  // new item quantity
+  google.protobuf.Int32Value new_quantity = 4;
+  // new item extra options
+  repeated AdjustedOrderItemExtraOption new_extra_options = 5;
+  // item additional cost set, ITEM_UPDATE needs to carry over the existing additional cost
+  money.MonetaryFields additional_cost = 6;
+  // item special instructions set, ITEM_UPDATE needs to carry over the existing special instructions
+  google.protobuf.StringValue special_instructions = 7;
+}
+
+// ItemAdjustmentType
+enum AdjustOrderItemType {
+  // adjust order item type unspecified
+  ADJUST_ORDER_ITEM_TYPE_UNSPECIFIED = 0;
+  // Item remove: remove item from order
+  ADJUST_ORDER_ITEM_TYPE_ITEM_REMOVE = 1;
+  // Item substitute: substitute item with another item
+  ADJUST_ORDER_ITEM_TYPE_ITEM_SUBSTITUTE = 2;
+  // Item update: update item quantity or extra options
+  ADJUST_ORDER_ITEM_TYPE_ITEM_UPDATE = 3;
+}
+
+// AdjustedOrderItemExtraOption
+message AdjustedOrderItemExtraOption {
+  // menu item extra option id
+  google.protobuf.StringValue menu_item_extra_option_id = 1;
+  // extra options
+  repeated AdjustedOrderItemExtraOption extra_options = 2;
+  // quantity
+  google.protobuf.Int32Value quantity = 3;
+}
+
+// AdjustOrder Response
+message AdjustOrderResponse {
+  // empty response
+}

@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package storage_self_serve.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/storage_self_serve.v1";
+
+// Type of validation
+enum OperationValidationType {
+  // DO NOT USE.
+  OPERATION_VALIDATION_TYPE_UNSPECIFIED = 0;
+  // Validation that is checked off as complete by a user.
+  OPERATION_VALIDATION_TYPE_MANUAL = 1;
+  // Automatic validations according to static rules like no DROP COLUMN.
+  OPERATION_VALIDATION_TYPE_AUTO = 2;
+}
+
+// Status of validation
+enum OperationValidationStatus {
+  // DO NOT USE.
+  OPERATION_VALIDATION_STATUS_UNSPECIFIED = 0;
+  // Default. Started but not finished
+  OPERATION_VALIDATION_STATUS_IN_PROGRESS = 1;
+  // Finished
+  OPERATION_VALIDATION_STATUS_DONE = 2;
+  // Skipped by storage admin override
+  OPERATION_VALIDATION_STATUS_SKIPPED = 3;
+  // Abandoned by user
+  OPERATION_VALIDATION_STATUS_ABANDONED = 4;
+  // Validation requires another validation to be completed first
+  OPERATION_VALIDATION_STATUS_AWAITING_PREREQS = 5;
+  // Validation failed
+  OPERATION_VALIDATION_STATUS_FAILED = 6;
+}
+
+// Defines the severity level of a validation
+enum ValidationLevel {
+  // Default unspecified value
+  VALIDATION_LEVEL_UNSPECIFIED = 0;
+
+  // Validation failures at this level block operations
+  VALIDATION_LEVEL_BLOCKING = 1;
+
+  // Validation failures at this level only warn but don't block operations
+  VALIDATION_LEVEL_WARNING = 2;
+}
+
+message ValidationMetadata {
+  // name of the validation
+  string name = 1;
+  // owning team
+  string owning_team = 2;
+}
+
+// Create request
+message CreateValidationRequest {
+  // id of the operation that this validation is associated with
+  string operation_id = 1;
+  // non-functional metadata
+  ValidationMetadata metadata = 2;
+  // validation type
+  OperationValidationType validation_type = 3;
+  // status (Defaults to IN_PROGRESS)
+  OperationValidationStatus status = 4;
+  // dd email of the user who created the validation
+  string updated_by = 5;
+}
+
+// Create response
+message CreateValidationResponse {
+  // validation id
+  string validation_id = 1;
+}
+
+// Update request
+message UpdateValidationStatusRequest {
+  // validation id
+  string validation_id = 1;
+  // validation status
+  OperationValidationStatus status = 2;
+  // dd email of the user who updated the validation
+  string updated_by = 3;
+  // [optional] reason for the change. Fill in stuff like why we grants exception
+  string reason = 4;
+}
+
+// Update response
+message UpdateValidationStatusResponse {}
+
+message UpdateValidationMetadataRequest {
+  // validation id
+  string validation_id = 1;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  ValidationMetadata metadata = 2;
+
+  // Mask to specify which fields to update. Fields that are not specified will
+  // NOT be updated. Use the unqualified underlying field name and use camelCase
+  // for multi-word field names. E.g., `owningTeam` for `metadata.owningTeam`.
+  google.protobuf.FieldMask update_mask = 3;
+
+  // dd email of the user who updated the validation
+  string updated_by = 4;
+}
+
+message UpdateValidationMetadataResponse {}
+
+// Read request
+message GetValidationRequest {
+  // validation id
+  string validation_id = 1;
+}
+
+// Read response
+message GetValidationResponse {
+  // validation id
+  string validation_id = 1;
+
+  // id of the operation that this validation is associated with
+  string operation_id = 2;
+
+  // non-functional metadata
+  ValidationMetadata metadata = 3;
+
+  // validation type
+  OperationValidationType validation_type = 4;
+
+  // validation status
+  OperationValidationStatus status = 5;
+
+  // dd email of the user who created the validation
+  string updated_by = 6;
+
+  // when the validation was last updated
+  google.protobuf.Timestamp updated_at = 7;
+
+  // when the validation was started
+  google.protobuf.Timestamp start_time = 8;
+
+  // when the validation was finished or abandoned
+  google.protobuf.Timestamp end_time = 9;
+
+  // when the validation was first created
+  google.protobuf.Timestamp created_at = 10;
+
+  // validation level (existing validations default to BLOCKING)
+  ValidationLevel validation_level = 11;
+}
+
+// Read-all request
+message GetAllValidationsForOperationRequest {
+  // Validations are associated with an operation
+  string operation_id = 1;
+  // Max number of records to return.
+  google.protobuf.Int32Value limit = 2;
+
+  // Wrapped to allow for existence check
+  oneof validation_type_wrapper {
+    // Filter for validations of the given type.
+    // Leave unset to run all validations.
+    OperationValidationType validation_type = 3;
+  }
+
+  // Wrapped to allow for existence check
+  oneof validation_level_wrapper {
+    // Filter for validations of the given level.
+    // Leave unset to get all validation levels.
+    ValidationLevel validation_level = 4;
+  }
+}
+
+// Read-all response
+message GetAllValidationsForOperationResponse {
+  // All validations assocaited with the operation
+  repeated GetValidationResponse validations = 1;
+}
+
+// Run validations matching filter
+message RunValidationsForOperationRequest {
+  // Validations are associated with an operation
+  string operation_id = 1;
+  // Wrapped to allow for existence check
+  oneof validation_type_wrapper {
+    // Filter for validations of the given type.
+    // Leave unset to run all validations.
+    OperationValidationType validation_type = 2;
+  }
+}
+
+message RunValidationsForOperationResponse {
+  // ids of all validations that will be run
+  repeated string validation_ids = 1;
+}

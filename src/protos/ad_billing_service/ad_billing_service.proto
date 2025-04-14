@@ -1,0 +1,796 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package ad_billing_service.v1;
+
+import "ads/budget.proto";
+import "ads/events/budget_transaction.proto";
+import "common/ads_promos.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/order_config.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_financial_service/merchant_commission_service.proto";
+import "order/order_lifecycle.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ad_billing_service";
+
+// This service serves ads-billing-invoicing related data and operations
+service AdBillingService {
+  option (service_client.client_config).service_name = "ad-billing-service";
+  option (service_client.client_config).service_app = "web-ad-billing-service";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // increment accumulations in (redemptionByCode, redemptionByConsumerByBudgetAssociationId, optimisticBudget)
+  rpc InsertOrIncrementAggregatedAccumulations(InsertOrIncrementAggregatedAccumulationsRequest) returns (InsertOrIncrementAggregatedAccumulationsResponse);
+
+  // retrieves promo redemption count by budget_association_id & consumer_id
+  rpc GetRedemptionCountByConsumerAndBudgetAssociationId(GetRedemptionCountByConsumerAndBudgetAssociationIdRequest) returns (GetRedemptionCountByConsumerAndBudgetAssociationIdResponse);
+
+  // retrieves promo redemption count by budget_association_id & consumer_id
+  rpc GetRedemptionCountByConsumerAndBudgetAssociationIds(GetRedemptionCountByConsumerAndBudgetAssociationIdsRequest) returns (GetRedemptionCountByConsumerAndBudgetAssociationIdsResponse);
+
+  // retrieves promo redemption count by code
+  rpc GetRedemptionCountByCode(GetRedemptionCountByCodeRequest) returns (GetRedemptionCountByCodeResponse);
+
+  // retrieves current promo budget spending by budget_association_id
+  rpc GetCurrentSpendingsByBudgetAssociationId(GetCurrentSpendingsByBudgetAssociationIdRequest) returns (GetCurrentSpendingsByBudgetAssociationIdResponse);
+
+  // batch version of GetCurrentSpendingsByBudgetAssociationId
+  rpc GetCurrentSpendingsByBudgetAssociationIds(GetCurrentSpendingsByBudgetAssociationIdsRequest) returns (GetCurrentSpendingsByBudgetAssociationIdsResponse);
+
+  // retrieve redemptions by consumer_id
+  rpc GetRedemptionsByConsumerId(GetRedemptionsByConsumerIdRequest) returns (GetRedemptionsByConsumerIdResponse);
+
+  // handle order cancel
+  rpc VoidMarketingFee(VoidMarketingFeeRequest) returns (VoidMarketingFeeResponse);
+
+  // get campaign ad spend aggregation amounts by budget_association_id, start and end times, and budget experiment info
+  rpc GetCampaignAdSpendAggregation(GetCampaignAdSpendAggregationRequest) returns (GetCampaignAdSpendAggregationResponse);
+
+  // handle redeem direct call during checkout
+  rpc HandleRedemption(HandleRedemptionRequest) returns (HandleRedemptionResponse);
+
+  // Return Merchant Fees (Ad fee, promo fee) associated to a delivery
+  rpc GetMerchantFeeByDeliveryId(GetMerchantFeeByDeliveryIdRequest) returns (GetMerchantFeeByDeliveryIdResponse);
+
+  // Use or return free trial credit for payout breakdown
+  rpc RedeemOrUnredeemFreeTrialCredit(RedeemOrUnredeemFreeTrialCreditRequest) returns (RedeemOrUnredeemFreeTrialCreditResponse);
+
+  // use to retrieve sub txn data details only latest one, only support CPA and CPR now.
+  rpc GetBillingDetailsByDeliveryId(GetBillingDetailsByDeliveryIdRequest) returns (GetBillingDetailsByDeliveryIdResponse);
+
+  // retrieves promo redemption count by consumer_id
+  rpc GetRedemptionCountByConsumerId(GetRedemptionCountByConsumerIdRequest) returns (GetRedemptionCountByConsumerIdResponse);
+
+  // Calculator marketing fee for a store order cart
+  rpc GetMarketingFee(GetMarketingFeeRequest) returns (GetMarketingFeeResponse);
+
+  // Create Premier Marketing Fund campaign leveraging billing/fund config within this service
+  // RFC: https://docs.google.com/document/d/1villLROKB8h-AdTZmX7tC5fYJI0XsZDmEmLeglrSOsA/edit?tab=t.0#bookmark=id.m8hg0yotlae8
+  rpc CreatePMFCampaign(CreatePMFCampaignRequest) returns (CreatePMFCampaignResponse);
+}
+
+// CreatePMFCampaign request
+message CreatePMFCampaignRequest {
+  // business id
+  google.protobuf.StringValue business_id = 1;
+  // store id, optional
+  google.protobuf.StringValue store_id = 2;
+}
+
+// CreatePMFCampaign response
+message CreatePMFCampaignResponse {
+  // Created campaign id
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+// GetBillingDetailsByDeliveryId request
+message GetBillingDetailsByDeliveryIdRequest {
+  // delivery_id
+  google.protobuf.StringValue delivery_id = 1;
+}
+
+// GetBillingDetailsByDeliveryId response
+message GetBillingDetailsByDeliveryIdResponse {
+  // billing details which maps to billable_event_table and sub_txn table
+  repeated BillingDetails billing_details = 1;
+}
+
+// billing details
+message BillingDetails {
+  // billable_event_id
+  google.protobuf.StringValue billable_event_id = 1;
+  // ad group id
+  google.protobuf.StringValue ad_group_id = 2;
+  // type: CPR or CPA
+  google.protobuf.StringValue type = 3;
+  // event_id
+  google.protobuf.StringValue event_id = 4;
+  // cx id
+  google.protobuf.StringValue consumer_id = 5;
+  // store id
+  google.protobuf.StringValue store_id = 6;
+  // billing line item id
+  google.protobuf.StringValue billing_line_item_id = 7;
+  // delivery id
+  google.protobuf.StringValue delivery_id = 8;
+  // placement type stored in db
+  google.protobuf.StringValue placement_type = 9;
+  // event_active_date
+  google.protobuf.Timestamp event_active_date = 10;
+  // created_at
+  google.protobuf.Timestamp created_at = 11;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 12;
+  // billing method stored in billable event table.
+  google.protobuf.StringValue billing_method = 13;
+  // currency
+  google.protobuf.StringValue currency = 14;
+  // first active ts
+  google.protobuf.Timestamp first_active_ts = 15;
+  // last active ts
+  google.protobuf.Timestamp last_active_ts = 16;
+  // ad click event_id
+  google.protobuf.StringValue ad_click_event_id = 17;
+  // campaign id or enrichment id
+  google.protobuf.StringValue entity_id = 18;
+  // entity type: campaign or enrichment
+  ads.events.EntityIdType entity_type = 19;
+
+  // event detail
+  oneof event_detail {
+    // cpr event detail
+    CprEventDetail cpr_event_detail = 20;
+    // cpa event detail
+    CpaEventDetail cpa_event_detail = 21;
+  }
+
+  // data stored in subtxn
+  repeated SubTransactionDetails sub_transaction_details = 22;
+}
+
+// cpr event detail
+message CprEventDetail {
+  // billable_event_id
+  google.protobuf.StringValue billable_event_id = 1;
+  // redemption_id
+  google.protobuf.StringValue redemption_id = 2;
+  // redeem code
+  google.protobuf.StringValue code = 3;
+  // store order cart id
+  google.protobuf.StringValue store_order_cart_id = 4;
+  // order cart id
+  google.protobuf.StringValue order_cart_id = 5;
+  // order_uuid
+  google.protobuf.StringValue order_uuid = 6;
+  // num applications
+  google.protobuf.Int64Value num_applications = 7;
+  // funded by for campaign.
+  google.protobuf.StringValue funded_by = 8;
+  // order submitted timestamp.
+  google.protobuf.Timestamp order_cart_submitted_at = 9;
+  // order subtotal
+  google.protobuf.Int64Value order_subtotal = 10;
+  // override marketing fee
+  google.protobuf.BoolValue override_order_cart_marketing_fee = 11;
+  // item ids.
+  repeated google.protobuf.StringValue item_ids = 12;
+  // total discount
+  google.protobuf.Int64Value discount_value = 13;
+  // platform fee
+  google.protobuf.Int64Value platform_fee = 14;
+  // discount subsidy
+  google.protobuf.Int64Value discount_subsidy = 15;
+}
+
+// cpa event detail
+message CpaEventDetail {
+  // billable_event_id
+  google.protobuf.StringValue billable_event_id = 1;
+  // order_subtotal
+  google.protobuf.Int64Value order_subtotal = 2;
+  // order_cart_submitted_at
+  google.protobuf.Timestamp order_cart_submitted_at = 3;
+  // order confirm time
+  google.protobuf.Timestamp store_order_confirm_time = 4;
+  // auction id
+  google.protobuf.StringValue auction_id = 5;
+  // acution created at
+  google.protobuf.Timestamp auction_created_at = 6;
+  // previous attributed delivery id
+  google.protobuf.StringValue previous_attributed_delivery_id = 7;
+}
+
+// subtxn data
+message SubTransactionDetails {
+  // sub txn funded entity type
+  ads.events.SubTransactionFundedEntityType funded_entity_type = 1; // from budgetTxn proto
+  // fee type: ads or promo fee
+  ads.events.SubTransactionFeeType fee_type = 2; // from budgetTxn proto
+  // fee amount (redemption fee or ads fee)
+  money.MonetaryFields fee_amount = 3;
+  // tax amount
+  money.MonetaryFields tax_amount = 4;
+  // discount amount
+  money.MonetaryFields discount_subsidy = 5;
+  // funded by id
+  google.protobuf.StringValue funded_by_id = 6;
+  // billing profile id
+  google.protobuf.StringValue billing_profile_id = 7;
+  // billing method, invoice/witholding
+  ads_promos.v1.BillingMethod billing_method = 8;
+  // billable event id
+  google.protobuf.StringValue billable_event_id = 9;
+  // billable sub txn id
+  google.protobuf.StringValue billable_sub_transaction_id = 10;
+}
+
+// request for incrementing all 3 (redemptionByCode, redemptionByConsumerByBudgetAssociationId, optimisticBudget)
+// accumulation tables
+message InsertOrIncrementAggregatedAccumulationsRequest {
+  // for optimisticBudget table
+  // optional. budget start time. If not exist, then it only updates lifetime accumulation
+  google.protobuf.Timestamp budget_start_at = 1;
+
+  // time when the transaction happened
+  google.protobuf.Timestamp transaction_timestamp = 2;
+
+  // spending
+  google.protobuf.Int32Value spend = 3;
+
+  // for redemption count tables
+  google.protobuf.Int32Value redemption_count = 4;
+
+  // consumer ID
+  google.protobuf.StringValue consumer_id = 5;
+
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 6;
+
+  // event_id (order_id:campaign_id/adgroup_id:action) no action means normal increments
+  google.protobuf.StringValue event_id = 7;
+
+  // redemption code
+  google.protobuf.StringValue code = 8;
+
+  // if isSynchronize, then check if the event_id exists in the database first
+  google.protobuf.BoolValue is_synchronize = 9;
+}
+
+// response for incrementing all 3 (redemptionByCode, redemptionByConsumerByBudgetAssociationId, optimisticBudget)
+// accumulation tables
+message InsertOrIncrementAggregatedAccumulationsResponse {
+  // consumer ID
+  google.protobuf.StringValue consumer_id = 5;
+
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 6;
+
+  // promo code
+  google.protobuf.StringValue code = 7;
+}
+
+// request for GetRedemptionCountByConsumerByBudgetAssociationId
+message GetRedemptionCountByConsumerAndBudgetAssociationIdRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 2;
+}
+
+// batch request variant of GetRedemptionCountByConsumerByBudgetAssociationId
+message GetRedemptionCountByConsumerAndBudgetAssociationIdsRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // A budget_association_id can be either campaign_id or ad_group id
+  repeated BudgetAssociationId budget_association_ids = 2;
+}
+
+// response for GetRedemptionCountByConsumerByBudgetAssociationId
+message GetRedemptionCountByConsumerAndBudgetAssociationIdResponse {
+  // count of current redemption
+  google.protobuf.Int32Value redemption_count = 1;
+}
+
+// response for GetRedemptionCountByConsumerByBudgetAssociationId
+message GetRedemptionCountByConsumerAndBudgetAssociationIdsResponse {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // results for each consumer_id
+  repeated RedemptionCountForBudgetAssociationId redemption_count_for_budget_association_ids = 2;
+}
+
+// request variant of GetRedemptionCountByConsumerIdRequest
+message GetRedemptionCountByConsumerIdRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+// request variant of GetRedemptionCountByConsumerIdResponse
+message GetRedemptionCountByConsumerIdResponse {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // results for each budget_association_id for this Consumer
+  repeated RedemptionCountForBudgetAssociationIdString redemption_count_for_budget_association_ids = 2;
+}
+
+// represents the redemption count for a single budget_association_id
+message RedemptionCountForBudgetAssociationIdString {
+  // A budget_association_id string value
+  google.protobuf.StringValue budget_association_id_string_value = 1;
+  // count of current redemption
+  google.protobuf.Int32Value redemption_count = 2;
+}
+
+// represents the redemption count for a single budget_association_id
+message RedemptionCountForBudgetAssociationId {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // count of current redemption
+  google.protobuf.Int32Value redemption_count = 2;
+}
+
+// request for GetRedemptionCountByCode
+message GetRedemptionCountByCodeRequest {
+  // promo code
+  google.protobuf.StringValue code = 1;
+}
+
+// response for GetRedemptionCountByCode
+message GetRedemptionCountByCodeResponse {
+  // count of current redemption
+  google.protobuf.Int32Value redemption_count = 1;
+}
+
+// request for GetRedemptionsByConsumerId
+message GetRedemptionsByConsumerIdRequest {
+  // required, retrieve consumer's latest deliveries by consumer id
+  google.protobuf.Int64Value consumer_id = 1;
+  // how for back to search, default limiting to 50
+}
+
+// response for GetRedemptionsByConsumerId
+message GetRedemptionsByConsumerIdResponse {
+  // list of redemptions
+  repeated Redemption redemptions = 1;
+}
+
+// request for GetCurrentSpendingByBudgetAssociationId
+message GetCurrentSpendingsByBudgetAssociationIdRequest {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // budget start time. If not exist, then it only updates lifetime accumulation
+  google.protobuf.Timestamp budget_start_at = 2;
+  // reserved for deleted value
+  reserved 3;
+}
+
+// query to wrap budgetAssociation
+message BudgetAssocationQuery {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // budget start time. If not exist, then it only updates lifetime accumulation
+  google.protobuf.Timestamp budget_start_at = 2;
+}
+
+// request for GetCurrentSpendingByBudgetAssociationIds
+message GetCurrentSpendingsByBudgetAssociationIdsRequest {
+  // a list of BudgetAssocationQuery
+  repeated BudgetAssocationQuery budget_association_queries = 1;
+}
+
+// response for GetCurrentSpendingByBudgetAssociationId
+message GetCurrentSpendingsByBudgetAssociationIdResponse {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // current spending
+  repeated BudgetCurrentSpending current_spending = 2;
+  // redemption_count
+  google.protobuf.Int32Value transaction_count = 3;
+}
+
+// result to warp budget association returns
+message BudgetAssociationResult {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // current spending
+  repeated BudgetCurrentSpending current_spending = 2;
+  // redemption_count
+  google.protobuf.Int32Value transaction_count = 3;
+}
+
+// response for GetCurrentSpendingByBudgetAssociationIds
+message GetCurrentSpendingsByBudgetAssociationIdsResponse {
+  // a list of BudgetAssociationResult
+  repeated BudgetAssociationResult budget_association_results = 1;
+}
+
+// A budget_association_id can be either campaign_id or ad_group id
+message BudgetAssociationId {
+  // A budget_association_id is one of campaign_id and ad_group id
+  oneof id {
+    // campaign id
+    google.protobuf.StringValue campaign_id = 1;
+    // ad group id
+    google.protobuf.StringValue adgroup_id = 2;
+    // enrichment id
+    google.protobuf.StringValue enrichment_id = 3;
+  }
+}
+
+// current spending
+message BudgetCurrentSpending {
+  // time_window_type is one of ("LIFETIME", "DAILY", "WEEKLY", "MONTHLY")
+  TimeWindowType time_window_type = 1;
+  // time_window_index
+  google.protobuf.Int32Value time_window_index = 2;
+  // current spending
+  google.protobuf.Int32Value spend = 3;
+}
+
+// The type of time window
+enum TimeWindowType {
+  // unspecified
+  TIME_WINDOW_TYPE_UNSPECIFIED = 0;
+  // Lifetime time window
+  TIME_WINDOW_TYPE_LIFETIME = 1;
+  // daily time window
+  TIME_WINDOW_TYPE_DAILY = 2;
+  // weekly time window
+  TIME_WINDOW_TYPE_WEEKLY = 3;
+  // monthly time window
+  TIME_WINDOW_TYPE_MONTHLY = 4;
+}
+
+// consumer redemptions
+message Redemption {
+  // System-generated redemption object id
+  google.protobuf.StringValue id = 1;
+
+  // AdBilling object for which this redemption belongs
+  google.protobuf.StringValue campaign_id = 2;
+
+  // The order for this redemption
+  google.protobuf.StringValue order_id = 3;
+}
+
+// Request message for handling a billable event related to order cancellation.
+message VoidMarketingFeeRequest {
+  // Void Marketing Fee Config
+  VoidMarketingFee void_marketing_fee = 1;
+}
+
+// Void Marketing Fee Request message
+message VoidMarketingFee {
+  // Order Details for void marketing fee
+  message OrderDetails {
+    // The Consumer Id who checked out the order
+    google.protobuf.Int64Value consumer_id = 1;
+
+    // The Id of the Order
+    google.protobuf.StringValue order_uuid = 2;
+
+    // The Id of the Delivery
+    google.protobuf.StringValue delivery_id = 3;
+
+    // The Id of the Order Cart
+    google.protobuf.StringValue order_cart_id = 4;
+
+    // The created timestamp
+    google.protobuf.Timestamp order_created_at = 5;
+
+    // The order submission timestamp
+    google.protobuf.Timestamp order_submitted_at = 6;
+
+    // The order cancel timestamp
+    google.protobuf.Timestamp order_cancelled_at = 7;
+
+    // Subtotal of the order
+    money.MonetaryFields subtotal = 8;
+  }
+
+  // Merchant Details for void marketing fee
+  message MerchantDetails {
+    // The store Id
+    google.protobuf.StringValue store_id = 1;
+
+    // The submarket Id
+    google.protobuf.Int64Value submarket_id = 2;
+
+    // The business Id
+    google.protobuf.Int64Value business_id = 3;
+
+    // The business group Id
+    google.protobuf.Int64Value business_group_id = 4;
+  }
+
+  // Discount Details for void marketing fee
+  message DiscountDetails {
+    // Breakdown of the marketing fee components
+    order.MarketingFeeComponentBreakdown marketing_fee_breakdown = 1;
+
+    // Details of the discount
+    money.DiscountDetails discount_details = 2;
+  }
+
+  // Contains the order details
+  OrderDetails order_details = 1;
+
+  // Contains the merchant details
+  MerchantDetails merchant_details = 2;
+
+  // Contains the discount details
+  DiscountDetails discount_details = 3;
+
+  // budgetTxnsaction used for figure out negative spend
+  repeated ads.events.BudgetTransaction budget_transactions = 4;
+
+  // if true, do not change budget, but change cx redemptions count
+  google.protobuf.BoolValue is_pay_mx_special = 5;
+}
+
+// Respone message for handling a billable event related to order cancellation.
+message VoidMarketingFeeResponse {}
+
+// request for GetCampaignAdSpendAggregation
+message GetCampaignAdSpendAggregationRequest {
+  // list of campaign_ad_spend_aggregation_requests
+  repeated CampaignAdSpendAggregationRequest campaign_ad_spend_aggregation_requests = 1;
+  // boolean to bypass cached values
+  google.protobuf.BoolValue should_bypass_cache = 2;
+}
+
+// singular aggregation request across a certain time range
+message CampaignAdSpendAggregationRequest {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // Start time for the Spend Aggregation
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the Spend Aggregation
+  google.protobuf.Timestamp end_time = 3;
+  // Budget AB information, can be default for no experiments
+  ads.BudgetExperimentInfo budget_experiment_info = 4;
+}
+
+// response for GetCampaignAdSpendAggregation
+message GetCampaignAdSpendAggregationResponse {
+  // list of campaign_ad_spend_aggregations
+  repeated CampaignAdSpendAggregation campaign_ad_spend_aggregations = 1;
+}
+
+// singular aggregation across a certain time range
+message CampaignAdSpendAggregation {
+  // A budget_association_id can be either campaign_id or ad_group id
+  BudgetAssociationId budget_association_id = 1;
+  // Start time for the Spend Aggregation
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the Spend Aggregation
+  google.protobuf.Timestamp end_time = 3;
+  // Budget AB information, can be default for no experiments
+  ads.BudgetExperimentInfo budget_experiment_info = 4;
+  // current spending
+  money.MonetaryFields spend = 5;
+}
+
+// Message to trigger synchronous redemption flow from checkout
+message HandleRedemptionRequest {
+  // Id of the campaign being redeemed
+  google.protobuf.StringValue campaign_id = 1;
+
+  // Id of the ad_group being redeemed
+  google.protobuf.StringValue ad_group_id = 2;
+
+  // Id of the ad being redeemed
+  google.protobuf.StringValue ad_id = 3;
+
+  // Promo code if this was a redemption by code
+  google.protobuf.StringValue code = 4;
+
+  // Store Id of the store being checked out from
+  google.protobuf.StringValue store_id = 5;
+
+  // Id of the consumer who placed the order
+  google.protobuf.StringValue consumer_id = 6;
+
+  // Timestamp of the cart submission
+  google.protobuf.Timestamp order_cart_submitted_at = 7;
+
+  // Order creation timestamp
+  google.protobuf.Timestamp order_created_at = 8;
+
+  // Order subtotal
+  money.MonetaryFields subtotal = 9;
+
+  // Id of the store order cart
+  google.protobuf.StringValue store_order_cart_id = 10;
+
+  // Id of the order cart
+  google.protobuf.StringValue order_cart_id = 11;
+
+  // Uuid of the order
+  google.protobuf.StringValue order_uuid = 12;
+
+  // Delivery id associated with this order
+  google.protobuf.StringValue delivery_id = 13;
+
+  // Number of applications of this promo
+  google.protobuf.Int32Value num_applications = 14;
+
+  // How much of the promo fee was to subsidize the cx discount
+  money.MonetaryFields discount_subsidy = 15;
+
+  // How much of the promo fee was a flat fee
+  money.MonetaryFields platform_fee = 16;
+
+  // How much tax to charge on the flat fee
+  money.MonetaryFields platform_fee_tax = 17;
+
+  // How much discount did the cx enjoy in total from this redemption
+  money.MonetaryFields promotion_value = 18;
+
+  // Is this a federated campaign and if so from which source
+  money.FederatedSource.Type federated_source = 19;
+
+  // Item ids assocaited with this redemption
+  repeated google.protobuf.StringValue item_ids = 20;
+
+  // Calculated funding split for this redemption
+  money.Funding promotion_fund = 21;
+}
+
+// Response for redemption handling endpoint
+message HandleRedemptionResponse {}
+
+// Request to query merchant fees associated to a delivery
+message GetMerchantFeeByDeliveryIdRequest {
+  // Id of the delivery, internal integer id
+  google.protobuf.StringValue delivery_id = 1;
+}
+
+// Ad fee related fields
+message AdFeeEntity {
+  // billing method for the ad fee and free trial
+  ads_promos.v1.BillingMethod billing_method = 1;
+
+  // The unit price for the ad (without tax)
+  money.MonetaryFields ad_fee = 2;
+
+  // The tax amount for the ad
+  money.MonetaryFields ad_fee_tax = 3;
+
+  // The applied free trial credit amount for ad fee
+  money.MonetaryFields ad_fee_credit = 4;
+}
+
+// Promo fee related fields
+message PromoFeeEntity {
+  // billing method for the promo fee and free trial
+  // Note that the free trial and promo fee are implemented by store payment and payout breakdown respectively Aug 2024
+  // But eventually they should be the same. And they are always the same in terms of invoicing/withholding
+  ads_promos.v1.BillingMethod billing_method = 1;
+
+  // The applied free trial credit amount for promo fee
+  money.MonetaryFields promo_fee_credit = 2;
+
+  // The unit price for platform fee (without tax)
+  money.MonetaryFields platform_fee = 3;
+
+  // The tax amount for the platform fee
+  money.MonetaryFields platform_fee_tax = 4;
+
+  // discount subsidy for the promotion by this SubTransactionFundedEntityType
+  money.MonetaryFields discount_subsidy = 5;
+
+  // funded entity type for the discount subsidy
+  ads.events.SubTransactionFundedEntityType funded_entity_type = 6;
+}
+
+// Response for GetMerchantFeeByDeliveryId
+message GetMerchantFeeByDeliveryIdResponse {
+  // ID of the delivery, internal integer id
+  google.protobuf.StringValue delivery_id = 1;
+
+  // A list of Ad Fees, could be multiple in the future
+  repeated AdFeeEntity ads_fees = 2;
+
+  // A list of Promo Fees, could be multiple in the future
+  repeated PromoFeeEntity promo_fees = 3;
+
+  // aggregated number for all non-merchant funded discount subsidy
+  money.MonetaryFields non_merchant_promotion_discount_subsidy = 4;
+
+  // total promotion discount amount
+  money.MonetaryFields total_promotion_discount = 5;
+}
+
+// Request for RedeemOrUnredeemFreeTrialCredit
+message RedeemOrUnredeemFreeTrialCreditRequest {
+  // Corresponds to the event_id (not billable_event_id) field in billable_event
+  string event_id = 1;
+
+  // positive amount means to redeem the credit,
+  // will only proceed if the current applied amount is 0
+  // negative amount means to unredeem the credit,
+  // will only proceed if the current applied amount equals to the absolute value of request.amount
+  google.protobuf.Int32Value amount = 2;
+}
+
+// Response for RedeemOrUnredeemFreeTrialCredit
+message RedeemOrUnredeemFreeTrialCreditResponse {
+  // Same event id from the request
+  string event_id = 1;
+
+  // whether the process is succeeded
+  bool is_success = 2;
+
+  // error message if any
+  string error_message = 3;
+}
+
+// Request message for calculating marketing fee for a store order cart
+message GetMarketingFeeRequest {
+  // Store order cart id
+  int64 store_order_cart_id = 1;
+
+  // Subtotal without discounts
+  money.MonetaryFields original_subtotal = 2;
+
+  // Subtotal with discounts
+  money.MonetaryFields discounted_subtotal = 3;
+
+  // Store promotion ids
+  repeated int64 store_promotion_ids = 4;
+
+  // Discount for service fee
+  money.MonetaryFields service_fee_discount = 5;
+
+  // Discount for delivery fee
+  money.MonetaryFields delivery_fee_discount = 6;
+
+  // Discount for small order fee
+  money.MonetaryFields small_order_fee_discount = 7;
+
+  // True if this is a DashPass order
+  bool is_dashpass_order = 8;
+
+  // Store promotion uuids
+  repeated string store_promotion_uuids = 9;
+
+  // Payload with store order cart details
+  merchant_commission.StoreOrderCartPayload store_order_cart_payload = 10;
+
+  // Order config
+  common.order_config.v1.OrderConfig order_config = 11;
+}
+
+// Response message for calculating marketing fee for a store order cart
+message GetMarketingFeeResponse {
+  // Store order cart id, same as request
+  int64 store_order_cart_id = 1;
+
+  // Marketing fee which includes platform fee + discount subsidy
+  money.MonetaryFields marketing_fee = 2;
+
+  // Marketing fee amount to invoice
+  money.MonetaryFields invoiceable_marketing_fee = 3;
+
+  // breakdown of components to be relayed to Mx Order Service for inclusion in order_confirmation event
+  order.MarketingFeeComponentBreakdown breakdown_components = 4;
+
+  // invoicing fields
+  map<string, string> invoicing_fields = 5;
+
+  // Tax on the marketing fee itself
+  money.MonetaryFields marketing_fee_tax = 6;
+}

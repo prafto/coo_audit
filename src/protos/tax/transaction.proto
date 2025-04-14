@@ -1,0 +1,508 @@
+syntax = "proto3";
+package doordash.tax.transaction;
+
+import "common/cart.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "tax/tax.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/tax/transaction";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.tax.transaction";
+
+service Transaction {
+  rpc QuoteTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc FinalizeTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc AuditTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc VoidTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc AdjustTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc RefundTransaction(TransactionRequest) returns (TransactionResponse);
+  rpc ShadowTransaction(ShadowTransactionRequest) returns (ShadowTransactionResponse);
+  rpc ShadowDiscountDistribution(ShadowDiscountDistributionRequest) returns (ShadowDiscountDistributionResponse);
+}
+
+message Address {
+  string id = 1;
+  string street = 2;
+  string state = 3;
+  string zip_code = 4;
+  string country_code = 5;
+  google.protobuf.DoubleValue lat = 6;
+  google.protobuf.DoubleValue lng = 7;
+  string city = 8;
+  // Source of the address
+  AddressSource source = 9;
+}
+
+// Source providing more information where addresses came from
+enum AddressSource {
+  // Unspecified
+  ADDRESS_SOURCE_UNSPECIFIED = 0;
+  // Payment method that is being charged
+  ADDRESS_SOURCE_PAYMENT_METHOD = 1;
+  // Most recently added payment method
+  ADDRESS_SOURCE_MOST_RECENTLY_ADDED_PAYMENT_METHOD = 2;
+  // Most recent delivery address
+  ADDRESS_SOURCE_DELIVERY_ADDRESS = 3;
+  // Company Headquarters
+  ADDRESS_SOURCE_COMPANY_HEADQUARTERS = 4;
+}
+
+enum StoreType {
+  RESTAURANT = 0;
+  GROCERY = 1;
+  LIQUOR = 2;
+  DASH_MART = 3;
+  DRIVE = 4;
+}
+
+enum MerchantEntity {
+  DDI = 0;
+  DDK = 1;
+  DDG = 2;
+}
+
+message Store {
+  string id = 1;
+  StoreType store_type = 2;
+  Address store_address = 3;
+  string business_id = 4;
+  MerchantEntity merchant_entity = 5;
+}
+
+enum ReferenceType {
+  CART = 0;
+  ORDER = 1;
+  DISPATCH_ERROR = 2;
+  DELIVERY_UUID = 3;
+  REF_TYPE_OTHER_1 = 4;
+  STORE_ORDER_CART = 5;
+  STORE_PAYMENT = 6;
+  CPM_EVENT = 7;
+  LEGACY_DD_CONSUMER_SUBSCRIPTION = 8;
+  AD_CLICK = 9;
+  BILLING_INVOICE_ATTEMPT = 10;
+  PATHFINDER = 11;
+  INTERNAL = 12;
+}
+
+message Reference {
+  string id = 1;
+  ReferenceType ref_type = 2;
+}
+
+enum LineItemType {
+  MENU_ITEM = 0;
+  SMALL_ORDER_FEE = 1;
+  SERVICE_FEE = 2;
+  DELIVERY_FEE = 3;
+  COMMISSION = 4;
+  TECHNOLOGY_FEE = 5;
+  LEGISLATIVE_FEE = 6;
+  MENU_ITEM_EXTRA_OPTION = 7;
+  LINE_ITEM_TYPE_OTHER_1 = 8;
+  LINE_ITEM_TYPE_OTHER_2 = 9;
+  MARKETING_FEE = 10;
+  DASH_PASS_MARKETING_FEE = 11;
+  PROCESSING_FEE = 12;
+  TABLET_FEE = 13;
+  PRINTER_FEE = 14;
+  MX_DELIVERY_FEE = 15;
+  DELIVERY_ORDER_FEE = 16;
+  PAYMENT_PROCESSING_FEE = 17;
+  PICKUP_ORDER_FEE = 18;
+  FEE = 19;
+  ONE_TIME_SETUP_FEE = 20;
+  SOFTWARE_SUBSCRIPTION_FEE = 21;
+  DASH_PASS_SUBSCRIPTION_FEE = 22;
+  FLEXIBLE_FULFILLMENT_FLAT_FEE = 23;
+  BAG_FEE = 24;
+  CUP_FEE = 25;
+  PRIORITY_FEE = 26;
+  MX_DISCOUNT = 27;
+  AD_FEE = 28;
+  BOTTLE_DEPOSIT_FEE = 29;
+  MERCHANT_BUNDLE_FEE = 30;
+  RETAIL_DELIVERY_FEE = 31;
+  PERSONAL_SHOPPER_FEE = 32;
+  VOICE_ORDER_FEE = 33;
+  GIFT_CARD = 34;
+  RED_CARD_REFUND_OLD_SUBTOTAL = 35;
+  RED_CARD_REFUND_OLD_SUBTOTAL_TAX = 36;
+  RED_CARD_REFUND_ADJUSTED_SUBTOTAL = 37;
+  DASHER_EQUITY_FEE = 38;
+  DRIVE_PROMOTION_FEE = 39;
+  DRIVE_PROMOTION_SUBSIDY = 40;
+  SF_HEALTH_MANDATE_FEE = 41;
+  STAFF_BENEFITS_FEE = 42;
+  RESTAURANT_OPERATIONS_FEE = 43;
+  DASH_PASS_LILY_SUBSCRIPTION_FEE = 44;
+}
+
+enum QuantityType {
+  DISCRETE = 0; // default case
+  CONTINUOUS = 1;
+}
+
+message LineItemPriceDetails {
+  google.protobuf.StringValue promotion_id = 1; //may not always be set if from subscription
+  money.MonetaryFields discount_amount = 2;
+  repeated money.FundedBy discount_funding = 3;
+  money.MonetaryFields pre_discounted_amount = 4;
+  money.MonetaryFields post_discounted_amount = 5;
+}
+
+message LineItem {
+  message NestedItemInfo {
+    // Root reference_id Eg. the unique carnival_item_id from Order and Pricing CartItem
+    google.protobuf.StringValue root_reference_id = 1;
+    // Reference id of current item. E.g. reference_uuid from the Pricing ItemExtraOption
+    google.protobuf.StringValue reference_id = 2;
+    // reference_id from the direct upper level item
+    google.protobuf.StringValue upper_reference_id = 3;
+  }
+
+  message AdditionalData {
+    // key to store additional data key
+    string key = 1;
+    // value to store additional data value
+    google.protobuf.StringValue value = 2;
+  }
+
+  string id = 1;
+  LineItemType item_type = 2;
+  money.MonetaryFields amount = 3;
+  int32 quantity = 4;
+  string parent_id = 5;
+  LineItemType parent_line_item_type = 6;
+  string name = 7;
+  google.protobuf.BoolValue is_alcohol = 8;
+  LineItemPriceDetails price_details = 9;
+  Audience audience = 10;
+  google.protobuf.DoubleValue continuous_quantity = 11;
+  QuantityType quantity_type = 12;
+  google.protobuf.StringValue fee_rate = 13;
+  money.AppliedDiscounts item_level_discount = 14;
+  google.protobuf.BoolValue is_snap_ebt_eligible = 15;
+  google.protobuf.StringValue external_id = 16;
+  repeated EligibleDiscounts discounts_applicable = 17;
+  NestedItemInfo nested_item_info = 18;
+  repeated AdditionalData additional_data = 19;
+  google.protobuf.StringValue item_name = 20;
+  google.protobuf.StringValue item_description = 21;
+}
+
+enum TaxStep {
+  TAX_STEP_UNSPECIFIED = 0;
+  CANADA_ALCOHOL_TAX = 1;
+  COUNTRY_LEVEL_TAX = 2;
+  DEFAULT_TAX_CATEGORY = 3;
+  LEGACY_TAX = 4;
+  COUNTRY_TAX_ELIGIBILITY = 5;
+  MENU_15 = 6;
+  STATE_LEVEL_TAX = 7;
+  STORE_LEVEL_TAX = 8;
+  SUBTOTAL_TAX_CATEGORY = 9;
+  TAX_CATEGORY = 10;
+  VERTEX = 11;
+  ZERO_TAX = 12;
+  CONSTANT_TAX = 13;
+  ORDER_FEES_TAX = 14;
+  ORDER_LEVEL_TAX = 15;
+  TAX_ELIGIBILITY = 16;
+  VERTEX_WITH_DEFAULT_CATEGORY = 17;
+}
+
+message PaymentDetail {
+  enum PaymentType {
+    PAYMENT_TYPE_UNSPECIFIED = 0;
+    PAYMENT_TYPE_CREDIT_CARD = 1;
+    PAYMENT_TYPE_SNAP_EBT = 2;
+  }
+  PaymentType payment_type = 1;
+  money.MonetaryFields amount = 2;
+  money.MonetaryFields tax_amount = 3;
+}
+
+message LineItemTax {
+  message TaxDetail {
+    string name = 1;
+    money.MonetaryFields tax_amount = 2;
+    string tax_rate = 3;
+    // String representation of sql Decimal percentage (java type java.math.BigDecimal)
+    google.protobuf.StringValue nominal_rate = 4;
+  }
+  LineItem line_item = 1;
+  repeated TaxDetail tax_details = 2;
+  google.protobuf.BoolValue is_tax_inclusive = 3;
+  TaxStep tax_step = 4;
+  repeated PaymentDetail payment_details = 5;
+  repeated TaxBreakdownDetail vertex_tax_breakdown_details = 6;
+  TaxabilityReason taxability_reason = 7;
+  // This field is used for calculating the taxable price difference between GST and PST in Canada
+  money.MonetaryFields discount_treatment_bifurcation = 8;
+  google.protobuf.StringValue tax_category = 9;
+}
+
+message Cart {
+  message CartItem {
+    string carnival_item_id = 1;
+    google.protobuf.Int32Value quantity = 2;
+    repeated ItemExtraOption item_extra_options = 3;
+    MenuItem menu_item = 4;
+    money.MonetaryFields unit_price_monetary_fields = 5;
+    money.MonetaryFields unit_price_with_options_monetary_fields = 6;
+    money.AppliedDiscounts item_level_discount = 7;
+  }
+
+  message MenuItem {
+    string id = 1;
+    google.protobuf.Int64Value price = 2;
+    cart.Category category = 3;
+    google.protobuf.BoolValue is_alcohol = 4;
+    google.protobuf.StringValue merchant_supplied_id = 5;
+    google.protobuf.StringValue category_id = 6;
+    google.protobuf.StringValue category_merchant_supplied_id = 7;
+    google.protobuf.BoolValue is_snap_ebt_eligible = 8;
+    google.protobuf.StringValue external_id = 9;
+  }
+
+  message ItemExtraOption {
+    string id = 1; // menu_item_extra_item_option_id
+    google.protobuf.Int32Value quantity = 2;
+    google.protobuf.StringValue merchant_supplied_id = 3;
+    google.protobuf.Int64Value price = 4;
+    repeated ItemExtraOption item_extra_options = 5;
+    google.protobuf.StringValue item_extra_id = 6;
+    google.protobuf.StringValue item_extra_merchant_supplied_id = 7;
+    google.protobuf.BoolValue is_snap_ebt_eligible = 8;
+    google.protobuf.StringValue external_id = 9;
+  }
+
+  string id = 1;
+  repeated CartItem items = 2; // including cart items in sub carts
+  common.Creator creator = 3;
+  money.MonetaryFields subtotal_monetary_fields = 4;
+  google.protobuf.Int64Value store_order_cart_id = 5;
+  google.protobuf.StringValue external_order_reference = 6;
+}
+
+enum ProcessType {
+  DEFAULT = 0;
+  CHECKOUT = 1;
+  ADJUST = 2;
+  REFUND = 3;
+}
+
+message TransactionRequest {
+  message AdditionalData {
+    // key to store additional data key
+    string key = 1;
+    // value to store additional data value
+    google.protobuf.StringValue value = 2;
+  }
+  string transaction_id = 1;
+  Reference reference = 2;
+  Store store = 3;
+  Address delivery_location = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp estimated_delivery_at = 6;
+  repeated LineItem line_items = 7;
+  common.Channel channel = 8;
+  ProcessType process_type = 9;
+  // For AdjustTransaction, new_transaction_id is expected for replacing the original transaction_id
+  string new_transaction_id = 10;
+  // same fulfillment_type value within pricing cart
+  google.protobuf.StringValue fulfillment_type = 11;
+  Cart cart = 12;
+  repeated money.AppliedDiscounts applied_discounts = 13;
+  money.MonetaryFields subtotal = 14;
+  google.protobuf.StringValue promotion_id = 15;
+  money.MonetaryFields discount_amount = 16;
+  repeated money.FundedBy discount_funding = 17;
+  money.MonetaryFields snap_ebt_authorized_amount = 18;
+  SourceType source_type = 19;
+  Adjustment adjustment = 20;
+  repeated EligibleDiscounts discounts_applicable = 21;
+  // When is_shadow is set transaction records are not persisted to CRDB and async Kafka/Cadence flows are not triggered
+  bool is_shadow = 22;
+  // optional field to specify experience that this transaction pertains to
+  common.Experience experience = 23;
+  google.protobuf.StringValue payment_protocol = 24;
+  repeated AdditionalData additional_data = 25;
+  // when is_replay is set transaction records are not persisted to CRDB and async Kafka/Cadence flows are not triggered
+  bool is_replay = 26;
+  // Optional field which upstream can use to propagate consumerId
+  google.protobuf.StringValue consumer_id = 27;
+}
+
+message TransactionResponse {
+  reserved 10, 16;
+
+  string transaction_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  repeated LineItemTax line_items_tax = 3;
+  string default_tax_rate = 4;
+  money.MonetaryFields subtotal_tax_amount = 5;
+  money.MonetaryFields fees_tax_amount = 6;
+  bool is_mpf_state = 7;
+  repeated dsj_tax_service.MerchantSubtotalAdjustment merchant_subtotal_adjustments = 8;
+  repeated TaxPerTaxRate tax_per_tax_rate = 9;
+  money.TaxStrategy tax_strategy = 11;
+  repeated TaxPerTaxRate fees_tax_per_tax_rate = 12;
+  repeated TaxPerTaxRate subtotal_tax_per_tax_rate = 13;
+  money.MonetaryFields vat_exclusive_subtotal = 14;
+  repeated TransactionResponse sub_transactions = 15;
+  TaxBusinessLine business_line = 17;
+  TaxChannel channel = 18;
+  google.protobuf.StringValue merchant_tax_transaction_uuid = 19;
+  repeated PaymentDetail subtotal_payment_details = 20;
+  bool is_tax_charge_disabled_at_merchant = 21;
+  repeated TaxBreakdownDetail tax_breakdown_details = 22;
+  money.MonetaryFields vat_exclusive_alcohol_subtotal = 23;
+  money.MonetaryFields alcohol_subtotal_vat = 24;
+  string store_address_tax_area_id = 25;
+  money.OrderTaxBreakdown order_tax_breakdown = 26;
+  repeated money.ItemTaxBreakdown item_tax_breakdowns = 27;
+}
+
+enum TaxBreakdownRecordSource {
+  UNSPECIFIED = 0;
+  MX_ORDER_FEE = 1;
+  MX_NON_ORDER_FEE = 2;
+  CX_ORDER = 3;
+  CX_NON_ORDER_FEE = 4;
+}
+
+message TaxBreakdownDetail {
+  // Record source
+  TaxBreakdownRecordSource record_source = 1;
+  // Id in the tax breakdown table
+  string tax_breakdown_id = 2;
+  // Id in the tax breakdown aggregation table
+  string tax_breakdown_aggregation_id = 3;
+  // tax amount
+  money.MonetaryFields tax_amount = 4;
+  // fee type
+  LineItemType fee_type = 5;
+  // jurisdiction id
+  google.protobuf.Int32Value jurisdiction_id = 6;
+  // jurisdiction level
+  string jurisdiction_level = 7;
+  // jurisdiction name
+  string jurisdiction_name = 8;
+  // imposition type
+  string imposition_type = 9;
+  // imposition type id
+  google.protobuf.Int32Value imposition_type_id = 10;
+  // imposition name
+  string imposition_name = 11;
+  // imposition id
+  google.protobuf.Int32Value imposition_id = 12;
+}
+
+message ShadowTransactionRequest {
+  Reference reference = 1;
+  Store store = 2;
+  google.protobuf.Timestamp created_at = 3;
+  money.MonetaryFields subtotal_tax_amount = 4;
+  repeated LineItemTax line_items_tax = 5;
+  string source = 6;
+  common.Channel channel = 7;
+  Address delivery_location = 8;
+}
+
+message ShadowTransactionResponse {
+  string shadow_transaction_id = 1;
+}
+
+enum Audience {
+  DEFAULT_AUDIENCE = 0;
+  CONSUMER = 1;
+  MERCHANT = 2;
+  AUDIENCE_OTHER = 3; // Not in use. Could be replaced
+}
+
+message TaxPerTaxRate {
+  money.MonetaryFields tax_amount = 1;
+  string tax_rate = 2;
+  money.MonetaryFields total = 3;
+}
+
+message ShadowDiscountDistributionRequest {
+  repeated LineItemTax line_item_tax = 1;
+  repeated LineItem line_items_original = 2;
+  money.MonetaryFields subtotal_tax_amount = 3;
+  money.MonetaryFields fees_tax_amount = 4;
+  // the original request sent to QuoteTransaction
+  TransactionRequest request = 5;
+}
+
+message ShadowDiscountDistributionResponse {
+  string shadow_discount_distribution_id = 1;
+}
+
+enum TaxBusinessLine {
+  TAX_BUSINESS_LINE_DEFAULT = 0;
+  TAX_BUSINESS_LINE_RESTAURANT = 1;
+  TAX_BUSINESS_LINE_GROCERY = 2;
+  TAX_BUSINESS_LINE_DASH_MART = 3;
+  TAX_BUSINESS_LINE_DRIVE = 4;
+  TAX_BUSINESS_LINE_FLEXIBLE_FULFILLMENT = 5;
+}
+
+enum TaxChannel {
+  TAX_CHANNEL_DEFAULT = 0;
+  TAX_CHANNEL_MARKETPLACE = 1;
+  TAX_CHANNEL_DEMAND_GEN = 2;
+  TAX_CHANNEL_RETAILER = 3;
+  TAX_CHANNEL_DRIVE = 4;
+  TAX_CHANNEL_SHIP_ANYWHERE = 5;
+}
+
+enum SourceType {
+  SOURCE_TYPE_DEFAULT = 0;
+  SOURCE_TYPE_PAYOUT = 1;
+  SOURCE_TYPE_STORE_PAYMENT = 2;
+  SOURCE_TYPE_ADS_FOR_PAYOUT = 3;
+  SOURCE_TYPE_ADS_FOR_OTHERS = 4;
+  SOURCE_TYPE_PRICING = 5;
+  SOURCE_TYPE_DRIVE = 6;
+  SOURCE_TYPE_BILLING_INVOICE = 7;
+  SOURCE_TYPE_PATHFINDER = 8;
+}
+
+enum AdjustmentType {
+  UNDEFINED = 0;
+  RED_CARD_REFUND = 1;
+}
+
+message Adjustment {
+  AdjustmentType adjustment_type = 1;
+  repeated LineItem line_items = 2;
+}
+
+// Will deprecate in the future and replaced with TaxPromotionType enum in common/
+enum PromotionType {
+  UNDEFINED_PROMOTION_TYPE = 0;
+  FIXED = 1;
+  NOT_FIXED = 2;
+}
+
+message EligibleDiscounts {
+  money.MonetaryFields discount_amount = 1;
+  money.FundedBy discount_funding_source = 2;
+  PromotionType promotion_type = 3;
+}
+
+enum TaxabilityReason {
+  TAXABILITY_REASON_UNSPECIFIED = 0;
+  MX_OFFER_DELIVERY_ONLY = 1;
+  MX_OFFER_PICKUP_ONLY = 2;
+  MX_OFFER_DELIVERY_AND_PICKUP = 3;
+  MX_NOT_OFFER_DELIVERY_AND_NOT_OFFER_PICKUP = 4;
+  MX_INFO_MISSING = 5;
+}

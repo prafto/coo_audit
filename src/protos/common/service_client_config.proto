@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package service_client;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/common";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "ServiceClientConfigProto";
+option java_package = "com.doordash.serviceclient";
+
+// Used by the service owners to describe how the service wants the client to behave for all methods.
+message ServiceClientConfig {
+  // Name of the service in k8s. Example: identity-service.
+  string service_name = 1;
+
+  // Name of the service app. Leave unset to use the default "web".
+  string service_app = 2;
+
+  // Timeout recommended by the service for the client to wait for a response in a single attempt in milliseconds.
+  int64 response_attempt_timeout_millis = 3;
+
+  // Retry behavior.
+  RetryConfig retry_config = 4;
+
+  // Circuit breaking behavior.
+  CircuitBreakerConfig circuit_breaker_config = 5;
+
+  // Port of the application to connect to. Leave unset to use the default 50051.
+  int32 port = 6;
+
+  // Required service headers.
+  repeated string required_headers = 7;
+}
+
+// Used by the service owners to describe how the service wants the client to behave on a single method.
+// Any configuration set in ServiceClientMethodConfig overrides those in ServiceClientConfig.
+message ServiceClientMethodConfig {
+  // Timeout recommended by the service method for the client to wait for a response in a single attempt in milliseconds.
+  int64 response_attempt_timeout_millis = 1;
+
+  // Retry behavior.
+  RetryConfig retry_config = 2;
+
+  // Circuit breaking behavior.
+  CircuitBreakerConfig circuit_breaker_config = 3;
+
+  // Required method headers.
+  repeated string required_headers = 4;
+}
+
+// Encapsulates client retry behavior recommended by the service.
+// These are parameters for an exponential backoff retry strategy.
+message RetryConfig {
+  // How much time to wait after the first attempt.
+  int64 initial_wait_millis = 1;
+
+  // Multiplier used to compute the nth wait time.
+  float wait_multiplier = 2;
+
+  // Total number of attempts, including the original one. i.e. max_attempts = 1 means no retry.
+  int32 max_attempts = 3;
+
+  // Use this option to ensure a gRPC status code is retried.
+  // Default behavior is, 10 (ABORTED) and 14 (UNAVAILABLE) are retriable, and all others are not.
+  // Use this field to instruct client to flip a non-retriable code to retriable.
+  repeated int32 do_retry_grpc_code = 5;
+
+  // Use this option to ensure a gRPC status code is NOT retried.
+  // Default behavior is, 10 (ABORTED) and 14 (UNAVAILABLE) are retriable, and all others are not.
+  // Use this field to instruct client to flip a retriable code to non-retriable.
+  repeated int32 do_not_retry_grpc_code = 6;
+
+  // Use this option to ensure an HTTP status code is retried.
+  // Default behavior is, 429, 502, 503 and 504 are retriable, and all others are not.
+  // Use this field to instruct client to flip a non-retriable code to retriable.
+  repeated int32 do_retry_http_code = 7;
+
+  // Use this option to ensure an HTTP status code is NOT retried.
+  // Default behavior is, 429, 502, 503 and 504 are retriable, and all others are not.
+  // Use this field to instruct client to flip a retriable code to non-retriable.
+  repeated int32 do_not_retry_http_code = 8;
+}
+
+// Encapsulates client circuit breaking behavior recommended by the upstream service.
+// Hermes offers a circuit breaker that watches the RPC failure rate and "breaks the circuit"
+// if it exceeds [failure_rate_threshold]. The circuit starts in the CLOSED state.
+// If the total amount of requests is greater than [minimum_request_threshold] and
+// the percentage of failing requests exceeds [failure_rate_threshold], the circuit will OPEN.
+// The circuit stays in an OPEN state for a given amount of time ([circuit_open_window]),
+// during which all requests fail fast. After [circuit_open_window] ms passes,
+// the circuit enters a HALF_OPEN state, where it attempts forwarding a request to
+// the upstream server. If the request succeeds, the circuit goes back to the CLOSED state.
+// Otherwise, the circuit goes back to OPEN state and repeats.
+message CircuitBreakerConfig {
+  // Once the failed request / total requests exceeds [failure_rate_threshold],
+  // the circuit will go from CLOSED to OPEN.
+  float failure_rate_threshold = 1;
+
+  // The circuit breaker will start detecting failures after at least
+  // [minimum_request_threshold] requests have been made.
+  int64 minimum_request_threshold = 2;
+
+  // The circuit will remain in the HALF_OPEN state for [trial_request_interval_millis] ms.
+  int64 trial_request_interval_millis = 3;
+
+  // The circuit will remain in the OPEN state for [circuit_open_window_millis] ms.
+  int64 circuit_open_window_millis = 4;
+
+  // The circuit breaker will count successes and failures within the last
+  // [counter_sliding_window_millis] ms.
+  int64 counter_sliding_window_millis = 5;
+
+  // Use this option to ensure a gRPC status code is gRPC status code is ignored from
+  // counting towards the failure rate that decides the circuit breaker state.
+  // Default behavior is no gRPC codes are ignored.
+  repeated int32 do_ignore_grpc_code = 6;
+}
+
+extend google.protobuf.ServiceOptions {
+  service_client.ServiceClientConfig client_config = 63198;
+}
+
+extend google.protobuf.MethodOptions {
+  service_client.ServiceClientMethodConfig client_method_config = 67032;
+}

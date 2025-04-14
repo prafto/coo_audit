@@ -1,0 +1,405 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/service_client_config.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "identity/authentication.proto";
+import "identity/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+message CreateAPIKeyRequest {
+  int64 service_id = 1;
+  int64 client_id = 2;
+  google.protobuf.Timestamp valid_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  repeated string scope = 5;
+  repeated string tenant = 6;
+}
+
+message UpdateAPIKeyRequest {
+  string key = 1;
+  int64 id = 2;
+  google.protobuf.Timestamp valid_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message UpdateAPIKeyTenantRequest {
+  int64 id = 1;
+  repeated string tenant = 2;
+}
+
+message RotateAPIKeyRequest {
+  int64 id = 1;
+  google.protobuf.Timestamp valid_at = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  google.protobuf.Timestamp expires_at_old = 4;
+}
+
+message RotateAPIKeyResponse {
+  APIKeyResponse new_api_key = 1;
+  string message = 2;
+}
+
+message ListAPIKeyRequest {
+  int64 service_id = 1;
+  int64 client_id = 2;
+  bool is_all = 3;
+}
+
+message ListAPIKeyResponse {
+  repeated TokenInfoResponse keys = 1;
+}
+
+message APIKeyResponse {
+  int64 id = 1;
+  string token = 2;
+}
+
+message ClientRequest {
+  int64 id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  AdminState admin_state = 4;
+}
+
+message Client {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  AdminState admin_state = 4;
+}
+
+message ClientId {
+  int64 id = 1;
+}
+
+message QueryClientRequest {
+  // Clients name
+  google.protobuf.StringValue client_name_match = 1;
+
+  // Maximum number of rows to return
+  uint32 max_row_count = 2;
+}
+
+message QueryClientResponse {
+  // List of queried clients
+  repeated Client client = 1;
+}
+
+message APIKeyId {
+  int64 id = 1;
+}
+
+message ServiceRequest {
+  int64 id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  AdminState admin_state = 4;
+}
+
+message Service {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  AdminState admin_state = 4;
+}
+
+message ServiceId {
+  int64 id = 1;
+}
+
+message QueryServiceRequest {
+  // Service's name
+  google.protobuf.StringValue service_name_match = 1;
+
+  // Maximum number of rows to return
+  uint32 max_row_count = 2;
+}
+
+message QueryServiceResponse {
+  // List of queried services
+  repeated Service service = 1;
+}
+
+/*
+ * Request for unbanning an IP
+ */
+message UnbanIpRequest {
+  // IpAddress to be unbanned
+  google.protobuf.StringValue ip_address = 1;
+}
+
+/*
+ * Response UnbanIp
+ */
+message UnbanIpResponse {
+  google.protobuf.StringValue ip_address = 1;
+}
+
+/*
+ * Values for Verification State
+ */
+enum VerificationState {
+  NONE = 0;
+  NEEDED = 1;
+  DONE = 2;
+}
+
+/*
+ * Options for Verification Field, either email address or phone number
+ */
+message VerificationField {
+  oneof field {
+    string email_address = 1;
+    string phone_number = 2;
+  }
+}
+
+/*
+ * Request for get Verification State
+ */
+message VerificationStateGetRequest {
+  // Unique identifier for the Entity
+  google.protobuf.StringValue entity_id = 1;
+
+  // The field to get verification state for
+  VerificationField field = 2;
+}
+
+message VerificationStateMessage {
+  // Verification State for id & field
+  VerificationState state = 1;
+
+  // Unique identifier for the Entity
+  google.protobuf.StringValue entity_id = 2;
+
+  // The field to get verification state for
+  VerificationField field = 3;
+}
+
+service ManagementService {
+  rpc CreateClient(ClientRequest) returns (Client) {
+    option (google.api.http) = {
+      post: "/api/v1/clients"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc UpdateClient(ClientRequest) returns (Client) {
+    option (google.api.http) = {
+      put: "/api/v1/clients/{id}"
+      body: "*"
+    };
+  }
+
+  rpc GetClient(ClientId) returns (Client) {
+    option (google.api.http) = {get: "/api/v1/clients/{id}"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc DeleteClient(ClientId) returns (ClientId) {
+    option (google.api.http) = {delete: "/api/v1/clients/{id}"};
+  }
+
+  rpc QueryClient(QueryClientRequest) returns (QueryClientResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/clientquery/{client_name_match}"
+      additional_bindings {get: "/api/v1/clientquery/{client_name_match}/{max_row_count}"}
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc CreateService(ServiceRequest) returns (Service) {
+    option (google.api.http) = {
+      post: "/api/v1/services"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc UpdateService(ServiceRequest) returns (Service) {
+    option (google.api.http) = {
+      put: "/api/v1/services/{id}"
+      body: "*"
+    };
+  }
+
+  rpc GetService(ServiceId) returns (Service) {
+    option (google.api.http) = {get: "/api/v1/services/{id}"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc DeleteService(ServiceId) returns (ServiceId) {
+    option (google.api.http) = {delete: "/api/v1/services/{id}"};
+  }
+
+  rpc QueryService(QueryServiceRequest) returns (QueryServiceResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/servicequery/{service_name_match}"
+      additional_bindings {get: "/api/v1/servicequery/{service_name_match}/{max_row_count}"}
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (APIKeyResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/api-keys"
+      body: "*"
+    };
+  }
+
+  rpc CreateIdentityRestrictedAPIKey(CreateAPIKeyRequest) returns (APIKeyResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/api-keys/identity-restricted"
+      body: "*"
+    };
+  }
+
+  rpc ListAPIKey(ListAPIKeyRequest) returns (ListAPIKeyResponse) {
+    option (google.api.http) = {get: "/api/v1/api-keys/{service_id}/{client_id}/{is_all}"};
+  }
+
+  rpc UpdateAPIKey(UpdateAPIKeyRequest) returns (APIKeyResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/api-keys/{id}"
+      body: "*"
+    };
+  }
+
+  rpc UpdateAPIKeyExpireAt(UpdateAPIKeyRequest) returns (APIKeyResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/api-keys/expire/{id}"
+      body: "*"
+    };
+  }
+
+  rpc RotateAPIKey(RotateAPIKeyRequest) returns (RotateAPIKeyResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/api-keys/rotate"
+      body: "*"
+    };
+  }
+
+  rpc DeleteAPIKey(APIKeyId) returns (APIKeyId) {
+    option (google.api.http) = {delete: "/api/v1/api-keys/{id}"};
+  }
+
+  rpc UnbanIpAddress(UnbanIpRequest) returns (UnbanIpResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/unban-ip"
+      body: "*"
+    };
+  }
+
+  /*
+   * Get verification state
+   *
+   * Get verification state for specified entity id and field
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format, or fields
+   *
+   * * 403 for token with insufficient privileges or too many attempts
+   *
+   * * 500 for any internal server errors
+   */
+  rpc getVerificationState(VerificationStateGetRequest) returns (VerificationStateMessage) {
+    option (google.api.http) = {get: "/api/v1/verification/entity"};
+  }
+
+  /*
+   * Sets verification state
+   *
+   * Set verification state for specified user id and field
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format, or fields
+   *
+   * * 403 for token with insufficient privileges or too many attempts
+   *
+   * * 500 for any internal server errors
+   */
+  rpc setVerificationState(VerificationStateMessage) returns (VerificationStateMessage) {
+    option (google.api.http) = {
+      put: "/api/v1/verification/entity"
+      body: "*"
+    };
+  }
+
+  /*
+   * Sets target APIKey's Tenant
+   *
+   * Required ADMIN permission in identity-service
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format, or fields
+   *
+   * * 403 for token with insufficient privileges or too many attempts
+   *
+   * * 500 for any internal server errors
+   */
+  rpc UpdateAPIKeyTenant(UpdateAPIKeyTenantRequest) returns (APIKeyResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/api-keys/tenant/{id}"
+      body: "*"
+    };
+  }
+}

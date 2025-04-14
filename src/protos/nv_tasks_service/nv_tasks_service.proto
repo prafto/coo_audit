@@ -1,0 +1,1069 @@
+syntax = "proto3";
+
+package doordash.nv.tasks_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.retail.catalog.v2/common.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ontology/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.nv.tasksservice";
+
+// APIs for New Verticals Tasks Service
+service NvTasksService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Returns "Hello $name".
+  rpc Hello(HelloRequest) returns (HelloResponse) {
+    // This is an exceptionally slow RPC, so we will set its timeout to 2 seconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // Returns "Bye $name".
+  rpc Bye(ByeRequest) returns (ByeResponse);
+
+  // Return stream message
+  rpc GetMessageStream(GetMessageStreamRequest) returns (stream GetMessageStreamResponse);
+
+  // Add tasks
+  rpc AddTasks(AddTasksRequest) returns (AddTasksResponse);
+
+  // Get tasks
+  rpc GetTasksByIds(GetTasksByIdsRequest) returns (GetTasksByIdsResponse);
+
+  // List tasks
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+
+  // Assign tasks
+  rpc AssignTasks(AssignTasksRequest) returns (AssignTasksResponse);
+
+  // Unassign tasks
+  rpc UnassignTasks(UnassignTasksRequest) returns (UnassignTasksResponse);
+
+  // Update task
+  rpc UpdateTask(UpdateTaskRequest) returns (UpdateTaskResponse);
+
+  // Delete task
+  rpc DeleteTasks(DeleteTasksRequest) returns (DeleteTasksResponse);
+
+  // Create workflow tasks
+  rpc CreateWorkflowTasks(CreateWorkflowTasksRequest) returns (CreateWorkflowTasksResponse);
+
+  // Bulk Assign tasks
+  rpc BulkAssignTasks(BulkAssignTasksRequest) returns (BulkAssignTasksResponse);
+
+  // Bulk Unassign tasks
+  rpc BulkUnassignTasks(BulkUnassignTasksRequest) returns (BulkUnassignTasksResponse);
+
+  // submit oms task result
+  rpc SubmitOmsTaskResult(SubmitOmsTaskResultRequest) returns (SubmitOmsTaskResultResponse);
+
+  // Get in store photos
+  rpc GetInStorePhotos(GetInStorePhotosRequest) returns (GetInStorePhotosResponse);
+}
+
+// Request for Hello
+message HelloRequest {
+  // Name of person being greeted.
+  string name = 1;
+}
+
+// Response for Hello
+message HelloResponse {
+  // Greeting message.
+  string messages = 1;
+}
+
+// Request for Bye
+message ByeRequest {
+  // Name of person being farewelled.
+  string name = 1;
+}
+
+// Response for Bye
+message ByeResponse {
+  // Farewell message.
+  string messages = 1;
+}
+
+// Request for GetMessageStream
+message GetMessageStreamRequest {}
+
+// Response for GetMessageStream
+message GetMessageStreamResponse {
+  // Stream message
+  string message = 1;
+}
+
+// The request object to add tasks, supports adding multiple tasks at once.
+message AddTasksRequest {
+  // a list of tasks
+  repeated IncomingTask tasks = 1;
+
+  // person/service who creates the tasks
+  string created_by = 2;
+
+  // idempotency token to prevent adding duplicate tasks from client retry logic
+  string idempotency_token = 3;
+}
+
+// The order in which to sort the task list
+enum TaskListSortOrder {
+  // default order
+  TASK_LIST_SORT_ORDER_UNSPECIFIED = 0;
+  // ascending order
+  TASK_LIST_SORT_ORDER_ASC = 1;
+  // descending order
+  TASK_LIST_SORT_ORDER_DESC = 2;
+}
+
+// The priority of the task
+enum TaskPriority {
+  // Default
+  TASK_PRIORITY_UNSPECIFIED = 0;
+  // Low priority
+  TASK_PRIORITY_LOW = 1;
+  // Medium priority
+  TASK_PRIORITY_MEDIUM = 2;
+  // High priority
+  TASK_PRIORITY_HIGH = 3;
+}
+
+// The status of the task
+enum TaskStatus {
+  // Default
+  TASK_STATUS_UNSPECIFIED = 0;
+  // Task has been opened
+  TASK_STATUS_OPEN = 1;
+  // Task is being worked on
+  TASK_STATUS_IN_PROGRESS = 2;
+  // Task is complete
+  TASK_STATUS_COMPLETED = 3;
+  // Task has been created but not yet opened
+  TASK_STATUS_NOT_STARTED = 4;
+  // Task is on hold
+  TASK_STATUS_ON_HOLD = 5;
+  // Task is in review
+  TASK_STATUS_IN_REVIEW = 7;
+  // Task is production ready
+  TASK_STATUS_PRODUCTION_READY = 8;
+  // Task is ready for rework
+  TASK_STATUS_REWORK_READY = 9;
+  // Task is deprecated
+  TASK_STATUS_DEPRECATED = 10;
+}
+
+// The workflow of a task
+enum TaskWorkflow {
+  // Default
+  TASK_WORKFLOW_UNSPECIFIED = 0;
+  // Edit task
+  TASK_WORKFLOW_EDIT = 1;
+  // Audit task
+  TASK_WORKFLOW_AUDIT = 2;
+  // Training task
+  TASK_WORKFLOW_TRAINING = 3;
+}
+
+// The incoming task object, must provide task_type, subject_id, task_priority
+message IncomingTask {
+  // The ID of the task
+  string task_id = 21;
+
+  // The type of the task, eg: urpc_audit, urpc_fix, CLUSTER_DELINKING, CLUSTER_MERGING etc
+  string type = 1;
+
+  // This is the id of the subject to be worked on in this task, eg: dd_sic
+  // The subject_id must be matching with the task_type.
+  string subject_id = 2;
+
+  // The priority of the task, low, medium, high
+  TaskPriority priority = 3;
+
+  // The workflow of the task
+  TaskWorkflow workflow = 20;
+
+  // do not use
+  reserved 4 to 11;
+  // The tag of the task. eg: DSML, ops upload, etc.
+  // Only support single tag.
+  string tag = 12;
+
+  // tags
+  repeated string tags = 18;
+
+  // any comments / instructions (text) related to this task
+  string comment = 13;
+
+  // any task details (data) required to complete the task.
+  string details = 14;
+
+  // task details v2
+  TaskDetails details_v2 = 17;
+
+  // the task id of the parent task
+  string parent_task_id = 15;
+
+  // the assignee of the task
+  string assignee_id = 16;
+
+  // task config
+  // Supported keys: "TTL_SECONDS", value in seconds
+  map<string, string> task_configs = 19;
+}
+
+// The task details v2 object
+message TaskDetails {
+  // supported task details
+  oneof task_details {
+    // delink cluster task details
+    DelinkingTask delink_task = 1;
+
+    // merge cluster task details
+    MergingTask merge_task = 2;
+
+    // regroup task details
+    RegroupingTask regroup_task = 3;
+
+    // sku build task details
+    SkuBuildTask sku_build_task = 4;
+
+    // match review task details
+    MatchReviewTask match_review_task = 5;
+  }
+
+  // Delinking task definition
+  message DelinkingTask {
+    // the cluster to review
+    Cluster cluster = 1;
+  }
+
+  // Merging task definition
+  message MergingTask {
+    // the 1st cluster to merge
+    Cluster cluster_1 = 1;
+    // the 2nd cluster to merge
+    Cluster cluster_2 = 2;
+  }
+
+  // Regrouping task definition
+  message RegroupingTask {
+    // the id of the cluster that needs regrouping
+    string cluster_id = 1;
+    // the Skus of the cluster that needs regrouping
+    repeated SKU skus = 2;
+  }
+
+  // Match Review task definition
+  message MatchReviewTask {
+    // deprecated fields
+    reserved 3;
+    reserved 'match_confidence_level';
+
+    // SKUs that are compared with
+    Comparand comparand_1 = 1;
+    // SKUs that are compared to. These could be sorted in the order of high confidence and verified prime data
+    repeated Comparand comparands_2 = 2;
+    // Details about the Task goals
+    string task_instructions = 4;
+  }
+
+  // cluster definition
+  message Cluster {
+    // the cluster id
+    string cluster_id = 1;
+    // the reference skus
+    repeated SKU reference_skus = 2;
+    // the skus that needs review
+    repeated SKU needs_review_skus = 3;
+  }
+
+  // SKU definition
+  message SKU {
+    // id. eg: ump id
+    string id = 1;
+
+    // the business id
+    // the ump_id and business_id pair uniquely identifies a sku
+    string business_id = 7;
+    // the ump attributes
+    SkuContent sku_content = 2;
+
+    // sku content definition
+    message SkuContent {
+      // item name
+      string item_name = 1;
+      // brand name
+      string brand = 2;
+      // size info
+      string size = 3;
+      // photo url
+      string primary_photo_url = 4;
+      // upc/gtin
+      repeated string upcs = 5;
+      // variant
+      map<string, string> variant = 6;
+    }
+  }
+
+  // Comparand definition
+  message Comparand {
+    // Compare Sku identifier
+    string compare_sku_id = 1;
+    // SKU that is being compared
+    repeated CompareSkuAttribute compare_sku_attributes = 2;
+    // SKU version, used for tracking the version of the SKU
+    google.protobuf.Int64Value compare_sku_version = 3;
+  }
+
+  // CompareSkuAttribute definition
+  message CompareSkuAttribute {
+    // Canonical id of a global attribute. It's part of the uri of the attribute entity in graphite. It's an UUID
+    string attribute_id = 1;
+    // Name (called in Graphite) assigned for an attribute or name defined in prime content
+    string attribute_name = 2;
+    // Name shown on the UI / preferred label
+    string attribute_display_name = 3;
+    // Value(s) of the field/attribute
+    repeated string attribute_values = 4;
+  }
+
+  // SKU build task definition
+  message SkuBuildTask {
+    // the business_id of the sku
+    string business_id = 1;
+
+    // the msid of the sku
+    string merchant_supplied_id = 2;
+
+    // metadata such as ids from the task requestor
+    RequestorMetadata requestor_metadata = 3;
+
+    // [deprecated] the product template of the sku
+    ProductTemplate product_template = 4 [deprecated = true];
+
+    // data from extraction ML model
+    repeated SkuAttribute extracted_attributes = 5;
+
+    // data from other services
+    repeated ReferenceAttribute reference_attributes = 6;
+
+    // product template metadata
+    ontology.v1.ProductTemplateMetadata product_template_metadata = 7;
+
+    // New value for supplemental information to process sku build task result
+    map<string, string> additional_details = 8;
+  }
+
+  // Requestor metadata
+  message RequestorMetadata {
+    // request id
+    string request_id = 1;
+
+    // SKU identifier ID, enriched_sku_id for Mx SKU Build
+    string sku_identifier_id = 2;
+
+    // Sku Build Request type
+    SkuBuildRequestType sku_build_request_type = 3;
+  }
+
+  // enum for Sku Build Request type
+  enum SkuBuildRequestType {
+    // Request type not specified
+    SKU_BUILD_REQUEST_TYPE_UNSPECIFIED = 0;
+    // Default Build pipeline use case
+    SKU_BUILD_REQUEST_TYPE_BUILD = 1;
+    // 3pd use case
+    SKU_BUILD_REQUEST_TYPE_3PD = 2;
+    // Advertisers use case
+    SKU_BUILD_REQUEST_TYPE_ADVERTISERS = 3;
+  }
+
+  // reference attribute
+  message ReferenceAttribute {
+    // reference name  (Eg: Merchant (aka Baseline), Salsify, Syndigo) will be shown as a tab name on the UI.
+    string reference_name = 1;
+
+    // attribute key which is a uuid
+    string attribute_id = 2;
+
+    // name of the field/attribute (Eg: flavor)
+    string attribute_name = 3;
+
+    // value of the attribute
+    string attribute_value = 4;
+  }
+}
+
+// product template
+message ProductTemplate {
+  // unique identifier for the product template (graphite's uuid)
+  string product_template_id = 1;
+
+  // product template version
+  string product_template_version = 2;
+
+  // product template name
+  string product_template_name = 3;
+}
+
+// the sku attribute object. Contains data related to a sku attribute
+message SkuAttribute {
+  // canonical id of the global attribute. it's part of the uri of the attribute entity in graphite, and it's an UUID
+  string attribute_id = 1;
+
+  // name or preferred label(called in Graphite) assigned for the attribute
+  string attribute_name = 2;
+
+  // value(s) of the field/attribute with confidence scores
+  repeated AttributeValue attribute_values = 3;
+
+  // [optional] user input field: user inputs
+  repeated UserAttributeValue user_attribute_values = 4;
+
+  // [optional] user input field: flag each attribute in case of any issues
+  AttributeFlag attribute_flag = 5;
+
+  // SKU attribute value
+  message AttributeValue {
+    // value id
+    string value_id = 1;
+
+    // value of the field
+    string value = 2;
+
+    // confidence score from the model
+    doordash.retail.catalog.v2.Confidence.ConfidenceLevel confidence_level = 3;
+
+    // additional information
+    string additional_info = 4;
+
+    // internal identifier of the value, e.g. brand_id, product_category_id
+    string internal_id = 5;
+
+    // dd internal values used for protobuf enum string value
+    string internal_value = 6;
+  }
+
+  // SKU user input attribute
+  message UserAttributeValue {
+    // [optional] value id - if the value is from the restricted list
+    string value_id = 1;
+
+    // user input value
+    google.protobuf.StringValue user_value = 2;
+
+    // flag to indicate values that are outside of restricted list
+    bool is_new_user_value = 3;
+
+    // internal identifier of the value, e.g. brand_id, product_category_id
+    string internal_id = 4;
+
+    // dd internal values used for protobuf enum string value
+    string internal_value = 5;
+  }
+
+  // Attribute flag
+  message AttributeFlag {
+    // reason code for flagging an attribute
+    AttributeReasonCode attribute_reason_code = 1;
+
+    // additional comment on flagging
+    string attribute_comment = 2;
+
+    // flagged values for attribute restricted values
+    repeated string flagged_values = 3;
+  }
+
+  // Attribute reason code
+  enum AttributeReasonCode {
+    // default
+    ATTRIBUTE_REASON_CODE_UNSPECIFIED = 0;
+
+    // low quality data
+    ATTRIBUTE_REASON_CODE_LOW_QUALITY = 1;
+
+    // reference data conflict
+    ATTRIBUTE_REASON_CODE_REFERENCE_DATA_CONFLICT = 2;
+
+    // missing value, free text can be included in attribute_comment
+    ATTRIBUTE_REASON_CODE_MISSING_VALUE = 3;
+
+    // not enough information
+    ATTRIBUTE_REASON_CODE_NOT_ENOUGH_INFO = 4;
+  }
+}
+
+// The response to add tasks. Returns the created tasks.
+message AddTasksResponse {
+  // a list of tasks
+  repeated Task tasks = 1;
+}
+
+// The task object. Contains data related to a task
+// ** Do NOT rename any field **
+message Task {
+  // The id of a task
+  string task_id = 1;
+
+  // The type of a task
+  string type = 2;
+
+  // The workflow of the task
+  TaskWorkflow workflow = 17;
+
+  // task priority , low medium high
+  TaskPriority priority = 3;
+
+  // The assignee user id
+  string assignee_id = 4;
+
+  // Open, in_progress, completed
+  TaskStatus status = 5;
+
+  // The tag of this task
+  string tag = 6;
+
+  // tags
+  repeated string tags = 13;
+
+  // the subject id
+  string subject_id = 7;
+
+  // any comments related to the task
+  string comment = 8;
+
+  // any detailed data required to complete the task. eg: the urpc tagging decisions
+  //  this saves whatever is passed from clients. No validation is done on service side.
+  // a limit of 64KB in size
+  string details = 9;
+
+  // task details v2
+  TaskDetails details_v2 = 14;
+
+  // the task result
+  TaskResult task_result = 15;
+
+  // the task id of the parent task
+  string parent_task_id = 10;
+
+  // the timestamp when the task is created
+  google.protobuf.Timestamp created_on = 11;
+
+  // the timestamp when the task was last updated
+  google.protobuf.Timestamp updated_on = 12;
+
+  // the timestamp when the task will expire and be deleted
+  google.protobuf.Timestamp expired_at = 16;
+}
+
+// Task result definition
+message TaskResult {
+  // supported task result
+  oneof task_result {
+    // delink task result
+    DelinkingTaskResult delink_result = 1;
+    // merge task result
+    MergingTaskResult merge_result = 2;
+    // regroup task result
+    RegroupingTaskResult regroup_result = 3;
+    // sku build task result
+    SkuBuildTaskResult sku_build_result = 4;
+    // Matching review task result
+    MatchingReviewTaskResult matching_review_result = 5;
+  }
+
+  // definition for delink task result
+  message DelinkingTaskResult {
+    // ump id
+    string ump_id = 1;
+
+    // business id
+    // The ump_id and business_id pair uniquely identifies a sku
+    string business_id = 6;
+    // cluster id
+    string cluster_id = 2;
+    // review decision
+    Decision decision = 3;
+    // reason
+    Reason reason_code = 4;
+    // only fill this when decision is further review
+    AdditionalInfo additional_info = 5;
+  }
+
+  // definition for merge task result
+  message MergingTaskResult {
+    // cluster id 1
+    string cluster_id1 = 1;
+    // cluster id 2
+    string cluster_id2 = 2;
+    // review decision
+    Decision decision = 3;
+    // reason
+    Reason reason_code = 4;
+    // only fill this when decision is further review
+    AdditionalInfo additional_info = 5;
+  }
+
+  // definition for regroup task result
+  message RegroupingTaskResult {
+    // cluster id
+    string cluster_id = 1;
+    // pairwise match results for the skus in the regroup task
+    repeated PairwiseMatchResult pairwise_match_results = 2;
+  }
+
+  // definition for pairwise match result
+  message PairwiseMatchResult {
+    // id of the first item, eg: ump id
+    string id1 = 1;
+    // id of the second item, eg: ump id
+    string id2 = 2;
+    // review decision
+    Decision decision = 3;
+  }
+
+  // Results of matching review Task
+  message MatchingReviewTaskResult {
+    // Comparand_1 identifier
+    string comparand_1_id = 1;
+    // Comparand_1 version
+    google.protobuf.Int64Value comparand_1_version = 6;
+    // User chosen matching sku out of multiple skus. In case of 1:1 comparison the id of the second comparand is populated
+    string comparand_2_id = 2;
+    // Comparand_2 version
+    google.protobuf.Int64Value comparand_2_version = 7;
+    // Review decision
+    Decision decision = 3;
+    // Reasoncode for incomplete tasks
+    Reason reason_code = 4;
+    // Only fill this when decision is further review
+    AdditionalInfo additional_info = 5;
+  }
+
+  // Additional information when the review decision is DECISION_FURTHER_REVIEW
+  message AdditionalInfo {
+    // additional info key
+    AdditionalInfoKey key = 1;
+    // additional info value
+    string value = 2;
+    // additional info key enums
+    enum AdditionalInfoKey {
+      // Default
+      ADDITIONAL_INFO_KEY_UNSPECIFIED = 0;
+      // This is the cluster id that needs further review when reason code is REASON_INCORRECTLY_LINKED_REFERENCE_SKU
+      ADDITIONAL_INFO_KEY_CLUSTER_ID = 1;
+    }
+  }
+
+  // review decision
+  enum Decision {
+    // Default
+    DECISION_UNSPECIFIED = 0;
+    // match
+    DECISION_MATCH = 1;
+    // not match
+    DECISION_NOT_MATCH = 2;
+    // further review
+    DECISION_FURTHER_REVIEW = 3;
+  }
+
+  // possible reasons
+  enum Reason {
+    // Default
+    REASON_UNSPECIFIED = 0;
+    // Bad sku quality
+    REASON_SKU_QUALITY_ISSUE = 1;
+    // Bad reference skus in the cluster
+    REASON_INCORRECTLY_LINKED_REFERENCE_SKU = 2;
+  }
+
+  // SKU build task result
+  message SkuBuildTaskResult {
+    // SKU build attributes
+    repeated SkuAttribute sku_attributes = 1;
+
+    //constructed item name that is a combination of attribute values
+    string constructed_item_name = 2;
+
+    // flag insufficient data
+    repeated SkuBuildReasonCode sku_build_reason_code = 3;
+
+    // [deprecated] the product template of the sku, including in task result because the version may be updated
+    ProductTemplate product_template = 4 [deprecated = true];
+
+    // product template metadata
+    ontology.v1.ProductTemplateMetadata product_template_metadata = 5;
+
+    // additional reference data
+    AdditionalReferenceData additional_reference_data = 6;
+
+    // sku build reason code
+    enum SkuBuildReasonCode {
+      // default
+      SKU_BUILD_REASON_CODE_UNSPECIFIED = 0;
+
+      // wrong product template
+      SKU_BUILD_REASON_CODE_WRONG_PRODUCT_TEMPLATE = 1;
+
+      // insufficient raw data
+      SKU_BUILD_REASON_CODE_INSUFFICIENT_RAW_DATA = 2;
+
+      // restricted item
+      SKU_BUILD_REASON_CODE_RESTRICTED_ITEM = 3;
+
+      // important unused tokens exist
+      SKU_BUILD_REASON_CODE_IMPORTANT_UNUSED_TOKENS_EXIST = 4;
+
+      // others, free text will be included in the task comments
+      SKU_BUILD_REASON_CODE_OTHERS = 5;
+
+      // wrong weighted item (user input for WI is different from raw merchant data)
+      SKU_BUILD_REASON_CODE_WRONG_WEIGHTED_ITEM = 6;
+
+      // wrong photo
+      SKU_BUILD_REASON_CODE_WRONG_PHOTO = 7;
+    }
+  }
+}
+
+// Reason codes for ON HOLD status
+enum OnHoldReasonCode {
+  // Unspecified
+  ON_HOLD_REASON_CODE_UNSPECIFIED = 0;
+
+  // Wrong L4 assigned
+  ON_HOLD_REASON_CODE_SKU_BUILD_PENDING_L4_UPDATE = 1;
+
+  // Flagged missing RVs
+  ON_HOLD_REASON_CODE_SKU_BUILD_PENDING_MISSING_RV_UPDATE = 2;
+}
+
+// Additional reference data for in-store data
+message AdditionalReferenceData {
+  //in store photo URLs
+  repeated InStorePhoto in_store_photos = 1;
+}
+
+// The request object to fetch tasks
+message GetTasksByIdsRequest {
+  // task id
+  repeated string task_ids = 1;
+}
+
+// The response object, returns the tasks
+message GetTasksByIdsResponse {
+  // tasks
+  repeated Task tasks = 1;
+}
+
+// The assignment status of the task
+enum AssignStatus {
+  // Default
+  ASSIGN_STATUS_UNSPECIFIED = 0;
+  // Task is assigned
+  ASSIGN_STATUS_IS_ASSIGNED = 1;
+  // Task is not assigned
+  ASSIGN_STATUS_IS_NOT_ASSIGNED = 2;
+}
+
+// The request object to list tasks by certain criteria, returns paginated result
+// Supported operations for MVP:
+// - List tasks with certain type
+// - List tasks with certain type and status
+// - List tasks with certain type, status and priority
+// - List tasks with certain priority
+// - List tasks with certain status
+// - List tasks assigned to a certain user
+// - List tasks for a certain subject
+message ListTasksRequest {
+  // filter for tasks with certain type
+  string type = 1;
+
+  // filter for tasks with certain priority
+  TaskPriority priority = 2;
+
+  // filter for tasks assigned to certain user
+  string assignee_id = 3;
+
+  // filter for task workflow
+  TaskWorkflow workflow = 10;
+
+  // filter for tasks that are assigned or unassigned
+  AssignStatus assign_status = 9;
+
+  // filter for tasks with certain status
+  TaskStatus status = 4;
+
+  // filter for tasks related to a certain subject id
+  string subject_id = 5;
+
+  // filter for tasks with certain tag, must be a full string match
+  string tag = 6;
+
+  // the order in which to sort the tasks
+  TaskListSortOrder sort_order = 11;
+
+  // how many tasks to fetch in a single page
+  int32 page_size = 7;
+
+  // page token
+  string page_token = 8;
+}
+
+// Response for List tasks
+message ListTasksResponse {
+  // Tasks that meet the filtering criteria
+  repeated Task tasks = 1;
+
+  // Page token
+  string page_token = 2;
+}
+
+// Request object for assigning tasks to certain user
+// Support only assigning single task for MVP
+message AssignTasksRequest {
+  // A list of task ids.
+  repeated string task_ids = 1;
+
+  // the assignee user id
+  string assignee_id = 2;
+
+  // the user id that assigns the tasks
+  // if not provided by the client, the service will use the same value as assignee_id
+  string updated_by = 3;
+}
+
+// Response object for assign tasks
+message AssignTasksResponse {
+  //  success = true, failure = false
+  bool success = 1;
+
+  // in case of failure, the error. eg: task is already assigned
+  string error_message = 2;
+}
+
+// Request object for unassign tasks
+message UnassignTasksRequest {
+  // Task ids to unassign
+  // Support only unassigning a single task for MVP
+  repeated string task_ids = 1;
+
+  // The user id that unassigns the tasks
+  // if not provided by the client, the service will use the previously assigned user id
+  string updated_by = 2;
+}
+
+// Response object for unassign a task
+message UnassignTasksResponse {
+  // success = true, failure = false
+  bool success = 1;
+
+  // in case of failure, the error
+  string error_message = 2;
+}
+
+// Request object for updating a task. Support updating following attributes:
+// task priority, task details, task comments, task status, parent task id
+message UpdateTaskRequest {
+  // don't use
+  reserved 1 to 6, 8, 10;
+
+  // The new task value to be updated.
+  Task task = 11;
+
+  // the user id that makes this update
+  string updated_by = 9;
+
+  // Specify which of the above property needs to be updated.
+  google.protobuf.FieldMask field_mask = 7;
+}
+
+// Reponse object for updating a task.
+message UpdateTaskResponse {
+  // update result, true for success, false for failure
+  bool success = 1;
+
+  // error message in case of failure.
+  string error_message = 2;
+}
+
+// Request object for deleting tasks
+message DeleteTasksRequest {
+  // Task ids to delete
+  repeated string task_ids = 1;
+}
+
+// Response object for deleting tasks
+message DeleteTasksResponse {
+  //  success = true, failure = false
+  bool success = 1;
+
+  // error message in case of failure
+  string error_message = 2;
+}
+
+// Request object for creating workflow tasks
+message CreateWorkflowTasksRequest {
+  // list of IncomingTask
+  repeated IncomingTask tasks = 1;
+
+  // the ID of the user making this request
+  string updated_by = 2;
+}
+
+// Response object for creating workflow tasks
+message CreateWorkflowTasksResponse {
+  //  success = true, failure = false
+  bool success = 1;
+
+  // in case of failure, the error
+  string error_message = 2;
+}
+
+// Request object for bulk assigning tasks to certain user
+message BulkAssignTasksRequest {
+  // A list of task ids.
+  repeated string task_ids = 1;
+
+  // the assignee user id
+  string assignee_id = 2;
+
+  // the user id that assigns the tasks
+  string updated_by = 3;
+}
+
+// Response object for bulk assign tasks
+message BulkAssignTasksResponse {
+  //  the number of successfully assigned tasks
+  int32 success_count = 1;
+
+  // in case of failure, the task ids that fail to be assigned
+  repeated string failed_task_ids = 2;
+}
+
+// Request object for bulk unassign tasks
+message BulkUnassignTasksRequest {
+  // Task ids to unassign
+  repeated string task_ids = 1;
+
+  // The user id that unassigns the tasks
+  string updated_by = 2;
+}
+
+// Response object for bulk unassign tasks
+message BulkUnassignTasksResponse {
+  // the number of successfully unassigned tasks
+  int32 success_count = 1;
+
+  // in case of failure, the task ids that fail to be unassigned
+  repeated string failed_task_ids = 2;
+}
+
+// Request object to submit oms review result
+message SubmitOmsTaskResultRequest {
+  // The task id
+  string task_id = 1;
+
+  // The task result
+  TaskResult task_result = 2;
+
+  // user who reviewed the task
+  string reviewed_by = 3;
+}
+
+// Response object to submit oms review result
+message SubmitOmsTaskResultResponse {
+  // the updated task object with the task result
+  Task updated_task = 1;
+}
+
+// Request object to receive the message from client
+message OmsRequestEvent {
+  // user who created this request
+  string created_by = 1;
+
+  // a list of tasks in this request
+  repeated IncomingTask tasks = 2;
+
+  // used by client to trace the request.
+  string client_request_token = 3;
+}
+
+// task result for each individual task
+message OmsTaskResult {
+  // task
+  IncomingTask task = 1;
+
+  // task result
+  TaskResult result = 2;
+}
+
+// Response object to send the result
+message OmsResponseEvent {
+  //  request token of a request, for tracing a unique request
+  string client_request_token = 1;
+
+  // a list of results
+  repeated OmsTaskResult results = 2;
+
+  // the timestamp when the tasks are completed
+  google.protobuf.Timestamp completed_at = 3;
+}
+
+// Request object to get in store photos
+message GetInStorePhotosRequest {
+  // business id
+  string business_id = 1;
+  // msid
+  string ump_id = 2;
+  // source of the photos
+  PhotoSource source = 3;
+}
+
+// Photo source
+enum PhotoSource {
+  // Default
+  PHOTO_SOURCE_UNSPECIFIED = 0;
+  // In store photos taken by Dx
+  PHOTO_SOURCE_DASHER_APP = 1;
+  //  photos taken from the Optimus app
+  PHOTO_SOURCE_OPTIMUS_APP = 2;
+  //  photos from our catalog
+  PHOTO_SOURCE_CATALOG_DATA = 3;
+  //  photos from 3pd pipleline
+  PHOTO_SOURCE_3PD = 4;
+}
+
+// Response object to get in store photos
+message GetInStorePhotosResponse {
+  // a list of photos
+  repeated InStorePhoto photos = 1;
+  // [deprecated] photo source
+  PhotoSource source = 2 [deprecated = true];
+}
+
+// In store photo
+message InStorePhoto {
+  // photo url
+  string photo_url = 1;
+  // timestamp when the photo was ingested
+  google.protobuf.Timestamp iguazu_ingest_timestamp = 2;
+  // photo metadata
+  map<string, string> photo_metadata = 3;
+  // photo source
+  PhotoSource photo_source = 4;
+}

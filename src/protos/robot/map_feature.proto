@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package robot.v1;
+
+import "common/dayparts.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "robot/robot.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.robot.v1";
+
+// Shared map feature protos used across labs-map-service, labs-fleet-service,
+// labs-router-service and the robot
+
+// Represents if a feature is meant to be enabled or disabled at a given time.
+enum FeatureEnableState {
+  // Unspecified
+  FEATURE_ENABLE_STATE_UNSPECIFIED = 0;
+  // Feature is enabled
+  FEATURE_ENABLE_STATE_ENABLED = 1;
+  // Feature is disabled
+  FEATURE_ENABLE_STATE_DISABLED = 2;
+}
+
+// Enum to represent the operating mode which this feature applies to
+enum FeatureOperatingMode {
+  // Unspecified - When this is set, default to FEATURE_OPERATING_MODE_ALL
+  FEATURE_OPERATING_MODE_UNSPECIFIED = 0;
+  // Feature applies to all operating modes
+  FEATURE_OPERATING_MODE_ALL = 1;
+  // Feature applies only to robots operating in NoLo mode
+  FEATURE_OPERATING_MODE_NOLO = 2;
+  // Feature applies only to robots operating in YesLo mode
+  FEATURE_OPERATING_MODE_YESLO = 3;
+}
+
+// Represents a period during which a schedule entry is active.
+message ScheduledPeriod {
+  // When the period starts (inclusive).
+  dayparts.TimeOfDay start_time = 1;
+  // When the period ends (exclusive).
+  dayparts.TimeOfDay end_time = 2;
+}
+
+// Recurrence pattern specifying which days of the week apply.
+message RecurrenceDaysOfWeek {
+  // A list of days for which the schedule entry applies.
+  repeated dayparts.DayOfWeek days = 1;
+}
+
+// Recurrence definition that can be extended over time.
+message Recurrence {
+  // The recurrence pattern.
+  oneof pattern {
+    // Recurrence based on days of the week.
+    RecurrenceDaysOfWeek days_of_week = 1;
+    // NOTE: In the future, we might add:
+    // RecurrenceDayOfMonth day_of_month = 2;
+    // RecurrenceBiWeekly bi_weekly = 3;
+  }
+}
+
+// A single schedule entry that applies during a specified period with a given recurrence.
+message ScheduleEntry {
+  // The time period for this schedule.
+  ScheduledPeriod period = 1;
+
+  // The state (ON or OFF) during this period.
+  FeatureEnableState state = 2;
+
+  // When this schedule applies (e.g., specific days of the week).
+  Recurrence recurrence = 3;
+}
+
+// The overall schedule configuration for the feature.
+message FeatureSchedule {
+  // The default state when no schedule entry applies. If not set or unset, the default state is FEATURE_ENABLED.
+  FeatureEnableState default_state = 1;
+
+  // A list of recurring schedule entries.
+  repeated ScheduleEntry entries = 2;
+
+  // The timezone in which the schedule is defined. Expects tz in IANA format. If not set, the timezone is UTC.
+  string timezone = 3;
+}
+
+// A series of lat and lon points treated as a polyline
+// Follows the definition of a LineString in the GeoJSON spec:
+// https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.4
+message LineString {
+  // Points on the line
+  repeated LatitudeLongitude coordinates = 1;
+}
+
+// A series of lat and lon points treated as a polygon
+// Follows the definition of a Polygon in the GeoJSON spec:
+// https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.6
+message Polygon {
+  // Points that bounds the Polygon
+  repeated LatitudeLongitude coordinates = 1;
+}
+
+// Geometry can be one of LineString, Polygon or Point
+// A subset implementation of the Geometry object in the GeoJSON spec:
+// https://datatracker.ietf.org/doc/html/rfc7946#section-3.1
+message Geometry {
+  // one of the following geometry types
+  oneof geometry_oneof {
+    // Polygon
+    Polygon polygon = 1;
+    // Line String
+    LineString line_string = 2;
+    // Point
+    LatitudeLongitude point = 3;
+  }
+}
+
+// Different types of map features that are considered by the router
+// in the cloud and the robot as an input to its routing decisions.
+enum FeatureType {
+  // Unspecified
+  FEATURE_TYPE_UNSPECIFIED = 0;
+  // A zone blocked for routing
+  FEATURE_TYPE_BLOCKED = 1;
+  // A robot battery swap location - used for fleet dispatch
+  FEATURE_TYPE_BATTERY_SWAP = 2;
+  // A robot home base location - used for fleet dispatch
+  FEATURE_TYPE_HOME_BASE = 3;
+  // An idle location for the robot to wait - used for fleet dispatch
+  FEATURE_TYPE_IDLE_LOCATION = 4;
+}
+
+// Namespace (ie environment) of the map feature.
+// This will be defaulted to FEATURE_NAMESPACE_TEST in storage service (on both insertion and read, if null).
+enum FeatureNamespace {
+  // Unspecified, default namespace required by linter
+  FEATURE_NAMESPACE_UNSPECIFIED = 0;
+  // Test map features
+  FEATURE_NAMESPACE_TEST = 1;
+  // Production map features
+  FEATURE_NAMESPACE_PRODUCTION = 2;
+}
+
+// MapFeature is an annotation of a particular area, point or line in the map.
+// They are used to provide additional map information to the robot/router during routing.
+// These are normally map layers that are too ephemeral to be stored in the semantic map.
+message MapFeature {
+  // Unique identifier of this feature instance
+  string id = 1;
+  // Unique identifier of the geographic shard that this feature belongs to
+  repeated string tile_ids = 2;
+  // Human readable label for this feature
+  string label = 3;
+  // Type of map feature
+  FeatureType type = 4;
+  // A point, line or region on the map
+  Geometry geometry = 5;
+  // User who last updated the feature
+  google.protobuf.StringValue user_modified = 6;
+  // Time when the feature needs to be re-evaluated at
+  google.protobuf.Timestamp revisit_at = 7;
+  // Time when the feature is deemed expired; Note: the expired_at field should not be used to indicate
+  // that the map feature is expired/deleted on the robot client because clocks may be out of sync.
+  // Use the deleted flag instead.
+  google.protobuf.Timestamp expired_at = 8;
+  // Time when the feature was last updated
+  google.protobuf.Timestamp updated_at = 9;
+  // Whether the map feature has been marked as deleted. Map features are marked as deleted
+  // instead of being removed in the DB to ensure that we can signal these deletion updates to
+  // the clients. The map features are later fully deleted after the snapshot generation process.
+  //
+  // An explicit boolean field is needed instead of using the expired_at field because the expired_at
+  // can be inaccurate when comparing using out-of-sync clocks between the server and the robots.
+  bool deleted = 10;
+  // The namespace of the feature
+  FeatureNamespace namespace = 11;
+  // Whether or not the feature is enabled, by user intention. Overrides all other disable flags if set.
+  bool user_disabled = 14;
+  // The recurrence schedule for the feature
+  FeatureSchedule schedule = 12; // optional - if not set, schedule_disabled is always true
+  // Set to true when the scheduler determines this features needs to be disabled via a schedule rule
+  bool schedule_disabled = 13;
+  // The operating mode which this feature applies to
+  FeatureOperatingMode operating_mode = 15;
+}
+
+// MapFeatureSnapshot are stored as .pb files in S3. Snapshots are created periodically
+// to contain all map features within a section of the map (tile_id). This is consumed
+// by the robot and the router service to load all the historical map features in bulk.
+message MapFeatureSnapshot {
+  // MapFeature instances
+  repeated MapFeature map_features = 1;
+  // Tile id that overlaps with the features
+  string tile_id = 2;
+  // Server time when the feature snapshot was created
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// Contains the metadata of MapFeatureSnapshots stored in S3. This is the payload passed to the robot
+// and router to download snapshots. The references are created and stored during the snapshot generation process.
+// See MapFeatureSnapshot to learn more about snapshots.
+message MapFeatureSnapshotRef {
+  // Unique identifier of this snapshot instance
+  string id = 1;
+  // Unique identifier of the geographic shard that this snapshot covers
+  string tile_id = 2;
+  // s3 bucket
+  google.protobuf.StringValue s3_bucket = 3;
+  // s3 key
+  google.protobuf.StringValue s3_key = 4;
+  // The signed s3 url of this snapshot
+  google.protobuf.StringValue signed_s3_url = 5;
+  // The time that this shard was created
+  google.protobuf.Timestamp created_at = 6;
+  // When the reference will be deleted
+  google.protobuf.Timestamp expired_at = 7;
+}

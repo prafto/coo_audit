@@ -1,0 +1,335 @@
+syntax = "proto3";
+
+package doordash.payment.payin;
+
+import "data_classification.v1/data_classification.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payment/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payment.payin.cartpayment";
+
+/*
+   Correlation ids specified and owned by client to cross reference a cart payment entity created in Payment service.
+*/
+message CorrelationIds {
+  google.protobuf.StringValue reference_id = 1;
+  google.protobuf.StringValue reference_type = 2;
+}
+
+/*
+   Indicate the amount of funds in the created charge which will be held at DoorDash processor platform account.
+   The remaining funds (cart_payment.amount - application_fee_amount) may or may not flow to the
+   account specified by payout_account_id according to the purchase characteristics specified by PurchaseInformation.
+
+   For backward compatibility,
+   we expect clients to provide the connect account ID inside the payout_account_id field.
+   For future API versions, clients will provide the payment-service's payout account ID here, in which
+   case we can look up the corresponding provider resource ID inside our service.
+*/
+message SplitPayment {
+  google.protobuf.StringValue payout_account_id = 1;
+  google.protobuf.Int32Value application_fee_amount = 2;
+}
+
+/*
+   Latest action applied on a cart payment object.
+
+   Note: all enum members are lower cased to align with payment service pydantic definitions
+*/
+enum PaymentAction {
+  _unknown_payment_action = 0;
+  pending_refund_upon_capture = 1;
+  refund = 2;
+  refund_then_new_delayed_charge = 3;
+  refund_then_new_charge = 4;
+  charge_with_incremental_auth = 5;
+  delayed_charge = 6;
+  charge = 7;
+  enqueued = 8;
+  pending_client_action_before_auth = 9;
+  cancel_pending_charge_then_new_delayed_charge = 10;
+  confirmed_delayed_charge = 11;
+}
+
+/*
+   Shipping address used by payment service when creating a cart payment with PayPal
+   Fields are the same as PayPal requirement. See here for more info.
+*/
+message ShippingAddress {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.StringValue last_name = 2;
+  google.protobuf.StringValue street_address = 3;
+  google.protobuf.StringValue locality = 4;
+  google.protobuf.StringValue region = 5;
+  google.protobuf.StringValue postal_code = 6;
+  google.protobuf.StringValue country_code_alpha2 = 7;
+  google.protobuf.StringValue extended_address = 8;
+}
+
+/*
+   Purchase metadata used by payment service to drive internal behaviors when creating a cart payment.
+*/
+message PurchaseInfo {
+  google.protobuf.BoolValue contains_alcohol = 1;
+  ShippingAddress shipping_address = 2 [(data_classification.v1.data_classification).pii = true];
+  google.protobuf.StringValue device_data = 3;
+  google.protobuf.StringValue ebt_tran_id = 4;
+  google.protobuf.StringValue snap_merchant_id = 5;
+  google.protobuf.StringValue snap_store_id = 6;
+  google.protobuf.StringValue external_snap_store_id = 7;
+}
+
+/*
+   Low level payment intent data model.
+*/
+message PaymentIntent {
+  // Unique identifier of this payment intent
+  google.protobuf.StringValue id = 1;
+
+  // Id of cart payment object which this payment intent was created for
+  google.protobuf.StringValue cart_payment_id = 2;
+
+  // Idempotency key of this payment intent object
+  google.protobuf.StringValue idempotency_key = 3;
+
+  // Timestamp of when this payment intent was created
+  google.protobuf.Timestamp created_at = 4;
+
+  // Timestamp of when this payment intent was last updated
+  google.protobuf.Timestamp updated_at = 5;
+
+  // Timestamp of when this payment intent was captured if it was created with delay capture
+  google.protobuf.Timestamp captured_at = 6;
+
+  // Timestamp of when this payment intent was canceled before being captured
+  google.protobuf.Timestamp canceled_at = 7;
+
+  // Current view of payment intent's net amount
+  google.protobuf.Int32Value amount = 8;
+
+  // The initial amount when this payment intent was created
+  google.protobuf.Int32Value amount_initiated = 9;
+
+  // Id of payment method used to create this payment intent
+  google.protobuf.StringValue payment_method_id = 10;
+
+  // Currency
+  doordash.payment.common.Currency currency = 11;
+
+  // Country
+  doordash.payment.common.Country country = 12;
+
+  // Provider level payment intent details
+  PgpPaymentIntent pgp_payment_intent = 13;
+
+  // Batching details
+  PaymentBatchingDetails batching_details = 14;
+}
+
+/*
+   Provider layer payment intent details.
+*/
+message PgpPaymentIntent {
+  // Unique identifier of this pgp payment intent
+  google.protobuf.StringValue id = 1;
+
+  // Idempotency key of this payment intent object
+  google.protobuf.StringValue idempotency_key = 2;
+
+  // Id of payment intent which this pgp payment intent was created for
+  google.protobuf.StringValue payment_intent_id = 3;
+
+  // Pgp code indicating which provider was used for this pgp payment intent
+  doordash.payment.common.PgpCode pgp_code = 4;
+
+  // Primary id to identify corresponding object in provider's dataset
+  // e.g. in Stripe this could point to a Stripe payment intent object with id "pi_xxx"
+  google.protobuf.StringValue resource_id = 5;
+
+  // Additional id to identify underlying charge resource created
+  // for provider side payment intent object
+  // e.g. in Stripe this could point to a Charge object with id "ch_xxx"
+  google.protobuf.StringValue charge_resource_id = 6;
+
+  // Amount deducted from a merchant's connected account for flow of funds transactions
+  // on the path to deprecation to 0
+  google.protobuf.Int32Value application_fee_amount = 7;
+
+  // Merchant's payout account id. Now it is stripe_managed_account_id
+  google.protobuf.StringValue payout_account_id = 8;
+
+  // Equal to the amount - application_fee_amount
+  // needed to unblock RSL in case the application_fee_amount deprecation to 0
+  // faces any issues during enablement to avoid blocking
+  google.protobuf.Int32Value net_amount_to_merchant_account = 9;
+}
+
+/*
+   Acquirer used for the transaction.
+*/
+enum AcquirerCode {
+  _unknown_acquirer = 0;
+  // jpm: JPMorgan Chase
+  jpm = 1;
+}
+
+/*
+   Provider summary of Cart Payment.
+*/
+message PaymentGatewayDetails {
+  // Pgp code indicating which provider was used for this charge
+  doordash.payment.common.PgpCode pgp_code = 1;
+
+  // Provider specific customer identifier
+  google.protobuf.StringValue customer_id = 2;
+
+  // Provider specific payment method identifier
+  google.protobuf.StringValue payment_method_id = 3;
+
+  // Provider specific transaction identifier
+  google.protobuf.StringValue resource_id = 4;
+
+  // Gateway specific decline reason if available
+  // for each processors (pgp_code), please refer to:
+  // - stripe: https://stripe.com/docs/declines/codes
+  // - braintree / paypal: https://developer.paypal.com/braintree/articles/control-panel/transactions/declines
+  google.protobuf.StringValue decline_reason = 5;
+
+  // Acquirer used for the transaction
+  AcquirerCode acquirer_code = 6;
+}
+
+/*
+   Payment method summary of Cart Payment.
+*/
+message PaymentMethodDetails {
+  // Identifier of payment method
+  google.protobuf.StringValue dd_payment_method_id = 1;
+
+  // Type
+  google.protobuf.StringValue type = 2;
+
+  // Remaining balance if payment method is EBT
+  google.protobuf.Int64Value ebt_remaining_balance = 3;
+}
+
+/*
+   A list of cart payments related to a batched payment and associated details
+*/
+message CartPaymentBatchDetails {
+  // Unique identifier of the cart payment
+  google.protobuf.StringValue cart_payment_id = 1;
+
+  // cart payment reference id
+  google.protobuf.StringValue reference_id = 2;
+
+  // cart payment reference id type
+  google.protobuf.StringValue reference_type = 3;
+
+  // Amount allocated to the associated cart payment out of this batched payment
+  google.protobuf.Int64Value amount_allocated = 4;
+}
+
+/*
+   Details on whether a payment is batched
+*/
+message PaymentBatchingDetails {
+  // Whether the payment is batched yet or not (pending batching)
+  google.protobuf.BoolValue is_batched = 1;
+
+  // list of cart payments associated with this batched payment
+  repeated CartPaymentBatchDetails batched_cart_payments = 2;
+}
+
+/*
+   Client facing combined view of intents (individual charges) and refunds.
+*/
+message PaymentDetails {
+  // Unique identifier, corresponds to payment intent ID
+  google.protobuf.StringValue dd_payment_intent_id = 1;
+
+  // Current amount for charge
+  google.protobuf.Int32Value net_amount = 2;
+
+  // Original amount of charge
+  google.protobuf.Int32Value original_amount = 3;
+
+  // Refunded amount of charge
+  google.protobuf.Int32Value amount_refunded = 4;
+
+  // Status of charge
+  google.protobuf.StringValue status = 5;
+
+  // Method of capture
+  google.protobuf.StringValue capture_method = 6;
+
+  // Timestamp of when this charge was created
+  google.protobuf.Timestamp created_at = 7;
+
+  // Timestamp of when this charge was last updated
+  google.protobuf.Timestamp updated_at = 8;
+
+  // Summary of payment method used
+  PaymentMethodDetails payment_method = 9;
+
+  // Summary of payment provider properties for charge
+  PaymentGatewayDetails payment_gateway_details = 10;
+
+  // Error reason for failure, if applicable
+  google.protobuf.StringValue error_reason = 11;
+
+  // Amount captured for a charge
+  google.protobuf.Int64Value amount_captured = 12;
+
+  // Batching details
+  PaymentBatchingDetails batching_details = 13;
+}
+
+/*
+   List of payment details included as part of cart payments.
+*/
+message PaymentDetailsList {
+  // Number of details
+  google.protobuf.Int32Value count = 1;
+
+  // Flag for more records existing
+  google.protobuf.BoolValue has_more = 2;
+
+  // List of detail elements
+  repeated PaymentDetails data = 3;
+}
+
+/*
+   Supporting fields for PaymentRequiredAction, used by client to perform actions necessary for a charge to proceed.
+*/
+message PaymentRequiredActionData {
+  // Client specific data added for consistency of CartPayment definition, though unused for events.
+  google.protobuf.StringValue client_secret = 1;
+
+  // Generic structure for additional actions
+  map<string, google.protobuf.Any> next_actions = 2;
+
+  // Unique identifier of this pgp payment intent confirmation.
+  google.protobuf.StringValue pgp_payment_intent_confirmation_id = 3;
+
+  // Provider for completing the payment
+  doordash.payment.common.PgpCode pgp_code = 4;
+
+  // Provider sdk info for completing the payment
+  doordash.payment.common.ProviderSdkConfig pgp_sdk_config = 5;
+}
+
+/*
+   Required actions for clients for Cart Payments in order for charges to proceed, such as client side authentication.
+*/
+message PaymentRequiredAction {
+  // Type of action
+  google.protobuf.StringValue type = 1;
+
+  // Data specific to above type
+  PaymentRequiredActionData data = 2;
+}

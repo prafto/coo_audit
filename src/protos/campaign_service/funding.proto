@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package campaign_service.v1;
+
+import "campaign_service/billing_profile.proto";
+import "common/money.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.campaign";
+
+// Holds assorted fees that may be associated with an ad group
+message Fees {
+  // Platform fees associated with incentive redemptions
+  repeated FlatFee incentive_platform_flat_fee = 1;
+
+  // Tech Debt - Flat fees meant to simulate discount passthrough
+  //             Required for legacy Mx promo
+  repeated FlatFee incentive_discount_flat_fee = 2 [deprecated = true];
+
+  // Tech Debt - Subtotal percentage fees meant to simulate discount
+  //             passthrough required for legacy Mx promo
+  PercentageFee incentive_percentage_fee = 3 [deprecated = true];
+
+  reserved 4;
+  reserved "total_placement_fees";
+
+  // Tech Debt - Flat fees charged once for an entire ad group
+  //             Required for legacy banner billing
+  repeated TotalPlacementFee placement_fees = 5 [deprecated = true];
+}
+
+// Holds flat billing amounts typically associated with
+// banner placements
+message TotalPlacementFee {
+  // Amount of fee to charge once, not per transaction
+  money.MonetaryFields amount = 1;
+
+  // Type of placement fee, propagated to invoice
+  google.protobuf.StringValue total_placement_fee_type = 2;
+
+  // Funding entity for this total placement fee
+  Funding funding = 3;
+
+  // which opportunity line item is the contract attached to for this fee
+  google.protobuf.StringValue salesforce_opportunity_line_item_id = 4;
+}
+
+// Per transaction fee of a flat monetary amount
+message FlatFee {
+  // Amount of the flat fee
+  money.MonetaryFields amount = 1;
+
+  // Funding entity for this flat fee
+  Funding funding = 2;
+}
+
+// Per transaction fee of percentage of the subtotal
+message PercentageFee {
+  // Percentage of the order subtotal to be converted to a fee
+  google.protobuf.StringValue percentage = 1;
+
+  // Maximum amount that can be charged for this fee
+  money.MonetaryFields max_value = 2;
+
+  // Funding entity for this percentage fee
+  Funding funding = 3;
+}
+
+// Describes an entity that is paying a part of the
+// cost of each transaction
+message Funding {
+  // Determines how to allocate the costs of a transaction
+  // to this party or billing profile
+  RuleType funding_rule_type = 1;
+
+  // How is the funding entity related to each transaction
+  // Relevant for tax calculations
+  EntityType entity_type = 2;
+
+  // Amounts for relevant funding rule types
+  oneof funding_amount {
+    // Monetary amount for flat amount rules
+    money.MonetaryFields amount = 3;
+
+    // Percentage of subtotal for percentage rules
+    google.protobuf.StringValue percentage = 4;
+  }
+
+  reserved 5;
+  reserved "billing_profile_id";
+
+  // Id of the funding entity which is auto generated when campaign is created
+  google.protobuf.StringValue id = 6;
+
+  // Which billing profile this payment is associated with
+  // This is at the funding level to support multifunding platform use cases
+  oneof billing_profile_value {
+    // Id of external billing profile, uuid format
+    google.protobuf.StringValue billing_profile_identifier = 7;
+
+    // Embedded billing profile for compatibility purposes
+    BillingProfile billing_profile = 8;
+  }
+
+  // Supported funding rule types
+  enum RuleType {
+    // Unspecified type
+    RULE_TYPE_UNSPECIFIED = 0;
+
+    // A percentage of the transaction cost will be allocated
+    // to this funding entity
+    PERCENTAGE = 1;
+
+    // A flat amount up to the transaction cost will be
+    // allocated to this funding entity
+    FLAT_AMOUNT = 2;
+
+    // Any transactions costs not already allocated to a PERCENTAGE
+    // or FLAT_AMOUNT rule will be allocated equally among
+    // funding entities with type REMAINDER
+    REMAINDER = 3;
+  }
+
+  // Supported funding entity types, this is how the funding entity relates
+  // to any given transaction.
+  // Merchant is used in the context of transactions tied to an order
+  // Third party is any party not tied to an order,
+  //      so this entity type covers CPG Ax and Rx Franchise for example.
+  enum EntityType {
+    // Unspecified entity type
+    ENTITY_TYPE_UNSPECIFIED = 0;
+
+    // Doordash is paying for this portion of the funding
+    DOORDASH = 1;
+
+    // Merchant is paying for this portion of the funding
+    // note that only one entity per transaction can be
+    // denoted as the Merchant
+    MERCHANT = 2;
+
+    // An entity unaffiliated with the Mx or DD is paying
+    // for this portion of the funding.
+    THIRDPARTY = 3;
+  }
+}

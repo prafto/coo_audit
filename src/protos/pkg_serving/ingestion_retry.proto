@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package pkg_serving.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+
+// Assumption: Ingestion consumer receives a message from
+// indexer and attempts to store it in PESS.
+
+// Use cases for ingestion into serving (aka data access)
+enum IngestionUseCase {
+  // Unspecified
+  INGESTION_USE_CASE_UNSPECIFIED = 0;
+  // Mx Catalog V2
+  INGESTION_USE_CASE_MX_CATALOG_V2 = 1;
+  // Inventory
+  INGESTION_USE_CASE_INVENTORY = 2;
+  // Graph proxy cdc
+  INGESTION_USE_CASE_GRAPH_PROXY_CDC = 3;
+  // App cdc
+  INGESTION_USE_CASE_APP_CDC_MX_CATALOG = 4;
+  // Consolidated index workers
+  INGESTION_USE_CASE_CONSOLIDATED_INDEX_WORKERS = 5;
+  // Store Menu (NV Inventory in Menu schema)
+  INGESTION_USE_CASE_STORE_MENU = 6;
+}
+
+// Retry event for ingestion stream failures. Expected to be a generic
+// container which can serve multiple indexing needs. This corresponds
+// to the granularity in which an ingestion consumer receives events,
+// i.e. for Mx catalog V2, this is a batch of catalog updates
+message IngestionRetryEvent {
+  // Use case for which this is a retry event
+  IngestionUseCase ingestion_use_case = 1;
+  // Ingestion data. Expected to be parsed based on the use case
+  // by the retry consumer
+  bytes ingestion_data = 2;
+  // Number of retries so far
+  int64 retry_count = 3;
+  // Timestamp of the first retry event produced for this message
+  google.protobuf.Timestamp original_retry_published_at = 4;
+  // Timestamp of the current retry event produced for this message.
+  // Note that for the first retry event, current_retry_published_at
+  // and original_retry_published_at will be the same
+  google.protobuf.Timestamp current_retry_published_at = 5;
+  // Last known exception message
+  google.protobuf.StringValue last_exception_message = 6;
+  // Last known exception stacktrace
+  google.protobuf.StringValue last_exception_stacktrace = 7;
+}
+
+// Dead letter queue for when we can't process this message successfully any further.
+// This corresponds to the granularity of what is stored in PESS,
+// i.e. for Mx Catalog V2, it would be a single business-level catalog product
+message IngestionDlqEvent {
+  reserved 1;
+  reserved "ingestion_use_case";
+  // Ingestion data in JSON format
+  google.protobuf.StringValue ingestion_data = 2;
+  reserved 3;
+  reserved "group_id";
+  // PESS entity ID to uniquely identify the entity
+  // For e.g. for Mx Catalog V2, this is the Mx catalog ID
+  google.protobuf.StringValue entity_id = 4;
+  reserved 5;
+  reserved "dlq_reason";
+  // Original retry publish timestamp
+  google.protobuf.Timestamp original_retry_published_at = 6;
+  // Final retry publish timestamp
+  google.protobuf.Timestamp final_retry_published_at = 7;
+  // Last known exception message
+  google.protobuf.StringValue last_exception_message = 8;
+  // Last known exception stacktrace
+  google.protobuf.StringValue last_exception_stacktrace = 9;
+  // Use case for which this is a DLQ event
+  string ingestion_use_case_str = 10;
+  // DLQ reason
+  string dlq_reason_str = 11;
+}

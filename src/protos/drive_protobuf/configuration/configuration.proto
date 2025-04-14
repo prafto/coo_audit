@@ -1,0 +1,368 @@
+syntax = "proto3";
+
+package com.doordash.drive.configuration.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.drive.configuration";
+
+// API containing endpoints for getting drive-related configuration values. See design doc: https://docs.google.com/document/d/1Wd-IBVtaEnYAPLABoWcv1zgPEg7FJrWb0oQAePilHhk/edit#
+service DriveConfigurationService {
+  // Returns the configuration values necessary for fulfillment in the Dasher app (specifically for Get Delivery, but could be used for other use cases in the app as well)
+  rpc GetDasherFulfillmentConfiguration(GetDasherFulfillmentConfigurationRequest) returns (GetDasherFulfillmentConfigurationResponse);
+  // Returns the configuration values necessary to perform dasher pay calculations
+  rpc GetDasherPayConfiguration(GetDasherPayConfigurationRequest) returns (GetDasherPayConfigurationResponse);
+  // Returns the configuration values necessary for return delivery decision making
+  rpc GetReturnDeliveryConfiguration(GetReturnDeliveryConfigurationRequest) returns (GetReturnDeliveryConfigurationResponse);
+  // Return soft requirements for delivery address associated with delivery.
+  rpc GetSoftRequirementsForDriveOrder(GetSoftRequirementsForDriveOrderRequest) returns (GetSoftRequirementsForDriveOrderResponse);
+}
+
+// Request including an optional business_id, store_id, and/or submarket_id. All of these are required fields.
+message GetDasherPayConfigurationRequest {
+  // The business id associated with the store
+  google.protobuf.StringValue business_id = 1;
+  // The store id associated with the delivery
+  google.protobuf.StringValue store_id = 2;
+  // The submarket id associated with the store
+  google.protobuf.StringValue submarket_id = 3;
+  // The delivery id whose pay is being calculated
+  google.protobuf.StringValue delivery_id = 4;
+}
+
+// Response including all possible configuration values for dasher pay
+message GetDasherPayConfigurationResponse {
+  // Returns whether or not the delivery is for a grocery merchant, used to infer whether to use a special grocery pay calculator or not
+  google.protobuf.BoolValue is_grocery_delivery = 1;
+  // Returns how many cents extra we should pay the dasher for delivering a large order, or 0 if the feature is not enabled
+  int64 order_volume_extra_pay_cents = 2;
+  // Returns if order is from a merchant that do not have tips enabled
+  google.protobuf.BoolValue is_from_non_tip_merchant = 3;
+  // Returns whether or not the delivery is for a parcel merchant, used to infer whether to use parcel delivery source for dasher pay
+  google.protobuf.BoolValue is_parcel_delivery = 4;
+}
+
+// Request including store_id, submarket_id, order_value, distance_meters, cash_on_delivery, delivery_uuid, delivery_id
+message GetSoftRequirementsForDriveOrderRequest {
+  // The store_id needed to comput soft_requirements
+  google.protobuf.Int64Value store_id = 1;
+  // The submarket_id needed to comput soft_requirements
+  google.protobuf.Int64Value submarket_id = 2;
+  // The order_value needed to comput soft_requirements
+  google.protobuf.Int32Value order_value = 3;
+  // The distance_meters needed to comput soft_requirements
+  google.protobuf.Int64Value distance_meters = 4;
+  // The cash_on_delivery needed to comput soft_requirements
+  google.protobuf.Int64Value cash_on_delivery = 5;
+  // The delivery_uuid is associated with delivery
+  google.protobuf.StringValue delivery_uuid = 6;
+  // The delivery_id for which soft_requirements is needed
+  google.protobuf.Int64Value delivery_id = 7;
+}
+
+// Response including soft_requirements
+message GetSoftRequirementsForDriveOrderResponse {
+  // The soft_requirements is associated with address
+  google.protobuf.StringValue soft_requirements = 1;
+}
+
+// Request including business_id, store_id, submarket_id, and/or delivery id. All of these are required fields.
+message GetDasherFulfillmentConfigurationRequest {
+  // The business id associated with the store
+  google.protobuf.StringValue business_id = 1;
+  // The store id associated with the delivery
+  google.protobuf.StringValue store_id = 2;
+  // The submarket id associated with the store
+  google.protobuf.StringValue submarket_id = 3;
+  // The delivery id which is currently assigned to a dasher
+  google.protobuf.StringValue delivery_id = 4;
+  // The dasher's locale i.e. "en-US" for English/United States, in RFC5646 format. Used to render certain strings in a locale aware way. If empty, en-US will be assumed.
+  google.protobuf.StringValue dasher_locale = 5;
+}
+
+// Response including all possible configuration values for fulfillment via the dasher app
+message GetDasherFulfillmentConfigurationResponse {
+  // Holds instructions configured by business
+  message DasherInstructionsConfiguration {
+    // Return instructions for the dasher app, used when returning a delivery in different scenarios
+    message DasherReturnInstructions {
+      // The summary of return instructions
+      google.protobuf.StringValue summary = 1;
+      // Instructions to show when the customer cannot be located
+      google.protobuf.StringValue customer_unavailable = 2;
+      // Instructions to show upon acceptance of the return
+      google.protobuf.StringValue special = 3;
+      // Instructions to show when a delivery must be returned due to cold-chain compliance (grocery deliveries that have been on the road too long, mostly)
+      google.protobuf.StringValue cold_chain = 4;
+      // The phone number to call when there's a problem with the return
+      google.protobuf.StringValue phone_number_suffix = 5;
+    }
+
+    // Instructions used at Walmart stores primarily where we can tell the Dasher to input their parking stall so that store associates can find them
+    message DasherParkingInstructions {
+      // Represents parking instructions at a particular location (at store or at consumer)
+      message DasherLocationBasedParkingInstructions {
+        // The short message/title used to request that the dasher inputs their parking details
+        google.protobuf.StringValue prompt_title = 1;
+        // The more detailed description used to request that the dasher inputs their parking details
+        google.protobuf.StringValue prompt_message = 2;
+        // A hint about what kind of parking situation exists at the store i.e. "Parking stall number" or "Parking stall letter"
+        google.protobuf.StringValue prompt_input_hint = 3;
+      }
+
+      // Instructions to be used when the dasher is at the store location.
+      DasherLocationBasedParkingInstructions at_store = 1;
+      // Instructions to be used when the dasher is at the consumer location.
+      DasherLocationBasedParkingInstructions at_consumer = 2;
+    }
+    // Instructions used when dropping off the order
+    google.protobuf.StringValue dropoff = 1;
+    // Set of instructions used when returning an order
+    DasherReturnInstructions return = 2;
+    // Business-level instructions used upon acceptance of the order. Not the final string displayed to the dasher.
+    google.protobuf.StringValue special = 3;
+    // Instructions used for parking stalls (see above description)
+    DasherParkingInstructions parking = 4;
+    // The prefix used before instructions from the customer appear i.e. "Instructions from the customer: <instructions goes here>"
+    google.protobuf.StringValue customer_instructions_prefix = 5;
+    // The type of the order, basically a freeform value used in various places i.e. "This is a DoorDash Drive pharma order."
+    google.protobuf.StringValue order_type = 6;
+    // Instructions used when picking up the order
+    google.protobuf.StringValue pickup = 7;
+    // A string comprised of several of the above properties, depending on the type of delivery. Used as the "final" value of special instructions displayed to the dasher upon acceptance.
+    google.protobuf.StringValue combined_special = 8;
+    // A string representing order volume mapped to a t-shirt size [XS, S, M, L, XL]
+    google.protobuf.StringValue order_volume_classification = 9;
+    // Type of order volume scalar to classification (i.e. using number of items or weight and volume of items)
+    OrderVolumeScalarSource order_volume_scalar_source = 10;
+    // Show contact Cx steps during dropoff
+    google.protobuf.BoolValue show_contact_cx_step = 11;
+    // list of equipments to equip the dasher with
+    repeated DasherEquipment equip_dx_for = 12;
+  }
+
+  // Return Info
+  message ReturnInfo {
+    // information for payment
+    message PayInfo {
+      // name of the payment
+      google.protobuf.StringValue name = 1;
+      // string we want to display to show the pay
+      google.protobuf.StringValue display_pay = 2;
+    }
+
+    // Pay details
+    message ReturnPayDetails {
+      // header to be shown
+      google.protobuf.StringValue header = 1;
+      // pay to be displayed
+      google.protobuf.StringValue display_pay = 2;
+      // subtitle to be shown
+      google.protobuf.StringValue subtitle = 3;
+      // details of return pay
+      repeated PayInfo details = 4;
+      // total pay
+      PayInfo total_pay = 5;
+    }
+
+    // Return instructions
+    message ReturnInstructions {
+      // Detailed instructions
+      google.protobuf.StringValue detailed = 1;
+      // Instruction header
+      google.protobuf.StringValue header = 2;
+      // Summary
+      google.protobuf.StringValue summary = 3;
+      // Confirmation
+      google.protobuf.StringValue confirmation = 4;
+    }
+
+    // Pay details
+    ReturnPayDetails pay_details = 1;
+    // Type of return
+    google.protobuf.StringValue type = 2;
+    // Return title
+    google.protobuf.StringValue return_title = 3;
+    // Original delivery pay
+    google.protobuf.Int32Value original_delivery_pay = 4;
+    // Instructions
+    ReturnInstructions instructions = 5;
+    // confirmation title
+    google.protobuf.StringValue confirmation_title = 6;
+  }
+
+  // Enum for equipment type
+  enum DasherEquipment {
+    // Enum case for unknown
+    DASHER_EQUIPMENT_UNSPECIFIED = 0;
+    // Enum for pizza bags
+    DASHER_EQUIPMENT_PIZZA_BAG = 1;
+  }
+
+  // Contains configurations for the post tipping feature
+  message PostTipCutoffConfiguration {
+    // Contains dynamic configuration for the post tipping feature (optional)
+    message DynamicPostTipCutoffConfiguration {
+      // The hour and minutes at which we stop accepting post tips
+      google.protobuf.Duration post_tip_eligibility_cutoff = 1;
+      // The hour and minutes at which the last tip can be received
+      google.protobuf.Duration tip_received_cutoff = 2;
+    }
+
+    // The static number of days at which we accept a post tip (usually 14 days after delivery if set, optional)
+    int64 static_days = 1;
+    // Dynamic configuration for accepting post tips until a particular timestamp
+    DynamicPostTipCutoffConfiguration dynamic = 2;
+  }
+
+  // Item object
+  message Item {
+    // Name of the item
+    google.protobuf.StringValue name = 1;
+    // Description of the item
+    google.protobuf.StringValue description = 2;
+    // Quantity of the item
+    google.protobuf.Int32Value quantity = 3;
+    // Bundle key of the item
+    google.protobuf.StringValue bundle_key = 4;
+    // Barcode of the item
+    google.protobuf.StringValue barcode = 5;
+    // Is the item damaged?
+    google.protobuf.BoolValue is_damaged = 6;
+    // Scan status of the item
+    google.protobuf.StringValue scan_status = 7;
+    // ExternalId of the item
+    google.protobuf.StringValue external_id = 8;
+    // Weight of the item
+    google.protobuf.StringValue weight = 9;
+    // Volume of the item
+    google.protobuf.StringValue volume = 10;
+    // Price of the item
+    google.protobuf.Int32Value price = 11;
+  }
+
+  // Catering Setup Instruction
+  message CateringSetupInstruction {
+    // URL for the actual instructions image
+    google.protobuf.StringValue url = 1;
+  }
+
+  // Delivery Metadata
+  message DeliveryMetadata {
+    // Indicates which compartment item goes to
+    google.protobuf.StringValue compartment_indicator = 1;
+  }
+
+  // Type of order volume scalar to classification (i.e. using number of items or weight and volume of items)
+  enum OrderVolumeScalarSource {
+    // No special process was used to determine the classification
+    ORDER_VOLUME_SCALAR_SOURCE_UNSPECIFIED = 0;
+    // Using the number of items to determine classification
+    ORDER_VOLUME_SCALAR_SOURCE_NUMBER_OF_ITEMS = 1;
+    // Using the weight and volume matrix to determine the classification
+    ORDER_VOLUME_SCALAR_SOURCE_WEIGHT_AND_VOLUME_OF_ITEMS = 2;
+  }
+
+  // Represents equipment that can exist at the store
+  enum StoreEquipmentType {
+    // The store doesn't have any equipment
+    STORE_EQUIPMENT_TYPE_NONE_UNSPECIFIED = 0;
+    // The store has pizza bags available for the Dasher.
+    STORE_EQUIPMENT_TYPE_PIZZA_BAG = 1;
+  }
+
+  // The enum for SigneeType
+  enum SigneeType {
+    // Indicates unspecified signee type
+    SIGNEE_TYPE_UNSPECIFIED = 0;
+    // Indicates that the Cx should sign off on the delivery
+    SIGNEE_TYPE_CUSTOMER = 1;
+    // Indicates that the Mx employee should sign off on the delivery
+    SIGNEE_TYPE_MERCHANT = 2;
+  }
+
+  // On time bonus paid to the dasher
+  int64 submarket_on_time_bonus_cents = 1;
+  // Bonus paid to preferred dashers for the given store
+  int64 preferred_incentive_cents = 2;
+  // Contains dasher instructions (see above docs)
+  DasherInstructionsConfiguration dasher_instructions = 3;
+  // Returns whether or not the delivery is part of project dash, used to display a special badge
+  google.protobuf.BoolValue is_project_dash_delivery = 4;
+  // Returns whether or not the delivery is for a grocery merchant, used to display a special badge
+  google.protobuf.BoolValue is_grocery_delivery = 5;
+  // Returns the bonus amount that we'll pay the dasher if they set up the catering table properly
+  int64 catering_setup_pay_cents = 6;
+  // Returns whether or not the given store/business is whitelisted for contactless delivery
+  google.protobuf.BoolValue is_contactless_delivery_enabled_by_whitelist = 7;
+  // Returns whether or not we should display the notes associated with the delivery to the dasher
+  google.protobuf.BoolValue is_delivery_notes_enabled = 8;
+  // The list of equipment that the store posesses
+  repeated StoreEquipmentType store_equipment = 9;
+  // Returns whether or not we'll send a text to the customer asking for a tip
+  google.protobuf.BoolValue is_post_tip_request_enabled = 10;
+  // Configuration for when we'll stop accepting post tips
+  PostTipCutoffConfiguration post_tip_cutoff_configuration = 11;
+  // Returns true if the delivery can be returned
+  google.protobuf.BoolValue is_delivery_returnable = 12;
+  // Returns true if the delivery's return will automatically be assigned & confirmed to the dasher when initiated
+  google.protobuf.BoolValue is_automated_returns_enabled = 13;
+  // Returns true if all signatures require entry of the relationship to the recipient (i.e. father/mother/caretaker/self/etc)
+  google.protobuf.BoolValue is_signature_relationship_required = 14;
+  // Returns true if HIPAA compliance training is needed to complete the delivery, usually used for Drive pharmacy orders
+  google.protobuf.BoolValue is_hipaa_compliance_required = 15;
+  // Returns true if the customer cannot supply a tip upfront to be able to surface this to the Dasher on the accept modal
+  google.protobuf.BoolValue is_pre_tipping_disabled = 16;
+  // Returns true if the customer can supply a tip via the Customer Tracking UI (map view of where the Dasher is located + order details + tip input for some businesses)
+  google.protobuf.BoolValue is_tip_via_customer_tracking_enabled = 17;
+  // items list from the delivery_items table
+  repeated Item items = 18;
+  // Catering setup instruction
+  CateringSetupInstruction catering_setup_instruction = 19;
+  // drop off confirmation for drive order
+  google.protobuf.BoolValue requires_dropoff_confirmation = 20;
+  // Is the order setup pay eligible
+  money.MonetaryFields setup_pay_eligible_monetary_fields = 21;
+  // Delivery metadata
+  DeliveryMetadata delivery_metadata = 22;
+  // Chat agent id
+  google.protobuf.StringValue chat_agent_id = 23;
+  // is posttip enabled
+  google.protobuf.BoolValue is_post_tippable = 24;
+  // is post tipping ever eligible
+  google.protobuf.BoolValue is_post_tipping_ever_eligible = 25;
+  // return info
+  ReturnInfo return_info = 26;
+  // is returnable delivery
+  google.protobuf.BoolValue is_returnable_delivery = 27;
+  // is pre-tip enabled pickup zone
+  google.protobuf.BoolValue is_pre_tip_enabled_pickup_zone = 28;
+  // Returns true if Dx is required to take a photo of delivery at Cx dropoff
+  google.protobuf.BoolValue is_photo_on_delivery_enabled = 29;
+  // The signeeType for signatures
+  SigneeType signee_type = 30;
+}
+
+// Request with values required to determine return delivery
+message GetReturnDeliveryConfigurationRequest {
+  // The delivery id to consider for return
+  google.protobuf.StringValue delivery_id = 1;
+  // The business id associated with the store
+  google.protobuf.StringValue business_id = 2;
+  // The store id associated with the delivery
+  google.protobuf.StringValue store_id = 3;
+  // The cash on delivery amount for this delivery
+  google.protobuf.StringValue cash_on_delivery = 4;
+}
+
+// Response to confirm return delivery allowed
+message GetReturnDeliveryConfigurationResponse {
+  // Indicates if return delivery required
+  bool should_generate_return_delivery = 1;
+}

@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package geo_intelligence.v2;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "EnhancedAddress";
+option java_package = "geo.intelligence.enhanced_address.proto";
+
+// Service which serves address metadata from the Geo Intelligence team.
+service GeoIntelligenceEnhancedAddressService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+
+  // returns a dropoff geofence
+  rpc GetDropoffGeofence(GetDropoffGeofenceRequest) returns (GetDropoffGeofenceResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // Returns an address's navigation pin
+  // An address's navigation pin is used for automotive navigation and is different from the lat/lng of the address itself
+  // For example, an address's lat/lng may be correct, but a navigation app may mistakenly navigate to it from the street on the other side of the house.
+  // Due to this problem, we have a separate navigation pin.
+  rpc GetNavigationPin(GetNavigationPinRequest) returns (GetNavigationPinResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+}
+
+// Request for a navigation pin given an id (or multiple ids)
+// Clients should pass all IDs they have access to, and Geo will return the best navigation pin it can find.
+// If we have a consumer_address_link_id level navigation pin, we want to use that, else we fall back to address_id level, then source_place_id level.
+message GetNavigationPinRequest {
+  // Source-specific original identifier of the address record.
+  google.protobuf.StringValue source_place_id = 1;
+  // Geo address identifier
+  google.protobuf.StringValue address_id = 2;
+  // Consumer address indentifier
+  google.protobuf.StringValue consumer_address_link_id = 3;
+}
+
+// Response for a navigation pin
+message GetNavigationPinResponse {
+  // lookup id associated with the navigation pin
+  oneof lookup_id {
+    // Source-specific original identifier of the address record.
+    google.protobuf.StringValue source_place_id = 1;
+    // Geo address identifier
+    google.protobuf.StringValue address_id = 2;
+    // Consumer address indentifier
+    google.protobuf.StringValue consumer_address_link_id = 3;
+  }
+
+  // navigation point latitude
+  google.protobuf.DoubleValue navigation_lat = 4;
+  // navigation point longitude
+  google.protobuf.DoubleValue navigation_lng = 5;
+  // json blob that stores the doordash_vintage (in the future, it could also store other information such as confidence level)
+  google.protobuf.StringValue metadata = 6;
+}
+
+// Request for a dropoff geofence given an id (or multiple ids)
+message GetDropoffGeofenceRequest {
+  // Source-specific original identifier of the address record.
+  google.protobuf.StringValue source_place_id = 1;
+  // TODO: add more fields once we decide what we want to look up by for Marketplace
+  // Note: this was a deliberate choice not to use oneof here, because we may want to get multiple ids and fall back from most precise to least precise.
+  // If we have a consumer_address_link_id level geofence, we want to use that, else we fall back to address_id level, then source_place_id level.
+}
+
+// Response for a dropoff geofence
+message GetDropoffGeofenceResponse {
+  // lookup id associated with the geofence
+  oneof lookup_id {
+    // our first type of lookup id is source_place_id
+    google.protobuf.StringValue source_place_id = 1;
+  }
+
+  // contains the associated geofence
+  Geofence geofence = 2;
+}
+
+// response that contains a geofence
+message Geofence {
+  reserved 3;
+  reserved "geofence_confidence";
+  // geography for the geofence
+  google.protobuf.StringValue geojson_geography = 2; // GeoJSON format: https://geojson.org/
+  // confidence value for geofence between -1 to 100 with -1 being default
+  int64 geofence_confidence_value = 4;
+}

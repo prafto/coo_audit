@@ -1,0 +1,813 @@
+syntax = "proto3";
+
+package case_management_service.salesforce.v1;
+
+import "case-management-service/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.casemanagement.salesforce";
+
+// API that is a gateway to Salesforce
+service SalesforceGatewayService {
+  // Note: Config values below are not tuned.
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Gets the active cases assigned to the provided user.
+  // Returns subset of data from ERS getSalesforceCasesSummaryBySalesforceUserId
+  rpc GetSalesforceActiveCasesByAgent(GetSalesforceActiveCasesByAgentRequest) returns (GetSalesforceActiveCasesByAgentResponse);
+
+  // Gets salesforce cases for a provided delivery uuid
+  // Returns subset of data from ERS getSalesforceCasesSummaryByDeliveryUuid
+  rpc GetSalesforceCasesByDeliveryUuid(GetSalesforceCasesByDeliveryUuidRequest) returns (GetSalesforceCasesByDeliveryUuidResponse);
+
+  // Maps DoorDash email address to Salesforce User ID
+  // Returns subset of data from ERS getSalesforceContext
+  rpc GetSalesforceUserId(GetSalesforceUserIdRequest) returns (GetSalesforceUserIdResponse);
+
+  // Loads salesforce case by case number
+  // Returns subset of data from ERS getSalesforceCasesSummaryByCaseNums
+  rpc GetSalesforceCasesByCaseNumber(GetSalesforceCasesByCaseNumberRequest) returns (GetSalesforceCasesByCaseNumberResponse);
+
+  // Method to create a chat transcript at Salesforce
+  rpc CreateSalesforceChatTranscript(CreateSalesforceChatTranscriptRequest) returns (CreateSalesforceChatTranscriptResponse);
+
+  // Method to close a salesforce case.
+  rpc CloseSalesforceCase(CloseSalesforceCaseRequest) returns (CloseSalesforceCaseResponse);
+
+  // Loads Salesforce Case History
+  rpc GetSalesforceCaseHistory(GetSalesforceCaseHistoryRequest) returns (GetSalesforceCaseHistoryResponse);
+  // Load Salesforce Emails
+  rpc GetSalesforceEmails(GetSalesforceEmailsRequest) returns (GetSalesforceEmailsResponse);
+  // Loads Salesforce Case Feed
+  rpc GetSalesforceCaseFeed(GetSalesforceCaseFeedRequest) returns (GetSalesforceCaseFeedResponse);
+  // Signs attachment metadata
+  rpc SignEmailAttachmentMetadata(SignEmailAttachmentMetadataRequest) returns (SignEmailAttachmentMetadataResponse);
+
+  // Gets recent Dasher Appeals cases
+  rpc GetRecentDasherAppeals(GetRecentDasherAppealsRequest) returns (GetRecentDasherAppealsResponse);
+
+  // Loads Salesforce Case History, case feed and emails
+  rpc GetSalesforceCaseDetails(GetSalesforceCaseDetailsRequest) returns (GetSalesforceCaseDetailsResponse);
+
+  // Gets GetAmazonConnectContactTraceRecords given a contactId
+  rpc GetAmazonConnectContactTraceRecords(GetAmazonConnectContactTraceRecordsRequest) returns (GetAmazonConnectContactTraceRecordsResponse);
+}
+
+// Defines the fields that are needed in a Case, to display the case tab details.
+message CaseDetails {
+  // "Pretty" version of a case id - ex. the case number. Corresponding field in ERS: case_number
+  google.protobuf.StringValue case_num = 1;
+  // 18 digit case id
+  google.protobuf.StringValue case_id = 2;
+  // Case creation timestamp
+  google.protobuf.Timestamp created_at = 3;
+  // Case status
+  google.protobuf.StringValue status = 4;
+  // Chat Key
+  google.protobuf.StringValue chat_key = 5;
+  // [optional] CMP Internal Incident Id
+  google.protobuf.StringValue incident_id = 6;
+  // Channel Type of the case
+  case_management_service.v1.ChannelType channel_type = 7;
+  // case solved_at timestamp
+  google.protobuf.Timestamp solved_at = 8;
+}
+
+// Business Data for the case - store id, name, business id, etc.
+message BusinessData {
+  // no. 1 - 7 for voice ordering
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // store pickup link
+  google.protobuf.StringValue store_pickup_link = 4;
+  // store delivery link
+  google.protobuf.StringValue store_delivery_link = 5;
+  // agent greeting
+  google.protobuf.StringValue agent_greeting = 6;
+  // store hours
+  google.protobuf.StringValue store_hours = 7;
+  // merchant phone number
+  google.protobuf.StringValue merchant_phone_number = 8;
+  // customer phone number
+  google.protobuf.StringValue customer_phone_number = 9;
+  // merchant website
+  google.protobuf.StringValue merchant_website = 10;
+  // agent instruction
+  google.protobuf.StringValue agent_instruction = 11;
+  // merchant address
+  google.protobuf.StringValue merchant_address = 12;
+}
+
+// Indicates the type of voice order
+enum VoiceOrderType {
+  // unspecified
+  VOICE_ORDER_TYPE_UNSPECIFIED = 0;
+  // Delivery Order
+  VOICE_ORDER_TYPE_DELIVERY = 1;
+  // Pickup Order
+  VOICE_ORDER_TYPE_PICKUP = 2;
+}
+
+// Cusotmer Data for the case collected by AI
+message VoiceAIData {
+  // First name
+  google.protobuf.StringValue customer_first_name = 1;
+  // Last name
+  google.protobuf.StringValue customer_last_name = 2;
+  // Address
+  google.protobuf.StringValue customer_address = 3;
+  // Type of voice order, delivery or pickup
+  VoiceOrderType voice_order_type = 4;
+  // Flag to indicate if the customer address is valid
+  google.protobuf.BoolValue is_voice_case_ai_transfer = 5;
+}
+
+// Information about what the case is about
+message CaseInformationData {
+  // Subject
+  google.protobuf.StringValue subject = 1;
+  // Pre Chat Details
+  google.protobuf.StringValue pre_chat_details = 2;
+  // Issue
+  google.protobuf.StringValue issue = 3;
+  // Initial Queue Name
+  google.protobuf.StringValue initial_queue_name = 4;
+  // Previous list of self help flows that the delivery went through
+  repeated google.protobuf.StringValue previous_self_help_flows = 5;
+  // Business Data - store id, name, business id, etc.
+  BusinessData business_data = 6;
+  // type, voice ordering, support, etc.
+  google.protobuf.StringValue type = 7;
+  // Customer data - AI collected information
+  VoiceAIData voice_ai_data = 8;
+}
+
+// Information about the current case owner
+message CaseOwnerData {
+  // Current owner plain text name
+  google.protobuf.StringValue current_owner_name = 1;
+  // ID of the case owner
+  google.protobuf.StringValue owner_id = 2;
+}
+
+// IDs about the affected audience or source ex. delivery / consumer / dasher / store.
+message CaseAffectedAudienceData {
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2;
+  // Dasher ID
+  google.protobuf.StringValue dasher_id = 3;
+  // Store ID
+  google.protobuf.StringValue store_id = 4;
+  // Reporter Type
+  google.protobuf.StringValue reporter_type = 5;
+  // Business ID
+  google.protobuf.StringValue business_id = 6;
+}
+
+// Loads the active cases for an agent
+message GetSalesforceActiveCasesByAgentRequest {
+  // Salesforce User ID
+  google.protobuf.StringValue agent_salesforce_user_id = 1;
+  // Indicates if the client is requesting a force refresh of the data.
+  google.protobuf.BoolValue force_refresh = 2;
+  // Any additional metadata that may be useful for logging
+  // ex. if forcing refresh, what was the cause of that trigger
+  map<string, string> metadata = 3;
+}
+
+// Details about an active case
+message ActiveCaseResponse {
+  // General case data
+  CaseDetails case = 1;
+  // Information specific to what the case is about
+  CaseInformationData case_information_data = 2;
+  // Information about the current case owner
+  CaseOwnerData case_owner_data = 3;
+  // Information pointing to audiences of this case
+  CaseAffectedAudienceData case_affected_audience_data = 4;
+}
+
+// Response to get active cases by agent
+message GetSalesforceActiveCasesByAgentResponse {
+  // List of cases that are active and assigned
+  repeated ActiveCaseResponse cases = 1;
+}
+
+// Request to load an individual case by the case number (which is different than the id)
+message GetSalesforceCasesByCaseNumberRequest {
+  // The case number
+  google.protobuf.StringValue case_number = 1;
+  // Any additional metadata that may be useful
+  // ex. the source, to understand if we can utilize cache or not
+  map<string, string> metadata = 2;
+}
+
+// Response from loading a case by the number
+message GetSalesforceCasesByCaseNumberResponse {
+  // The response for the case
+  ActiveCaseResponse salesforce_case = 1;
+}
+
+// Request to get salesforce user id
+message GetSalesforceUserIdRequest {
+  // Salesforce Email
+  google.protobuf.StringValue email = 1;
+}
+
+// Response from Get Salesforce User
+message GetSalesforceUserIdResponse {
+  // The salesforce user id
+  google.protobuf.StringValue salesforce_user_id = 1;
+}
+
+// Indicates the source of the call
+enum CallSource {
+  // Unspecified Source
+  CALL_SOURCE_UNSPECIFIED = 0;
+  // THQ Source
+  CALL_SOURCE_THQ = 1;
+  // Dispatch Call Source
+  CALL_SOURCE_DISPATCH = 2;
+  // Risk Data Platform Source
+  CALL_SOURCE_RDP = 3;
+  // Risk Workstation Source
+  CALL_SOURCE_RISK_WORKSTATION = 4;
+}
+
+// Request to load salesforce cases for a delivery uuid
+message GetSalesforceCasesByDeliveryUuidRequest {
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 1;
+  // The source of the call.
+  // We may want to perform different logic, such as caching, depending on where it comes from.
+  CallSource source = 2;
+}
+
+// Set of fields showing a child, merged cases
+message CaseDetailsResponseWithMergedCases {
+  // Details about case
+  CaseDetailsResponse case = 1;
+  // Details about merged cases
+  repeated CaseDetailsResponse merged_cases = 2;
+}
+
+// Set of details provided in this response
+message CaseDetailsResponse {
+  // High level case details
+  CaseDetails case_details = 1;
+  // Information about the current owner of the case
+  CaseOwnerData case_owner_data = 2;
+  // Issue
+  google.protobuf.StringValue issue = 3;
+  // Resolution
+  google.protobuf.StringValue resolution = 4;
+  // Reporter Type
+  google.protobuf.StringValue reporter_type = 5;
+  // Timestamp the current status was set
+  google.protobuf.Timestamp status_at = 6;
+  // Issue Type
+  google.protobuf.StringValue issue_type = 7;
+  // Resolution Type
+  google.protobuf.StringValue resolution_type = 8;
+}
+
+// Response showing case information for related cases for the current delivery.
+message GetSalesforceCasesByDeliveryUuidResponse {
+  // List of cases [fields specific to this response type]
+  repeated CaseDetailsResponseWithMergedCases cases = 1;
+}
+
+// Type / Source of this close case request.
+enum CloseSalesforceCaseType {
+  // Unspecified type
+  CLOSE_SALESFORCE_CASE_TYPE_UNSPECIFIED = 0;
+  // Chat
+  CLOSE_SALESFORCE_CASE_TYPE_CHAT = 1;
+  // FWS
+  CLOSE_SALESFORCE_CASE_TYPE_FWS = 2;
+}
+
+// Request to close a Salesforce Case
+message CloseSalesforceCaseRequest {
+  // The Case ID
+  google.protobuf.StringValue case_id = 1;
+  // The Issue Type
+  google.protobuf.StringValue issue_type = 2;
+  // The Issue
+  google.protobuf.StringValue issue = 3;
+  // The Resolution
+  google.protobuf.StringValue resolution = 4;
+  // The Resolution Type
+  google.protobuf.StringValue resolution_type = 5;
+  // The Status
+  google.protobuf.StringValue status = 6;
+  // The Owner ID
+  google.protobuf.StringValue owner_id = 7;
+  // The type of case that is being closed.
+  CloseSalesforceCaseType close_type = 8;
+}
+
+// Response from closing a salesforce case
+message CloseSalesforceCaseResponse {}
+
+// Request to create a Chat Transcript
+message CreateSalesforceChatTranscriptRequest {
+  // The case ID
+  google.protobuf.StringValue case_id = 1;
+  // Status
+  google.protobuf.StringValue status = 2;
+  // Escalation request time
+  google.protobuf.Timestamp escalation_request_time = 3;
+  // Agent Join Time
+  google.protobuf.Timestamp agent_join_time = 4;
+  // Chat end time
+  google.protobuf.Timestamp chat_end_time = 5;
+  // Ended by
+  google.protobuf.StringValue ended_by = 6;
+  // Agent Chat Duration
+  google.protobuf.Duration agent_chat_duration = 7;
+  // Wait Time
+  google.protobuf.Duration wait_time = 8;
+  // User Agent
+  google.protobuf.StringValue user_agent = 9;
+  // Chat Transcript
+  google.protobuf.StringValue chat_transcript = 10;
+  // Average Visitor Response Time
+  google.protobuf.Duration average_visitor_response_time = 11;
+  // Average Operator Response Time
+  google.protobuf.Duration average_operator_response_time = 12;
+  // Operator Message Count
+  google.protobuf.Int32Value operator_message_count = 13;
+  // Visitor Message Count
+  google.protobuf.Int32Value visitor_message_count = 14;
+  // Max Operator Response Time
+  google.protobuf.Duration max_operator_response_time = 15;
+  // Max visitor response time
+  google.protobuf.Duration max_visitor_response_time = 16;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 17;
+  // Start Time
+  google.protobuf.Timestamp start_time = 18;
+  // Bot Duration
+  google.protobuf.Duration bot_duration = 19;
+  // Rejoin Count
+  google.protobuf.Int32Value rejoin_count = 20;
+  // Agent ID
+  google.protobuf.StringValue agent_id = 21;
+  // Transcript Unique ID
+  google.protobuf.StringValue transcript_unique_id = 22;
+}
+
+// Response from creating a Chat Transcript
+message CreateSalesforceChatTranscriptResponse {
+  // The created transcript id
+  google.protobuf.StringValue transcript_id = 1;
+  // The status of creation vs updated
+  google.protobuf.StringValue status = 2;
+}
+
+// Request to load Salesforce Case History
+message GetSalesforceCaseHistoryRequest {
+  // Salesforce Case IDs that history is being loaded for.
+  repeated google.protobuf.StringValue salesforce_case_ids = 1;
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  // Time filter options
+  case_management_service.v1.TimeFilterOptions time_filter_options = 3;
+}
+
+// Response to load salesforce case history
+message GetSalesforceCaseHistoryResponse {
+  // Salesforce Case History records
+  repeated SalesforceCaseHistory history = 1;
+}
+
+// Gets the Salesforce case history.
+message SalesforceCaseHistory {
+  // ID of this change
+  google.protobuf.StringValue id = 1;
+  // Salesforce Case History ID
+  google.protobuf.StringValue salesforce_case_id = 2;
+  // Salesforce ID of user that created this change
+  google.protobuf.StringValue created_by_salesforce_id = 3;
+  // Name of user that created this change
+  google.protobuf.StringValue created_by_name = 4;
+  // Timestamp of when this change was created
+  google.protobuf.Timestamp created_at = 5;
+  // Name of field that was changed
+  google.protobuf.StringValue field_name = 6;
+  // Old value of field
+  google.protobuf.StringValue old_value = 8;
+  // New value of field
+  google.protobuf.StringValue new_value = 9;
+  // Data type of field
+  google.protobuf.StringValue data_type = 10;
+}
+
+// Salesforce email Messages
+message SalesforceEmail {
+  // Status of the email
+  enum SalesforceEmailStatus {
+    // Unspecified status
+    SALESFORCE_EMAIL_STATUS_UNSPECIFIED = 0;
+    // New
+    SALESFORCE_EMAIL_STATUS_NEW = 1;
+    // Read
+    SALESFORCE_EMAIL_STATUS_READ = 2;
+    // Replied
+    SALESFORCE_EMAIL_STATUS_REPLIED = 3;
+    // Sent
+    SALESFORCE_EMAIL_STATUS_SENT = 4;
+    // Forwarded
+    SALESFORCE_EMAIL_STATUS_FORWARDED = 5;
+    // Draft
+    SALESFORCE_EMAIL_STATUS_DRAFT = 6;
+  }
+  // ID of this message
+  google.protobuf.StringValue id = 1;
+  // Salesforce Case ID
+  google.protobuf.StringValue parent_id = 2;
+  // Salesforce Activity ID
+  google.protobuf.StringValue activity_id = 3;
+  // ID of who created this message
+  google.protobuf.StringValue created_by_id = 4;
+  // Timestamp of when this message was created
+  google.protobuf.Timestamp created_date = 5;
+  // Timestamp of when this message was last modified
+  google.protobuf.Timestamp last_modified_date = 6;
+  // ID of who last modified this message
+  google.protobuf.StringValue last_modified_by_id = 7;
+  // System modstamp
+  google.protobuf.Timestamp system_modstamp = 8;
+  // Text body of the email
+  google.protobuf.StringValue text_body = 9;
+  // HTML body of the email
+  google.protobuf.StringValue html_body = 10;
+  // Headers of the email
+  google.protobuf.StringValue headers = 11;
+  // Subject of the email
+  google.protobuf.StringValue subject = 12;
+  // Name of the email
+  google.protobuf.StringValue name = 13;
+  // Name of the person who sent the email
+  google.protobuf.StringValue from_name = 14;
+  // Email address of the person who sent the email
+  google.protobuf.StringValue from_address = 15;
+  // Email address that the email was validated from
+  google.protobuf.StringValue validated_from_address = 16;
+  // Email address that the email was sent to
+  google.protobuf.StringValue to_address = 17;
+  // Email address that the email was cc'd to
+  google.protobuf.StringValue cc_address = 18;
+  // Email address that the email was bcc'd to
+  google.protobuf.StringValue bcc_address = 19;
+  // Whether the email was incoming or outgoing
+  google.protobuf.BoolValue incoming = 20;
+  // Whether the email has an attachment
+  google.protobuf.BoolValue has_attachment = 21;
+  // Status of the email
+  SalesforceEmailStatus status = 22;
+  // Timestamp of when the email was sent
+  google.protobuf.Timestamp message_date = 23;
+  // Whether the email was deleted
+  google.protobuf.BoolValue is_deleted = 24;
+  // ID of the email that this email was a reply to
+  google.protobuf.StringValue reply_to_email_message_id = 25;
+  // Whether the email is a private draft
+  google.protobuf.BoolValue is_private_draft = 26;
+  // Whether the email is externally visible
+  google.protobuf.BoolValue is_externally_visible = 27;
+  // ID of the email message
+  google.protobuf.StringValue message_identifier = 28;
+  // ID of the thread
+  google.protobuf.StringValue thread_identifier = 29;
+  // ID of the client thread
+  google.protobuf.StringValue client_thread_identifier = 30;
+  // Whether the email is client managed
+  google.protobuf.BoolValue is_client_managed = 31;
+  // ID of the related object
+  google.protobuf.StringValue related_to_id = 32;
+  // Whether the email is tracked
+  google.protobuf.BoolValue is_tracked = 33;
+  // Whether the email is opened
+  google.protobuf.BoolValue is_opened = 34;
+  // Timestamp of when the email was first opened
+  google.protobuf.Timestamp first_opened_date = 35;
+  // Timestamp of when the email was last opened
+  google.protobuf.Timestamp last_opened_date = 36;
+  // Whether the email bounced
+  google.protobuf.BoolValue is_bounced = 37;
+  // ID of the email template
+  google.protobuf.StringValue email_template_id = 38;
+  // High level details about the attachments, if requested
+  repeated AttachmentMetadata attachments = 39;
+  // Name of user who created this feed item
+  google.protobuf.StringValue created_by_name = 40;
+  // Salesforce email case metadata
+  SalesforceEmailCaseMetadata metadata = 41;
+}
+
+// Amazon Connect Contact Trace Record from Salesforce
+message AmazonConnectContactTraceRecord {
+  // ID of this record = a82Kd00000Wfx5tIAB
+  google.protobuf.StringValue id = 1;
+  // Salesforce Case ID = 500Kd00002EfpKBIAZ
+  google.protobuf.StringValue salesforce_case_id = 2;
+  // CMP Incident ID = abc-123-feg
+  google.protobuf.StringValue cmp_incident_id = 3;
+  // currency = USD
+  google.protobuf.StringValue currency_iso = 4;
+  // phone number = +19514545750
+  google.protobuf.StringValue customer_endpoint_address = 5;
+  // name = CTR 471808956
+  google.protobuf.Timestamp ctr_name = 6 [deprecated = true];
+  // Duration in seconds = 146
+  google.protobuf.Int32Value agent_interaction_duration = 7;
+  // agent user name = fake.test@taskus.com
+  google.protobuf.StringValue agent_user_name = 8;
+  // channel = VOICE
+  google.protobuf.StringValue channel = 9;
+  // contact id =  fc3c430d-f01e-40d6-b166-8bb532281527
+  google.protobuf.StringValue contact_id = 10;
+  // initiation method = INBOUND
+  google.protobuf.StringValue initiation_method = 11;
+  // queue name =  Health, Safety, Legal Tier 1 Pod - Phone
+  google.protobuf.StringValue queue_name = 12;
+  // name = CTR 471808956
+  google.protobuf.StringValue contact_trace_record_name = 13;
+  // time the call was initiated
+  google.protobuf.Timestamp initiation_timestamp = 14;
+}
+
+// Request to load salesforce emails
+message GetSalesforceEmailsRequest {
+  // Salesforce Case IDs
+  repeated google.protobuf.StringValue salesforce_case_ids = 1;
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  // Time filter options
+  case_management_service.v1.TimeFilterOptions time_filter_options = 3;
+  // Indicates if attachment metadata should be loaded
+  google.protobuf.BoolValue load_attachment_metadata = 4;
+  // Salesforce email message ids
+  repeated google.protobuf.StringValue email_message_ids = 5;
+  // Indicates if case metadata should be loaded
+  google.protobuf.BoolValue load_case_metadata = 6;
+}
+
+// Response to load salesforce emails
+message GetSalesforceEmailsResponse {
+  // List of emails
+  repeated SalesforceEmail emails = 1;
+}
+
+// Request to load Salesforce Case Feed
+message GetSalesforceCaseFeedRequest {
+  // Salesforce Case ID
+  repeated google.protobuf.StringValue salesforce_case_ids = 1;
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  // Time filter options
+  case_management_service.v1.TimeFilterOptions time_filter_options = 3;
+}
+
+// Request to get all the details about a salesforce case
+message GetSalesforceCaseDetailsRequest {
+  // Salesforce Case ID
+  google.protobuf.StringValue salesforce_case_id = 1 [deprecated = true];
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  // Time filter options
+  case_management_service.v1.TimeFilterOptions time_filter_options = 3;
+  // Salesforce Case ID List
+  repeated google.protobuf.StringValue salesforce_case_ids = 4;
+}
+
+// Response to load Salesforce Case Feed
+message GetSalesforceCaseFeedResponse {
+  // List of feed items
+  repeated SalesforceFeedItem feed_items = 1;
+}
+
+// Response to GetSalesforceCaseDetailsRequest
+message GetSalesforceCaseDetailsResponse {
+  // Salesforce Case History records
+  repeated SalesforceCaseHistory history = 1;
+  // List of feed items
+  repeated SalesforceFeedItem feed_items = 2;
+  // List of emails
+  repeated SalesforceEmail emails = 3;
+  // List of amazon connect contact trace records
+  repeated AmazonConnectContactTraceRecord ac_contact_trace_records = 4;
+}
+
+// Salesforce Feed Item
+message SalesforceFeedItem {
+  // The different feed item types
+  enum SalesforceFeedItemType {
+    // Unspecified type
+    SALESFORCE_FEED_ITEM_TYPE_UNSPECIFIED = 0;
+    // Tracked Change
+    SALESFORCE_FEED_ITEM_TYPE_TRACKED_CHANGE = 1;
+    // User Status
+    SALESFORCE_FEED_ITEM_TYPE_USER_STATUS = 2;
+    // Text Post
+    SALESFORCE_FEED_ITEM_TYPE_TEXT_POST = 3;
+    // Advanced Text Post
+    SALESFORCE_FEED_ITEM_TYPE_ADVANCED_TEXT_POST = 4;
+    // Link Post
+    SALESFORCE_FEED_ITEM_TYPE_LINK_POST = 5;
+    // Content Post
+    SALESFORCE_FEED_ITEM_TYPE_CONTENT_POST = 6;
+    // Poll Post
+    SALESFORCE_FEED_ITEM_TYPE_POLL_POST = 7;
+    // Rypple Post
+    SALESFORCE_FEED_ITEM_TYPE_RYPPLE_POST = 8;
+    // Profile Skill Post
+    SALESFORCE_FEED_ITEM_TYPE_PROFILE_SKILL_POST = 9;
+    // Dashboard Component Snapshot
+    SALESFORCE_FEED_ITEM_TYPE_DASHBOARD_COMPONENT_SNAPSHOT = 10;
+    // Approval Post
+    SALESFORCE_FEED_ITEM_TYPE_APPROVAL_POST = 11;
+    // Case Comment Post
+    SALESFORCE_FEED_ITEM_TYPE_CASE_COMMENT_POST = 12;
+    // Reply Post
+    SALESFORCE_FEED_ITEM_TYPE_REPLY_POST = 13;
+    // Email Message Event
+    SALESFORCE_FEED_ITEM_TYPE_EMAIL_MESSAGE_EVENT = 14;
+    // Call Log Post
+    SALESFORCE_FEED_ITEM_TYPE_CALL_LOG_POST = 15;
+    // Change Status Post
+    SALESFORCE_FEED_ITEM_TYPE_CHANGE_STATUS_POST = 16;
+    // Attach Article Event
+    SALESFORCE_FEED_ITEM_TYPE_ATTACH_ARTICLE_EVENT = 17;
+    // Milestone Event
+    SALESFORCE_FEED_ITEM_TYPE_MILESTONE_EVENT = 18;
+    // Activity Event
+    SALESFORCE_FEED_ITEM_TYPE_ACTIVITY_EVENT = 19;
+    // Chat Transcript Post
+    SALESFORCE_FEED_ITEM_TYPE_CHAT_TRANSCRIPT_POST = 20;
+    // Collaboration Group Created
+    SALESFORCE_FEED_ITEM_TYPE_COLLABORATION_GROUP_CREATED = 21;
+    // Collaboration Group Unarchived
+    SALESFORCE_FEED_ITEM_TYPE_COLLABORATION_GROUP_UNARCHIVED = 22;
+    // Social Post
+    SALESFORCE_FEED_ITEM_TYPE_SOCIAL_POST = 23;
+    // Question Post
+    SALESFORCE_FEED_ITEM_TYPE_QUESTION_POST = 24;
+    // Facebook Post
+    SALESFORCE_FEED_ITEM_TYPE_FACEBOOK_POST = 25;
+    // Basic Template Feed Item
+    SALESFORCE_FEED_ITEM_TYPE_BASIC_TEMPLATE_FEED_ITEM = 26;
+    // Create Record Event
+    SALESFORCE_FEED_ITEM_TYPE_CREATE_RECORD_EVENT = 27;
+    // Canvas Post
+    SALESFORCE_FEED_ITEM_TYPE_CANVAS_POST = 28;
+    // Announcement Post
+    SALESFORCE_FEED_ITEM_TYPE_ANNOUNCEMENT_POST = 29;
+  }
+  // ID of this feed item
+  google.protobuf.StringValue id = 1;
+  // Salesforce Case ID
+  google.protobuf.StringValue parent_id = 2;
+  // Type of feed item
+  SalesforceFeedItemType type = 3;
+  // ID of who created this feed item
+  google.protobuf.StringValue created_by_id = 4;
+  // Timestamp of when this feed item was created
+  google.protobuf.Timestamp created_date = 5;
+  // If record is deleted
+  google.protobuf.BoolValue is_deleted = 6;
+  // Timestamp of when this feed item was last modified
+  google.protobuf.Timestamp last_modified_date = 7;
+  // System modstamp
+  google.protobuf.Timestamp system_modstamp = 8;
+  // Number of comments
+  google.protobuf.Int32Value comment_count = 9;
+  // Number of likes
+  google.protobuf.Int32Value like_count = 10;
+  // Title of the feed item
+  google.protobuf.StringValue title = 11;
+  // Body of the feed item
+  google.protobuf.StringValue body = 12;
+  // URL of the link
+  google.protobuf.StringValue link_url = 13;
+  // Whether the feed item is rich text
+  google.protobuf.BoolValue is_rich_text = 14;
+  // ID of the related record
+  google.protobuf.StringValue related_record_id = 15;
+  // ID of who inserted this feed item
+  google.protobuf.StringValue inserted_by_id = 16;
+  // Network scope
+  google.protobuf.StringValue network_scope = 17;
+  // Visibility
+  google.protobuf.StringValue visibility = 18;
+  // ID of the best comment
+  google.protobuf.StringValue best_comment_id = 19;
+  // Name of user who created this email. May be a system user.
+  google.protobuf.StringValue created_by_name = 20;
+}
+
+// SalesforceEmailCaseMetadata object
+message SalesforceEmailCaseMetadata {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+  // Business id
+  google.protobuf.StringValue business_id = 2;
+  // Customer type
+  google.protobuf.StringValue customer_type = 3;
+}
+
+// Metadata associated with an attachment
+message AttachmentMetadata {
+  // document id
+  google.protobuf.StringValue document_id = 1;
+  // document link id
+  google.protobuf.StringValue document_link_id = 2;
+  // content document id
+  google.protobuf.StringValue content_document_id = 3;
+  // content version id
+  google.protobuf.StringValue content_version_id = 4;
+  // title
+  google.protobuf.StringValue title = 5;
+  // path on client
+  google.protobuf.StringValue path_on_client = 6;
+  // file type
+  google.protobuf.StringValue file_type = 7;
+  // version data
+  google.protobuf.StringValue version_data = 8;
+  // content size
+  google.protobuf.Int64Value content_size = 9;
+  // file extension
+  google.protobuf.StringValue file_extension = 10;
+  // signed url
+  google.protobuf.StringValue signed_url = 11;
+  // Name of user who created the attachment. May be a system user.
+  google.protobuf.StringValue created_by_name = 12;
+}
+
+// Request to sign attachment metadata
+message SignEmailAttachmentMetadataRequest {
+  // The email message id
+  google.protobuf.StringValue email_message_id = 1;
+}
+
+// Response to sign attachment metadata
+message SignEmailAttachmentMetadataResponse {
+  // The signed attachment metadata
+  repeated AttachmentMetadata signed_attachment_metadata = 1;
+}
+
+// Request to get recent dasher appeals
+message GetRecentDasherAppealsRequest {
+  // The dasher id
+  google.protobuf.StringValue dasher_id = 1;
+  // The number of recent appeals to get
+  google.protobuf.Int32Value recent_appeals_count = 2;
+  // Lookback Period
+  google.protobuf.Duration lookback_period = 3;
+  // Only get appeals that are open
+  google.protobuf.BoolValue only_open_appeals = 4;
+}
+
+// Response to get recent dasher appeals
+message GetRecentDasherAppealsResponse {
+  // The recent dasher appeals
+  repeated CaseDetailsResponse recent_appeals = 1;
+}
+
+// request object for getting amazon connect contact trace records
+message GetAmazonConnectContactTraceRecordsRequest {
+  // list of contact ids
+  repeated google.protobuf.StringValue contact_id_list = 1;
+  // list of cmp incident ids if you dont know the contact ids
+  repeated google.protobuf.StringValue cmp_incident_id_list = 2;
+}
+
+// response object for getting amazon connect contact trace records
+message GetAmazonConnectContactTraceRecordsResponse {
+  // contact_trace_record_list
+  repeated AmazonConnectContactTraceRecord contact_trace_record_list = 1;
+}

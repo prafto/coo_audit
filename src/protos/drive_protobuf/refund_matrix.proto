@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package com.doordash.drive.api.refund_matrix.v1;
+
+import "doordash.api/annotations.proto";
+import "drive_protobuf/common.proto";
+import "drive_protobuf/drive_order.proto";
+import "drive_protobuf/drive_request_contexts.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "RefundMatrixGrpcEndpoint";
+option java_package = "com.doordash.drive.api.refund_matrix";
+
+// APIs for Refund Matrix
+service RefundMatrixService {
+  option (.doordash.api.service) = {
+    name: "drive-refund-matrix-service"
+    url: "drive-rpc.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_FOR_DRIVE"
+    owner: {
+      id: "drive-fulfillment-team"
+      name: "drive-fulfillment-team"
+      slack_channel: "#eng-drive"
+      email_alias: "drive-eng@doordash.com"
+    }
+    name_spaces: ["drive"]
+    target_products: [INTERNAL]
+  };
+  // Get Refund Matrix
+  rpc GetRefundMatrix(GetRefundMatrixRequest) returns (GetRefundMatrixResponse) {
+    option (google.api.http) = {
+      post: "/drive/v1/refunds/matrix"
+      body: "*"
+    };
+
+    option (.doordash.api.endpoint) = {
+      tier: T2
+      // Update once the endpoint is tested and prod traffic is live
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_read_c_r_issuance_policies",
+          "perm_mxa_config",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  // Get Refund Matrix row by ID
+  rpc GetRefundMatrixRowById(GetRefundMatrixRowByIdRequest) returns (GetRefundMatrixRowByIdResponse);
+}
+
+// Refund Matrix Object
+message RefundMatrix {
+  // All refund rows for refund matrix. Return business matrix if available, if not then store matrix, else default
+  repeated RefundMatrixRow refund_matrix_rows = 1;
+}
+
+// Refund Matrix Row Object
+message RefundMatrixRow {
+  // UUID to represent refund matrix row rule ID
+  google.protobuf.StringValue refund_rule_id = 1;
+  // Internal reason code
+  google.protobuf.StringValue reason_code = 2;
+  // Internal reason comments code
+  google.protobuf.StringValue reason_comments_code = 3;
+  // Matrix Entity Type
+  MatrixEntityType matrix_entity_type = 4;
+  // Entity ID or "default" if entity type is default
+  google.protobuf.StringValue matrix_entity_id = 5;
+  // Problem Level
+  ProblemLevel problem_level = 6;
+  // Party at Fault
+  PartyAtFault party_at_fault = 7;
+  // Reason 1 friendly name
+  google.protobuf.StringValue primary_reason = 8;
+  // Reason 2 friendly name
+  google.protobuf.StringValue secondary_reason = 9;
+  // Reason 2 description
+  google.protobuf.StringValue secondary_reason_description = 10;
+  // Reason 3 friendly name
+  google.protobuf.StringValue tertiary_reason = 11;
+  // Percent Order Value to merchant from DD
+  google.protobuf.Int32Value percent_order_value_refunded_to_merchant = 12;
+  // Percent Drive Delivery Fee to merchant from DD
+  google.protobuf.Int32Value percent_drive_delivery_fee_refunded_to_merchant = 13;
+  // Percent Tip to merchant from DD
+  google.protobuf.Int32Value percent_tip_refunded_to_merchant = 14;
+  // Additional amount to merchant from DD
+  google.protobuf.Int32Value additional_amount_refunded_to_merchant = 15;
+  // Percent order value for the merchant to refund the customer
+  google.protobuf.Int32Value percent_order_value_to_refund_to_customer_by_merchant = 16;
+  // Percent delivery fee for the merchant to refund the customer
+  google.protobuf.Int32Value percent_delivery_fee_to_refund_to_customer_by_merchant = 17;
+  // Percent tip for the merchant to refund the customer
+  google.protobuf.Int32Value percent_tip_to_refund_to_customer_by_merchant = 18;
+  // Additional amount for the merchant to refund the customer
+  google.protobuf.Int32Value additional_amount_to_refund_to_customer_by_merchant = 19;
+  // Party responsible for the refund
+  PartyResponsibleForRefund party_responsible_for_refund = 20;
+  // Created at
+  google.protobuf.Timestamp created_at = 21;
+  // Line of business
+  drive_service.drive_order.LineOfBusiness line_of_business = 22;
+}
+
+// Refund Matrix Row Metadata
+message RefundMatrixRowMetadata {
+  // Is refund matrix row eligible
+  google.protobuf.BoolValue is_refund_matrix_row_eligible = 1;
+}
+
+// Request object for GetRefundMatrix API
+message GetRefundMatrixRequest {
+  // Store ID
+  google.protobuf.Int64Value store_id = 1;
+  //  Business ID
+  google.protobuf.Int64Value business_id = 2;
+  // Developer ID
+  google.protobuf.Int64Value developer_id = 3;
+  // Drive Order ID. Required to fetch the order type
+  google.protobuf.Int64Value drive_order_id = 4;
+  // Requester of the refund
+  RefundRequester refund_requester = 5;
+  // Filter type
+  FilterType filter_type = 6;
+  // Source of incoming refund request
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 7;
+  // Filtering by levels, e.g., problem level - [ item, delivery, apology]
+  repeated ProblemLevel problem_levels = 8;
+}
+
+// Response object for GetRefundMatrix API
+message GetRefundMatrixResponse {
+  // Refund Details
+  RefundMatrix refund_matrix = 1;
+  // Explanations for the returned refund matrix
+  repeated Explanation explanations = 2;
+  // the refund_rule_id to refund matrix row metadata mapping
+  map<string, RefundMatrixRowMetadata> refund_matrix_metadata = 3;
+}
+
+// Request object for GetRefundMatrixRowById API
+message GetRefundMatrixRowByIdRequest {
+  // Refund Matrix Row ID
+  google.protobuf.StringValue id = 1;
+}
+
+// Response object for GetRefundMatrixRowById API
+message GetRefundMatrixRowByIdResponse {
+  // Refund row for refund matrix
+  RefundMatrixRow row = 1;
+}
+
+// Explanation object for returned refund matrix rows
+message Explanation {
+  // Explanation title
+  google.protobuf.StringValue title = 1;
+  // Explanation message details
+  google.protobuf.StringValue message = 2;
+}
+
+// Refund requester i.e. who is requesting the refunds
+enum RefundRequester {
+  // Not specified / null this value should not be selected
+  REFUND_REQUESTER_UNSPECIFIED = 0;
+  // MERCHANT
+  REFUND_REQUESTER_MERCHANT = 1;
+  // CUSTOMER
+  REFUND_REQUESTER_CUSTOMER = 2;
+  // DOORDASH
+  REFUND_REQUESTER_DOORDASH = 3;
+}
+
+// Matrix Entity Type
+enum MatrixEntityType {
+  // Not specified
+  MATRIX_ENTITY_TYPE_UNSPECIFIED = 0;
+  // Store Matrix
+  MATRIX_ENTITY_TYPE_STORE = 1;
+  // Account Matrix
+  MATRIX_ENTITY_TYPE_ACCOUNT = 2;
+  // Developer Matrix
+  MATRIX_ENTITY_TYPE_DEVELOPER = 3;
+  // Default matrix for all entities
+  MATRIX_ENTITY_TYPE_DEFAULT = 4;
+  // Outage Matrix
+  MATRIX_ENTITY_TYPE_OUTAGE = 5;
+}
+
+// Party at fault for refund
+enum PartyAtFault {
+  // Not specified
+  PARTY_AT_FAULT_UNSPECIFIED = 0;
+  // Merchant at fault
+  PARTY_AT_FAULT_MERCHANT = 1;
+  // DoorDash at fault
+  PARTY_AT_FAULT_DOORDASH = 2;
+  // Merchant and DoorDash at fault
+  PARTY_AT_FAULT_MERCHANT_AND_DOORDASH = 3;
+  // Customer at fault
+  PARTY_AT_FAULT_CUSTOMER = 4;
+}
+
+// Party financially responsible for refund
+enum PartyResponsibleForRefund {
+  // Not specified
+  PARTY_RESPONSIBLE_FOR_REFUND_UNSPECIFIED = 0;
+  // Merchant
+  PARTY_RESPONSIBLE_FOR_REFUND_MERCHANT = 1;
+  // DoorDash
+  PARTY_RESPONSIBLE_FOR_REFUND_DOORDASH = 2;
+  // Merchant and DoorDash
+  PARTY_RESPONSIBLE_FOR_REFUND_MERCHANT_AND_DOORDASH = 3;
+}
+
+// Refund problem level
+enum ProblemLevel {
+  // Not specified
+  PROBLEM_LEVEL_UNSPECIFIED = 0;
+  // Item Level Refund
+  PROBLEM_LEVEL_ITEM_LEVEL = 1;
+  // Delivery Level Refund
+  PROBLEM_LEVEL_DELIVERY_LEVEL = 2;
+  // Combo Level Refund
+  PROBLEM_LEVEL_COMBO_LEVEL = 3;
+}
+
+// Refund Matrix filter type
+enum FilterType {
+  // Not specified, filter the rows as default behavior for backwards compatibility
+  FILTER_TYPE_UNSPECIFIED = 0;
+  // Do not filter the rows but provide the metadata
+  FILTER_TYPE_METADATA_ONLY = 1;
+  // Do not filter nor provide any metadata
+  FILTER_TYPE_NO_FILTER = 2;
+}

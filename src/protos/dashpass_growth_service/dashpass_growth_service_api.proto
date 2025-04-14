@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package dashpass_growth_service.v1;
+
+import "common/common.proto";
+import "common/date.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "common/time.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dashpass_growth_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashpass_growth_service.api";
+
+// DashPass Growth Service
+service DashPassGrowthService {
+  option (doordash.api.service) = {
+    name: "dashpass-growth-service"
+    url: "dashpass-growth-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["subscriptions"] /* an area of the project, will be a part of URL */
+    api_key_name: "UG_DASHPASS_GROWTH_SERVICE_API_KEY"
+    owner: {
+      name: "dashpass-growth-service"
+      id: "dashpass-growth-alerts"
+      slack_channel: "#eng-dashpass-growth"
+      email_alias: "dashpass-growth-eng@doordash.com"
+    }
+    target_products: [CX]
+    vertical_domains: [CX]
+  };
+
+  option (service_client.client_config).service_name = "dashpass-growth-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).service_app = "api";
+
+  // Get the upsell for order cart
+  rpc GetUpsellForOrderCart(GetUpsellForOrderCartRequest) returns (GetUpsellForOrderCartResponse) {
+    option (google.api.http) = {get: "/cx/subscriptions/v1/upsell/cart"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // Get the upsell for checkout
+  rpc GetUpsellForCheckout(GetUpsellForCheckoutRequest) returns (GetUpsellForCheckoutResponse) {
+    option (google.api.http) = {get: "/cx/subscriptions/v1/upsell/checkout"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is called for mosaic standard landing page */
+  rpc GetLandingPage(GetLandingPageRequest) returns (GetLandingPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/cx/subscriptions/v2/get_landing_page"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+    };
+  }
+
+  /* This endpoint is called to trigger util scripts */
+  rpc RunScript(RunScriptRequest) returns (RunScriptResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 86400000; // 1 day in milliseconds.
+  }
+}
+
+// Get Upsell for Order Cart Request
+message GetUpsellForOrderCartRequest {
+  // consumer Id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Quote Id for the order
+  google.protobuf.StringValue quote_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Get Upsell for Order Cart Response
+message GetUpsellForOrderCartResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load, in this case inline upsell screen
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> upsell_screens = 1;
+}
+
+// Get Upsell for Checkout Request
+message GetUpsellForCheckoutRequest {
+  // consumer Id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Quote Id for the order
+  google.protobuf.StringValue quote_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Get Upsell for Checkout Response
+message GetUpsellForCheckoutResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load, in this case inline upsell screen
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> upsell_screens = 1;
+}
+
+// Get Landing Page Request
+message GetLandingPageRequest {
+  // Landing Page type - Standard for now
+  LandingPageType page_type = 1;
+  // consumer Id
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // Source
+  google.protobuf.StringValue source = 3;
+}
+
+// Enum for Mosaic Landing Page Type
+enum LandingPageType {
+  // Unspecified page type
+  LANDING_PAGE_TYPE_UNSPECIFIED = 0;
+  // standard plan landing page
+  LANDING_PAGE_TYPE_STANDARD = 1;
+}
+
+// Get Landing Page Response
+message GetLandingPageResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> landing_pages = 1;
+}
+
+/* This message used to trigger util scripts */
+message RunScriptRequest {
+  // Name of the script to run
+  google.protobuf.StringValue script_name = 1;
+  // JSON string of arguments to pass to the script
+  google.protobuf.StringValue json_args = 2;
+}
+
+/* This message is used to return the result of the script */
+message RunScriptResponse {
+  // JSON string of the result of the script
+  google.protobuf.StringValue data = 1;
+}

@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package loyalty_serivce;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "loyalty_service/merchant_loyalty.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "LoyaltyInternalProto";
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.loyalty.internal";
+
+// internal loyalty service
+service LoyaltyInternalService {
+  // link/update store id given a external reference id type
+  rpc UpsertInternalExternalStoreId(UpsertInternalExternalStoreIdRequest) returns (UpsertInternalExternalStoreIdResponse);
+  // bulk link/update store id given a external reference id type
+  rpc SetExternalStoreMappings(SetExternalStoreMappingsRequest) returns (SetExternalStoreMappingsResponse);
+  // get store id mapping between external reference and doordash
+  rpc GetExternalStoreMappings(GetExternalStoreMappingsRequest) returns (GetExternalStoreMappingsResponse);
+  // directly update loyalty cx balance for a program - for storefront Mx migration use only
+  rpc UpsertLoyaltyCxBalance(UpsertLoyaltyCxBalanceRequest) returns (UpsertLoyaltyCxBalanceResponse);
+  // server startup probe
+  rpc GetStartUpProbe(GetStartUpProbeRequest) returns (GetStartUpProbeResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+}
+
+// Request to link/update store id given a external reference id type
+message UpsertInternalExternalStoreIdRequest {
+  //doordash store id
+  google.protobuf.StringValue internal_store_id = 1;
+  //store id in external source
+  google.protobuf.StringValue external_store_id = 2;
+  //type of program identifier
+  oneof loyalty_program_identifier {
+    // loyalty_program_id
+    google.protobuf.StringValue loyalty_program_id = 3;
+  }
+}
+
+// Response for store id mapping between external business group and doordash
+message UpsertInternalExternalStoreIdResponse {
+  // on success, return store id mapping
+  message Success {
+    //success message
+    google.protobuf.StringValue message = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return best attempt doordash to external store id
+    Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// single mapping for internal store id to external store id
+message ExternalStoreMapping {
+  // doordash store id
+  google.protobuf.StringValue internal_store_id = 1;
+  // store id in external source
+  google.protobuf.StringValue external_store_id = 2;
+}
+
+// Request to bulk link/update store id given a external reference id type
+message SetExternalStoreMappingsRequest {
+  // loyalty_program_id
+  google.protobuf.StringValue loyalty_program_id = 1;
+  // repeated single mapping for internal store id to external store id
+  repeated ExternalStoreMapping external_store_mappings = 2;
+}
+
+// Response for bulk link/update store id given a external reference id type
+message SetExternalStoreMappingsResponse {
+  // on success, return store id mapping
+  message Success {
+    // loyalty_program_id
+    google.protobuf.StringValue loyalty_program_id = 1;
+    // repeated single mapping for internal store id to external store id
+    repeated ExternalStoreMapping external_store_mappings = 2;
+  }
+
+  // result is either success or error
+  oneof result {
+    // on success, return best attempt doordash to external store id
+    SetExternalStoreMappingsResponse.Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// Request to get store id mapping between external reference and doordash
+message GetExternalStoreMappingsRequest {
+  // loyalty_program_id
+  google.protobuf.StringValue loyalty_program_id = 1;
+}
+
+// Response for store id mapping between external reference and doordash
+message GetExternalStoreMappingsResponse {
+  // on success, return store id mapping
+  message Success {
+    // loyalty_program_id
+    google.protobuf.StringValue loyalty_program_id = 1;
+    // repeated single mapping for internal store id to external store id
+    repeated ExternalStoreMapping external_store_mappings = 2;
+  }
+
+  // result is either success or error
+  oneof result {
+    // on success, return best attempt doordash to external store id
+    GetExternalStoreMappingsResponse.Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// request to update the cx loyalty balance
+message UpsertLoyaltyCxBalanceRequest {
+  // order id - if any
+  google.protobuf.StringValue order_id = 1;
+  // program id
+  google.protobuf.StringValue program_id = 2;
+  // storefront consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // loyalty balance
+  google.protobuf.Int32Value balance = 4;
+  // store id
+  google.protobuf.StringValue store_id = 5;
+}
+
+// response from the update the cx loyalty balance
+message UpsertLoyaltyCxBalanceResponse {
+  // on success, return the current balance
+  message Success {
+    // success message
+    google.protobuf.StringValue message = 1;
+    // updated loyalty balance on the Cx account
+    google.protobuf.Int32Value balance = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return best attempt doordash to external store id
+    Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// probe request
+message GetStartUpProbeRequest {
+  // loyalty application type
+  enum LoyaltyApplicationType {
+    // invalid or unknown app
+    LOYALTY_APPLICATION_TYPE_UNSPECIFIED = 0;
+    // web
+    LOYALTY_APPLICATION_TYPE_WEB = 1;
+    // kafka-consumer
+    LOYALTY_APPLICATION_TYPE_KAFKA_CONSUMER = 2;
+    // mx-crm
+    LOYALTY_APPLICATION_TYPE_MX_CRM = 3;
+  }
+  // the application to run the startup probe
+  LoyaltyApplicationType app = 1;
+}
+
+// probe response
+message GetStartUpProbeResponse {
+  // whether warmup is successful
+  google.protobuf.BoolValue ready = 1;
+}

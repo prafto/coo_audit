@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/ads_promos.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/pricing.proto";
+import "tax/transaction.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+// Kafka msg schema to handle tax calculations for different ads flows (CPA, CPM, etc.)
+// Owned by Intl Mx Plat team. Reach out to us in #ask-intl-mx-plat for questions.
+message AdsTaxTransactionEvent {
+  // Type of pricing model being processed - Can be CPA, CPM etc
+  PricingModel type = 1;
+
+  // ISO-ALPHA2 country code (e.g. CA, US, DE, JP)
+  google.protobuf.StringValue country_code = 2 [deprecated = true];
+
+  // The id of the campaign
+  google.protobuf.StringValue campaign_id = 3;
+
+  // The id of the ad event - could be store views/store clicks or batch id (CPM)
+  google.protobuf.StringValue event_id = 4;
+
+  // Timestamp of when ad event occurred
+  google.protobuf.Timestamp event_timestamp = 5;
+
+  // Subtotal unit amount that we need to calculate the tax for US and CA
+  // For Australia ads_fee is tax inclusive but tax service would break it down into subtotal and tax amount
+  money.MonetaryFields ads_fee = 6;
+
+  // Currently only supports CPM. To support CPA, CPC, etc. just add another nested proto below
+  oneof tax_required_info {
+    // CPM specific fields needed to make TaxService.QuoteTransaction() request
+    CPMTaxInfo cpm_tax_info = 7;
+
+    // CPA specific fields needed to make TaxService.QuoteTransaction() request
+    CPATaxInfo cpa_tax_info = 8;
+
+    // CPC specific fields needed to make TaxService.QuoteTransaction() request
+    CPCTaxInfo cpc_tax_info = 9;
+  }
+}
+
+// CPM specific fields needed to make TaxService.QuoteTransaction() request
+message CPMTaxInfo {
+  // Store information for CPA and CPC, address required will be fetched from geo-intelligence service using store_id
+  google.protobuf.StringValue store_id = 1 [deprecated = true];
+
+  // Billing address or store information for calculating tax for CPM
+  // note: CPM pricing model is used by HPB which would be billed to the Merchant HQ Address rather than the store address
+  google.protobuf.StringValue billing_address_id = 2;
+
+  // This would be batch Id for Pricing Model CPM
+  google.protobuf.StringValue batch_id = 3;
+}
+
+// CPA specific fields needed to make TaxService.QuoteTransaction() request
+message CPATaxInfo {
+  // the id and ref_type of reference
+  doordash.tax.transaction.Reference reference = 1;
+
+  // The id of the delivery
+  google.protobuf.StringValue delivery_id = 2;
+
+  // the store id information
+  google.protobuf.StringValue store_id = 3;
+
+  // the store address
+  doordash.tax.transaction.Address store_address = 4;
+
+  // the store id information
+  google.protobuf.StringValue business_id = 5;
+
+  // MFS billing method that the event should use
+  ads_promos.v1.BillingMethod billing_method = 6;
+
+  // order event status
+  google.protobuf.StringValue order_event_status = 7;
+
+  // order life cycle event timestamp
+  google.protobuf.Timestamp mx_olc_event_timestamp = 8;
+}
+
+// CPC Specific fields needed to make TaxService.QuoteTransaction() request in Tax Job
+message CPCTaxInfo {
+  // the id and ref_type of reference
+  doordash.tax.transaction.Reference reference = 1;
+
+  // the id of the ad click
+  google.protobuf.StringValue ad_click_id = 2;
+
+  // billing profile id for the campaign of the event, for countries with per-region tax rate
+  google.protobuf.StringValue billing_profile_id = 3;
+
+  // billing profile id for the campaign of the event, for countries with per-region tax rate
+  google.protobuf.StringValue advertiser_id = 4;
+
+  // the store id information
+  google.protobuf.StringValue business_id = 5;
+
+  // the store address of the campaign which CPC tax will be calculated for countries with nation-consistent tax rates
+  doordash.tax.transaction.Address store_address = 6;
+
+  // the store id information
+  google.protobuf.StringValue store_id = 7;
+}

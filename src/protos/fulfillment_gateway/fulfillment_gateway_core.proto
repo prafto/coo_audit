@@ -1,0 +1,656 @@
+syntax = "proto3";
+
+package fuflillment_gateway.v1;
+
+import "common/service_client_config.proto";
+import "delivery_service/delivery_core.proto";
+import "delivery_service/delivery_metadata.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/common.proto";
+import "task_service/eta_prediction.proto";
+import "task_service/task.proto";
+import "task_service/task_config.proto";
+import "task_service/task_fulfillment.proto";
+import "task_service/task_group.proto";
+import "task_service/workflow.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.fulfillment_gateway";
+
+// Service for fx gateway
+service FulfillmentGatewayService {
+  option (doordash.api.service) = {
+    name: "fulfillment-gateway-service"
+    url: "task-service-fulfillment-gateway.service.prod.ddsd"
+    port: 5051
+    api_key_name: "FULFILLMENT_GATEWAY_SERVICE_API_KEY"
+    name_spaces: [
+      "fulfillment-gateway-service",
+      "task-console",
+      "task-service",
+      "logistics-platform"
+    ]
+    owner: {
+      id: "logistics-platform-alerts"
+      name: "logistics-platform"
+      slack_channel: "#eng-logistics-infra"
+      email_alias: "eng-logistics-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // API to start the execution of the Fulfillment flow
+  rpc StartFulfillmentExecution(StartFulfillmentExecutionRequest) returns (StartFulfillmentExecutionResponse) {
+    option (google.api.http) = {
+      post: "/fulfillment-gateway-service/v1/fulfillment/start"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // API to terminate the execution of the Fulfillment flow
+  rpc CancelFulfillmentExecution(CancelFulfillmentExecutionRequest) returns (CancelFulfillmentExecutionResponse) {
+    option (google.api.http) = {
+      post: "/fulfillment-gateway-service/v1/fulfillment/cancel"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // API to unassign a task group/ task groups from a dasher
+  rpc UnassignTaskGroups(UnassignTaskGroupsRequest) returns (UnassignTaskGroupsResponse);
+
+  // API to force assign a task group/ task groups from a dasher
+  rpc ForceAssignTaskGroups(ForceAssignTaskGroupsRequest) returns (ForceAssignTaskGroupsResponse);
+
+  // API to retrieve information related to the execution of a fulfillment workflow
+  rpc GetFulfillmentWorkflowStatus(GetFulfillmentWorkflowStatusRequest) returns (GetFulfillmentWorkflowStatusResponse);
+
+  // API to add an additional task groups to a workflow
+  rpc AddTaskGroupsToExistingWorkflows(AddTaskGroupsToExistingWorkflowsRequest) returns (AddTaskGroupsToExistingWorkflowsResponse);
+
+  // API to get a single or list of task groups based on task group id
+  rpc GetTaskGroups(GetTaskGroupsRequest) returns (GetTaskGroupsResponse);
+
+  // Selectively unassign a task group
+  rpc UnassignTaskGroup(UnassignTaskGroupRequest) returns (UnassignTaskGroupResponse);
+
+  // API to mark individual step in a task as complete
+  rpc CompleteStepInTaskGroup(CompleteStepInTaskGroupRequest) returns (CompleteStepInTaskGroupResponse);
+
+  // Fetch the fulfillment history
+  rpc GetFulfillmentHistory(GetFulfillmentHistoryRequest) returns (GetFulfillmentHistoryResponse);
+
+  // Fetch task group information and fulfillment steps for fulfillment of task group
+  rpc GetTaskGroupAndCurrentFulfillmentData(GetTaskGroupAndCurrentFulfillmentDataRequest) returns (GetTaskGroupAndCurrentFulfillmentDataResponse);
+
+  // Create return task groups for an active offer and add them to their original task group's workflow.
+  rpc CreateReturns(CreateReturnsRequest) returns (CreateReturnsResponse);
+
+  // Updates the reattempt and return state of a canonical task group and updates the shiftRoute.
+  rpc UpdateReattemptReturnStates(UpdateReattemptReturnStatesRequest) returns (UpdateReattemptReturnStatesResponse);
+
+  // Used by the Task Console UI to load task configs with flexible filtering options
+  // Example URL: GET /fulfillment-gateway-service/v1/task-configs/all?task_name=collect_store_hours&version=2&status=TASK_CONFIG_STATUS_ACTIVE&status=TASK_CONFIG_STATUS_DRAFT
+  rpc GetTaskConfigs(GetTaskConfigsRequest) returns (GetTaskConfigsResponse) {
+    option (google.api.http) = {get: "/fulfillment-gateway-service/v1/task-configs/all"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Used by Task Console UI to get a specific task config by name and version
+  // Example URL: GET /fulfillment-gateway-service/v1/task-configs/collect_store_hours/versions/2
+  rpc GetTaskConfig(GetTaskConfigRequest) returns (GetTaskConfigResponse) {
+    option (google.api.http) = {get: "/fulfillment-gateway-service/v1/task-configs/{task_name}/versions/{version}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Used to update task group assignment constraint fields
+  rpc UpdateTaskGroupAssignmentConstraint(UpdateTaskGroupAssignmentConstraintRequest) returns (UpdateTaskGroupAssignmentConstraintResponse);
+
+  // Used to update pickup and dropoff time windows for a task group
+  rpc UpdateTaskTimeWindow(UpdateTaskTimeWindowRequest) returns (UpdateTaskTimeWindowResponse);
+
+  // DEPRECATED
+  rpc GetActiveTaskConfigByName(GetActiveTaskConfigByNameRequest) returns (GetActiveTaskConfigByNameResponse);
+
+  // DEPRECATED
+  rpc GetTaskConfigsByNameAndStatus(GetTaskConfigsByNameAndStatusRequest) returns (GetTaskConfigsByNameAndStatusResponse);
+
+  // DEPRECATED
+  rpc GetTaskConfigByNameAndVersion(GetTaskConfigByNameAndVersionRequest) returns (GetTaskConfigByNameAndVersionResponse);
+
+  // DEPRECATED
+  rpc GetTaskConfigsByName(GetTaskConfigsByNameRequest) returns (GetTaskConfigsByNameResponse);
+
+  // DEPRECATED
+  rpc GetTaskConfigsByStatuses(GetTaskConfigsByStatusesRequest) returns (GetTaskConfigsByStatusesResponse);
+}
+
+// Defines CreateReturns request
+message CreateReturnsRequest {
+  // List of existing taskGroupIds for which a return delivery is to be created.
+  repeated google.protobuf.StringValue task_group_id = 1;
+  // name of client, ex: DRIVE
+  google.protobuf.StringValue client_name = 2;
+  // Dasher User Id
+  google.protobuf.Int64Value dasher_user_id = 3;
+  // Shift Id
+  google.protobuf.Int64Value shift_id = 4;
+}
+
+// Defines CreateReturns request
+message CreateReturnsResponse {
+  // List of return task group Ids created (associated with the original workflow)
+  repeated google.protobuf.StringValue return_task_group_ids = 1;
+}
+
+// Defines StartFulfillmentExecution request
+message StartFulfillmentExecutionRequest {
+  // idempotency key from client
+  google.protobuf.StringValue idempotency_key = 1;
+  // name for workflow
+  google.protobuf.StringValue workflow_name = 2;
+  // currency information
+  google.protobuf.StringValue currency = 3;
+  // Task Group info needed for creation; task_group_name : task_group_data
+  map<string, StartFulfillmentTaskGroupData> task_groups_data = 4;
+  // name of the client
+  google.protobuf.StringValue client_name = 5;
+  // whether it's a test execution or not
+  google.protobuf.BoolValue is_test = 6;
+}
+
+// Response to get task group information
+message GetTaskGroupResponse {
+  // result to be returned for GetTaskGroup request
+  oneof result {
+    // task group data to be returned
+    task_service.v2.TaskGroup data = 1;
+    // error message to be returned
+    task_service.v2.Error error = 2;
+  }
+}
+
+// Request to get task group information
+message GetTaskGroupAndCurrentFulfillmentDataRequest {
+  // task group id to get as part of the request
+  google.protobuf.StringValue task_group_ids = 1;
+}
+
+// Response to get task group and current steps information
+message GetTaskGroupAndCurrentFulfillmentDataResponse {
+  // information related to task group
+  GetTaskGroupResponse task_group_info = 1;
+  // steps in the trip that have to do with the task group
+  repeated task_service.v2.ItineraryStep steps_for_task_group = 2;
+}
+
+// Request to get task group information
+message GetTaskGroupsRequest {
+  // List of task group ids to get as part of the request
+  repeated google.protobuf.StringValue task_group_ids = 1;
+}
+
+// Response message for obtaining task group information based on task group ids
+message GetTaskGroupsResponse {
+  // Map of task groups to be returned, key: task group id, value: task group data
+  map<string, GetTaskGroupResponse> task_groups = 1;
+}
+
+// Request for complete step
+message CompleteStepInTaskGroupRequest {
+  // step_id
+  google.protobuf.StringValue step_id = 1;
+  // shift id
+  google.protobuf.Int64Value shift_id = 2;
+}
+
+// Response for complete step
+message CompleteStepInTaskGroupResponse {
+  // step completion time
+  google.protobuf.Timestamp step_completed_at = 1;
+  // task completion time
+  google.protobuf.Timestamp task_completed_at = 2;
+  // optional, if the task was the last in the task group
+  google.protobuf.Timestamp task_group_completed_at = 3;
+  // optional, if the task group was the last in the workflow
+  google.protobuf.Timestamp workflow_completed_at = 4;
+}
+
+// Defines UnassignTaskGroup request
+message UnassignTaskGroupsRequest {
+  // list of task group ids to unassign
+  repeated string task_group_ids = 1;
+  // name of the client
+  google.protobuf.StringValue client_name = 2;
+}
+
+// Defines GetFulfillmentWorkflowStatus request
+message GetFulfillmentWorkflowStatusRequest {
+  // workflow id related to the fulfillment execution
+  google.protobuf.StringValue workflow_id = 1;
+  // name of the client
+  google.protobuf.StringValue client_name = 2;
+}
+
+// Defines ForceAssignTaskGroups request
+message ForceAssignTaskGroupsRequest {
+  // list of task group ids to force assign
+  repeated string task_group_ids = 1;
+  // shift id to assign task groups to
+  google.protobuf.Int64Value shift_id = 2;
+  // name of the client
+  google.protobuf.StringValue client_name = 3;
+}
+
+// Request to unassign a single task group
+message UnassignTaskGroupRequest {
+  // task_group_id id
+  google.protobuf.StringValue task_group_id = 1;
+  // unassign reason text
+  google.protobuf.StringValue unassign_reason_text = 2;
+  // is unassign excused
+  google.protobuf.BoolValue is_unassign_excused = 3;
+}
+
+// Response for unassign task group
+message UnassignTaskGroupResponse {
+  // time that it was unassigned
+  google.protobuf.Timestamp unassigned_at = 1;
+  // was it unassigned by the dasher
+  google.protobuf.BoolValue is_unassign_by_dasher = 2;
+  // reason for unassign
+  google.protobuf.StringValue unassign_reason = 3;
+  // is unassign excused
+  google.protobuf.BoolValue is_unassign_excused = 4;
+  // shift id
+  google.protobuf.Int64Value shift_id = 5;
+}
+
+// Defines AddTaskGroupsToWorkflow request
+message AddTaskGroupsToExistingWorkflowsRequest {
+  // Map of task groups to be added to various workflows, key = workflowId, value = new task group data
+  map<string, AddTaskGroupData> task_group_data_to_be_added = 1;
+  // name of the client,  ex: DRIVE
+  google.protobuf.StringValue client_name = 2;
+}
+
+// Object for information needed to create a task group in an existing workflow
+message AddTaskGroupData {
+  // Data for new task group
+  task_service.v2.TaskGroupData task_group_data = 1;
+  // Delivery Data Model ETA prediction, will deprecate once ETA supports task native for parcels
+  task_service.v2.DeliveryEtaPrediction delivery_eta_prediction = 2;
+  //name for new task group
+  google.protobuf.StringValue task_group_name = 3;
+  // taskGroupId for new task group
+  google.protobuf.StringValue task_group_id = 4;
+}
+
+// Defines the Task Group Data needed for creation (minimal version of task service's task group data)
+message StartFulfillmentTaskGroupData {
+  // Task Group assignment constraint (from task service proto)
+  task_service.v2.AssignmentConstraint assignment_constraint = 1;
+  // Task Data for task creation; task_name : task_data
+  map<string, task_service.v2.TaskData> tasks_data = 2;
+  // Delivery Data Model ETA prediction, will deprecate once ETA supports task native for parcels
+  task_service.v2.DeliveryEtaPrediction eta_prediction = 3;
+  // upstream context for each taskGroup
+  task_service.v2.UpstreamContext upstream_context = 4;
+}
+
+// Defines UnassignTaskGroup response
+message UnassignTaskGroupsResponse {
+  // list of task group ids that were unassigned
+  repeated string task_group_ids = 1;
+}
+
+// Defines ForceAssignTaskGroups response
+message ForceAssignTaskGroupsResponse {
+  // list of task group ids that were force assigned to the given shift id
+  repeated string task_group_ids = 1;
+  // shift id that had task groups forced assigned to it
+  google.protobuf.Int64Value shift_id = 2;
+  // offer id for task groups assigned
+  google.protobuf.StringValue offer_id = 3;
+}
+
+// Defines GetFulfillmentWorkflowStatus response
+message GetFulfillmentWorkflowStatusResponse {
+  // Workflow information (ex. workflow ID, idempotency key)
+  task_service.v2.Workflow workflow = 1;
+  // Task groups that are part of the workflow
+  repeated task_service.v2.TaskGroup task_groups = 2;
+}
+
+// Defines StartFulfillmentExecution response
+message StartFulfillmentExecutionResponse {
+  // Workflow information (ex. workflow ID, idempotency key)
+  task_service.v2.Workflow workflow = 1;
+  // Task groups that are part of the workflow
+  repeated task_service.v2.TaskGroup task_groups = 2;
+}
+
+// Defines AddTaskGroupsToWorkflow response
+message AddTaskGroupsToExistingWorkflowsResponse {
+  // List of task groups that were added
+  repeated google.protobuf.StringValue task_group_ids_added = 1;
+  // Workflow IDs that failed to be added to a task group.
+  repeated google.protobuf.StringValue task_group_ids_not_added = 2;
+}
+
+// request to cancel execution of a fulfillment flow, requires workflow id
+message CancelFulfillmentExecutionRequest {
+  // either task group or workflow id
+  oneof id {
+    // workflow id to be cancelled
+    google.protobuf.StringValue workflow_id = 1;
+    // task group id to be cancelled
+    google.protobuf.StringValue task_group_id = 2;
+  }
+}
+
+// response returned by CancelFulfillmentExecution
+message CancelFulfillmentExecutionResponse {
+  // response for action taken (see task service common.proto)
+  task_service.v2.ActionResponse action_response = 1;
+}
+
+// Request for get fulfillment history
+message GetFulfillmentHistoryRequest {
+  // one of either shift or task group id
+  oneof identifier {
+    // task group id
+    google.protobuf.StringValue task_group_id = 1;
+    // shift id
+    google.protobuf.Int64Value shift_id = 2;
+    // offer id
+    google.protobuf.StringValue offer_id = 3;
+  }
+}
+
+// Response for get fulfillment history
+message GetFulfillmentHistoryResponse {
+  // task group fulfillment history (desc order)
+  repeated task_service.v2.TaskGroupFulfillment fulfillment_history = 1;
+}
+
+// Request for GetActiveTaskConfigByName
+message GetActiveTaskConfigByNameRequest {
+  // task name
+  google.protobuf.StringValue task_name = 1;
+}
+
+// Response for GetActiveTaskConfigByName
+message GetActiveTaskConfigByNameResponse {
+  // task config
+  task_service.v2.TaskConfig config = 2;
+
+  reserved 1;
+  reserved "task_config";
+}
+
+// Request for GetTaskConfigsByNameAndStatus
+message GetTaskConfigsByNameAndStatusRequest {
+  // task name
+  google.protobuf.StringValue task_name = 1;
+
+  // task status
+  task_service.v2.TaskConfigStatus config_status = 3;
+
+  reserved 2;
+  reserved "status";
+}
+
+// Response for GetTaskConfigsByNameAndStatus
+message GetTaskConfigsByNameAndStatusResponse {
+  // a list of task configs
+  repeated task_service.v2.TaskConfig configs = 2;
+
+  reserved 1;
+  reserved "task_configs";
+}
+
+// Request for GetTaskConfigByNameAndVersion
+message GetTaskConfigByNameAndVersionRequest {
+  // task name
+  google.protobuf.StringValue task_name = 1;
+
+  // task version
+  google.protobuf.Int32Value version = 2;
+}
+
+// Response for GetTaskConfigByNameAndVersion
+message GetTaskConfigByNameAndVersionResponse {
+  // task config
+  task_service.v2.TaskConfig config = 2;
+
+  reserved "task_config";
+  reserved 1;
+}
+
+// Request for GetTaskConfigsByName
+message GetTaskConfigsByNameRequest {
+  // task name
+  google.protobuf.StringValue task_name = 1;
+}
+
+// Response for GetTaskConfigsByName
+message GetTaskConfigsByNameResponse {
+  // a list of task configs
+  repeated task_service.v2.TaskConfig configs = 2;
+
+  reserved "task_configs";
+  reserved 1;
+}
+
+// Request for GetTaskConfigsByStatuses
+message GetTaskConfigsByStatusesRequest {
+  // task status
+  repeated task_service.v2.TaskConfigStatus status_list = 2;
+
+  reserved "status";
+  reserved 1;
+}
+
+// Response for GetTaskConfigsByStatuses
+message GetTaskConfigsByStatusesResponse {
+  // a list of task configs
+  repeated task_service.v2.TaskConfig configs = 2;
+
+  reserved "task_configs";
+  reserved 1;
+}
+
+// Request for UpdateReattemptReturnStates
+message UpdateReattemptReturnStatesRequest {
+  // Mapping of task group id to state
+  map<string, UpdateReattemptReturnStateData> task_group_state_updates = 1;
+}
+
+// State Details for a Task Group ID
+message UpdateReattemptReturnStateData {
+  // state to be updates
+  task_service.v2.ReattemptReturnState state = 1;
+  // reason (optional)
+  delivery_service.delivery_metadata.v1.UndeliverableOrderMetadata undeliverable_order_metadata = 2;
+}
+
+// Response for UpdateReattemptReturnStates
+message UpdateReattemptReturnStatesResponse {
+  // List of task group IDs that were successfully updated with new reattempt/return states
+  repeated google.protobuf.StringValue successful_task_group_id = 1;
+  // List of task group IDs that failed to update with new reattempt/return states
+  repeated google.protobuf.StringValue failed_task_group_id = 2;
+}
+
+// Request for GetTaskConfigs with flexible filtering options
+message GetTaskConfigsRequest {
+  // Optional task name filter
+  google.protobuf.StringValue task_name = 1;
+
+  // Optional version filter
+  google.protobuf.Int32Value version = 2;
+
+  // Optional status filters
+  repeated task_service.v2.TaskConfigStatus status_list = 4;
+
+  reserved 3;
+  reserved "statuses";
+}
+
+// Response for GetTaskConfigs
+message GetTaskConfigsResponse {
+  // a list of task configs matching the filters
+  repeated task_service.v2.TaskConfig task_configurations = 3;
+
+  reserved "task_configs";
+  reserved 1;
+  reserved "configs";
+  reserved 2;
+}
+
+// Request for GetTaskConfig for getting a specific task config by name and version
+message GetTaskConfigRequest {
+  // Task name for the URL path parameter
+  string task_name = 1;
+  // Version number for the URL path parameter
+  int32 version = 2;
+}
+
+// Response for GetTaskConfig, containing the requested task config
+message GetTaskConfigResponse {
+  // The requested task config
+  task_service.v2.TaskConfig config = 2;
+
+  reserved "task_config";
+  reserved 1;
+}
+
+// Request for UpdateTaskGroupAssignmentConstraint
+message UpdateTaskGroupAssignmentConstraintRequest {
+  // Task group id
+  google.protobuf.StringValue task_group_id = 1;
+  // Phone Model
+  google.protobuf.StringValue phone_model = 2;
+  // Serviceable Vehicle Type Ids
+  repeated google.protobuf.Int64Value serviceable_vehicle_type_ids = 3;
+  // Min Age Required
+  google.protobuf.Int64Value min_age_required = 4;
+  // Is ASAP
+  google.protobuf.BoolValue is_asap = 5;
+  // Should be manually assigned
+  google.protobuf.BoolValue should_be_manually_assigned = 6;
+  // Dasher Constraints
+  task_service.v2.DasherConstraints dasher_constraints = 7;
+  // Dasher Accept Modal Badge Type
+  google.protobuf.StringValue serviceable_vehicle_types = 8;
+  // Should Excuse Unassign
+  google.protobuf.BoolValue should_excuse_unassign = 9;
+  // Should Ignore Unassign After Pickup
+  google.protobuf.BoolValue should_ignore_unassign_after_pickup = 10;
+  // Accept Modal Badge Type
+  delivery_service.core.DasherAcceptModalBadgeType accept_modal_badge_type = 11;
+  // Accept Modal Additional Text
+  google.protobuf.StringValue accept_modal_additional_text = 12;
+  // Fulfillment Type
+  google.protobuf.StringValue fulfillment_type = 13;
+  // Single Store Batching
+  google.protobuf.BoolValue single_store_batching = 14;
+  // Order Volume
+  google.protobuf.Int32Value order_volume = 15;
+  // Max Batch Size
+  google.protobuf.Int32Value max_batch_size = 16;
+  // Max Mins Allowed On Road
+  google.protobuf.Int32Value max_mins_allowed_on_road = 17;
+  // Preferred Dasher Equipment Ids
+  repeated int32 preferred_dasher_equipment_ids = 18;
+  // Preferred Dasher Attribute Ids
+  repeated delivery_service.core.DasherAttributePreference prefer_dasher_attributes = 19;
+  // Preferred Dasher Equipment Ids
+  repeated delivery_service.core.DasherEquipmentPreference prefer_dasher_equipment = 20;
+  // Preferred Dasher Onboarding Preference
+  repeated delivery_service.core.DasherOnboardingPreference prefer_dasher_onboarding = 21;
+  // Preferred Vehicle Type Ids
+  repeated delivery_service.core.VehicleTypePreference prefer_vehicles = 22;
+  // Tradeoff ASAP Cost
+  google.protobuf.Int32Value tradeoff_asap_cost = 23;
+  // Tradeoff ASAP Dasher Wait
+  google.protobuf.Int32Value tradeoff_asap_dasher_wait = 24;
+  // Experiment Info
+  google.protobuf.StringValue experiment_info = 25;
+  // Ignore Merchant Signals
+  google.protobuf.BoolValue ignore_merchant_signals = 26;
+  // Forced Pickup Order In Package
+  google.protobuf.Int32Value forced_pickup_order_in_package = 27;
+  // Static Preferences
+  google.protobuf.StringValue static_preferences = 28;
+  // Constraint Attributes
+  delivery_service.core.ConstraintAttributes constraint_attributes = 29;
+  // Can Be Batched
+  google.protobuf.BoolValue can_be_batched = 30;
+  // Soft Requirements
+  google.protobuf.StringValue soft_requirements = 31;
+  // Proactive Monitoring Required
+  google.protobuf.BoolValue proactive_monitoring_required = 32;
+  // Batch Type
+  task_service.v2.BatchType batch_type = 33;
+  // Force Batch UUID
+  google.protobuf.StringValue force_batch_uuid = 34;
+  // Should Remove Force Batch UUID
+  google.protobuf.BoolValue should_remove_force_batch_uuid = 35;
+}
+
+// Response for UpdateTaskGroupAssignmentConstraint
+message UpdateTaskGroupAssignmentConstraintResponse {
+  // Task group id that was updated
+  google.protobuf.StringValue task_group_id = 1;
+}
+
+// Request for UpdateTaskTimeWindow
+message UpdateTaskTimeWindowRequest {
+  // Task Group Id
+  google.protobuf.StringValue task_group_id = 1;
+  // Pickup Task Window Start Time
+  google.protobuf.Timestamp pickup_task_window_start_time = 2;
+  // Pickup Task Window End Time
+  google.protobuf.Timestamp pickup_task_window_end_time = 3;
+  // Dropoff Task Window Start Time
+  google.protobuf.Timestamp dropoff_task_window_start_time = 4;
+  // Dropoff Task Window End Time
+  google.protobuf.Timestamp dropoff_task_window_end_time = 5;
+}
+
+// Response for UpdateTaskTimeWindow
+message UpdateTaskTimeWindowResponse {
+  // Task group id that was updated
+  google.protobuf.StringValue task_group_id = 1;
+}

@@ -1,0 +1,252 @@
+syntax = "proto3";
+
+package custom_integrations_service.v1;
+
+import "common/code.proto";
+import "common/service_client_config.proto";
+import "custom_integrations_service/common.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_integrations/menu.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.customintegrations";
+
+// Order service for Custom Integration Service's menu
+service CustomIntegrationsMenuService {
+  option (service_client.client_config).response_attempt_timeout_millis = 200000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Validates and Identifies Store; Returns menu
+  rpc GetMenu(GetMenuRequest) returns (GetMenuResponse) {}
+
+  // Gets the list of out of stock items and options for a store
+  rpc GetStockInformation(GetStockInformationRequest) returns (GetStockInformationResponse) {}
+
+  // Gets the item status of specified item and store
+  rpc GetItemStatus(GetItemStatusRequest) returns (GetItemStatusResponse) {}
+}
+
+// Store Identification Request for Menu
+message GetMenuRequest {
+  // provider_type is the provider type of business in the request
+  CISProviderType provider_type = 1;
+  // location_id is the provider type of business in the request
+  google.protobuf.StringValue location_id = 2;
+  // parameters for request
+  MenuPullingParams params = 3;
+  // boolean for pull store hours
+  google.protobuf.BoolValue should_pull_store_hours = 4;
+  // boolean for pull store special hours
+  google.protobuf.BoolValue should_pull_store_special_hours = 5;
+  // menu experience
+  repeated MenuExperience menu_experiences = 6;
+}
+
+// Menu Pulling Params
+message MenuPullingParams {
+  // business id in int
+  google.protobuf.Int64Value business_id = 1;
+  // inflation rate in string
+  google.protobuf.StringValue inflation_rate = 2;
+  // inflation rounding unit in int
+  google.protobuf.Int32Value inflation_rounding_unit = 3;
+  // menu id in int
+  google.protobuf.Int32Value menu_id = 4;
+  // modifier defaults off in boolean
+  google.protobuf.BoolValue modifier_defaults_off = 5;
+  // menu component unset active in boolean
+  google.protobuf.BoolValue menu_component_unset_active = 6;
+  // menu experience details
+  repeated MenuExperienceDetails menu_experience_details = 7;
+}
+
+// Menu Experience details
+message MenuExperienceDetails {
+  // menu id in int
+  google.protobuf.Int32Value menu_id = 1;
+  // experience
+  google.protobuf.StringValue experience = 2;
+}
+
+// Store Identification Response
+message GetMenuResponse {
+  // Response Status Code
+  code.Code code = 1;
+  // Endpoint's response
+  oneof endpoint_response {
+    // successful response
+    SuccessfulMenuResponse successful_menu_response = 2;
+    // unsuccessful response
+    FailureMenuResponse failure_menu_response = 3;
+  }
+}
+
+// Successful response
+message SuccessfulMenuResponse {
+  // Menu response
+  MenuResponse menu_response = 1;
+  // Hours response
+  StoreOpenHoursResponse store_open_hours_response = 2;
+  // Store special hours response
+  StoreSpecialHoursResponse store_special_hours_response = 3;
+}
+
+// Response in case of failure
+message FailureMenuResponse {
+  // response_error shows error_code
+  ResponseError response_error = 1;
+  // error message describing what went wrong
+  google.protobuf.StringValue error_description = 2;
+  // raw menu json s3 bucket link
+  google.protobuf.StringValue raw_menu_json_s3_link = 3;
+}
+
+// Shows details of potential response error
+enum ResponseError {
+  // default
+  RESPONSE_ERROR_ERROR_CODE_UNSPECIFIED = 0;
+  // request timeout
+  RESPONSE_ERROR_ERROR_CODE_TIMEOUT = 1;
+  // request throttled
+  RESPONSE_ERROR_ERROR_CODE_THROTTLED = 2;
+  // transmission failed
+  RESPONSE_ERROR_ERROR_CODE_TRANSMISSION_FAILURE = 3;
+  // others
+  RESPONSE_ERROR_ERROR_CODE_GENERIC_ERROR = 4;
+}
+
+// Menu Response (StoreMenuResponseDto)
+message MenuResponse {
+  //  list of menu clips
+  repeated MenuClip menu_clips = 1;
+  // raw menu json s3 bucket link
+  google.protobuf.StringValue raw_menu_json_s3_link = 2;
+}
+
+// individual menu clip
+message MenuClip {
+  // menu fields
+  google.protobuf.StringValue menu = 1;
+  // type of menu
+  MenuType menu_type = 2;
+}
+
+// PullStoreHours Response List<StoreOpenHourClip>
+message StoreOpenHoursResponse {
+  //  list of store open hour clips
+  repeated StoreOpenHourClip store_open_hour_clip = 1;
+}
+
+// StoreOpenHourClip that stores list of open hours and menu type associated
+message StoreOpenHourClip {
+  // List<StoreOpenHour> stores StoreOpenHour objects
+  repeated merchant_integrations.OpenHours store_hours = 1;
+  // type of menu MenuType
+  MenuType store_hour_type = 2;
+  // menu experience
+  MenuExperience menu_experience = 3;
+}
+
+// List of store special hours
+message StoreSpecialHoursResponse {
+  //  list of store special hours clips
+  repeated StoreSpecialHourClip store_special_hour_clips = 1;
+}
+
+// Store special hours
+message StoreSpecialHourClip {
+  // List of special hours of this menu
+  repeated merchant_integrations.SpecialHours special_hours = 1;
+  // type of menu MenuType
+  MenuType store_hour_type = 2;
+  // menu experience
+  MenuExperience menu_experience = 3;
+}
+
+// Type of Menu
+enum MenuType {
+  // Unspecified menu
+  MENU_TYPE_UNSPECIFIED = 0;
+  // Breakfast menu
+  MENU_TYPE_BREAKFAST = 1;
+  // Lunch menu
+  MENU_TYPE_LUNCH = 2;
+  // Dinner menu
+  MENU_TYPE_DINNER = 3;
+  // All-day menu
+  MENU_TYPE_ALLDAY = 4;
+  // Special menu
+  MENU_TYPE_SPECIAL = 5;
+  // Overnight menu
+  MENU_TYPE_OVERNIGHT = 6;
+  // Latenight menu
+  MENU_TYPE_LATENIGHT = 7;
+}
+
+// Menu Experience
+enum MenuExperience {
+  // Unspecified menu experience
+  MENU_EXPERIENCE_UNSPECIFIED = 0;
+  // Marketplace menu experience
+  MENU_EXPERIENCE_MARKETPLACE = 1;
+  // Storefront menu experience
+  MENU_EXPERIENCE_STOREFRONT = 2;
+  // Voice menu experience
+  MENU_EXPERIENCE_VOICE = 3;
+}
+
+// Entity to be marked out of stock. Can be either an item or an option
+message OutOfStockEntity {
+  // Merchant supplied id of the entity
+  string merchant_supplied_id = 1;
+}
+
+// Store Identification Request for Stock
+message GetStockInformationRequest {
+  // provider_type is the provider type of store in the request
+  CISProviderType provider_type = 1;
+  // location_id is the provider type of store in the request
+  google.protobuf.StringValue location_id = 2;
+  // menu experience type
+  MenuExperience menu_experience = 3;
+  // Integration Type (marketplace, direct etc)
+  IntegrationType integration_type = 4;
+}
+
+// Stock information response
+message GetStockInformationResponse {
+  // list of items that need to be marked out of stock
+  repeated OutOfStockEntity out_of_stock_items = 1;
+  // list of options that need to be marked out of stock
+  repeated OutOfStockEntity out_of_stock_options = 2;
+}
+
+// Store Identification Request for Stock
+message GetItemStatusRequest {
+  // provider_type is the provider type of store in the request
+  CISProviderType provider_type = 1;
+  // location_id is the provider type of store in the request
+  google.protobuf.StringValue location_id = 2;
+  // List of merchant_supplied_ids concerned to  items availability
+  repeated google.protobuf.StringValue merchant_supplied_ids = 3; // equivalent to item_id
+}
+
+// Item Stock Information
+message ItemStatus {
+  // merchant_supplied_id
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  // Item availability active or in-active
+  google.protobuf.BoolValue is_active = 2;
+}
+
+// Stock information response
+message GetItemStatusResponse {
+  // HTTP status code
+  google.protobuf.Int32Value status_code = 1;
+  // List of item stock information
+  repeated ItemStatus items = 2;
+}

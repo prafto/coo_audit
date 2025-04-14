@@ -1,0 +1,154 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package deep_red.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "doordash.deepred";
+
+// apis for Samurai compute Nodes
+service DeepRedSamuraiService {
+  // Top level api for samurai
+  rpc SolveWorkload(SolveWorkloadRequest) returns (SolveWorkloadResponse);
+}
+
+// Immediate response from samurai
+message SolveWorkloadResponse {
+  // run/samurai specific request id created by shogun
+  string request_id = 1;
+  // samurai response
+  SamuraiResponse samurai_response = 2;
+}
+
+// Samurai Response
+message SamuraiResponse {
+  // List of routes
+  repeated Route routes = 1;
+  // List of assignments
+  repeated Assignment assignments = 2;
+}
+
+// Generic Request message for Samurai SolveWorkload
+message SolveWorkloadRequest {
+  // shogun generated id specific to each samurai
+  string request_id = 1;
+  // requested workload
+  WorkloadType workload_type = 2;
+  // Samurai supports 2 options for passing in the reuest payload
+  // 1. Request Payload -> Shogun sends the RequestPayload object directly over grpc
+  // 2. Lite Payload ->
+  //      a. Shogun uploads the shared engine snapshot to s3 or sends as bytes over grpc
+  //      b. Shogun sends a lite payload including only delivery and shift ids for each samurai to compute
+  //         along with a ref to entire snapshot s3 key or byte array
+  oneof payload {
+    // serialized request payload
+    RequestPayload request_payload = 3;
+    // Lite payload containing entity ids and s3 ref to shared snapshot
+    LitePayload lite_payload = 4;
+  }
+  // optional parameters for samurai
+  SamuraiParameters samurai_parameters = 5;
+}
+
+// Samurai parameters
+message SamuraiParameters {
+  // enable soft split
+  google.protobuf.BoolValue enable_soft_split = 1;
+  // batch annotator travel model
+  BatchAnnotatorTravelModel batch_annotator_travel_model = 2;
+}
+
+// Batch annotator travel model
+enum BatchAnnotatorTravelModel {
+  // unspecified
+  BATCH_ANNOTATOR_TRAVEL_MODEL_UNSPECIFIED = 0;
+  // straightline
+  BATCH_ANNOTATOR_TRAVEL_MODEL_STRAIGHTLINE = 1;
+  // travel service scoring
+  BATCH_ANNOTATOR_TRAVEL_MODEL_TRAVEL_SERVICE_SCORING = 2;
+  // travel service accurate
+  BATCH_ANNOTATOR_TRAVEL_MODEL_TRAVEL_SERVICE_ACCURATE = 3;
+  // travel service dx eta
+  BATCH_ANNOTATOR_TRAVEL_MODEL_TRAVEL_SERVICE_DX_ETA = 4;
+  // travel service accurate shadow
+  BATCH_ANNOTATOR_TRAVEL_MODEL_TRAVEL_SERVICE_ACCURATE_SHADOW = 5;
+}
+
+// Workload for samurai to compute
+enum WorkloadType {
+  // unspecified
+  WORKLOAD_TYPE_UNSPECIFIED = 0;
+  // generate costed assignments from task groups and shifts
+  WORKLOAD_TYPE_GENERATE_ASSIGNMENTS_FROM_TASK_GROUPS_AND_SHIFTS = 1;
+}
+
+// LitePayload containing entity ids and s3 ref to full snapshot
+message LitePayload {
+  // shared snapshot either in s3 or as bytes
+  oneof shared_snapshot {
+    // s3 key for full shogun snapshot shared by samurais
+    string shared_snapshot_s3_key = 1;
+    // full shared snapshot in bytes
+    bytes shared_snapshot_bytes = 2;
+  }
+  // Lite task groups
+  repeated LiteTaskGroup lite_task_groups = 3;
+  // Lite shifts
+  repeated LiteShift lite_shifts = 4;
+}
+
+// LiteTaskGroup contains only id and some computed fields. The rest is in the shared snapshot
+message LiteTaskGroup {
+  // task group id
+  string id = 1;
+  // If this delivery can be the first offered delivery in an offered route
+  bool can_lead = 2;
+}
+
+// LiteShift contains only id. The rest is in the shared snapshot
+message LiteShift {
+  // shift id
+  int64 id = 1;
+}
+
+// Generic Request Payload
+message RequestPayload {
+  // run metadata
+  RunMetadata run_metadata = 1;
+  // engine task groups and all required fields
+  repeated TaskGroup task_groups = 2;
+  // engine shifts and all required fields
+  repeated Shift shifts = 3;
+  // routes and all required fields
+  repeated Route routes = 4;
+  // assignments and all required fields
+  repeated Assignment assignments = 5;
+}
+
+// Run metadata shared among all samurais
+message RunMetadata {
+  // run_id
+  google.protobuf.StringValue id = 1;
+  // shogun start time
+  google.protobuf.Timestamp run_start = 2;
+  // market shortname
+  google.protobuf.StringValue market_shortname = 3;
+  // starting point set id
+  google.protobuf.StringValue sp_set_id = 4;
+}
+
+// TODO
+message TaskGroup {}
+
+// TODO
+message Shift {}
+
+// TODO
+message Route {}
+
+// TODO
+message Assignment {}

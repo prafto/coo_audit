@@ -1,0 +1,306 @@
+syntax = "proto3";
+
+package team_management;
+
+import "common/date.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "team_management";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.team_management";
+
+// Represents a range of local dates.
+message DateRange {
+  // Start date of the range.  Should be less than or equal to end_date.
+  date.Date start_date = 1;
+  // End date of the range.
+  date.Date end_date = 2;
+}
+
+// tms error code enum
+enum TeamManagementErrorCode {
+  // default error code
+  TEAM_MANAGEMENT_ERROR_CODE_UNSPECIFIED = 0;
+  // invalid expense code error code
+  TEAM_MANAGEMENT_ERROR_CODE_INVALID_EXPENSE_CODE = 1;
+  // missing expense code error code
+  TEAM_MANAGEMENT_ERROR_CODE_MISSING_EXPENSE_CODE = 2;
+
+  // permission denied errors because of plan limitations
+  // maximum amount of members per team account limit is reached
+  TEAM_MANAGEMENT_ERROR_CODE_MEMBERS_PER_TEAM_ACCOUNT_PLAN_LIMIT = 3;
+  // maximum amount of budgets per team account limit is reached
+  TEAM_MANAGEMENT_ERROR_CODE_BUDGETS_PER_TEAM_ACCOUNT_PLAN_LIMIT = 4;
+  // attempt to add a budget with amount beyond the limit
+  TEAM_MANAGEMENT_ERROR_CODE_MAX_BUDGET_AMOUNT_PLAN_LIMIT = 5;
+  // attempt to add credit card beyond monthly limit
+  TEAM_MANAGEMENT_ERROR_CODE_MAX_ADD_CARD_PAYMENT_ATTEMPTS_MONTHLY_LIMIT = 6;
+  // attempt to set payment method that is not supported by plan
+  TEAM_MANAGEMENT_ERROR_CODE_INVALID_PAYMENT_METHOD = 7;
+}
+
+// tms error object
+message Error {
+  // error code
+  TeamManagementErrorCode error_code = 1;
+  // error message
+  string error_message = 2;
+}
+
+// work benefits registry
+enum WorkBenefit {
+  // unknown
+  WORK_BENEFIT_UNSPECIFIED = 0;
+
+  // expensed meals
+  WORK_BENEFIT_EXPENSED_MEALS = 1;
+  // dashpass for work
+  WORK_BENEFIT_DASHPASS = 2;
+}
+
+// Types of order content TMS uses for checking budget eligibility
+enum WorkOrderContents {
+  // unknown
+  WORK_ORDER_CONTENT_UNSPECIFIED = 0;
+  // Restaurant orders
+  WORK_ORDER_CONTENT_RESTAURANT = 1;
+  // Grocery orders
+  WORK_ORDER_CONTENT_GROCERY = 2;
+  // Alcohol orders
+  WORK_ORDER_CONTENT_ALCOHOL = 3;
+  // Office orders
+  WORK_ORDER_CONTENT_OFFICE = 4;
+  // Flower orders
+  WORK_ORDER_CONTENT_FLOWER = 5;
+  // Other retail orders
+  WORK_ORDER_CONTENT_RETAIL = 6;
+}
+
+// Order attributes we want to pass to TMS for checking budget eligibility
+message OrderAttributes {
+  // Order contents
+  repeated WorkOrderContents order_contents = 1;
+
+  // Country where the order is placed in
+  CountryCode order_country_code = 2;
+}
+
+// Possible budget configurations
+message BudgetConfig {
+  // Types of order allowed for the budget
+  repeated WorkOrderContents permitted_order_contents = 1;
+}
+
+// Team level configurations
+message TeamConfig {
+  // team id
+  string team_id = 1;
+  // Types of order contents allowed by the team
+  repeated WorkOrderContents expensed_meal_allowed_order_contents = 2;
+}
+
+// Possible payment methods
+enum PaymentMethod {
+  // Default (should not happen)
+  UNKNOWN = 0;
+  // Pay via ghost payer's default card
+  DEFAULT_CARD = 1;
+  // Pay via invoicing (payer account with payment service)
+  INVOICING = 2;
+}
+
+// Countries DDFW team accounts can be created in.
+// 2-letter country code defined in ISO 3166
+// https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
+enum CountryCode {
+  // Default (should not happen)
+  COUNTRY_CODE_UNSPECIFIED = 0;
+  // United States of America
+  COUNTRY_CODE_US = 1;
+  // Canada
+  COUNTRY_CODE_CA = 2;
+  // Australia
+  COUNTRY_CODE_AU = 3;
+}
+
+// Represents DDFW plan
+enum WorkPlan {
+  // Default (should not happen)
+  WORK_PLAN_UNSPECIFIED = 0;
+  // Represents a state of the team account before self-serve project
+  // It means that business ops manually onboard corporate customers.
+  // No platform fee is charged ("free of charge")
+  WORK_PLAN_MANUAL_MANAGEMENT_FREE = 1;
+  // Represents a state of the team account after self-serve project
+  // It means that corporate customers onboard themselfes via self-serve process
+  // Oo platform fee is charged ("free of charge")
+  WORK_PLAN_SELF_SERVE_FREE = 2;
+}
+
+// Represents a limitation associated with Work plan
+enum WorkPlanLimitation {
+  // Default (should not happen)
+  WORK_PLAN_LIMITATION_UNSPECIFIED = 0;
+  // Limit of maximum amount of members per team account
+  WORK_PLAN_LIMITATION_MAX_MEMBERS_PER_TEAM_ACCOUNT = 1;
+  // Limit of maximum amount of budgets per team account
+  WORK_PLAN_LIMITATION_MAX_BUDGETS_PER_TEAM_ACCOUNT = 2;
+  // Maximum budget amount (e.g in USD)
+  WORK_PLAN_LIMITATION_MAX_BUDGET_AMOUNT = 3;
+  // Limit on the number of times a user can add a new credit card on file in one month
+  WORK_PLAN_LIMITATION_MAX_ADD_CARD_PAYMENT_ATTEMPTS_MONTHLY = 4;
+}
+
+// Represents a state of limitation in a context of specific team account
+message TeamAccountWorkPlanLimitation {
+  // Which limitation
+  WorkPlanLimitation limitation = 1;
+  // What's the limit value (e.g. 50 members per team account)
+  google.protobuf.Int64Value limit_value = 2;
+  // Is limit already reached for this team account
+  // In some cases it is not applicable (e.g. MAX_BUDGET_AMOUNT).
+  // In such cases value is false
+  bool is_limit_reached = 3;
+}
+
+// Represents a state of DDFW (Work) consumer in a context of fraud
+// For now used to determine self-serve status of company payer only.
+enum WorkConsumerStatusForFraud {
+  // should never be returned. Error state
+  WORK_CONSUMER_STATUS_FOR_FRAUD_UNSPECIFIED = 0;
+
+  // unknown.
+  // This means that TMS does not know anything about this consumer
+  // and this ID is not in a list of company payers.
+  // Fraud should treat them as non-self-serve company payers
+  WORK_CONSUMER_STATUS_FOR_FRAUD_UNKNOWN = 1;
+
+  // this Cx is self-serve company payer
+  WORK_CONSUMER_STATUS_FOR_FRAUD_SELF_SERVE_COMPANY_PAYER = 2;
+  // this Cx is non-self-serve company payer (onboarded manually by business ops)
+  WORK_CONSUMER_STATUS_FOR_FRAUD_MANUAL_MANAGEMENT_COMPANY_PAYER = 3;
+}
+
+// Payment info for the team account
+// This will eventually replace the payment fields in ExpensedMealsInfo
+message TeamAccountPaymentInfo {
+  // Payment method for the team account
+  PaymentMethod payment_method = 1;
+  // netsuite cannot be blank for invoicing payment method
+  string netsuite_id = 2;
+  // team account id
+  string team_account_id = 3;
+  // payer_consumer_id identifies virtual consumer ("company payer") which
+  // holds payment method to charge on behalf of the team account
+  int64 payer_consumer_id = 4;
+}
+
+// Represents workflow status
+enum WorkflowStatus {
+  // should never be returned. Error state
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  // Workflow is in progress
+  WORKFLOW_STATUS_IN_PROGRESS = 1;
+  // Workflow has completed successfully
+  WORKFLOW_STATUS_SUCCESS = 2;
+  // Workflow has failed
+  WORKFLOW_STATUS_ERROR = 3;
+}
+
+// Name of the workflow. Used for retrieving workflow status
+enum WorkflowName {
+  // should never be returned. Error state
+  WORKFLOW_NAME_UNSPECIFIED = 0;
+  // Triggered by OnboardTeamAccount API
+  WORKFLOW_NAME_ONBOARD_TEAM_ACCOUNT = 1;
+  // Triggered by ActivateTeamAccountBenefit API
+  WORKFLOW_NAME_ACTIVATE_BENEFIT = 2;
+  // Triggered by RemoveTeamAccountBenefit API
+  WORKFLOW_NAME_REMOVE_BENEFIT = 3;
+}
+
+// Invitation source
+enum InvitationSource {
+  // unknown
+  INVITATION_SOURCE_UNSPECIFIED = 0;
+
+  // admin invitation
+  INVITATION_SOURCE_ADMIN_INVITATION = 1;
+
+  // opt-in link
+  INVITATION_SOURCE_OPT_IN = 2;
+}
+
+// local date time for checkout
+message LocalDateTime {
+  // Year of LocalDateTime. Must be from 1 to 9999, or 0 if specifying a LocalDateTime without a year
+  int32 year = 1;
+  // Month of year. Must be from 1 to 12, or 0 if specifying a year without a month and day.
+  int32 month = 2;
+  // Day of month. Must be from 1 to 31 and valid for the year and month, or 0
+  // if specifying a year by itself or a year and month where the day is not significant.
+  int32 day = 3;
+  // 24 hour format
+  // hour
+  int32 hour = 4;
+  // minute
+  int32 minute = 5;
+  // second
+  int32 second = 6;
+}
+
+// Admin to get data for
+message TargetEntities {
+  // DEPRECATED; created with wrong type; Target team_member_id
+  repeated google.protobuf.Int64Value team_member_ids = 1 [deprecated = true];
+  // Target team_member_uuid
+  repeated google.protobuf.StringValue team_member_uuids = 2;
+}
+
+/** General object used to group "descriptors" which is anything that can help describe a target object.
+*/
+message Descriptors {
+  // Display name/label for a target object.
+  google.protobuf.StringValue label = 1;
+  // Description string for a target object. This is useful for rendering UX such as tooltips to describe the filter item.
+  google.protobuf.StringValue description_display_string = 2;
+}
+
+// DataValue -> DataPoint -> DataSet
+
+// Represents the value of a data point.
+message DataValue {
+  // Oneof for different types of data we support
+  oneof data_value {
+    // for integer values
+    google.protobuf.Int64Value int_value = 1;
+    // for decimal values
+    google.protobuf.DoubleValue double_value = 2;
+    // for monetary values
+    money.MonetaryFields monetary_value = 3;
+  }
+}
+
+/** Represents a data point with a label and value. (e.g. monetary value of 1199 with $11.99 as the label)
+ * Also labeling each data point with its corresponding date
+ */
+message DataPoint {
+  // Label/description
+  Descriptors descriptors = 1;
+  // Date (if applicable)
+  google.protobuf.Timestamp date = 2;
+  // Value of the data point
+  DataValue value = 3;
+}
+
+/** Represents a set of the same type of data in some sort of continuum (for example, one line in a line chart)
+*/
+message DataSet {
+  // Label that applies to the data set (for example, if we requested a breakdown by budget type (e.g. EM v.s. voucher), this could say the budget type)
+  Descriptors descriptors = 1;
+  // data points in data set
+  repeated DataPoint data_points = 2;
+}

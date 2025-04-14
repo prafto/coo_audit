@@ -1,0 +1,203 @@
+syntax = "proto3";
+
+package hyperlocal_service.v1;
+
+import "cart/cart_service.proto";
+import "common/service_client_config.proto";
+import "consumer_profile_service/consumer_address_link.proto";
+import "doordash.api/annotations.proto";
+import "geo-intelligence/doordash_place.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/hyperlocal_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.hyperlocal";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service HyperlocalService {
+  option (doordash.api.service) = {
+    name: "hyperlocal-service-web"
+    url: "hyperlocal-service-web.service.prod.ddsd"
+    name_spaces: ["gifting"]
+    port: 50051
+    owner: {
+      id: "pick-up-service"
+      name: "new-modes"
+      slack_channel: "#new-modes-eng"
+      email_alias: "new-modes-engineering@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+  option (service_client.client_config).service_name = "hyperlocal-service";
+  option (service_client.client_config).service_app = "web";
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Update the addresses and the google place associated with a given business config zone.
+  rpc UpdateHyperlocalConfigAddressDetails(UpdateHyperlocalConfigAddressDetailsRequest) returns (UpdateHyperlocalConfigAddressDetailsResponse);
+
+  // Update the type of hyperlocal experience and the data to be presented to the Cx of a given business config zone.
+  rpc UpdateHyperlocalExperience(UpdateHyperlocalExperienceRequest) returns (UpdateHyperlocalExperienceResponse);
+
+  // Update the shape of a Hyperlocal Business Config Zone.
+  rpc UpdateHyperlocalConfigZoneShape(UpdateHyperlocalConfigZoneShapeRequest) returns (UpdateHyperlocalConfigZoneShapeResponse);
+
+  // Gift search term suggestions.
+  rpc SuggestGiftSearchTerms(SuggestGiftSearchTermsRequest) returns (SuggestGiftSearchTermsResponse);
+
+  // Gift card generation
+  rpc GenerateGiftCard(GenerateGiftCardRequest) returns (GenerateGiftCardResponse);
+
+  // Save share cart info for later retrieval
+  rpc SaveShareCartInfo(SaveShareCartInfoRequest) returns (SaveShareCartInfoResponse);
+
+  // Fetch share cart info
+  rpc GetShareCartInfo(GetShareCartInfoRequest) returns (GetShareCartInfoResponse);
+}
+
+// Request to update the address details associated with a Hyperlocal config.
+message UpdateHyperlocalConfigAddressDetailsRequest {
+  // The place ID of the Hyperlocal business config zone to be updated.
+  google.protobuf.StringValue doordash_place_id = 1;
+
+  // The Google place that corresponds to this Hyperlocal business config zone.
+  google.protobuf.StringValue google_place_id = 2;
+
+  // The source place id that corresponds to this Hyperlocal business config zone.
+  google.protobuf.StringValue source_place_id = 3;
+}
+
+// Response after attempting to update the address details associated with a Hyperlocal config.
+message UpdateHyperlocalConfigAddressDetailsResponse {
+  // Explanation for why the updates have failed. Empty if the update is successful.
+  google.protobuf.StringValue error_message = 1;
+
+  // Whether the input can be adjusted to successfully make the update to the hyperlocal config.
+  google.protobuf.BoolValue action_required = 2;
+}
+
+// Request to update the shape of a hyperlocal config.
+message UpdateHyperlocalConfigZoneShapeRequest {
+  // The place ID of the Hyperlocal business config zone to be updated.
+  google.protobuf.StringValue doordash_place_id = 1;
+
+  // A list of coorindates representing the Hyperlocal Biz Config zone polygon.
+  google.protobuf.StringValue comma_separated_coordinates = 2;
+}
+
+// Response after attempting to update the shape of a Hyperlocal config zone.
+message UpdateHyperlocalConfigZoneShapeResponse {
+  // Explanation for why the updates have failed. Empty if the update is successful.
+  google.protobuf.StringValue error_message = 1;
+
+  // Whether the input can be adjusted to successfully make the update to the hyperlocal config.
+  google.protobuf.BoolValue action_required = 2;
+}
+
+// Request to update the type of hyperlocal experience and the data to be presented to the Cx of a given business config
+// zone.
+message UpdateHyperlocalExperienceRequest {
+  // The place ID of the Hyperlocal business config zone to be updated.
+  google.protobuf.StringValue doordash_place_id = 1;
+
+  // The naming of the Hyperlocal business config zone.
+  google.protobuf.StringValue place_name = 2;
+
+  // Available drop-off location options for this business config zone.
+  repeated HyperlocalDropoffLocationType available_dropoff_location_options = 3;
+
+  // The type of localized experience associated with this business config zone.
+  HyperlocalExperienceType experience_type = 4;
+
+  // Set to true if the Hyperlocal experience.
+  google.protobuf.BoolValue disable = 5;
+
+  // Hyperlocal config zone (place)-specific or drop-off location-specific delivery rules.
+  repeated DeliveryRule delivery_rules = 6;
+}
+
+// Response for attempting to update the type of hyperlocal experience and the data to be presented to the Cx of a given
+// business config zone.
+message UpdateHyperlocalExperienceResponse {
+  // Explanation for why the updates have failed. Empty if the update is successful.
+  google.protobuf.StringValue error_message = 1;
+
+  // Whether the input can be adjusted to successfully make the update to the hyperlocal config.
+  google.protobuf.BoolValue action_required = 2;
+}
+
+// Request to understand gift recommendation needs from Cx-provided prompt.
+message SuggestGiftSearchTermsRequest {
+  // prompt
+  google.protobuf.StringValue prompt = 1;
+}
+
+// Result of processing prompt as search terms.
+message SuggestGiftSearchTermsResponse {
+  // recommended search terms
+  repeated google.protobuf.StringValue terms = 1;
+}
+
+// Request to use GenAI to generate unique gift card. The information here will inform the outcome of the generated
+// gift card.
+message GenerateGiftCardRequest {
+  // Gift message
+  google.protobuf.StringValue gift_message = 1;
+
+  // Recipient name
+  google.protobuf.StringValue recipient_name = 2;
+}
+
+// Result of processing prompt as search terms.
+message GenerateGiftCardResponse {
+  // URL to the generated gift card image
+  google.protobuf.StringValue image_url = 1;
+}
+
+// SaveShareCartInfoRequest
+message SaveShareCartInfoRequest {
+  // info to store
+  ShareCartInfo share_cart_info = 1;
+}
+
+// payload representing share cart info
+message ShareCartInfo {
+  // Snapshot of the consumer cart to be shared / copied by recipient Cx later
+  cart_service.v1.ConsumerCart cart = 1;
+
+  // If shared, will be the consumer_address_link of the shared consumer's address for this order.
+  doordash_consumer_profile_service.ConsumerAddressLink consumer_address_link = 2;
+}
+
+// SaveShareCartInfoRequest
+message SaveShareCartInfoResponse {
+  // Randomized code that will act as a key to fetch the stored info
+  google.protobuf.StringValue code = 1;
+}
+
+// GetShareCartInfoRequest info to fetch the stored info
+message GetShareCartInfoRequest {
+  // Randomized code that will act as a key to fetch the stored info
+  google.protobuf.StringValue code = 1;
+}
+
+// fetched share cart info
+message GetShareCartInfoResponse {
+  // info fetched using the code
+  ShareCartInfo share_cart_info = 1;
+}

@@ -1,0 +1,982 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package drive_data_service;
+
+import "delivery_service/delivery_core.proto";
+import "drive_protobuf/common.proto";
+import "drive_protobuf/drive_portal_errors.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "drivedatarpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.drive.data";
+
+service DriveData {
+  rpc GetBusinessAndCreateIfNeededForDeveloper(GetBusinessForDeveloperRequest) returns (BusinessResponse);
+  rpc GetDeveloperById(DeveloperByIdRequest) returns (DeveloperResponse);
+  rpc CreateDeliverySimulator(DeliverySimulatorRequest) returns (google.protobuf.Empty);
+
+  rpc CancelDelivery(CancelDeliveryRequest) returns (ErrorResponse);
+  rpc ColdChainCancelCompleteDelivery(CancelDeliveryRequest) returns (ErrorResponse);
+  rpc ColdChainCancelAssignReturnDelivery(ColdChainCancelDeliveryRequest) returns (ErrorResponse);
+  rpc UpdateDelivery(UpdateDeliveryRequest) returns (UpdateDeliveryResponse);
+  rpc GetDeliveryEstimate(GetDeliveryEstimateRequest) returns (DeliveryEstimateResponse);
+
+  rpc GetDeveloperBusinessMappings(DeveloperBusinessMappingRequest) returns (DeveloperBusinessResponse);
+  rpc CreateDeveloperBusinessMapping(DeveloperBusinessMapping) returns (DeveloperBusinessMapping);
+  rpc UpdateDeveloperBusinessMappings(DeveloperBusinessMappingUpdateRequest) returns (DeveloperBusinessResponse);
+
+  rpc GetExternalStoreIdMappings(ExternalStoreIdMappingRequest) returns (ExternalStoreIdMappingResponse);
+  rpc CreateExternalStoreIdMappingOrUpdateExternalStoreId(ExternalStoreIdMapping) returns (ExternalStoreIdMapping);
+  rpc UpdateExternalStoreIdMappings(ExternalStoreIdMappingUpdateRequest) returns (ExternalStoreIdMappingResponse);
+
+  rpc GetStartingPoint(StartingPointRequest) returns (StartingPointResponse);
+  rpc GetStartingPointOperatingIntervals(GetStartingPointOperatingIntervalsRequest) returns (StartingPointOperatingIntervals);
+  rpc GetGlobalVar(GlobalVarRequest) returns (GlobalVarResponse);
+
+  rpc CreateBusiness(CreateBusinessRequest) returns (BusinessResponse);
+  rpc GetOrUpdateBusinessById(BusinessRequest) returns (BusinessResponse);
+
+  rpc CreateStore(CreateStoreRequest) returns (StoreResponse);
+  rpc CreateStoreWithStripeCard(CreateStoreWithStripeCardRequest) returns (StoreResponse);
+  rpc GetOrUpdateStoreById(StoreRequest) returns (StoreResponse);
+  rpc GetStoreForBusinessIdAndAddressId(StoreRequest) returns (StoreResponse);
+  rpc RecalculateStoreStartingPoints(StoreRequest) returns (google.protobuf.Empty);
+
+  rpc GetAddressAndCreateIfNeededFromComponents(AddressRequest) returns (AddressResponse);
+  rpc GetAddressByStoreId(RequestById) returns (AddressResponse);
+  rpc CheckAddress(CheckAddressRequest) returns (CheckAddressResponse);
+
+  rpc ValidateDelivery(ValidateDeliveryRequest) returns (ErrorResponse);
+  rpc ValidateDeliveryRefactored(ValidateDeliveryRequest) returns (ErrorResponse);
+
+  // functions that are harder to decouple, we would just call the dsj function directly for now
+  rpc ValidateDeliveryTimeIsWithinSpServiceHour(ValidateDeliveryTimeRequest) returns (ErrorResponse);
+  rpc GetGmapsEstimatedTravelDurationAndDistance(EstimateGmapTravelAndDistanceRequest) returns (DurationAndTime);
+
+  // functions about StoreAddressLink
+  rpc GetStoreAddressLink(GetStoreAddressLinkRequest) returns (StoreAddressLinkResponse);
+  rpc CreateOrUpdateStoreAddressLink(CreateOrUpdateStoreAddressLinkRequest) returns (google.protobuf.Empty);
+
+  rpc SubmitDelivery(SubmitDeliveryRequest) returns (SubmitDeliveryResponse);
+
+  rpc GetDrivePaymentMethodsForStore(GetDrivePaymentMethodsForStoreRequest) returns (GetDrivePaymentMethodsForStoreResponse);
+
+  rpc GetBuiltInTaxCategoryRule(BuiltInTaxCategoryRequest) returns (BuiltInTaxCategoryRule);
+
+  rpc CreateAndSaveEtaPrediction(CreateAndSaveEtaPredictionRequest) returns (CreateAndSaveEtaPredictionResponse);
+
+  // Create OrderCart pre-delivery from DriveOrder
+  rpc GetOrCreateOrderCart(GetOrCreateOrderCartRequest) returns (OrderCartResponse);
+
+  rpc AddDriveOrderToPendingCache(AddDriveOrderToCacheRequest) returns (google.protobuf.Empty);
+
+  rpc GetStoreTaxRate(StoreTaxRateRequest) returns (StoreTaxRateResponse);
+
+  rpc OnboardStoreToInvoicing(StoreOnboardInvoicingRequest) returns (StoreOnboardInvoicingResponse);
+
+  rpc TriggerDelayedCancellationCommissions(RequestById) returns (google.protobuf.Empty);
+
+  rpc TriggerCancelWebhook(RequestById) returns (google.protobuf.Empty);
+
+  rpc CreateDriveGuestConsumer(CreateDriveGuestConsumerRequest) returns (CreateDriveGuestConsumerResponse);
+
+  rpc ScheduleInvoicingRun(ScheduleInvoicingRunRequest) returns (ScheduleInvoicingRunResponse);
+}
+
+message DeliverySimulatorRequest {
+  google.protobuf.Int64Value delivery_id = 1;
+  google.protobuf.Int64Value business_id = 2;
+  google.protobuf.Int64Value store_id = 3;
+  google.protobuf.StringValue doordash_id = 4;
+}
+
+message BuiltInTaxCategoryRequest {
+  int64 store_id = 1;
+}
+
+message BuiltInTaxCategoryRule {
+  double tax_rate = 1;
+  int64 tax_category_id = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+}
+
+message RequestById {
+  int64 id = 1;
+}
+
+message GlobalVarRequest {
+  repeated string variables = 1;
+}
+
+message GlobalVarResponse {
+  repeated GlobalVar variables = 1;
+}
+
+message GlobalVar {
+  string name = 1;
+  google.protobuf.Any value = 2;
+}
+
+message StartingPointRequest {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.Int64Value pickup_address_id = 2;
+  google.protobuf.Int64Value store_id = 3;
+  google.protobuf.Timestamp pickup_at = 4;
+}
+
+message StartingPointResponse {
+  int64 id = 1;
+  string name = 2;
+  int64 submarket_id = 3;
+  int64 market_id = 4;
+  int32 extra_asap_pad = 5;
+  bool is_killed = 6;
+  bool is_active = 7;
+}
+
+message GetBusinessForDeveloperRequest {
+  int64 user_id = 1;
+  // (optional) brand name of business which developer is referring to. It would default to "business_owner"
+  google.protobuf.StringValue brand = 2;
+}
+
+message BusinessResponse {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  bool is_active = 4;
+  string drive_account_id = 5;
+  bool is_test = 6;
+  google.protobuf.Int64Value stripe_customer_id = 7;
+}
+
+message StoreByExternalIdResponse {
+  int64 id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue drive_store_id = 3;
+  google.protobuf.StringValue external_store_id = 4;
+}
+
+message DeveloperByIdRequest {
+  int64 user_id = 1;
+}
+
+message DeveloperResponse {
+  int64 user_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp deactivated_at = 3;
+  google.protobuf.StringValue webhook_url = 4;
+}
+
+message AddressRequest {
+  google.protobuf.StringValue unit = 1;
+  google.protobuf.StringValue street = 2;
+  google.protobuf.StringValue city = 3;
+  google.protobuf.StringValue state = 4;
+  google.protobuf.StringValue zip_code = 5;
+}
+
+message AddressResponse {
+  int64 id = 1;
+  google.protobuf.StringValue google_place_id = 2;
+  google.protobuf.StringValue printable_address = 3;
+  google.protobuf.StringValue unit = 4;
+  google.protobuf.StringValue street = 5;
+  google.protobuf.StringValue city = 6;
+  google.protobuf.StringValue subpremise = 7;
+  google.protobuf.StringValue state = 8;
+  google.protobuf.StringValue zip_code = 9;
+  google.protobuf.FloatValue lng = 10;
+  google.protobuf.FloatValue lat = 11;
+  google.protobuf.StringValue country = 12;
+  google.protobuf.StringValue shortname = 13;
+  google.protobuf.DoubleValue hp_lng = 14;
+  google.protobuf.DoubleValue hp_lat = 15;
+  google.protobuf.StringValue address_uuid = 16;
+}
+
+message CancelDeliveryRequest {
+  int64 delivery_id = 1;
+}
+
+message ColdChainCancelDeliveryRequest {
+  int64 delivery_id = 1;
+  int64 return_delivery_id = 2;
+}
+
+message UpdateDeliveryRequest {
+  reserved 27;
+  int64 delivery_id = 1;
+  int64 drive_order_id = 2;
+  google.protobuf.StringValue first_name = 3;
+  google.protobuf.StringValue last_name = 4;
+  google.protobuf.StringValue business_name = 5;
+  google.protobuf.Int64Value dropoff_address_id = 6;
+  google.protobuf.StringValue dropoff_subpremise = 7;
+  google.protobuf.StringValue customer_phone_number = 8;
+  google.protobuf.StringValue dropoff_special_instructions = 9;
+  google.protobuf.StringValue pickup_business_name = 10;
+  google.protobuf.StringValue pickup_instructions = 11;
+  google.protobuf.StringValue pickup_phone_number = 12;
+  google.protobuf.BoolValue signature_required = 13;
+  google.protobuf.BoolValue allow_unattended_delivery = 14;
+  google.protobuf.Timestamp pickup_window_start_time = 15; // to create delivery_windows
+  google.protobuf.Timestamp pickup_window_end_time = 16; // to create delivery_windows
+  google.protobuf.Timestamp delivery_window_start_time = 17; // to create delivery_windows
+  google.protobuf.Timestamp delivery_window_end_time = 18; // to create delivery_windows
+  google.protobuf.BoolValue contains_alcohol = 19;
+  google.protobuf.StringValue delivery_metadata = 20;
+  repeated google.protobuf.StringValue allowed_vehicles = 21;
+  google.protobuf.Int32Value pre_tip_amount = 22;
+  google.protobuf.Int32Value post_tip_amount = 23;
+  google.protobuf.Timestamp order_ready_time = 24;
+  google.protobuf.Timestamp quoted_delivery_time = 25; // to create estimate
+  google.protobuf.Timestamp quoted_pickup_time = 26; // to create estimate
+}
+
+// response to be updated in driveOrder table
+message UpdateDeliveryResponse {
+  google.protobuf.BoolValue is_asap = 1;
+  google.protobuf.Timestamp google_estimate = 2;
+  google.protobuf.Timestamp eta_prediction = 3;
+  google.protobuf.Timestamp eta_prediction_updated_at = 4;
+  google.protobuf.Timestamp quoted_delivery_time = 5;
+  google.protobuf.Timestamp quoted_pickup_time = 6; // which is estimated_pickup_time in driveOrder
+  google.protobuf.BoolValue edit_failed = 7;
+  google.protobuf.StringValue field_error_name = 8;
+  google.protobuf.StringValue field_error_message = 9;
+}
+
+message GetDeliveryEstimateRequest {
+  int64 store_id = 1;
+  int64 pickup_address_id = 2;
+  int64 dropoff_address_id = 3;
+  int32 order_value = 4;
+  google.protobuf.StringValue drive_partnership_id = 5;
+  google.protobuf.Timestamp pickup_time = 6;
+  google.protobuf.Timestamp dropoff_time = 7;
+  DrivePartnership drive_partnership = 8;
+  google.protobuf.Int64Value business_id = 9;
+  google.protobuf.StringValue trip_id = 10;
+  google.protobuf.Int32Value tip_cents = 11;
+  google.protobuf.Int64Value developer_id = 12;
+}
+
+message DrivePartnership {
+  string id = 1;
+  DriveOrderType order_type = 2;
+  int64 min_order_value_threshold = 3;
+  google.protobuf.Int64Value doorstep_store_id = 4;
+  google.protobuf.StringValue store_id = 5;
+  google.protobuf.StringValue account_id = 6;
+  google.protobuf.FloatValue commission_rate = 7;
+  google.protobuf.Int32Value min_fee = 8;
+  google.protobuf.Int32Value max_fee = 9;
+  google.protobuf.Int32Value dasher_pay_per_dropoff = 10;
+  google.protobuf.Int32Value pay_boost = 11;
+  google.protobuf.Int32Value setup_pay = 12;
+  bool setup_pay_enabled = 13;
+  google.protobuf.Int32Value delivery_pay_pad_time = 14;
+  google.protobuf.Int32Value max_delivery_distance = 15;
+  google.protobuf.StringValue delivery_requirements = 16;
+  google.protobuf.StringValue commission_logic = 17;
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+message DeliveryEstimateResponse {
+  int64 id = 1;
+  google.protobuf.StringValue currency = 2;
+  int64 fee = 3;
+  int64 fee_subtotal = 4;
+  int64 fee_tax = 5;
+  google.protobuf.Timestamp pickup_time = 6;
+  google.protobuf.Timestamp delivery_time = 7;
+  google.protobuf.Duration pickup_delay = 8;
+  int64 r2c_padding = 9; // TODO: to be deprecated by r2c_padding_duration
+  google.protobuf.Duration r2c_drive_duration = 10;
+  int64 r2c_distance = 11;
+  AddressResponse dropoff_address = 12;
+  google.protobuf.Timestamp pickup_window_start_time = 13;
+  google.protobuf.Timestamp pickup_window_end_time = 14;
+  google.protobuf.Duration r2c_padding_duration = 15;
+  bool is_pickup_time_experiment = 16;
+  DetailedR2CComponents detailed_r2c_components = 17;
+  AddressResponse pickup_address = 18;
+  google.protobuf.Int64Value promotional_fee_total = 19;
+  google.protobuf.Int64Value promotional_fee_subtotal = 20;
+  google.protobuf.Int64Value promotional_fee_tax = 21;
+  google.protobuf.Timestamp pickup_time_no_flf = 22;
+  google.protobuf.Int64Value dasher_regulatory_fee_total = 23;
+  google.protobuf.Int64Value dasher_regulatory_fee = 24;
+  google.protobuf.Int64Value dasher_regulatory_fee_tax = 25;
+  google.protobuf.BoolValue promotion_applies_to_regulatory_fees = 26;
+  google.protobuf.Duration poor_supply_dynamic_pickup_delay = 27;
+  google.protobuf.Duration lof_padding_duration = 28;
+  google.protobuf.BoolValue is_in_v2_model_treatment_group = 29;
+  google.protobuf.Timestamp pickup_time_from_v2_model = 30;
+  google.protobuf.Timestamp delivery_time_from_v2_model = 31;
+  google.protobuf.StringValue quote_id = 32;
+  google.protobuf.BoolValue has_promotional_fee = 33;
+}
+
+message DetailedR2CComponents {
+  google.protobuf.Duration google_estimate_duration = 1;
+  google.protobuf.DoubleValue padding_multipler = 2;
+  google.protobuf.Duration static_padding_duration = 3;
+  google.protobuf.Duration drive_predictor_padding_duration = 4;
+  google.protobuf.Duration submarket_padding_duration = 5;
+  google.protobuf.Duration flf_pickup_padding_duration = 6;
+}
+
+message DeveloperBusinessMappingRequest {
+  // set at least one for GET request
+  google.protobuf.StringValue brand_name = 1;
+  google.protobuf.Int64Value business_id = 2;
+  google.protobuf.Int64Value developer_id = 3;
+}
+
+message DeveloperBusinessMappingUpdateRequest {
+  // set at least one property that you want to filter the object by
+  google.protobuf.StringValue brand_name = 1;
+  google.protobuf.Int64Value business_id = 2;
+  google.protobuf.Int64Value developer_id = 3;
+
+  // only set the properties you want to update
+  google.protobuf.StringValue new_brand_name = 4;
+  google.protobuf.Int64Value new_business_id = 5;
+  google.protobuf.Int64Value new_developer_id = 6;
+}
+
+message DeveloperBusinessMapping {
+  string brand_name = 1;
+  int64 business_id = 2;
+  int64 developer_id = 3;
+}
+
+message DeveloperBusinessResponse {
+  repeated DeveloperBusinessMapping developer_business_mappings = 1;
+}
+
+message ExternalStoreIdMappingRequest {
+  // set at least one for GET request
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.StringValue external_store_id = 2;
+  google.protobuf.Int64Value business_id = 3;
+}
+
+message ExternalStoreIdMappingUpdateRequest {
+  // set at least one property (you want to filter the object by the properties)
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.StringValue external_store_id = 2;
+  google.protobuf.Int64Value business_id = 3;
+
+  // only set the properties you want to update, store_id cannot be updated because it's PK
+  google.protobuf.StringValue new_external_store_id = 4;
+  google.protobuf.Int64Value new_business_id = 5;
+}
+
+message ExternalStoreIdMapping {
+  int64 store_id = 1;
+  string external_store_id = 2;
+  int64 business_id = 3;
+}
+
+message ExternalStoreIdMappingResponse {
+  repeated ExternalStoreIdMapping external_store_id_mappings = 1;
+}
+
+message CreateStoreRequest {
+  string name = 1;
+  int64 business_id = 2;
+  int64 address_id = 3;
+  string phone_number = 4;
+  bool is_test = 5;
+  google.protobuf.StringValue drive_store_id = 6;
+  google.protobuf.StringValue merchant_supplied_id = 7;
+}
+
+message CreateStoreWithStripeCardRequest {
+  string name = 1;
+  int64 business_id = 2;
+  int64 address_id = 3;
+  string phone_number = 4;
+  bool is_test = 5;
+  google.protobuf.StringValue drive_store_id = 6;
+  string stripe_card_token = 7;
+  google.protobuf.StringValue merchant_supplied_id = 8;
+}
+
+message UpdateStoreRequest {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.Int64Value business_id = 2;
+  google.protobuf.Int64Value address_id = 3;
+  google.protobuf.StringValue phone_number = 4;
+  google.protobuf.Int64Value starting_point_id = 5;
+  google.protobuf.StringValue drive_store_id = 6;
+}
+
+message StoreRequest {
+  google.protobuf.Int64Value id = 1;
+  UpdateStoreRequest update_request = 2;
+  // For get_store_for_business_id_and_address
+  google.protobuf.Int64Value business_id = 3;
+  google.protobuf.Int64Value address_id = 4;
+  google.protobuf.StringValue drive_store_id = 5;
+}
+
+message StoreResponse {
+  int64 id = 1;
+  string name = 2;
+  int64 business_id = 3;
+  int64 address_id = 4;
+  string phone_number = 5;
+  bool is_test = 6;
+  google.protobuf.Int64Value starting_point_id = 7;
+  google.protobuf.StringValue drive_store_id = 8;
+  google.protobuf.Int64Value stripe_customer_id = 9;
+  google.protobuf.Int32Value delivery_radius = 10;
+}
+
+message CreateBusinessRequest {
+  string name = 1;
+  string description = 2;
+  bool is_test = 3;
+  CreationMethod creation_method = 4;
+  google.protobuf.StringValue drive_account_id = 5;
+}
+
+message UpdateBusinessRequest {
+  string drive_account_id = 1;
+}
+
+message BusinessRequest {
+  google.protobuf.Int64Value id = 1;
+  UpdateBusinessRequest update_request = 2;
+  google.protobuf.StringValue drive_account_id = 3;
+}
+
+enum CreationMethod {
+  DRIVE_AUTO_ONBOARDING = 0;
+}
+
+enum DriveOrderType {
+  DEFAULT_NULL_VALUE = 0;
+  SMALL_ORDER_FULFILLMENT = 1;
+  LARGE_ORDER_FULFILLMENT = 2;
+  ROUTE_FULFILLMENT = 3;
+  ON_CALL = 4;
+}
+
+enum AccountEntityType {
+  DEVELOPER = 0;
+  BUSINESS = 1;
+  STORE = 2;
+}
+
+enum ContactType {
+  NONE = 0;
+  PHONE_NUMBER = 1;
+  EMAIL = 2;
+}
+
+enum PublicApiErrorCode {
+  UNKNOWN_ERROR = 0;
+  INVALID_PICKUP_ADDRESS = 1;
+  PICKUP_ADDRESS_NOT_SERVICEABLE = 2;
+  INVALID_DROPOFF_ADDRESS = 3;
+  DROPOFF_ADDRESS_NOT_SERVICEABLE = 4;
+  DROPOFF_TOO_FAR_FROM_PICKUP = 5;
+  // for cases we can't tell whether it's pickup or dropoff address
+  INVALID_ADDRESS = 6;
+  INVALID_PICKUP_TIME = 7;
+  PICKUP_TIME_NOT_OPEN = 8;
+  INVALID_DELIVERY_TIME = 9;
+  INVALID_PHONE_NUMBER = 10;
+  INVALID_ORDER_CONTENT = 11;
+  INVALID_ORDER_VALUE = 12;
+  INVALID_DASHER_TIP = 13;
+  SUBTOTAL_TOO_HIGH = 14;
+  SUBTOTAL_TOO_LOW = 15;
+  TEMP_UNABLE_TO_PROCESS_ORDER = 16;
+  DUPLICATE_DELIVERY_ID = 17;
+}
+
+// Helpful debug context to describe an error for certain use cases when needed
+message ErrorDetails {
+  // Contains useful portal-facing error data to handle visibility into errors for portal use-cases
+  com.doordash.drive.api.portal.errors.v1.ErrorData portal_error_data = 1;
+}
+
+message Error {
+  string field_name = 1;
+  string message = 2;
+  PublicApiErrorCode error_code = 3;
+  /*
+     Additional metadata to describe the error, can be useful to tell clients parameters
+     associated with the error. Use case: Allow FE to take values in metadata map to use for translations.
+
+     Example - for a delivery radius exceeded code, we can have metadata map with key-value pairs like:
+     "milesExceeded" -> "4"
+     "kilometersExceeded" -> "6.43738"
+  */
+  map<string, string> metadata = 4;
+  // (Optional) Helpful debug context to describe an error for certain use cases when needed
+  ErrorDetails details = 5;
+}
+
+message ErrorResponse {
+  // field_error
+  repeated Error errors = 1;
+  repeated Error non_field_errors = 2;
+
+  // for public api capturing error code
+  google.protobuf.Int32Value code = 3;
+  google.protobuf.StringValue reason = 4;
+}
+
+message ValidateDeliveryTimeRequest {
+  google.protobuf.Timestamp pickup_time = 1;
+  google.protobuf.Timestamp dropoff_time = 2;
+  int64 starting_point_id = 3;
+  google.protobuf.Timestamp estimated_pickup_time = 4;
+}
+
+enum DriveVehicleType {
+  car = 0;
+  bicycle = 1;
+  walker = 2;
+  ebike = 3;
+}
+
+message EstimateGmapTravelAndDistanceRequest {
+  int64 pickup_address_id = 1;
+  int64 delivery_address_id = 2;
+  google.protobuf.Timestamp pickup_time = 3;
+  google.protobuf.Timestamp delivery_time = 4;
+  DriveVehicleType travel_mode = 5;
+}
+
+message DurationAndTime {
+  google.protobuf.Duration duration = 1;
+  google.protobuf.Int64Value distance = 2;
+}
+
+message ValidateDeliveryRequest {
+  int64 store_id = 1;
+  int64 pickup_address_id = 2;
+  int64 dropoff_address_id = 3;
+  int32 value_of_contents = 4;
+  int32 num_items = 5;
+  google.protobuf.Timestamp pickup_time = 6;
+  google.protobuf.Timestamp delivery_time = 7;
+  DrivePartnership partnership = 8;
+  google.protobuf.Int32Value driver_tip_cents = 9;
+  google.protobuf.Timestamp estimated_pickup_time = 10;
+  google.protobuf.StringValue pickup_phone_number = 11;
+}
+
+message CheckAddressRequest {
+  int64 pickup_address_id = 1;
+  google.protobuf.Int64Value dropoff_address_id = 2;
+  google.protobuf.Int64Value store_id = 3;
+  google.protobuf.Int32Value order_value = 4;
+  google.protobuf.Int32Value radius_in_km = 5;
+  DrivePartnership partnership = 6;
+}
+
+message CheckAddressResponse {
+  bool valid = 1;
+  google.protobuf.Int64Value starting_point_id = 2;
+  google.protobuf.StringValue starting_point_name = 3;
+  bool submarket_is_active = 4;
+  Submarket submarket = 5;
+  repeated Error errors = 6;
+}
+
+message Submarket {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+}
+
+message StoreAddressLinkResponse {
+  int64 id = 1;
+  int64 store_id = 2;
+  int64 address_id = 3;
+  bool is_active = 4;
+  google.protobuf.StringValue arriving_additional_instructions = 5;
+  google.protobuf.StringValue arrived_additional_instructions = 6;
+  google.protobuf.StringValue dasher_instructions = 7;
+  google.protobuf.StringValue parking_tips = 8;
+  google.protobuf.StringValue establishment_name = 9;
+  google.protobuf.StringValue arriving_instructions_image = 10;
+  google.protobuf.StringValue arrived_instructions_image = 11;
+  repeated delivery_service.core.DynamicInstruction dasher_dynamic_instructions = 12;
+}
+
+message GetStoreAddressLinkRequest {
+  int64 store_id = 1;
+  int64 address_id = 2;
+}
+
+message CreateOrUpdateStoreAddressLinkRequest {
+  int64 store_id = 1;
+  int64 address_id = 2;
+  google.protobuf.StringValue dasher_instructions = 3;
+  google.protobuf.StringValue establishment_name = 4;
+}
+
+message GetStartingPointOperatingIntervalsRequest {
+  int32 starting_point_id = 1;
+
+  google.protobuf.Timestamp start_time = 2;
+
+  google.protobuf.Timestamp end_time = 3;
+
+  bool include_drive_offset = 4;
+}
+
+message StartingPointOperatingIntervals {
+  int32 starting_point_id = 1;
+
+  repeated DateTimeInterval intervals = 2;
+
+  message DateTimeInterval {
+    google.protobuf.Timestamp start = 1;
+
+    google.protobuf.Timestamp end = 2;
+  }
+}
+
+message SubmitDeliveryRequest {
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.StringValue customer_first_name = 2;
+  google.protobuf.StringValue customer_last_name = 3;
+  google.protobuf.StringValue customer_phone_number = 4;
+  google.protobuf.Int64Value dropoff_address_id = 5;
+  google.protobuf.Int32Value num_items = 6;
+  google.protobuf.Int64Value value_of_contents = 7;
+  PaymentMethodRef payment_method = 8;
+  google.protobuf.Int64Value creator_id = 9;
+  google.protobuf.Int64Value pickup_address_id = 10;
+  google.protobuf.StringValue pickup_phone_number = 11;
+  google.protobuf.Timestamp quoted_delivery_time = 12;
+  google.protobuf.Timestamp quoted_pickup_time = 13;
+  google.protobuf.Int64Value dasher_tip_cents = 14;
+  google.protobuf.Int64Value paying_stripe_customer_id = 15;
+  google.protobuf.StringValue email = 16;
+  google.protobuf.StringValue dropoff_instructions = 17;
+  google.protobuf.StringValue dropoff_subpremise = 18;
+  google.protobuf.BoolValue should_be_manually_assigned = 19;
+  google.protobuf.BoolValue is_drive_batch = 20;
+  google.protobuf.BoolValue contains_alcohol = 21;
+  google.protobuf.StringValue pickup_address_establishment_name = 22;
+  google.protobuf.StringValue external_order_reference = 23;
+  google.protobuf.StringValue pickup_instructions = 24;
+  google.protobuf.StringValue external_delivery_id = 25;
+  google.protobuf.BoolValue requires_catering_setup = 26;
+  repeated DeliveryItem delivery_items = 27;
+  DeliveryFee delivery_fee = 28;
+  SubmitPlatform submit_platform = 30;
+  DeliveryEstimateInformation delivery_estimate_information = 31;
+  DeliveryEstimateResponse estimate = 32;
+  google.protobuf.StringValue quote_id = 33;
+
+  message DeliveryItem {
+    google.protobuf.StringValue name = 3;
+    google.protobuf.Int32Value quantity = 2;
+  }
+
+  message DeliveryFee {
+    google.protobuf.Int64Value subtotal = 1;
+    google.protobuf.Int64Value tax = 2;
+    google.protobuf.Int64Value promo_subtotal = 3;
+    google.protobuf.Int64Value promo_tax = 4;
+  }
+
+  message DeliveryEstimateInformation {
+    SubmitPlatform submit_platform = 1;
+    google.protobuf.Timestamp requested_pickup_time = 2;
+    google.protobuf.Timestamp requested_dropoff_time = 3;
+  }
+
+  enum SubmitPlatform {
+    DRIVE_API = 0;
+    DRIVE_OLO = 1;
+  }
+
+  message PaymentMethodRef {
+    oneof ref {
+      google.protobuf.Int64Value id = 1;
+      google.protobuf.StringValue name = 2;
+    }
+  }
+}
+
+message SubmitDeliveryResponse {
+  google.protobuf.Int64Value delivery_id = 1;
+  int64 doordash_id = 2;
+}
+
+message GetDrivePaymentMethodsForStoreRequest {
+  google.protobuf.Int64Value store_id = 1;
+}
+
+message GetDrivePaymentMethodsForStoreResponse {
+  repeated google.protobuf.StringValue payment_methods = 1;
+}
+
+message CreateAndSaveEtaPredictionRequest {
+  int64 drive_order_id = 1;
+  int64 delivery_id = 2;
+  int64 recipient_consumer_id = 3;
+  google.protobuf.Timestamp quoted_pickup_time = 4;
+  google.protobuf.Timestamp manual_pickup_time = 5;
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+}
+
+message CreateAndSaveEtaPredictionResponse {
+  int64 eta_prediction_id = 1;
+}
+
+enum DriveSubmitPlatform {
+  DRIVE_API = 0;
+  DRIVE_OLO = 1;
+  DRIVE_DESKTOP = 2;
+}
+
+message CreateDeliveryRequest {
+  google.protobuf.StringValue currency = 1;
+  google.protobuf.BoolValue should_send_notifications = 2;
+  AddressResponse dropoff_address = 3;
+  google.protobuf.StringValue dropoff_instructions = 4;
+  google.protobuf.StringValue dropoff_subpremise = 5;
+  int64 dasher_tip = 6;
+  int64 num_items = 7;
+  google.protobuf.BoolValue contains_alcohol = 8;
+  google.protobuf.StringValue allowed_vehicle_types = 9;
+  int64 order_value = 10;
+  google.protobuf.BoolValue is_route_based = 11;
+  google.protobuf.BoolValue is_depot = 12;
+  int64 order_volume = 13;
+  AddressResponse pickup_address = 14;
+  google.protobuf.StringValue pickup_phone_number = 15;
+  google.protobuf.Timestamp quoted_delivery_time = 16;
+  google.protobuf.Timestamp quoted_pickup_time = 17;
+  google.protobuf.BoolValue should_be_manually_assigned = 18;
+  google.protobuf.StringValue pickup_address_establishment_name = 19;
+  google.protobuf.StringValue pickup_business_name = 20;
+  google.protobuf.StringValue pickup_instructions = 21;
+  int64 external_delivery_id_old = 22 [deprecated = true];
+  google.protobuf.BoolValue requires_catering_setup = 23;
+  google.protobuf.StringValue external_order_reference = 24;
+  int64 cash_on_delivery = 25;
+  Store store = 26;
+  google.protobuf.Timestamp manual_pickup_time = 27;
+  google.protobuf.StringValue email = 28;
+  DeliveryEstimateResponse estimates = 29;
+  int64 drive_order_id = 30;
+  google.protobuf.StringValue first_name = 31;
+  google.protobuf.StringValue last_name = 32;
+  google.protobuf.StringValue phone_number = 33;
+  google.protobuf.BoolValue allow_unattended_delivery = 34;
+  int64 creator_id = 35;
+  repeated DeliveryItem delivery_items = 36;
+  google.protobuf.BoolValue team_lift_required = 37;
+  google.protobuf.Timestamp pickup_window_start_time = 38;
+  google.protobuf.Timestamp pickup_window_end_time = 39;
+  google.protobuf.Timestamp delivery_window_start_time = 40;
+  google.protobuf.Timestamp delivery_window_end_time = 41;
+  google.protobuf.StringValue external_delivery_id = 42;
+  google.protobuf.Timestamp order_ready_time = 43;
+  DeliveryEstimateInformation estimate_tracking_info = 44;
+  google.protobuf.Int64Value starting_point_id = 45;
+  google.protobuf.BoolValue auto_release_enabled = 46;
+  google.protobuf.FloatValue auto_release_distance = 47;
+  google.protobuf.BoolValue is_parcel = 48;
+  google.protobuf.StringValue hub_external_store_id = 49;
+  google.protobuf.BoolValue trigger_order_create = 50; // flag for indicating should trigger order create in kafka or not
+  DriveOrderType order_type = 51;
+  google.protobuf.StringValue parcel_route_id = 52;
+  google.protobuf.StringValue sortation_set_id = 53;
+  google.protobuf.Timestamp expires_by = 54;
+
+  message DeliveryItem {
+    google.protobuf.StringValue name = 1;
+    google.protobuf.FloatValue volume = 2;
+    google.protobuf.FloatValue weight = 3;
+    google.protobuf.StringValue barcode = 4;
+    google.protobuf.Int64Value quantity = 5;
+    google.protobuf.StringValue bundle_key = 6;
+    google.protobuf.BoolValue is_damaged = 7;
+    google.protobuf.StringValue description = 8;
+    google.protobuf.StringValue external_id = 9;
+    google.protobuf.StringValue scan_status = 10;
+    google.protobuf.Int32Value price = 11; // Price is an int32, where the last 2 digits represent the cents. price = 123 represents 1.23
+    google.protobuf.StringValue special_instructions = 12;
+  }
+
+  message Store {
+    int64 id = 1;
+    int64 business_id = 2;
+    int64 address_id = 3;
+    google.protobuf.Int64Value starting_point_id = 4;
+    google.protobuf.StringValue drive_store_id = 5;
+    google.protobuf.BoolValue is_test = 6;
+    string name = 7;
+    string phone_number = 8;
+    double fees_tax_rate = 9;
+    google.protobuf.Int64Value stripe_customer_id = 10;
+    google.protobuf.StringValue catering_contact_emails = 11;
+  }
+
+  message DeliveryEstimateInformation {
+    google.protobuf.StringValue quote_uuid = 1;
+
+    // Request
+    google.protobuf.Timestamp requested_pickup_time = 2;
+    google.protobuf.Timestamp requested_dropoff_time = 3;
+    google.protobuf.Timestamp requested_pickup_window_start_time = 4;
+    google.protobuf.Timestamp requested_pickup_window_end_time = 5;
+    google.protobuf.Timestamp requested_dropoff_window_start_time = 6;
+    google.protobuf.Timestamp requested_dropoff_window_end_time = 7;
+
+    // Estimates Detailed Info.
+    google.protobuf.Int64Value google_estimate_seconds = 8;
+    google.protobuf.Int64Value drive_predictor_padding_seconds = 9;
+    google.protobuf.Int64Value submarket_padding_seconds = 10;
+    google.protobuf.Int64Value static_pad_seconds = 11;
+    google.protobuf.FloatValue padding_multiplier = 12;
+    google.protobuf.Int64Value flf_pickup_padding_seconds = 13;
+
+    // Estimates Info
+    google.protobuf.Int64Value r2c_padding = 14;
+    google.protobuf.Int64Value r2c_drive_duration = 15;
+    google.protobuf.Int64Value r2c_distance_meters = 16;
+    bool pickup_time_experiment = 17;
+    google.protobuf.Int64Value pickup_delay = 18;
+    google.protobuf.Int64Value poor_supply_dynamic_pickup_delay = 19;
+    google.protobuf.Int64Value lof_padding_duration = 20;
+
+    // Estimate Pre Post Info
+    google.protobuf.Timestamp pre_quote_pickup_time = 21;
+    google.protobuf.Timestamp pre_quote_delivery_time = 22;
+    google.protobuf.Timestamp post_quote_pickup_time = 23;
+    google.protobuf.Timestamp post_quote_delivery_time = 24;
+    google.protobuf.Timestamp post_quote_pickup_window_start_time = 25;
+    google.protobuf.Timestamp post_quote_pickup_window_end_time = 26;
+
+    // Estimate v2 New Model Info
+    bool is_in_v2_model_treatment_group = 27;
+    google.protobuf.Timestamp post_quote_pickup_time_v2_model = 28;
+    google.protobuf.Timestamp post_quote_delivery_time_v2_model = 29;
+
+    // Delivery Identification
+    google.protobuf.Int64Value store_id = 30;
+    google.protobuf.Int64Value order_value = 31;
+    google.protobuf.StringValue formatted_pickup_address = 32;
+    google.protobuf.StringValue formatted_dropoff_address = 33;
+    google.protobuf.Int64Value pickup_address_id = 34;
+    google.protobuf.Int64Value dropoff_address_id = 35;
+
+    DriveSubmitPlatform submit_platform = 36;
+    google.protobuf.StringValue prediction_info = 37;
+  }
+}
+
+message GetOrCreateOrderCartRequest {
+  google.protobuf.Int64Value drive_order_id = 1;
+}
+
+message OrderCartResponse {
+  google.protobuf.Int64Value order_cart_id = 1;
+  google.protobuf.Int64Value store_order_cart_id = 2;
+  google.protobuf.StringValue order_uuid = 3;
+}
+
+message AddDriveOrderToCacheRequest {
+  google.protobuf.Int64Value drive_order_id = 1;
+  google.protobuf.BoolValue create_delivery = 2;
+  google.protobuf.BoolValue update_state_change = 3;
+}
+
+message StoreTaxRateRequest {
+  int64 store_id = 1;
+}
+
+message StoreTaxRateResponse {
+  double tax_rate = 1;
+}
+
+message StoreOnboardInvoicingRequest {
+  int64 store_id = 1;
+}
+
+// response is not needed, purely for logging
+message StoreOnboardInvoicingResponse {
+  bool success_by_developer_rule = 1;
+  bool success_by_business_rule = 2;
+}
+
+message CreateDriveGuestConsumerRequest {
+  int64 store_id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue phone_number = 4;
+  google.protobuf.StringValue email = 5;
+  google.protobuf.BoolValue should_send_notifications = 6;
+
+  int64 dropoff_address_id = 7;
+  google.protobuf.StringValue dasher_instructions = 8;
+  google.protobuf.StringValue subpremise = 9;
+
+  google.protobuf.StringValue debug_info = 100;
+}
+
+message CreateDriveGuestConsumerResponse {
+  message ConsumerAddressLink {
+    int64 id = 1;
+    int64 address_id = 2;
+    string dasher_instructions = 3;
+    bool is_active = 4;
+    string subpremise = 5;
+    string entry_code = 6;
+    string parking_instructions = 7;
+    google.protobuf.BoolValue is_commercial = 8;
+    google.protobuf.BoolValue is_invalid_secondary = 9;
+    google.protobuf.BoolValue is_missing_secondary = 10;
+  }
+
+  string consumer_id = 1;
+  google.protobuf.StringValue delivery_customer_pii_id = 2;
+  string user_id = 3;
+  google.protobuf.StringValue first_name = 4;
+  google.protobuf.StringValue last_name = 5;
+  google.protobuf.StringValue phone_number = 6;
+  google.protobuf.StringValue email = 7;
+  google.protobuf.BoolValue should_send_notifications = 8;
+  ConsumerAddressLink consumer_address_link = 9;
+}
+
+message ScheduleInvoicingRunRequest {
+  google.protobuf.StringValue start_date_str = 1;
+  google.protobuf.StringValue end_date_str = 2;
+  google.protobuf.Int64Value invoicing_group_id = 3;
+  google.protobuf.StringValue invoicing_env = 4;
+  google.protobuf.StringValue batch_number = 5;
+  google.protobuf.StringValue run_date_str = 6;
+}
+
+message ScheduleInvoicingRunResponse {
+  google.protobuf.StringValue message = 1;
+}

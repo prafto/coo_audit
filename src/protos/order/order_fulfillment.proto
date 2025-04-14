@@ -1,0 +1,195 @@
+syntax = "proto3";
+package order_service;
+
+import "common/order.proto";
+import "google/protobuf/timestamp.proto";
+import "common/service_client_config.proto";
+import "order_transmission/order_transmission2.proto";
+import "notification_protobuf/email.proto";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+
+option java_package = "com.doordash.rpc.order_fulfillment";
+option go_package = "order_fulfillment_service";
+
+service OrderFulfillmentService {
+    option (service_client.client_config).service_name = "order-service-fulfillment";
+    option (service_client.client_config).service_app = "grpc";
+    option (service_client.client_config).response_attempt_timeout_millis = 800;
+
+    // Transmission Endpoints
+    rpc ShouldTransmitOrder (OrderRequest) returns (ShouldTransmitOrderResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+    }
+
+    rpc TransmitOrder (TransmitOrderRequest) returns (TransmitOrderResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    }
+
+    rpc TransmitOrderToRetail (TransmitOrderToRetailRequest) returns (TransmitOrderToRetailResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    }
+
+    rpc TransmitOrderRelease(TransmitOrderReleaseRequest) returns (TransmitOrderReleaseResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    }
+
+    rpc TransmitOrderCancellation(TransmitOrderCancellationRequest) returns (TransmitOrderCancellationResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    }
+    rpc GetMxOrderReminderEmailData (GetMxOrderReminderEmailDataRequest) returns (GetMxOrderReminderEmailDataResponse);
+    // Debug Endpoints
+    rpc GenerateOrderPayload (OrderRequest) returns (OrderPayloadResponse);
+
+    // Deprecated
+    rpc DispatchOrder (DispatchOrderRequest) returns (DispatchOrderResponse);
+    rpc ShouldDispatchOrder (ShouldDispatchOrderRequest) returns (ShouldDispatchOrderResponse);
+    rpc CreateOrderWorkflow (CreateOrderWorkflowRequest) returns (CreateOrderWorkflowResponse);
+    rpc GetFaxDispatcherStatus (GetFaxDispatcherStatusRequest) returns (GetFaxDispatcherStatusResponse);
+    rpc GetOrderTransmission(OrderRequest) returns (GetOrderTransmissionResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    }
+
+}
+
+enum OrderDispatchedReason {
+    UNKNOWN_DISPATCHED_REASON = 0;
+    DISPATCHED_AS_EARLY_PROTOCOL = 1;
+    DISPATCHED_AS_BIG_ORDER = 2;
+    DISPATCHED_AS_STORE_IS_WHITELISTED = 3;
+    DISPATCHED_AS_ORDER_IS_LATE = 4;
+    DISPATCHED_BASED_ON_LATENCY = 5;
+}
+
+enum OrderNotDispatchedReason {
+    UNKNOWN_NOT_DISPATCHED_REASON = 0;
+    STORE_NOT_OPEN = 1;
+    DELIVERY_CANCELED = 2;
+    TOO_EARLY = 3;
+    MISSING_LATEST_ESTIMATED_PICKUP_TIME = 4;
+    ORDER_IS_NOT_READY_FOR_DISPATCH = 5;
+    ORDER_IS_LOCKED = 6;
+    ORDER_ALREADY_DISPATCHED = 7;
+}
+
+enum ProfileType {
+    UNSPECIFIED = 0;
+    DASHER = 1;
+    CONSUMER = 2;
+}
+
+message DispatchOrderRequest {
+    string store_order_cart_id = 1;
+}
+
+message DispatchOrderResponse {
+    oneof order_dispatch_result {
+        OrderDispatchedReason order_dispatched_reason = 1;
+        OrderNotDispatchedReason order_not_dispatched_reason = 2;
+    }
+}
+
+message ShouldDispatchOrderRequest {
+    string store_order_cart_id = 1;
+}
+
+message ShouldDispatchOrderResponse {
+    oneof order_dispatch_result {
+        OrderDispatchedReason order_dispatched_reason = 1;
+        OrderNotDispatchedReason order_not_dispatched_reason = 2;
+    }
+}
+
+message OrderRequest {
+    string store_order_cart_id = 1;
+}
+
+// deprecated - DO NOT USE
+message GetOrderTransmissionResponse {
+    doordash_order_transmission2.OrderTransmissionResponse order_transmission_response = 1;
+}
+
+message ShouldTransmitOrderResponse {
+    bool should_transmit = 1;
+    google.protobuf.Timestamp earliest_estimated_transmit_time = 2;
+}
+
+message TransmitOrderRequest {
+    string store_order_cart_id = 1;
+    bool force_transmit = 2;
+}
+
+message TransmitOrderResponse {
+    bool was_transmitted = 1;
+}
+
+message TransmitOrderToRetailRequest {
+    string store_order_cart_id = 1;
+}
+
+message TransmitOrderToRetailResponse {}
+
+message TransmitOrderReleaseRequest {
+    string delivery_id = 1;
+    int32 store_id = 2;
+    float distance_from_store = 3;
+    string first_name = 4;
+    float latitude = 5;
+    float longitude = 6;
+    ProfileType profile_type = 7;
+    google.protobuf.Timestamp approaching_store_time = 8;
+}
+
+message TransmitOrderReleaseResponse {
+    bool was_released = 1;
+}
+
+message TransmitOrderCancellationRequest {
+    string store_order_cart_id = 1;
+}
+
+message TransmitOrderCancellationResponse {
+    bool success = 1;
+}
+
+message OrderPayloadResponse {
+    string payload = 1;
+}
+
+message GetFaxDispatcherStatusRequest {
+    string fax_id = 1;
+    string country_shortname = 2;
+    string store_order_cart_id = 3;
+}
+
+message GetFaxDispatcherStatusResponse {
+    bool success = 1;
+}
+
+enum CreateWorkflowResult {
+    INVALID = 0;
+    CREATED = 1;
+    ALREADY_EXISTED = 2;
+}
+
+message CreateOrderWorkflowRequest {
+    string store_order_cart_id = 1;
+    string order_cart_id = 2;
+    string order_uuid = 3;
+    bool is_asap = 4;
+}
+
+message CreateOrderWorkflowResponse {
+    CreateWorkflowResult result = 1;
+    string workflow_id = 2;
+}
+
+message GetMxOrderReminderEmailDataRequest {
+    int64 delivery_id = 1;
+}
+
+message GetMxOrderReminderEmailDataResponse {
+    order.MxOrderReminderEmailStatus status = 1;
+    repeated doordash_notification.SendIterableEmailRequest email_requests = 2;
+}

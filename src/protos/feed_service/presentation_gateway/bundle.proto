@@ -1,0 +1,400 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package bundle;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "feed_service/facet_response_v2.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "presentation_gateway/common/location_context.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.bundle";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// This is a CxMobileBff endpoint, ported over to UG and PG to test the user experience.
+service Bundle {
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    name: "presentation-gateway"
+    url: "bundle-bundle-get-order-cart-id.service.prod.ddsd"
+    port: 50051
+    name_spaces: "presentation-gateway"
+    // this should be the #eng-bundle team, but PG is shadow testing this so we own it
+    owner: {
+      id: "presentation-gateway"
+      name: "presentation-gateway-platform"
+      slack_channel: "#presentation-gateway-platform"
+      email_alias: "presentation-gateway@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // GetOrderCartId retrieves bundle information for a given order ID.
+  rpc GetOrderCartId(GetOrderCartIdRequest) returns (GetOrderCartIdResponse) {
+    option (google.api.http) = {get: "/presentation-gateway/v1/bundle/orders/{order_id}"};
+
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd-sd-workspace"},
+        {field: "is_employee"},
+        {field: "is_guest"},
+        {field: "platform"},
+        {field: "x-request-start"},
+        {field: "x-facets-feature-new-badges"},
+        {field: "x-facets-feature-tall-logo-carousel"},
+        {field: "x-support-schedule-save"},
+        {field: "x-support-be-driven-user-preferences"},
+        {field: "x-enable-facets"},
+        {field: "x-facets-version"},
+        {field: "x-item-recommendation-version"},
+        {field: "enable-dp-exclusive-items"},
+        {field: "x-savelist-experience-type"},
+        {field: "x-facets-feature-no-tile"},
+        {field: "x-facets-feature-cuisine-filter-v2"},
+        {field: "x-facets-feature-item-carousel"},
+        {field: "x-enable-s4e"},
+        {field: "x-facets-feature-logo-merchandising"},
+        {field: "x-facets-feature-row-card-container"},
+        {field: "x-facets-feature-vertical-search"},
+        {field: "x-facets-feature-item-steppers"},
+        {field: "x-facets-feature-store-cell-redesign-round-1"},
+        {field: "x-facets-feature-store-cell-redesign-round-2"},
+        {field: "x-facets-feature-store-cell-redesign-round-3"},
+        {field: "x-facets-feature-store-carousel-redesign-round-1"},
+        {field: "x-facets-feature-always-open-nv"},
+        {field: "x-facets-feature-backend-driven-badges"},
+        {field: "x-facets-feature-save-for-later-items"},
+        {field: "x-facets-feature-quick-add-stepper-variant"},
+        {field: "x-facets-feature-sodp-badge"},
+        {field: "x-retail-feature-brands-filter"},
+        {field: "x-dd-menu-language"},
+        {field: "x-facets-feature-product-variants"},
+        {field: "x-dp-preview-eligible"},
+        {field: "x-dp-preview-visible"},
+        {field: "x-preference-modal-experience-type"},
+        {field: "x-store-dietary-tagging-enabled"},
+        {field: "x-device-context"},
+        {field: "dd-user-agent"},
+        {field: "x-realtime-recommendation-events"},
+        {field: "x-gifting-intent"},
+        {field: "x-consumer-id"}]
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+
+    // See: https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=17
+    //  for reference
+    option (doordash.api.inject_headers) = {
+      // TODO all these fields are optional in the BFF feed client but ignoring them (especially LAT, LNG)
+      //  leads to empty feed response
+      inject: [
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+}
+
+// GetOrderCartIdRequest represents the request for retrieving bundle information.
+message GetOrderCartIdRequest {
+  // PATH PARAMS
+  // The ID of the order to retrieve bundle information for.
+  string order_id = 1;
+
+  // QUERY PARAMS
+  // [Optional] The type of bundle to retrieve.
+  google.protobuf.StringValue bundle_type = 2;
+  // [Required] The maximum number of stores to include in the response.
+  google.protobuf.Int64Value max_num_of_stores = 3;
+  // [Optional] The sorting criteria for the stores in the bundle.
+  google.protobuf.StringValue sort_by_type = 4;
+  // [Optional] The filter criteria for selecting stores in the bundle.
+  google.protobuf.StringValue filter_selection = 5;
+
+  // INJECTED HEADERS
+  // The user ID.
+  string user_id = 6 [(doordash.api.inject_id) = USER_ID];
+
+  // The consumer ID.
+  google.protobuf.StringValue consumer_id = 7 [(doordash.api.inject_id) = CX_ID];
+
+  // The geo location context of the user
+  presentation_gateway.common.v1.LocationContext location_context = 8;
+
+  // the UUID of the cart
+  google.protobuf.StringValue cart_uuid = 9;
+}
+
+// GetOrderCartIdResponse represents the response containing bundle information.
+message GetOrderCartIdResponse {
+  // The expiration time of the bundle information.
+  google.protobuf.Timestamp expires_at = 1;
+  // A list of store opportunities included in the bundle.
+  repeated BundleStoreOpportunityResponse stores = 2;
+  // Display options for the bundle.
+  BundleDisplayOptions bundle_display_options = 3;
+  // Lego page information for the bundle.
+  BundleLegoPage lego_page = 4;
+  // Map store pin information for the bundle.
+  repeated BundleMapStorePinResponse map_store_pins = 5;
+}
+
+// BundleStoreOpportunityResponse represents information about a store opportunity in a bundle.
+message BundleStoreOpportunityResponse {
+  // The unique identifier of the store.
+  string id = 1;
+  // The name of the store.
+  string name = 2;
+  // The URL of the store's image.
+  string image_url = 3;
+  // The latitude coordinate of the store's location.
+  double lat = 4;
+  // The longitude coordinate of the store's location.
+  double lng = 5;
+  // The business name of the store.
+  string business_name = 6;
+  // The default bundle collection ID for retail stores.
+  google.protobuf.StringValue retail_store_default_bundle_collection_id = 7;
+  // Indicates whether the store is a retail store.
+  bool is_retail = 8;
+  // The ID of the bundle menu associated with the store.
+  google.protobuf.StringValue bundle_menu_id = 9;
+  // Indicates whether this is the primary store in the bundle.
+  google.protobuf.BoolValue is_primary_store = 10;
+  // A description of the store's business.
+  google.protobuf.StringValue business_description = 11;
+  // The average rating of the merchant.
+  google.protobuf.DoubleValue avg_merchant_rating = 12;
+  // The number of ratings for the merchant.
+  google.protobuf.Int32Value num_merchant_ratings = 13;
+  // A display string for the number of merchant ratings.
+  google.protobuf.StringValue num_merchant_ratings_display_string = 14;
+  // The relevance rank of the store in the bundle.
+  google.protobuf.Int32Value relevance_rank = 15;
+  // The URL of the store's header image.
+  google.protobuf.StringValue header_image_url = 16;
+  // The number of orders from this store in the last 28 days.
+  google.protobuf.Int64Value num_orders_28d = 17;
+  // Static ETA information for the bundle.
+  BundleStaticEta bundle_static_eta = 18;
+  // A description of the incremental effort required for this bundle.
+  google.protobuf.StringValue bundle_incremental_effort_description = 19;
+}
+
+// BundleDisplayOptions represents display options for the bundle.
+message BundleDisplayOptions {
+  // Button configuration for the store list.
+  BundleStoreListButton store_list_button = 1;
+  // Page configuration for the store list.
+  BundleStoreListPage store_list_page = 2;
+  // Types of placements for static ETAs.
+  repeated string static_eta_placement_types = 3;
+  // Timer configuration for post-checkout.
+  BundlePostcheckoutTimer postcheckout_timer = 4;
+  // Button configuration for the landing page.
+  BundleLandingPageButton landing_page_button = 5;
+  // Configuration for the global search bar.
+  BundleGlobalSearchBar global_search_bar = 6;
+  // Display type for the store pill carousel.
+  google.protobuf.StringValue store_pill_carousel_display_type = 8;
+  // Header titles for post-checkout.
+  BundlePostcheckoutHeaderTitles postcheckout_header_titles = 9;
+  // Map Pin display options
+  BundleMapPinDisplayOptions map_pin_display_options = 10;
+  // Precheckout cart not used for this endpoint but needed in REST response
+  BundlePrecheckoutCartBundleDisplayOptions precheckout_cart_bundle_display_options = 11;
+  // Precheckout header titles not used for this endpoint but needed in REST response
+  BundlePrecheckoutHeaderTitles precheckout_header_titles = 12;
+}
+
+// BundleStoreListButton represents the configuration for the store list button.
+message BundleStoreListButton {
+  // The text to display on the button.
+  string text = 1;
+  // The type of placement for the button.
+  string button_placement_type = 2;
+}
+
+// BundleStoreListPage represents the configuration for the store list page.
+message BundleStoreListPage {
+  // The title of the store list page.
+  string title = 1;
+  // Sort options available on the store list page.
+  repeated BundleSortOption sort_options = 2;
+  // Filters available on the store list page.
+  repeated BundleFilter filters = 3;
+}
+
+// BundleSortOption represents a sorting option for the store list.
+message BundleSortOption {
+  // The text to display for this sort option.
+  string text = 1;
+  // The type of sorting to apply.
+  string sort_by_type = 2;
+}
+
+// BundleStaticEta represents static ETA information for a bundle.
+message BundleStaticEta {
+  // The incremental duration in milliseconds for the bundle order.
+  google.protobuf.Int64Value bundle_order_incremental_duration_millis = 1;
+  // A description of the ETA.
+  google.protobuf.StringValue description = 2;
+}
+
+// BundleFilter represents a filter option for the store list.
+message BundleFilter {
+  // The unique identifier of the filter.
+  string id = 1;
+  // The name of the filter.
+  string name = 2;
+  // The type of filter.
+  string filter_type = 3;
+  // The type of selection for this filter.
+  string filter_selection_type = 4;
+  // The available values for this filter.
+  repeated BundleFilterValue filter_values = 5;
+}
+
+// BundleFilterValue represents a value option for a filter.
+message BundleFilterValue {
+  // The name of the filter value.
+  string name = 1;
+  // The actual value of the filter option.
+  string value = 2;
+}
+
+// BundlePostcheckoutTimer represents the configuration for the post-checkout timer.
+message BundlePostcheckoutTimer {
+  // The text to display before the countdown starts.
+  string pre_countdown_display_text = 1;
+  // The time when the countdown should start.
+  google.protobuf.Timestamp start_countdown_time = 2;
+  // The text to display during the countdown.
+  google.protobuf.StringValue timer_text = 3;
+  // A shorter version of the pre-countdown display text.
+  google.protobuf.StringValue pre_countdown_display_text_short = 4;
+}
+
+// BundleLegoPage represents the Lego page configuration for the bundle.
+message BundleLegoPage {
+  // The facet feed response for the Lego page.
+  feed_service.GetFacetFeedResponseV2 facet_feed_response = 1;
+}
+
+// BundleLandingPageButton represents the configuration for the landing page button.
+message BundleLandingPageButton {
+  // The text to display on the button.
+  string text = 1;
+}
+
+// BundleGlobalSearchBar represents the configuration for the global search bar.
+message BundleGlobalSearchBar {
+  // The default text to display in the search bar.
+  string default_text = 1;
+  // The context for the global search in the bundle.
+  string bundle_global_search_context = 2;
+  // The display type for the search bar.
+  string search_bar_display_type = 3;
+}
+
+// PreCheckoutCartBundleDisplayOptions represents display options for the pre-checkout cart bundle.
+message PreCheckoutCartBundleDisplayOptions {
+  // The title of the page.
+  google.protobuf.StringValue page_title = 1;
+  // The subtitle of the page.
+  google.protobuf.StringValue page_subtitle = 2;
+  // The type of placement for the display options.
+  string placement_type = 3;
+  // The use case for these display options.
+  google.protobuf.StringValue use_case = 4;
+}
+
+// BundlePostcheckoutHeaderTitles represents the header titles for post-checkout.
+message BundlePostcheckoutHeaderTitles {
+  // The main header text.
+  google.protobuf.StringValue header_text = 1;
+  // The subheader text.
+  google.protobuf.StringValue subheader_text = 2;
+  // Indicates whether to show an info icon.
+  bool show_info_icon = 3;
+}
+
+// BundleMapStorePinResponse represents a store pin on the map for a bundle.
+message BundleMapStorePinResponse {
+  // The unique identifier of the store.
+  string store_id = 1;
+  // The latitude coordinate of the store's location.
+  double lat = 2;
+  // The longitude coordinate of the store's location.
+  double lng = 3;
+  // The title of the store pin.
+  string title = 4;
+  // The subtitle of the store pin.
+  google.protobuf.StringValue subtitle = 5;
+  // The priority of the pin on the map.
+  int32 pin_priority = 6;
+  // The type of pin.
+  string pin_type = 7;
+  // The URL of the store's logo.
+  google.protobuf.StringValue store_logo_url = 8;
+  // The category of the pin.
+  string pin_category = 9;
+  // Asset information for the category.
+  BundleCategoryAsset category_asset = 10;
+}
+
+// BundleCategoryAsset represents asset information for a bundle category.
+message BundleCategoryAsset {
+  // The name of the icon to use when selected.
+  string selected_icon_name = 1;
+  // The name of the icon to use when unselected.
+  string unselected_icon_name = 2;
+}
+
+// BundleMapPinDisplayOptions  ...
+message BundleMapPinDisplayOptions {
+  // Limit of visible pins
+  int32 visible_map_pin_limit = 1;
+}
+
+// BundlePrecheckoutCartBundleDisplayOptions used for pre checkout cart display
+message BundlePrecheckoutCartBundleDisplayOptions {
+  // Page title
+  google.protobuf.StringValue page_title = 1;
+  // Page subtitle
+  google.protobuf.StringValue page_subtitle = 2;
+  // Placement type
+  string placement_type = 3;
+  // Use case
+  google.protobuf.StringValue use_case = 4;
+}
+
+// BundlePrecheckoutHeaderTitles used for pre checkout headers
+message BundlePrecheckoutHeaderTitles {
+  // Header text
+  google.protobuf.StringValue header_text = 1;
+  // Subheader text
+  google.protobuf.StringValue subheader_text = 2;
+  // Minimized state header text
+  string minimized_state_header_text = 3;
+  // Show info icon indicator
+  bool show_info_icon = 4;
+}

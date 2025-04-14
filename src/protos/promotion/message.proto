@@ -1,0 +1,216 @@
+syntax = "proto3";
+
+package dsj_promotion_service;
+
+import "common/cart.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/incentive.proto";
+
+option go_package = "dsj_promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dsj.promotion";
+
+service PromotionService {
+  // Find best valid Cx or Mx promotion for this cart
+  rpc GetBestPromotion(GetBestPromotionRequest) returns (GetBestPromotionResponse) {}
+
+  // Validate a Mx or Cx promotion. No state changes
+  rpc ValidatePromotion(ValidatePromotionRequest) returns (ValidatePromotionResponse) {}
+
+  // Validate a Cx promotion by submarket and campaign id. No state changes
+  rpc ValidatePromotionBySubmarket(ValidatePromotionBySubmarketRequest) returns (ValidatePromotionBySubmarketResponse) {}
+
+  // Mark a Mx or Cx promo redeemed, create events decrement count remaining
+  rpc RedeemPromotion(RedeemPromotionRequest) returns (RedeemPromotionResponse) {}
+
+  // Returns if user has unrestricted delivery promo, no state change
+  rpc GetUnrestrictedFreeDeliveryPromo(GetUnrestrictedFreeDeliveryPromoRequest) returns (GetUnrestrictedFreeDeliveryPromoResponse) {}
+
+  // Apply promo to user, redeem onto cart. State changes
+  rpc ApplyAndRedeemPromotion(ApplyAndRedeemPromotionRequest) returns (ApplyAndRedeemPromotionResponse) {}
+
+  // Redeem specific promo that user picked out from wallet onto cart. State changes
+  rpc RedeemPromotionOnCart(RedeemPromotionOnCartRequest) returns (RedeemPromotionOnCartResponse) {}
+
+  // Apply specific click-to-apply promo to user's wallet. State changes
+  rpc ClickToApplyPromotion(ClickToApplyPromotionRequest) returns (ClickToApplyPromotionResponse) {}
+
+  // Returns if consumer is new to store or not
+  rpc IsConsumerNewToStore(IsConsumerNewToStoreRequest) returns (IsConsumerNewToStoreResponse) {}
+
+  // Returns if consumer is new to DD and is eligible for new user benefits
+  rpc IsEligibleForNewUserBenefit(IsEligibleForNewUserBenefitRequest) returns (IsEligibleForNewUserBenefitResponse) {}
+
+  rpc IsConsumerSubscriptionUser(IsConsumerSubscriptionUserRequest) returns (IsConsumerSubscriptionUserResponse) {}
+}
+
+enum PromotionType {
+  NULL_PROMOTION = 0;
+  CONSUMER_PROMOTION = 1;
+  MERCHANT_PROMOTION = 2;
+  THIRDPARTY_PROMOTION = 3;
+}
+
+message ClickToApplyPromotionRequest {
+  string promotion_code = 1;
+  string email = 2;
+  string hash = 3;
+  string start_date = 4; // CharParam in the original rest API in "yyyy-MM-dd HH:mm:ss" format
+  string consumer_id = 5;
+  string user_id = 6;
+  string full_url = 7;
+}
+
+message ClickToApplyPromotionResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message RedeemPromotionOnCartRequest {
+  string promotion_code = 1;
+  cart.Cart cart = 2;
+}
+
+message RedeemPromotionOnCartResponse {
+  bool success = 1;
+  string error_message = 2;
+  repeated promotion_service.Incentive discounts = 3;
+}
+
+message ApplyAndRedeemPromotionRequest {
+  string promotion_code = 1;
+  string consumer_id = 2;
+  cart.Cart cart = 3;
+}
+
+message ApplyAndRedeemPromotionResponse {
+  bool success = 1;
+  string error_message = 2;
+  repeated promotion_service.Incentive discounts = 3;
+  string title = 4;
+  string description = 5;
+}
+
+message GetBestPromotionRequest {
+  string store_id = 1;
+  string consumer_id = 2;
+  cart.Cart cart = 3;
+}
+
+message GetBestPromotionResponse {
+  PromotionType type = 1;
+  string promotion_id = 2;
+  repeated promotion_service.Incentive discounts = 3;
+  google.protobuf.BoolValue is_referral = 4;
+  string promotion_title = 5;
+  string promotion_description = 6;
+  google.protobuf.BoolValue is_dp_subscriber_promo = 7;
+}
+
+message ValidatePromotionRequest {
+  PromotionType type = 1;
+  string promotion_id = 2;
+  string store_id = 3;
+  string consumer_id = 4;
+  cart.Cart cart = 5;
+  //source of this validate promo request
+  SourceType source = 6;
+
+  //Represents the source of the request
+  enum SourceType {
+    //unknown source
+    SOURCE_TYPE_UNSPECIFIED = 0;
+    //source is mobile bff
+    SOURCE_TYPE_MOBILE_BFF_VALIDATE = 1;
+    //source is web bff
+    SOURCE_TYPE_WEB_BFF_VALIDATE = 2;
+  }
+}
+
+message ValidatePromotionResponse {
+  bool is_valid = 1;
+  string error_message = 2;
+  repeated promotion_service.Incentive discounts = 3;
+  string promotion_code = 4;
+  google.protobuf.BoolValue is_referral = 5;
+
+  // The promotion_id sent in via the request may have been an ID or CODE.
+  // This will get this promotion's ID back to the caller.
+  string promotion_id = 6;
+
+  // If it is a Cx promotion linked to an Mx one, provide the Mx spm_id here
+  google.protobuf.StringValue matching_spm_id = 7;
+  string promotion_title = 8;
+  string promotion_description = 9;
+  google.protobuf.BoolValue is_dp_subscriber_promo = 10;
+}
+
+// ValidatePromotionBySubmarket request, for use when store info is unavailable
+message ValidatePromotionBySubmarketRequest {
+  // consumer id
+  string consumer_id = 1;
+  // consumer's submarket id
+  string submarket_id = 2;
+  // campaign id
+  string campaign_id = 3;
+}
+
+// ValidatePromotionBySubmarket response
+message ValidatePromotionBySubmarketResponse {
+  // consumer's validity status
+  bool is_valid = 1;
+  // error message associated with invalid response
+  string error_message = 2;
+}
+
+message RedeemPromotionRequest {
+  PromotionType type = 1;
+  string promotion_id = 2;
+  string store_id = 3;
+  cart.Cart cart = 4;
+}
+
+message RedeemPromotionResponse {
+  string promotion_code = 1;
+  google.protobuf.Int32Value flat_commission = 2;
+}
+
+message GetUnrestrictedFreeDeliveryPromoRequest {
+  string consumer_id = 1;
+}
+
+message GetUnrestrictedFreeDeliveryPromoResponse {
+  bool has_unrestriced_free_delivery_promo = 1;
+  google.protobuf.Int32Value min_subtotal = 2;
+  bool has_unrestricted_free_delivery_promo = 3;
+  google.protobuf.Int32Value discounted_delivery_fee = 4;
+  google.protobuf.StringValue title = 5;
+  google.protobuf.StringValue description = 6;
+}
+
+message IsConsumerNewToStoreRequest {
+  string consumer_id = 1;
+  string store_id = 2;
+}
+
+message IsConsumerNewToStoreResponse {
+  bool is_new = 1;
+}
+
+message IsEligibleForNewUserBenefitRequest {
+  string consumer_id = 1;
+}
+
+message IsEligibleForNewUserBenefitResponse {
+  bool is_eligible = 1;
+  google.protobuf.Int32Value first_delivery_fee = 2;
+}
+
+message IsConsumerSubscriptionUserRequest {
+  string consumer_id = 1;
+}
+
+message IsConsumerSubscriptionUserResponse {
+  bool is_subscription_user = 1;
+}

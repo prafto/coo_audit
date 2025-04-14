@@ -1,0 +1,295 @@
+syntax = "proto3";
+package credits_and_refunds.api.v1;
+
+import "common/service_client_config.proto";
+import "credits_and_refunds/cnr_common.proto";
+import "credits_and_refunds/cnr_order_detail.proto";
+import "doordash.api/annotations.proto";
+import "experience_reliability_service/order_resolution.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.cnr.api.v1";
+
+// Credits Refunds Service
+service CreditsRefundsService {
+  option (doordash.api.service) = {
+    name: "credits-refunds-service"
+    url: "cnr-platform-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["credits-refunds-service"]
+    api_key_name: "CNR_PLATFORM_API_KEY"
+    owner: {
+      id: "cnr-platform-alerts"
+      name: "cnr-platform"
+      slack_channel: "#ask-credit-refund-platform"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // get problem names for the request context.
+  rpc GetProblemsByDeliveryUuid(GetProblemsByDeliveryUuidRequest) returns (GetProblemsByDeliveryUuidResponse);
+  // get suggested apology credits
+  rpc GetSuggestedApologyCredits(GetSuggestedApologyCreditsRequest) returns (GetSuggestedApologyCreditsResponse);
+  // get order detail
+  rpc GetOrderDetailByDeliveryId(GetOrderDetailByDeliveryIdRequest) returns (GetOrderDetailByDeliveryIdResponse);
+  // bulk send dispatch error RSL
+  rpc BulkReplayRevenueSubLedgerEvents(BulkReplayRevenueSubLedgerEventsRequest) returns (BulkReplayRevenueSubLedgerEventsResponse);
+  // Shim intermediate endpoint for Self-Help service ad-hoc request
+  // https://doordash.atlassian.net/browse/CNRPLAT-317
+  rpc SelfHelpGetDailyWhaleSegmentCx(SelfHelpGetDailyWhaleSegmentCxRequest) returns (SelfHelpGetDailyWhaleSegmentCxResponse);
+  // create mx charges
+  rpc CreateStoreCharge(CreateStoreChargeRequest) returns (CreateStoreChargeResponse) {
+    option (google.api.http) = {
+      post: "/credits-refunds-service/v1/create-store-charge"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  // calculate cnr breakdown
+  rpc CalculateCnrBreakdown(CalculateCnrBreakdownRequest) returns (CalculateCnrBreakdownResponse);
+}
+
+//request object for dynamic menus
+message GetProblemsByDeliveryUuidRequest {
+  //delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  //source
+  RequestSource request_source = 3;
+  // filtering of problems applies at ProblemType and ProblemLevel.
+  // This will be an `AND`
+  // problem level - [ item, delivery, apology]
+  repeated ProblemLevel problem_levels = 4;
+  // problem type
+  repeated ProblemType problem_types = 5;
+  // Sets the problem display name to subproblem text for Drive
+  google.protobuf.BoolValue use_subproblem_display_name = 6;
+}
+
+//currently only 3 line items that are used today are added
+message GetProblemsByDeliveryUuidResponse {
+  // repeated
+  repeated Problem problem = 1;
+}
+
+// request with delivery uuid, the problems a cx complains, and cx consumer id
+message GetSuggestedApologyCreditsRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // delivery id to get previous order resolutions
+  google.protobuf.Int64Value delivery_id = 2;
+  // non-empty array of problems, eg. [missing_item, wrong_order_delivered, ...]
+  repeated google.protobuf.StringValue problems = 3;
+  // consumer id
+  google.protobuf.Int64Value consumer_id = 4;
+}
+
+// return the suggested amount
+message GetSuggestedApologyCreditsResponse {
+  // an int amount, in cents
+  google.protobuf.Int32Value suggested_apology_credits = 1;
+}
+
+// request with delivery id
+message GetOrderDetailByDeliveryIdRequest {
+  // delivery id to get order detail
+  int64 delivery_id = 1;
+  // delivery uuid
+  string delivery_uuid = 2;
+}
+
+// return all needed fields for commit and preview services
+message GetOrderDetailByDeliveryIdResponse {
+  // order object
+  repeated Order orders = 1;
+  // consumer object
+  Consumer consumer = 2;
+  // restaurant object
+  Store restaurant = 3;
+  // order cart object
+  OrderCart order_cart = 4;
+  // delivery id
+  google.protobuf.Int64Value id = 5;
+  // order's tax rate
+  google.protobuf.DoubleValue tax_rate = 6;
+  // tax subtotal
+  google.protobuf.Int32Value subtotal_tax_amount = 7;
+  // subtotal
+  google.protobuf.Int32Value subtotal = 8;
+  // quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 9;
+  // boolean value check whether customer pickup
+  google.protobuf.BoolValue is_consumer_pickup = 10;
+  // check whether from store to us
+  google.protobuf.BoolValue is_from_store_to_us = 11;
+  // order submit time
+  google.protobuf.Timestamp submitted_at = 12;
+  // order tip
+  google.protobuf.Int32Value tip_amount = 13;
+  // merchant tip
+  google.protobuf.Int32Value merchant_tip_amount = 14;
+  // order total
+  google.protobuf.Int32Value total = 15;
+  // actual delivery time
+  google.protobuf.Timestamp actual_delivery_time = 16;
+  // is order cancelled
+  google.protobuf.BoolValue cancelled = 17;
+  // total charge
+  google.protobuf.Int32Value charge_total = 18;
+  // time of dasher confirm
+  google.protobuf.Timestamp dasher_confirmed_time = 19;
+  // did deliver
+  google.protobuf.BoolValue did_deliver = 20;
+  // fees tax amount
+  google.protobuf.Int32Value fees_tax_amount = 21;
+  // tax amount
+  google.protobuf.Int32Value tax_amount = 22;
+  // commission rate
+  google.protobuf.FloatValue commission_rate = 23;
+  // mapping of participant order ids and respective charge totals
+  map<string, int64> order_charge_total_map = 24;
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 25;
+  // commission amount
+  google.protobuf.Int32Value commission_amount = 26;
+}
+
+// request object to publish missing RSL events in bulk
+message BulkReplayRevenueSubLedgerEventsRequest {
+  // array of dispatch error ids for which client has requested to replay RSL events
+  repeated int64 dispatch_error_ids = 1;
+}
+
+// RSL - Revenue Subledger
+// response object with publishing status's of individual dispatch_error_ids
+message BulkReplayRevenueSubLedgerEventsResponse {
+  // enum representing the status
+  enum ReplayStatus {
+    // default unspecified
+    REPLAY_STATUS_UNSPECIFIED = 0;
+    //event successfully sent to RSL
+    REPLAY_STATUS_SUCCESS = 1;
+    // event failed to be sent to RSL
+    REPLAY_STATUS_FAILURE = 2;
+    // dispatch_error id not found
+    REPLAY_STATUS_NOT_FOUND = 3;
+  }
+  // status for a single dispatch error
+  message RevenuePlatformEventReplayResult {
+    // dispatch_error id
+    int64 dispatch_error_id = 1;
+    // status of RSL publishing the dispatch error
+    ReplayStatus status = 2;
+    // detailed error message if the status is failure
+    google.protobuf.StringValue error_message = 3;
+  }
+  // list of status's of RSL publishing
+  repeated RevenuePlatformEventReplayResult rsl_replay_results = 1;
+}
+
+// Shim for Self-Help to get access to whale segment data
+// https://doordash.atlassian.net/browse/CNRPLAT-317
+message SelfHelpGetDailyWhaleSegmentCxRequest {
+  // id to check for in the Cx whale segment
+  int64 consumer_id = 1;
+}
+
+// Shim for Self-Help to get access to whale segment data
+// https://doordash.atlassian.net/browse/CNRPLAT-317
+message SelfHelpGetDailyWhaleSegmentCxResponse {
+  // daily whale status of the Cx
+  bool is_daily_whale = 1;
+  // whether Cx is at risk of not staying a daily whale
+  bool is_at_risk = 2;
+  // Whether Cx is elite or not
+  bool is_elite = 3;
+}
+
+// Request object for CreateStoreCharge API
+message CreateStoreChargeRequest {
+  // the delivery id in Long
+  google.protobuf.Int64Value delivery_id = 1;
+  // the handled order resolution status reqtype uuid that should get store charge
+  google.protobuf.StringValue status_reqtype_uuid = 2;
+  // optional problem resolution id to quantity mapping (delivery problem resolutions should have a quantity of 0)
+  map<string, int32> problem_resolution_quantity_map = 3;
+}
+
+// Response object for CreateStoreCharge API
+message CreateStoreChargeResponse {
+  // the actual store charge that is issued as a result of the API call
+  google.protobuf.Int32Value store_charge = 1;
+  // the aggregated store explanations
+  google.protobuf.StringValue store_explanation = 2;
+}
+
+// Request object for CalculateCnrBreakdown API
+message CalculateCnrBreakdownRequest {
+  // context that contains data on the delivery
+  CalculateCnrBreakdownContext request_context = 1;
+  // the current C&R calculated amount
+  IssuanceResult current_calculation_result = 2;
+}
+
+// Response object for CalculateCnrBreakdown API
+message CalculateCnrBreakdownResponse {
+  // the final C&R breakdown
+  IssuanceResult calculation_result = 1;
+  // the calculated store charge
+  google.protobuf.Int32Value store_charge = 2;
+}
+
+// object to capture context data
+message CalculateCnrBreakdownContext {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Source of order resolution, e.g. dispatch, consumer_mobile, etc.
+  google.protobuf.StringValue request_source = 2;
+  // Request type to filter by (eg, 'MISSING', 'INCORRECT')
+  google.protobuf.StringValue request_type = 3;
+  // details
+  google.protobuf.StringValue details = 4;
+  // reserving 5, it was previously for the problems field, which was updated to a new type
+  reserved 5;
+  reserved "problems";
+  // problems
+  experience_reliability_service.order_resolution.Problem problem = 6;
+}
+
+// object to capture the current C&R breakdown. So far we only need to support regular C&R and loyalty reward and external gift card
+// but this can be easily extended to support other type of credits that are calculated in the Order Resolution APIs
+message IssuanceResult {
+  // apology_credits
+  google.protobuf.Int32Value apology_credits = 1;
+  // credits
+  google.protobuf.Int32Value credits = 2;
+  // refund
+  google.protobuf.Int32Value refund = 3;
+  // loyalty_rewards
+  google.protobuf.Int32Value loyalty_rewards = 4;
+  // external_gift_card_refund
+  google.protobuf.Int32Value external_gift_card_refund = 5;
+}

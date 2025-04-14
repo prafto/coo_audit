@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+package robot.v1;
+
+import "google/protobuf/duration.proto";
+import "robot/common.proto";
+import "robot/robot.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.robot.v1";
+
+// Filters for relevant robots to consider. Next id: 5
+message ConnectionFilters {
+  // Allow robot ids. If empty, allow all robots
+  repeated string robot_canonical_ids = 1;
+
+  // Disallow explicit robot ids. This takes precedence over robot_canonical_ids
+  // TODO(mattjfan): This is experimental, revisit in future and remove if no longer needed
+  repeated string disallowed_robot_canonical_ids = 4;
+
+  // Enum specifying types of robots that are allowed to connect to
+  enum RobotType {
+    // Unspecified
+    ROBOT_TYPE_UNSPECIFIED = 0;
+    // Only allow connection to real robots
+    ROBOT_TYPE_REAL = 1;
+    // Only allow connection to simulated robots
+    ROBOT_TYPE_SIM = 2;
+  }
+
+  // Policy for robot types to allow auto-connecting to
+  RobotType robot_type = 2;
+
+  // Require exact git sha match. If false, use ra version protocol to check compatibility
+  bool require_exact_git_sha_match = 3;
+}
+
+// ConnectRequestPayload contains the necessary data to connect a robot to an
+// operator This can only be issued from an operator.
+message ConnectRequestPayload {
+  // Contains data to directly connect to a specific robot
+  message DirectConnectRequestPayload {
+    // Canonical id of the robot that the operator wants to connect to
+    string robot_canonical_id = 1; // e.g. "badger-1"
+    // Whether to force a connection even when there may be blocking conditions
+    bool force = 2;
+  }
+  // Contains data to attempt to connect to a robot with auto-connect
+  message AutoConnectRequestPayload {
+    // Filters for allowed robots to auto-connect
+    ConnectionFilters filters = 1;
+  }
+  // Canonical id of the robot that the operator wants to connect to
+  string robot_canonical_id = 1 [deprecated = true]; // e.g. "badger-1"
+  // Whether to force a connection even when there may be blocking conditions
+  bool force = 2 [deprecated = true];
+  // Oneof for the different types of connection requests
+  oneof connect_request_payload_oneof {
+    // Direct connection request
+    DirectConnectRequestPayload direct_connect_request = 4;
+    // Auto-connect request
+    AutoConnectRequestPayload auto_connect_request = 5;
+  }
+  // Metadata for the Connect request
+  RequestMetadata meta = 3;
+}
+
+// ConnectResponsePayload is the confirmation of a successful connection to a
+// robot
+message ConnectResponsePayload {
+  // The status of the connection request
+  enum ConnectStatus {
+    // Unspecified
+    CONNECT_STATUS_UNSPECIFIED = 0;
+    // Connection was successful
+    CONNECT_STATUS_SUCCESS = 1;
+    // Robot is already connected to another operator
+    CONNECT_STATUS_FAILED_EXISTING_CONNECTION = 2;
+    // Requested autoconnect, no matching robot currently available
+    CONNECT_STATUS_FAILED_DID_NOT_AUTO_CONNECT = 3;
+  }
+  // The state of the connection
+  ConnectStatus status = 1;
+  // Additional information about the status is provided here
+  string status_message = 2;
+  // The requested robot's canonical id
+  string robot_canonical_id = 3;
+  // Duration of either
+  // 1) Time since help request start if this is first connection since help request started or
+  // 2) Time since robot's last session disconnect if still requesting help or
+  // 3) Unset if robot is not requesting help
+  // This is used for calculating per-session help wait times
+  google.protobuf.Duration help_request_wait_duration = 4;
+}
+
+// Used to request that auto-connect matchmaking should deprioritize and/or suppress this robot
+message DeprioritizeRequest {
+  // Max time to live of suppression portion of request, in seconds.
+  // This fully blocks auto-connect for this duration
+  int64 suppress_ttl_s = 2;
+  // Max time to live of deprioritization portion of request, in seconds.
+  // This prioritizes non-deprioritized robots to autoconnect first, but will still allow robot to
+  // autoconnect if there are no other non-deprioritized robots requesting help
+  int64 deprioritize_ttl_s = 3;
+  // Legacy ttl_s, should be treated as deprioritize_ttl_
+  // TODO(mattjfan): Remove this field after all clients have been updated
+  int64 ttl_s = 1 [deprecated = true];
+}
+
+// DisconnectRequestPayload signals to disconnect self from an operator or
+// robot. This can be issued from either an operator or a robot.
+message DisconnectRequestPayload {
+  // Metadata for the Disconnect request
+  RequestMetadata meta = 1;
+  // Optional. If included, the robot will be deprioritized in auto-connect
+  // matchmaking. This may be desired in instances where, for example, the robot
+  // is in a state where it cannot be helped at the moment, and we want to avoid
+  // auto-connecting operators to it for some time.
+  DeprioritizeRequest deprioritize = 2;
+}
+
+// DisconnectResponsePayload is issued when the disconnect was successful
+message DisconnectResponsePayload {}
+
+// Operator mode to determine whether it's a real or fake operator
+message OperatorMode {
+  // Enum of possible operator modes
+  enum Mode {
+    // Unspecified
+    MODE_UNSPECIFIED = 0;
+    // Represents a simulated operator
+    MODE_SIMULATED = 1;
+    // Represents a real operator
+    MODE_REAL = 2;
+    // Represents a short-lived operator used for load and integration tests
+    MODE_EPHEMERAL = 3;
+  }
+  // The mode of the operator
+  Mode mode = 1;
+}
+
+// OperatorCheckinRequest updates the operator(RAC) state
+message OperatorCheckinRequestPayload {
+  reserved 1;
+  reserved "metadata";
+
+  // The remote operator's e-mail address e.g. "john.doe@doordash.com"
+  string operator_email = 2;
+  // The operator workstation code's git sha
+  string git_sha = 3;
+  // The operator workstation code's git branch
+  string git_branch = 4;
+  // The set of networking interfaces that the robot needs to connect to
+  repeated robot.v1.ConnectionInterface interfaces = 5;
+  // Metadata for the OperatorCheckin request
+  RequestMetadata meta = 6;
+  // The mode of the operator (e.g real, fake)
+  OperatorMode operator_mode = 7;
+  // Version of ra protocol supported by the client, used to check compatibility with robots
+  // for detail see: https://docs.google.com/document/d/1ptRcuqkOrqjjeruURgLfMqaG_gMdwihVMaVrGUxBD3o
+  string ra_protocol_version = 8;
+}
+
+// OperatorCheckinResponsePayload response to an operator checkin
+message OperatorCheckinResponsePayload {
+  // Canonical ID of the Robot the Operator is connected to. (E.g badger-1)
+  // Note that this is only populated when the ConnectionState for the Robot is
+  // ACTIVE
+  string robot_canonical_id = 1;
+  // The canonical ID of the operator that made the request
+  string operator_canonical_id = 2;
+}

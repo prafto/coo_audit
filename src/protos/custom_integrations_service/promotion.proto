@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package custom_integrations_service.v1;
+
+import "common/code.proto";
+import "common/dayparts.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "custom_integrations_service/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_integrations/promotion.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.customintegrations";
+
+// Order service for Custom Integration Service's promotions
+service CustomIntegrationsPromotionService {
+  option (service_client.client_config).response_attempt_timeout_millis = 200000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Validates and Identifies Store; Returns Promotions
+  rpc GetPromotions(GetPromotionsRequest) returns (GetPromotionsResponse) {}
+  // DEPRECATED. Applies coupon to basket
+  rpc ApplyCouponToBasket(ApplyCouponToBasketRequest) returns (ApplyCouponToBasketResponse) {
+    option deprecated = true;
+  }
+  // DEPRECATED. Removes coupon from basket
+  rpc RemoveCouponFromBasket(RemoveCouponFromBasketRequest) returns (RemoveCouponFromBasketResponse) {
+    option deprecated = true;
+  }
+  // Retrieve cart and fetch discount amount
+  rpc RetrieveExternalProviderCart(RetrieveExternalProviderCartRequest) returns (RetrieveExternalProviderCartResponse);
+  // Applies coupon to basket
+  rpc ApplyCoupon(ApplyCouponRequest) returns (ApplyCouponResponse);
+}
+
+// Get Promotions Request
+message GetPromotionsRequest {
+  // provider_type is the provider type of business in the request
+  CISProviderType provider_type = 1;
+  // location_id is the provider type of business in the request
+  google.protobuf.StringValue location_id = 2;
+  // promotion type
+  merchant_integrations.PromotionType promotion_type = 3;
+}
+
+// Get Promotions Response
+message GetPromotionsResponse {
+  // Response Status Code
+  code.Code code = 1;
+  // Endpoint's response
+  oneof endpoint_response {
+    // successful response
+    SuccessfulPromotionsResponse successful_promotions_response = 2;
+    // unsuccessful response
+    FailurePromotionsResponse failure_promotions_response = 3;
+  }
+}
+
+// Successful response
+message SuccessfulPromotionsResponse {
+  //  list of promotions
+  repeated Promotion promotions = 1;
+}
+
+// Response in case of failure
+message FailurePromotionsResponse {
+  // error message describing what went wrong
+  google.protobuf.StringValue error_description = 1;
+}
+
+// individual promotion
+message Promotion {
+  // external campaign id
+  google.protobuf.StringValue external_campaign_id = 1;
+  // promotion type
+  merchant_integrations.PromotionType promotion_type = 2;
+  // promo code
+  google.protobuf.StringValue promo_code = 3;
+  // promo description
+  google.protobuf.StringValue description = 4;
+  // start time
+  google.protobuf.Timestamp start_time = 5;
+  // end time
+  google.protobuf.Timestamp end_time = 6;
+  // promo title
+  google.protobuf.StringValue title = 7;
+  // active hours (day parts)
+  DayParts day_parts = 8;
+}
+
+// day parts (nullable)
+message DayParts {
+  // day parts array
+  repeated dayparts.DayPart day_part = 1;
+}
+
+// ApplyCouponToBasket Request
+message ApplyCouponToBasketRequest {
+  option deprecated = true;
+  // reserved for backwards compatibility
+  reserved 2;
+  reserved "promo_coupon_data";
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 3;
+  // Coupon related data
+  money.PromoCouponData promotion_coupon_data = 4;
+}
+
+// ApplyCouponToBasket Response
+message ApplyCouponToBasketResponse {
+  option deprecated = true;
+  // Success
+  message Success {
+    // reserved for backwards compatibility
+    reserved 1;
+    reserved "details";
+    // Coupon transaction details
+    money.PromoCouponDetails promo_details = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return the id of the reversed order transaction
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// DEPRECATED - Moved to money.proto
+// Monetary fields related to coupon promotion
+message PromoCouponDetails {
+  option deprecated = true;
+  // Coupon code
+  money.MonetaryFields coupon_code = 1;
+  // Discount amount value of coupon
+  money.MonetaryFields discount_amount = 2;
+  // Total after coupon applied
+  money.MonetaryFields total = 3;
+}
+
+// DEPRECATED - Moved to money.proto
+// Enum to denote which type of coupon
+enum PromoCouponType {
+  option deprecated = true;
+  // Unknown
+  PROMO_COUPON_TYPE_UNSPECIFIED = 0;
+  // Amount
+  PROMO_COUPON_TYPE_AMOUNT = 1;
+  // Percentage
+  PROMO_COUPON_TYPE_PERCENTAGE = 2;
+}
+
+// DEPRECATED - Moved to money.proto
+// Data fields related to 3P coupon promotion
+message PromoCouponData {
+  option deprecated = true;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue external_merchant_id = 2;
+  // Store id in the external loyalty provider
+  google.protobuf.StringValue external_store_id = 3;
+  // Identifier UUID associated with delivery
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Identifier for associated cart
+  google.protobuf.StringValue cart_uuid = 5;
+  // This is the coupon code in external system
+  google.protobuf.StringValue coupon_code = 6;
+  // Amount that the coupon intends to remove
+  google.protobuf.StringValue coupon_amount = 7;
+  // Type of coupe
+  PromoCouponType coupon_type = 8;
+}
+
+// RemoveCouponFromBasket Request
+message RemoveCouponFromBasketRequest {
+  option deprecated = true;
+  // reserved for backwards compatibility
+  reserved 2;
+  reserved "promo_coupon_data";
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 3;
+  // Coupon related data
+  money.PromoCouponData promotion_coupon_data = 4;
+}
+
+// RemoveCouponFromBasket Response
+message RemoveCouponFromBasketResponse {
+  // Success
+  message Success {
+    // reserved for backwards compatibility
+    reserved 1;
+    reserved "details";
+    // Coupon transaction details
+    money.PromoCouponDetails promo_details = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return the id of the reversed order transaction
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// ApplyCoupon Request
+message ApplyCouponRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 2;
+  // Coupon related data
+  money.PromoCouponData promo_coupon_data = 3;
+  // external cart id - stores external POS cart id
+  google.protobuf.StringValue external_cart_id = 4;
+}
+
+// ApplyCoupon Response
+message ApplyCouponResponse {
+  // Success
+  message Success {}
+  // result is either success or error
+  oneof result {
+    // on success, return the id of the reversed order transaction
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Fetch cart from third-party provider and retrieve payment info
+message RetrieveExternalProviderCartRequest {
+  // used to indicate provider type
+  CISProviderType provider_type = 1;
+  // external cart id - stores external POS cart id
+  google.protobuf.StringValue external_cart_id = 2;
+}
+
+// Fetch cart from third-party provider and retrieve payment info
+message RetrieveExternalProviderCartResponse {
+  // on success, return coupon info
+  message Success {
+    // coupons
+    money.PromoCouponDetails coupons = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return the id of the reversed order transaction
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}

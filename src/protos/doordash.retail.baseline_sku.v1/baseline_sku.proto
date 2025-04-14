@@ -1,0 +1,462 @@
+syntax = "proto3";
+
+package doordash.retail.baseline_sku.v1;
+
+import "common/code.proto";
+import "common/money.proto";
+import "doordash.retail.baseline_sku.v1/pagination.proto";
+import "doordash.retail.baseline_sku.v1/receipt.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/doordash/retail/baseline_sku/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+
+// API definition for Baseline SKU services
+// RFC: https://docs.google.com/document/d/1Dadsntl311kp8a1O84uhZNOxb0NPIjWR7UDuSai44mg/edit
+service BaselineSKUService {
+  // Get the baseline SKUs
+  rpc GetBaselineSKU(GetBaselineSKURequest) returns (GetBaselineSKUResponse);
+  // Add a new baseline SKU
+  rpc AddBaselineSKU(AddBaselineSKURequest) returns (AddBaselineSKUResponse);
+  // Scan baseline SKUs with given constraints
+  rpc ScanBaselineSKU(ScanBaselineSKURequest) returns (ScanBaselineSKUResponse);
+  // Replay new Baseline SKU notifications with given constraints
+  rpc ReplayBaselineSKU(ReplayBaselineSKURequest) returns (ReplayBaselineSKUResponse);
+  // Retry a given submission
+  rpc RetryAddBaselineSKU(RetryAddBaselineSKURequest) returns (RetryAddBaselineSKUResponse);
+  // Get baseline sku using MsIds
+  rpc GetItemBaselineSKUs(GetItemBaselineSKUsRequest) returns (GetItemBaselineSKUsResponse);
+  // Add or update receipts
+  rpc AddOrUpdateReceipts(AddOrUpdateReceiptsRequest) returns (AddOrUpdateReceiptsResponse);
+  // Get receipts by delivery uuid
+  rpc GetReceiptsByDeliveryUuid(GetReceiptsByDeliveryUuidRequest) returns (GetReceiptsByDeliveryUuidResponse);
+}
+
+// Type of SKU attributes
+enum AttributeType {
+  // Unspecified attribute type
+  ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+  // Catalog attribute
+  ATTRIBUTE_TYPE_CATALOG = 1;
+  // Inventory attribute
+  ATTRIBUTE_TYPE_INVENTORY = 2;
+  // Other attribute
+  ATTRIBUTE_TYPE_OTHER = 3;
+}
+
+// Source of the ingested baseline SKU
+enum SKUSource {
+  // Unspecified sku source
+  SKU_SOURCE_UNSPECIFIED = 0;
+  // Catalog feed
+  SKU_SOURCE_MX_CATALOG = 1;
+  // Inventory feed
+  SKU_SOURCE_INVENTORY_FEED = 2;
+  // Ground truth data
+  SKU_SOURCE_GROUND_TRUTH = 3;
+  // Migration data
+  SKU_SOURCE_MIGRATION = 4;
+}
+
+// Feed Processing Channel, reference doordash.retail.inventory.v1.FeedProcessingChannel
+enum FeedProcessingChannel {
+  reserved "FEED_PROCESSING_CHANNEL_DELIVERY_INTELLIGENCE_PLATFORM";
+  reserved 5;
+  // Default 0
+  FEED_PROCESSING_CHANNEL_UNSPECIFIED = 0;
+  // Nexla feed processor
+  FEED_PROCESSING_CHANNEL_NEXLA_FEED_PROCESSOR = 1;
+  // MDM
+  FEED_PROCESSING_CHANNEL_MERCHANT_DATA_MANAGEMENT = 2;
+  // Open API Pipeline
+  FEED_PROCESSING_CHANNEL_OPEN_API = 3;
+  // Ground Truth
+  FEED_PROCESSING_CHANNEL_GROUND_TRUTH = 4;
+  // Risk Data Platform
+  FEED_PROCESSING_CHANNEL_RISK_DATA_PLATFORM = 6;
+}
+
+// Metadata of the baseline SKU
+message Metadata {
+  // Source of the SKUs, e.g. Mx catalog, inventory feed, GT
+  SKUSource source = 1;
+  // Doordash business id, required
+  google.protobuf.Int64Value business_id = 2;
+  // Doordash store id, optional
+  google.protobuf.Int64Value store_id = 3;
+  // External request id, used for external tracking, debugging purpose, optional
+  google.protobuf.StringValue request_id = 4;
+  // ID to track SKUs at file/feed level
+  google.protobuf.StringValue submission_id = 5;
+  // Raw file source, used for tracking, optional
+  google.protobuf.StringValue file_path = 6;
+  // Provider name/Mx name
+  google.protobuf.StringValue provider_name = 7;
+  // Feed Processing Channel Source
+  FeedProcessingChannel feed_processing_channel = 8;
+  // Doordash business vertical id, optional
+  // Note: Currently this field may be empty and will be populated in the future.
+  google.protobuf.Int64Value business_vertical_id = 9;
+}
+
+// Definition for non-standard attribute
+message Attribute {
+  // Name of the attribute
+  google.protobuf.StringValue attr_name = 1;
+  // Type of the attribute
+  AttributeType attr_type = 2;
+  // Attribute value
+  oneof attr_val {
+    // Boolean type attribute value
+    google.protobuf.BoolValue attr_bool_val = 3;
+    // String type attribute value.
+    // TO BE DEPRECATED, Use AttrMultSelectiString instead, No new use case should be allowed.
+    google.protobuf.StringValue attr_str_val = 4;
+    // Double type attribute value
+    // TO BE DEPRECATED, Use AttrMultiSelectDouble instead, No new use case should be allowed.
+    google.protobuf.DoubleValue attr_double_val = 5;
+    // Money type attribute value
+    money.MonetaryFields attr_money_val = 6;
+    // Timestamp type attribute value
+    google.protobuf.Timestamp attr_ts_val = 7;
+    // Multi select string type attribute value
+    AttrMultiSelectString attr_multi_select_str = 8;
+    // Multi select double type attribute value
+    AttrMultiSelectDouble attr_multi_select_double = 9;
+  }
+}
+
+// Wrapper for multi select string attribute type
+message AttrMultiSelectString {
+  // List of string values
+  repeated google.protobuf.StringValue attr_multi_select_str_val = 1;
+}
+
+// Wrapper for multi select double attribute type
+message AttrMultiSelectDouble {
+  // List of double values
+  repeated google.protobuf.DoubleValue attr_multi_select_double_val = 1;
+}
+
+// Definition for SKU catalog attributes
+message BaselineSKUProduct {
+  // Item name
+  google.protobuf.StringValue raw_merchant_item_name = 1;
+  // Merchant supplied l1 item category
+  google.protobuf.StringValue l1_category = 2;
+  // Merchant supplied l2 item category
+  google.protobuf.StringValue l2_category = 3;
+  // Merchant supplied l3 item category
+  google.protobuf.StringValue l3_category = 4;
+  // Merchant supplied l4 item category
+  google.protobuf.StringValue l4_category = 5;
+  // Merchant supplied l5 item category
+  google.protobuf.StringValue l5_category = 6;
+  // UPC code of the item
+  google.protobuf.StringValue upc = 7;
+  // secondary_upc
+  repeated google.protobuf.StringValue secondary_upc = 8;
+  // price_lookup_code
+  google.protobuf.StringValue price_lookup_code = 9;
+  // Is this a private label item/brand?
+  google.protobuf.BoolValue private_label_flag = 10;
+  // Brand name of the item
+  google.protobuf.StringValue brand_name = 11;
+  // Size of product
+  google.protobuf.StringValue size = 12;
+  // Is this an alcohol item? (TRUE yes, FALSE no)
+  google.protobuf.BoolValue is_alcohol = 13;
+  // Is this a weighted item (such as produce or meat)? (TRUE yes, FALSE no)
+  google.protobuf.BoolValue is_weighted_item = 14;
+  // unit_of_measurement
+  google.protobuf.StringValue unit_of_measurement = 15;
+  // URL link to the product image.
+  google.protobuf.StringValue image_url = 16;
+  // Additional imagery (right, left, top, bottom, tilt right, tilt left, nutritional label, etc.)
+  repeated google.protobuf.StringValue additional_image_urls = 17;
+  // Extended sizes for items with multiple in one pack (6 pack of beer)
+  google.protobuf.StringValue extended_size = 18;
+  // For random weight items, how do we show this item to customers?
+  google.protobuf.StringValue cx_show_by = 19;
+  // For random weight items, how is this item priced?
+  google.protobuf.StringValue price_by = 20;
+  // For random weight items, if the item is priced per pound what is the approximate weight of one item or pack.
+  google.protobuf.DoubleValue average_weight_per_each = 21;
+  // Typical UOM for the average weight
+  google.protobuf.StringValue average_weight_uom = 22;
+  // priority_rank
+  google.protobuf.Int32Value priority_rank = 23;
+  // Flavor, scent, color, design pattern, etc.
+  repeated google.protobuf.StringValue variant = 24;
+  // Nutritional facts label info of item
+  repeated google.protobuf.StringValue nutritional_info = 25;
+  // Ingredients list
+  repeated google.protobuf.StringValue ingredients = 26;
+  // Short description of an item
+  google.protobuf.StringValue short_description = 27;
+  // Item disclaimers
+  google.protobuf.StringValue disclaimer = 28;
+  // Allergy/health info
+  google.protobuf.StringValue allergen_info = 29;
+  // Gluten Free, Kosher, Organic, etc
+  repeated google.protobuf.StringValue dietary_flags = 30;
+  // Does this item qualify for food stamps/SNAP program?
+  google.protobuf.BoolValue snap_eligible = 31;
+  // Has a bottle fee or not
+  google.protobuf.BoolValue is_package_fee_eligible = 32;
+  // Glass, Plastic, etc.
+  google.protobuf.StringValue package_type = 33;
+  // is_hsa_fsa_eligible
+  google.protobuf.BoolValue is_hsa_fsa_eligible = 34;
+  // Alcohol By Volume content in %
+  google.protobuf.DoubleValue abv = 35;
+  // L x W x H (in inches or ft)
+  google.protobuf.StringValue dimensions = 36;
+  // Weight of the item in lbs
+  google.protobuf.StringValue weight = 37;
+  // product_group
+  google.protobuf.StringValue product_group = 38;
+  // wine_vintage_year
+  google.protobuf.StringValue wine_vintage_year = 39;
+  // place_of_origin
+  google.protobuf.StringValue place_of_origin = 40;
+  // manufacturer
+  google.protobuf.StringValue manufacturer = 41;
+  // Merchant supplied item description
+  google.protobuf.StringValue description = 42;
+  // Catalog metadata
+  google.protobuf.StringValue metadata = 43;
+  // known product attributes listed in runtime.
+  map<string, Attribute> product_attributes = 44;
+}
+
+// Definition for SKU inventory attributes
+message BaselineSKUInventory {
+  // Tax Rate
+  google.protobuf.DoubleValue tax_rate = 1;
+  // Price of the item
+  money.MonetaryFields price = 2;
+  // Measurement price of the item, required for weighted item.
+  money.MonetaryFields measurement_price = 3;
+  // Loyalty price of the item
+  money.MonetaryFields loyalty_price = 4;
+  // Loyalty Measurement price of the item, required for weighted item.
+  money.MonetaryFields loyalty_measurement_price = 5;
+  // Non discount price of the item
+  money.MonetaryFields non_discount_price = 6;
+  // Non discount measurement price of the item, required for weighted item.
+  money.MonetaryFields non_discount_measurement_price = 7;
+  // Approximate weighted of the item, optional from merchant.
+  // For weighted item only, fallback to catalog.approximate_sold_as_quantity when not available during hydration.
+  google.protobuf.DoubleValue approximate_sold_as_quantity = 8;
+  // Bottle deposit fee of the item.
+  money.MonetaryFields bottle_deposit_fee = 9;
+  // Item location
+  google.protobuf.StringValue item_location = 10;
+  // Open Hours
+  repeated google.protobuf.StringValue open_hours = 11;
+  // Stock Level Info
+  repeated google.protobuf.StringValue stock_level_info = 12;
+  // Complex deals related promo info
+  repeated google.protobuf.StringValue promotion_info = 13;
+  // Is bike friendly
+  google.protobuf.BoolValue is_bike_friendly = 14;
+  // location information at item level
+  google.protobuf.StringValue location_info = 15;
+
+  // RIS self defined inventory string.
+  google.protobuf.StringValue inventory = 16;
+}
+
+// Baseline SKU attributes
+message BaselineSKUAttributes {
+  // Merchant supplied item id, usually SKU id
+  google.protobuf.StringValue merchant_supplied_item_id = 1;
+  // Product attributes
+  BaselineSKUProduct product = 2;
+  // Inventory attributes
+  BaselineSKUInventory inventory = 3;
+  // Fields to store all non-standard attributes
+  repeated Attribute other_attributes = 4;
+
+  // Optional, client can generate the SKU hash and pass
+  // to baseline sku along the request for async write.
+  google.protobuf.StringValue external_sku_hash = 5;
+
+  // Add since 2024 q2, attribute that is not listed in runtime will be here.
+  map<string, Attribute> unknown_attributes = 6;
+}
+
+// Baseline SKU definition
+message BaselineSKU {
+  // BaselineSKU hash
+  google.protobuf.StringValue sku_hash = 1;
+  // Timestamp, or version
+  google.protobuf.StringValue version = 2;
+  // BaselineSKU metadata
+  Metadata metadata = 3;
+  // SKU attributes
+  BaselineSKUAttributes sku_attributes = 4;
+}
+
+// Insert SKU request
+// Support batch insert for SKUs with the same metadata
+message AddBaselineSKURequest {
+  // BaselineSKU metadata
+  Metadata metadata = 1;
+  // List of SKU attributes
+  repeated BaselineSKUAttributes sku_attributes = 4;
+  // Whether to include sku in response, default to true if not set.
+  google.protobuf.BoolValue include_sku_in_response = 5;
+}
+
+// Insert SKU response
+message AddBaselineSKUResponse {
+  // Baseline SKUs
+  repeated BaselineSKU skus = 1;
+  // Submission ID
+  google.protobuf.StringValue submission_id = 2;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// Get SKU request to read SKUs by hashes
+message GetBaselineSKURequest {
+  // list of sku_hash
+  repeated google.protobuf.StringValue sku_hashes = 1;
+  // If provided, return the latest sku attribute by that time.
+  // Otherwise, default return latest sku attribute
+  google.protobuf.Timestamp timestamp = 2;
+  // business id
+  google.protobuf.Int64Value business_id = 3;
+}
+
+// Get SKU response
+message GetBaselineSKUResponse {
+  // Baseline SKUs
+  repeated BaselineSKU skus = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// SKU scan request
+message ScanBaselineSKURequest {
+  // Doordash merchant id
+  google.protobuf.Int64Value merchant_id = 1;
+  // Doordash business id
+  google.protobuf.Int64Value business_id = 2;
+  // Doordash store id
+  google.protobuf.Int64Value store_id = 3;
+  // File path
+  google.protobuf.Int64Value file_path = 4;
+  // Request id
+  google.protobuf.StringValue request_id = 5;
+  // Submission id
+  google.protobuf.StringValue submission_id = 6;
+  // Timestamp of the requested view of data, optional
+  // If not provided, the latest version will be returned
+  google.protobuf.Timestamp timestamp = 7;
+  // Pagnation
+  PaginationArgs page_arg = 10;
+}
+
+// SKU scan response
+message ScanBaselineSKUResponse {
+  // Baseline SKUs
+  repeated BaselineSKU skus = 1;
+  // Pagination info
+  PageInfo page_info = 10;
+}
+
+// SKU replay request
+message ReplayBaselineSKURequest {
+  // Doordash business id
+  google.protobuf.Int64Value business_id = 1;
+  // Optional, the starting timestamp(inclusive) of messages to replay, if not specified,
+  // the replay will start from the very beginning of all the skus
+  google.protobuf.Timestamp start_timestamp = 2;
+  // Optional, the ending timestamp(exclusive) of messages to replay, if not specified,
+  // the replay will end at the last sku that ever received before the API call timestamp.
+  google.protobuf.Timestamp end_timestamp = 3;
+}
+
+// SKU replay response
+message ReplayBaselineSKUResponse {
+  // Server-side generate submission id, it could be used to track the progress of
+  // the replay, essentially this is the cadence workflow id that executes the replay
+  google.protobuf.StringValue submission_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// SKU submission retry request
+message RetryAddBaselineSKURequest {
+  // Submission ID
+  google.protobuf.StringValue submission_id = 1;
+  // Key Prefix
+  google.protobuf.StringValue prefix = 2;
+}
+
+// SKU submission retry response
+message RetryAddBaselineSKUResponse {
+  // Submission ID
+  google.protobuf.StringValue submission_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// Get Item Baseline SKUs request
+message GetItemBaselineSKUsRequest {
+  // Business Id
+  google.protobuf.Int64Value business_id = 1;
+  // MsIds
+  repeated google.protobuf.StringValue merchant_supplied_item_ids = 2;
+}
+
+// Get Item Baseline SKUs Response
+message GetItemBaselineSKUsResponse {
+  // repeated skus
+  repeated BaselineSKU sku = 1;
+}
+
+// Add or update receipt request
+message AddOrUpdateReceiptsRequest {
+  // Request id
+  google.protobuf.StringValue request_id = 1;
+  // Source
+  FeedProcessingChannel source = 2;
+  // Receipts
+  repeated Receipt receipts = 3;
+}
+
+// Add or update receipt response
+message AddOrUpdateReceiptsResponse {
+  // Code
+  code.Code code = 1;
+  // Message
+  google.protobuf.StringValue message = 2;
+}
+
+// Get receipts by delivery uuid request
+message GetReceiptsByDeliveryUuidRequest {
+  // Delivery uuid
+  repeated string delivery_uuid = 1;
+  // Source
+  FeedProcessingChannel source = 2;
+}
+
+// Get receipts by delivery uuid response
+message GetReceiptsByDeliveryUuidResponse {
+  // Receipts
+  repeated Receipt receipt = 1;
+}

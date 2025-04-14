@@ -1,0 +1,407 @@
+syntax = "proto3";
+
+package router_service.v1;
+
+import "autonomous_partner_api/partner_endpoints_common.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "robot/map_feature.proto";
+import "robot/operating_zone.proto";
+import "robot/robot.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.labs_router_service.v1";
+
+// A struct representing a router service error.
+message RouterServiceError {
+  // Enum representing the type of router error
+  // These errors are a union of cloud and robot router errors.
+  enum Type {
+    // Unspecified
+    TYPE_UNSPECIFIED = 0;
+    // Invalid number of points in the route request
+    TYPE_INVALID_NUM_POINTS = 1;
+    // // Map is not available. E.g no map name/ version, download fails
+    TYPE_NO_MAP = 2;
+    // Robot is not in a valid location
+    TYPE_INVALID_ROBOT_LOCATION = 3;
+    // No route can be found
+    TYPE_NO_ROUTE_FOUND = 4;
+    // One of the destinations is not serviceable (e.g mx, cx, p2p)
+    TYPE_NOT_SERVICEABLE = 5;
+    // The route is self-intersecting which is not allowed.
+    TYPE_SELF_INTERSECTING_ROUTE = 6;
+  }
+
+  // The type of router error
+  Type type = 1;
+  // String containing details of the router error
+  string message = 2;
+  // The index of the router leg which led to the error.
+  // This is only set for errors specific to a leg (e.g TYPE_NOT_SERVICEABLE)
+  // and is indexed based on the input list of destinations.
+  // e.g (leg == 0 -> mx, leg == 1 -> cx if there are 2 input
+  // destinations) and (leg == 0 -> p2p if there's 1 input destination)
+  google.protobuf.Int32Value leg = 3;
+}
+
+// Version of a semantic map.
+message SemanticMapVersion {
+  // Map name.
+  string map_name = 1;
+  // Map version.
+  string map_version = 2;
+}
+
+// A point to route to/from.
+message RoutingPoint {
+  // The point to route to.
+  robot.v1.LatitudeLongitude latlng = 1;
+
+  // The street address to route to. Use to snap to lane.
+  string street_address = 2;
+
+  // Whether or not the lat and lng has been overridden by the user.
+  bool is_latlng_overridden = 3;
+
+  // A list of annotated lat/lng points to route to at a merchant location.
+  autonomous_partner_api.partner_endpoints_common.MerchantMetadata merchant_metadata = 4;
+}
+
+// Request to the router
+message RouteRequest {
+  // Convenient string to identify this request amongst several in a batch. This
+  // can for example be used to store a robot_id.
+  string route_request_id = 1;
+  // Start location to route from.
+  RoutingPoint start = 2;
+  // Can include intermediate points.
+  repeated RoutingPoint destinations = 3;
+  // The semantic map to use for routing.
+  string map_name = 4;
+  // The semantic map version to use for routing.
+  string map_version = 5;
+  // Whether or not the robot is operating without a local operator.
+  bool is_nolo = 6;
+}
+
+// Response from the router
+message RouteResponse {
+  // See description in RouteRequest.
+  string route_request_id = 1;
+
+  // The status of the route request
+  enum Status {
+    // Unspecified status
+    STATUS_UNSPECIFIED = 0;
+    // A route from the start through the destinations was found.
+    STATUS_SUCCESS = 1;
+    // The start is not near a drivable lane.
+    STATUS_FAILED = 2;
+  }
+  // Indicates whether or not routing was successful.
+  Status status = 2;
+
+  // If the request failed, contains details.
+  string error_string = 3 [deprecated = true];
+
+  // ETAs are between (start->destinations[0],
+  // destinations[0]->destinations[1], ... destinations[N-1]->destinations[N]).
+  repeated double eta_secs = 4;
+
+  // Router error containing details of failed route request
+  RouterServiceError router_error = 5;
+
+  // The final routing point computed given the map constraints
+  // this may be different from the input routing point in the request
+  robot.v1.LatitudeLongitude final_destination = 6;
+}
+
+// A set of RouteRequest.
+message BatchRouteRequest {
+  // List of route requests for the router to process
+  repeated RouteRequest requests = 1;
+}
+
+// A set of RouteResponse.
+message BatchRouteResponse {
+  // List of route responses from the router
+  repeated RouteResponse responses = 1;
+}
+
+// A request to preload a set of semantic maps.
+message PreloadMapsRequest {
+  // The map versions to preload.
+  repeated SemanticMapVersion map_versions = 1;
+}
+
+// The PreloadMaps response.
+message PreloadMapsResponse {}
+
+// A request to get the operating zone for the map
+message GetOperatingZoneRequest {
+  // Name of the map used by the robot
+  string hd_map_name = 1;
+  // Version of the map used by the robot
+  string hd_map_version = 2;
+}
+
+// The OperatingZone response
+message GetOperatingZoneResponse {
+  // The operating zone
+  robot.v1.OperatingZone operating_zone = 1;
+}
+
+// The request to get the map versions. Note: for now, only preloaded maps are supported.
+message MapVersionsRequest {
+  // If set, only return the map versions that intersect with the bounds filter.
+  // An intersection is defined as any point inside the bounds filter touches any point inside the bounds of the map.
+  robot.v1.Geometry bounds_intersection_filter = 1; // optional
+}
+
+// The response to a request for the map versions
+message MapVersionsResponse {
+  // The map versions with metadata to help identify the real world usage of the map
+  message MapVersionWithMetadata {
+    // The release type of the map
+    enum ReleaseType {
+      // This map is not specified as the default for any driving mode now
+      RELEASE_TYPE_UNSPECIFIED = 0;
+      // This map is used for Nolo operations
+      RELEASE_TYPE_NOLO = 1;
+      // This map is used for YesLo operations
+      RELEASE_TYPE_YESLO = 2;
+      // This map is used for night operations
+      RELEASE_TYPE_NIGHT = 3;
+    }
+
+    // Release types for this map version. If empty, the map is not used for specific (nolo, yeslo, night) driving modes.
+    repeated ReleaseType release_types = 7;
+
+    // The branch name (used to more easily identify what robots this will be applicable to).
+    // If the map is not found in the map version index, this will be empty.
+    string branch_name = 2;
+
+    // The map version
+    SemanticMapVersion version = 3;
+
+    // Whether or not the map is preloaded in the router data cache
+    bool preloaded = 4;
+
+    // Southwest corner of the bounds of this map version.
+    robot.v1.LatitudeLongitude min_lat_lon = 5;
+
+    // Northeast corner of the bounds of this map version
+    robot.v1.LatitudeLongitude max_lat_lon = 6;
+
+    // Deprecated fields
+    reserved 1;
+    reserved "release_type";
+  }
+
+  // The map versions that fit the query criteria
+  repeated SemanticMapVersion versions = 1;
+
+  // The map versions with release info
+  repeated MapVersionWithMetadata map_infos = 2;
+}
+
+// A proposed map feature mutation
+message LiveMapMutatationProposal {
+  // An action which can delete an existing feature
+  message DeleteFeature {
+    // The id of the feature to delete
+    string existing_feature_id = 1;
+  }
+  // An action which can update an existing feature
+  message UpdateFeature {
+    // The id of the feature to update
+    string existing_feature_id = 1;
+    // The type of map feature
+    robot.v1.FeatureType type = 2;
+    // A point, line or region on the map
+    robot.v1.Geometry geometry = 3;
+  }
+  // An action which can create a new feature
+  message CreateFeature {
+    // The type of map feature
+    robot.v1.FeatureType type = 1;
+    // A point, line or region on the map
+    robot.v1.Geometry geometry = 2;
+  }
+
+  // The action to take
+  oneof mutation_action {
+    // Delete an existing feature
+    DeleteFeature delete_feature = 1;
+    // Create a new feature
+    CreateFeature create_feature = 2;
+    // Update an existing feature
+    UpdateFeature update_feature = 3;
+  }
+}
+
+// Roll up stats about the serviceability impact of a proposed map change
+message ServiceabilityStats {
+  // The number of lanes that are serviceable
+  // You can calculate the serviceability rate by dividing num_serviceable_lanes by num_total_lanes
+  int32 num_serviceable_lanes = 1;
+  // The total number of lanes in the map
+  int32 num_total_lanes = 2;
+  // The total length of the lanes that are serviceable
+  // You can calculate the serviceable length rate by dividing total_serviceable_length_meters by total_length_meters
+  double total_serviceable_length_meters = 3;
+  // The total lane length of the map.
+  double total_length_meters = 4;
+}
+
+// The request to get serviceability information for a particular semantic map
+message ServiceabilityReportRequest {
+  // Semantic map version. Required.
+  SemanticMapVersion map_version = 1;
+  // Whether or not to analyze the NoLo or YesLO serviceability of the map
+  bool is_nolo = 2;
+  // Should the response include serviceability info for individual lanes (default no)
+  bool include_lanes = 3;
+  // Proposed changes to the live map to help determine serviceability impact.
+  repeated LiveMapMutatationProposal proposals = 4;
+}
+
+// The response to a serviceability report request
+message ServiceabilityReportResponse {
+  // Per-lane serviceability information
+  message LaneServiceability {
+    // The id of the lane
+    string lane_id = 1;
+    // The serviceability of the lane
+    bool serviceable = 2;
+    // The length of the lane
+    double length_meters = 3;
+  }
+
+  // The serviceability stats for the map
+  ServiceabilityStats serviceability_stats = 1;
+
+  // The serviceability of each lane (optionally returned, depending on request params)
+  repeated LaneServiceability lane_serviceability = 2;
+}
+
+// A request to get test driving destinations.
+message GetDestinationRequest {
+  // Destination request mode.
+  enum Mode {
+    // The API will pick a default mode.
+    MODE_UNSPECIFIED = 0;
+    // Return an historical delivery [mx,cx] pair. The sampling strategy is defined in the
+    // TerritoryConfig of the Labs repo.
+    MODE_SAMPLE_DELIVERY = 1;
+  }
+  // Destination request mode.
+  Mode mode = 1;
+
+  // Map version used by the robot.
+  SemanticMapVersion map_version = 2;
+
+  // Location of the robot
+  RoutingPoint robot_location = 3;
+
+  // Maximum travel time allowed.
+  double max_eta_seconds = 4;
+}
+
+// The response to a GetDestinationRequest.
+message GetDestinationResponse {
+  // A sequence of destinations the robot should follow.
+  repeated RoutingPoint destinations = 1;
+}
+
+// A request to obtain dropoff locations.
+message SuggestDropOffRequest {
+  // Customer location.
+  RoutingPoint query_point = 1;
+  // The maximum number of points to return.
+  int32 max_num_points = 2;
+
+  // Map versions of currently operating robots. They are used in the following way:
+  // 1) Suggested drop-offs are computed for each specified map.
+  // 2) The union is computed.
+  // 3) The drop-offs are de-duped.
+  repeated SemanticMapVersion map_versions = 3;
+}
+
+// The response to a SuggestDropOffRequest.
+message SuggestDropOffResponse {
+  // Ranked list of suggested drop-off points. The first point is the one we predict to be best.
+  repeated robot.v1.LatitudeLongitude suggested_points = 1;
+}
+
+// The router service definition.
+service RouterService {
+  option (doordash.api.service) = {
+    name: "LabsRouterService"
+    url: "labs-router-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["labs-router-service"]
+    owner: {
+      // https://doordash.chronosphere.io/collections/doordash-labs-remote-assistance-engi
+      id: "doordash-labs-remote-assistance-engi"
+      name: "ddlabs-ra-eng"
+      // Sharing slack channel with labs fleet service
+      slack_channel: "#labs-fleet-service-builds"
+      email_alias: "ddlabs-ra-eng@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Performs a request to the router to get the eligiblity of the entire route
+  // as well as the etas for each segment.
+  rpc BatchRoute(BatchRouteRequest) returns (BatchRouteResponse) {}
+
+  // Pre-load a set of semantic maps.
+  rpc PreloadMaps(PreloadMapsRequest) returns (PreloadMapsResponse) {}
+
+  // Fetches the OperatingZone of a map
+  rpc GetOperatingZone(GetOperatingZoneRequest) returns (GetOperatingZoneResponse) {}
+
+  // Gets map version information for the latest published maps
+  rpc MapVersions(MapVersionsRequest) returns (MapVersionsResponse) {
+    option (google.api.http) = {
+      post: "/labs-router-service/v1/map-versions"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // Gets serviceability information for a map
+  rpc ServiceabilityReport(ServiceabilityReportRequest) returns (ServiceabilityReportResponse) {
+    option (google.api.http) = {
+      post: "/labs-router-service/v1/serviceability-report"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // Returns test driving destinations.
+  rpc GetDestination(GetDestinationRequest) returns (GetDestinationResponse) {}
+
+  // Returns suggested drop-off locations.
+  rpc SuggestDropOff(SuggestDropOffRequest) returns (SuggestDropOffResponse) {}
+}

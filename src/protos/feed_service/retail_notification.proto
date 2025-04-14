@@ -1,0 +1,255 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package feed_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/retail_feed.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_MULTIPLE_FILES
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.feed_service.retail_notification";
+
+// Project Codename: Retail Notification
+service RetailNotificationService {
+  option (doordash.api.service) = {
+    name: "feed-service-web-retail-notification"
+    url: "feed-service-web-retail-notification.service.prod.ddsd"
+    name_spaces: ["nv-growth"]
+    port: 50051
+    owner: {
+      name: "new-verticals-growth"
+      id: "new-verticals-growth"
+      slack_channel: "#eng-new-verticals-growth-alerts"
+      email_alias: "nv-growth-engineering@doordash.com"
+    }
+    target_products: [
+      CX,
+      INTERNAL
+    ]
+  };
+  option (service_client.client_config).retry_config.max_attempts = 2; // default 3
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 100; // default 10
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000; // default 20000
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 10000; // default 10000
+
+  // Get the requested carousel
+  rpc GetRetailNotification(GetRetailNotificationRequest) returns (GetRetailNotificationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000; // default 10000
+  }
+
+  // Get NV Deals Page Endpoint
+  rpc GetNVLandingPage(GetNVLandingPageRequest) returns (GetNVLandingPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/nv-growth/v1/landing"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+  // Get Shopping List Config Data:
+  rpc GetShoppingListConfig(GetShoppingListConfigRequest) returns (GetShoppingListConfigResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/nv-growth/v1/get_shopping_list_config"};
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+  // Create or Update Shopping List Config Data:
+  rpc CreateOrUpdateShoppingListConfig(CreateOrUpdateShoppingListConfigRequest) returns (CreateOrUpdateShoppingListConfigResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/nv-growth/v1/create_or_update_shopping_list_config"};
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+}
+
+// request format of GetRetailNotification API
+message GetRetailNotificationRequest {
+  // notification type
+  google.protobuf.StringValue notification_type = 1;
+  // consumer identifier
+  google.protobuf.Int64Value consumer_id = 2;
+  // max number of entities the caller wants
+  int32 num_entities = 3;
+  // can specify number of mx to select
+  int32 num_mx = 4;
+  // can specify mx business ids
+  google.protobuf.StringValue mx_business_ids = 5;
+  // can specify business vertical ids
+  google.protobuf.StringValue business_vertical_ids = 6;
+  // can specify item types
+  google.protobuf.StringValue item_types = 7;
+}
+
+// response format of GetConsumerNotificationFeed API
+message GetRetailNotificationResponse {
+  // list of entities used in single-collection deals notification
+  repeated RetailNotificationEntity entities = 1;
+  // list of collections
+  repeated RetailNotificationCollection collections = 2;
+  // notification type, may be different from the type in request
+  google.protobuf.StringValue notification_type = 3;
+  // notification metadata
+  google.protobuf.StringValue notification_metadata = 4;
+}
+
+// A collection of entities
+message RetailNotificationCollection {
+  // list of entities
+  repeated RetailNotificationEntity entities = 1;
+  // collection type, e.g. "Popular deals", "Buy it again"
+  google.protobuf.StringValue collection_type = 2;
+  // collection metadata
+  google.protobuf.StringValue collection_metadata = 3;
+}
+
+// entity metadata
+message RetailNotificationEntity {
+  // entity identifier
+  google.protobuf.Int64Value entity_id = 1;
+  // entity type
+  google.protobuf.StringValue entity_type = 2;
+  // entity name
+  google.protobuf.StringValue entity_name = 3;
+  // ranking of the entity
+  google.protobuf.Int64Value entity_rank = 4;
+  // url of entity image
+  google.protobuf.StringValue entity_image_url = 5;
+  // entity metadata
+  google.protobuf.StringValue entity_metadata = 6;
+  // promotion data
+  PromotionData promotion_data = 7;
+}
+
+// promotion data
+message PromotionData {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // campaign id
+  google.protobuf.StringValue campaign_id = 2;
+  // campaign placement type
+  google.protobuf.StringValue placement_type = 3;
+  // promo display name
+  google.protobuf.StringValue promo_display_name = 4;
+  // promo minimum spend
+  google.protobuf.Int64Value promo_display_min_spend = 5;
+  // promo discount type
+  google.protobuf.StringValue promo_discount_type = 6;
+  // promo currency
+  google.protobuf.StringValue promo_currency = 7;
+  // promo max discount
+  google.protobuf.Int64Value promo_max_discount = 8;
+  // promo percentage off
+  google.protobuf.Int64Value promo_percentage_off = 9;
+  // promo expiration time
+  google.protobuf.StringValue promo_expiration_time = 10;
+  // promo code
+  google.protobuf.StringValue promo_code = 11;
+  // business vertical id
+  google.protobuf.Int64Value business_vertical_id = 12;
+}
+
+// request format of GetNVLandingPage API
+message GetNVLandingPageRequest {
+  // Required - location metadata needed to fetch deals near Cx
+  google.protobuf.Int64Value submarket_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Required - location metadata needed to fetch deals near Cx
+  google.protobuf.Int64Value district_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Required - location metadata needed to fetch deals near Cx
+  google.protobuf.DoubleValue lat = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Required - location metadata needed to fetch deals near Cx
+  google.protobuf.DoubleValue lng = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Optional - since some requests may be from guests
+  google.protobuf.Int64Value consumer_id = 5 [(doordash.api.inject_id) = CX_ID];
+  // Optional - landing page type
+  LandingPageType page_type = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Optional - specify comma seperated category/verticals to filter for
+  google.protobuf.StringValue categories = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Optional - cursor to pass in optional configs
+  google.protobuf.StringValue cursor = 8 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// response format of GetNVLandingPage API
+message GetNVLandingPageResponse {
+  // Deprecated: please use response instead
+  repeated FacetV2 lego_section_body = 1 [deprecated = true];
+
+  // Lego response to be rendered on the client
+  GetFacetFeedResponseV2 response = 2;
+}
+
+// Request format of GetShoppingListConfig
+message GetShoppingListConfigRequest {
+  // Optional: config_id sent by client
+  google.protobuf.StringValue config_id = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Optional: Page size
+  google.protobuf.Int32Value page_size = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Optional: Page number
+  google.protobuf.Int32Value page_number = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Response format of GetShoppingListConfig
+message GetShoppingListConfigResponse {
+  // Returned list of config data
+  repeated StoreSelectorConfigData shopping_list_config_list = 1;
+  // Returned page size
+  google.protobuf.Int32Value page_size = 2;
+  // Returned page number
+  google.protobuf.Int32Value page_number = 3;
+}
+
+// Request format of CreateOrUpdateShoppingListConfig
+message CreateOrUpdateShoppingListConfigRequest {
+  // Optional: config_id sent by client
+  google.protobuf.StringValue config_id = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Required: Shopping list config data to create / update entry by
+  StoreSelectorConfigData shopping_list_config_payload = 2;
+}
+
+// Response format of CreateOrUpdateShoppingListConfig
+message CreateOrUpdateShoppingListConfigResponse {
+  // Returned updated config data
+  StoreSelectorConfigData shopping_list_config_result = 1;
+}
+
+// NV Landing Page Type
+enum LandingPageType {
+  // Default type
+  LANDING_PAGE_TYPE_UNSPECIFIED = 0;
+  // Deals landing page type
+  LANDING_PAGE_TYPE_DEALS = 1;
+}

@@ -1,0 +1,910 @@
+syntax = "proto3";
+
+package traffic_control_plane.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+import "traffic_control_plane/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/traffic_control_plane/api/v1";
+
+// Release
+enum Release {
+  // Unspecified
+  RELEASE_UNSPECIFIED = 0;
+  // Canary
+  RELEASE_CANARY = 1;
+  // Stable
+  RELEASE_STABLE = 2;
+}
+
+// MeshServiceConfigIdentifier
+message MeshServiceConfigIdentifier {
+  // Override
+  message Override {
+    // Cell
+    Cell cell = 10;
+    // Release
+    Release release = 20;
+  }
+
+  // Service Name
+  google.protobuf.StringValue service_name = 10;
+
+  // Environment
+  Environment env = 20;
+
+  // Optional override
+  Override override = 30;
+
+  // Unique identifier
+  // Several APIs will directly use the variant for identifying a configuration
+  // The variant is built using the following schema:
+  // ${env}-${override(${cell}-${release})| default}
+  google.protobuf.StringValue variant = 40;
+}
+
+// Request message for retrieving an overview of mesh service configurations.
+message GetMeshServiceConfigsOverviewV1Request {
+  // Service Name
+  string service_name = 10;
+}
+
+// Response message for retrieving an overview of mesh service configurations.
+message GetMeshServiceConfigsOverviewV1Response {
+  // List of mesh configuration wrappers containing different variants and environments.
+  repeated MeshServiceConfigIdentifier mesh_configs = 10;
+
+  // Placement of this service
+  Placement placement = 20;
+}
+
+// Request message for retrieving specific mesh service configurations.
+message GetMeshServiceConfigsV1Request {
+  // Name of the service to retrieve configurations for.
+  string service_name = 10;
+
+  // Variant of the service configuration to retrieve.
+  string variant = 20;
+
+  // include defaults
+  bool include_defaults = 30;
+}
+
+// Response for GetMeshServiceConfigs
+message GetMeshServiceConfigsV1Response {
+  // Name of the service this configuration belongs to.
+  string service_name = 10;
+
+  // Variant of the service configuration.
+  string variant = 20;
+
+  // Mesh configuration for the service.
+  MeshConfig config = 30;
+
+  // Optional defaults
+  MeshConfigDefaults defaults = 40;
+}
+
+// CreateMeshOverrideRequest
+message CreateMeshOverrideRequest {
+  // service name
+  string service_name = 10;
+
+  // staging, prod, cell 1 override/ etc
+  repeated MeshServiceConfigIdentifier variants = 20;
+
+  // Requester
+  User requester = 30;
+}
+
+// CreateMeshOverrideResponse
+message CreateMeshOverrideResponse {
+  // github URL
+  string github_url = 10;
+}
+
+// SetMeshServiceConfigsRequest
+message SetMeshServiceConfigsRequest {
+  // service name
+  string service_name = 10;
+
+  // Variant of the service configuration.
+  // Examples include Primary, cell-001-01, cell-001-01-stable, etc
+  string variant = 20;
+
+  // Requester
+  User requester = 25;
+
+  // Actual mesh configuration for the service.
+  MeshConfig config = 30;
+}
+
+// SetPlacementServiceConfigsRequest
+message SetPlacementServiceConfigsRequest {
+  // service name
+  string service_name = 10;
+
+  // placement
+  Placement placement = 20;
+
+  // Requester
+  User requester = 30;
+}
+
+// SetPlacementServiceConfigsResponse
+message SetPlacementServiceConfigsResponse {
+  // github URL
+  string github_url = 10;
+}
+
+// SetMeshServiceConfigsResponse
+message SetMeshServiceConfigsResponse {
+  // github URL
+  string github_url = 10;
+}
+
+// OnboardMeshServiceRequest
+message OnboardMeshServiceRequest {
+  // service name
+  string service_name = 10;
+
+  // app name
+  string app_name = 20;
+
+  // staging, prod, cell 1 override/ etc
+  repeated MeshServiceConfigIdentifier variants = 30;
+
+  // Mesh configuration for the service.
+  MeshConfig config = 40;
+
+  // Placement of the service
+  Placement placement = 45;
+
+  // Requester
+  User requester = 50;
+
+  // Requester
+  NotificationPreferences notification_preferences = 55;
+
+  // Add to an existing service(s)'s egress
+  repeated string add_to_egress = 60;
+}
+
+// SetMeshServiceConfigsResponse
+message OnboardMeshServiceResponse {
+  // github URL
+  string github_url = 10;
+}
+
+// Represents the mesh configuration
+message MeshConfig {
+  // Type of the configuration.
+  string type = 1;
+
+  // Name of the configuration.
+  string name = 2;
+
+  // Service identifier.
+  string service = 3;
+
+  // Application identifier.
+  string app = 4;
+
+  // Namespace of the service.
+  string namespace = 5;
+
+  // Ingress configuration for the service.
+  Ingress ingress = 6;
+
+  // Egress configuration for the service.
+  Egress egress = 7;
+
+  // Additional domains to set for routing
+  repeated string additional_domains = 8;
+}
+
+// Represents the ingress configuration
+message Ingress {
+  // List of metric configurations.
+  repeated Metric metrics = 1;
+
+  // List of probe configurations.
+  repeated Probe probes = 2;
+
+  // List of service configurations.
+  repeated IngressService services = 3;
+
+  // Common HTTP protocol options.
+  HttpProtocolOptions common_http_protocol_options = 4;
+
+  // WebSocket configuration.
+  WebSocket websocket = 5;
+
+  // Timeout duration for draining connections.
+  // https://github.com/envoyproxy/envoy/blob/2acf901aecc6ba984d8dc6621a47832b83b98219/api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#L567
+  google.protobuf.Duration drain_timeout = 6;
+
+  // Whether to use the remote address for various HTTP features.
+  // https://github.com/envoyproxy/envoy/blob/2acf901aecc6ba984d8dc6621a47832b83b98219/api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#L638-L646
+  google.protobuf.BoolValue use_remote_address = 7;
+
+  // Timeout duration for delayed connection close.
+  // https://github.com/envoyproxy/envoy/blob/2acf901aecc6ba984d8dc6621a47832b83b98219/api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#L569-L599
+  google.protobuf.Duration delayed_close_timeout = 8;
+
+  // Tracing configuration for ingress traffic.
+  Tracing tracing = 9;
+
+  // Access log configuration for ingress traffic.
+  AccessLog access_log = 10;
+
+  // TestTrafficRouting configuration.
+  TestTrafficRouting test_traffic_routing = 11;
+
+  // Adaptive Concurrency configuration.
+  // https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/adaptive_concurrency_filter#config-http-filters-adaptive-concurrency
+  // https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto
+  AdaptiveConcurrency adaptive_concurrency = 12;
+
+  // Grpc Stats
+  GrpcStats grpc_stats = 13;
+
+  // Slow Start configuration
+  // https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/slow_start
+  SlowStart slow_start = 14;
+
+  // Outlier Detection
+  OutlierDetection outlier_detection = 15;
+
+  // Cache Advisor
+  CacheAdvisor cache_advisor = 16;
+}
+
+// Represents the egress configuration for the service.
+message Egress {
+  // WebSocket configuration for egress traffic.
+  WebSocket websocket = 1;
+  // Tracing configuration for egress traffic.
+  Tracing tracing = 2;
+  // Access log configuration for egress traffic.
+  AccessLog access_log = 3;
+  // Services
+  repeated EgressService services = 4;
+  // GRPC Stats
+  GrpcStats grpc_stats = 5;
+  // QuotaWorker
+  QuotaWorker quota_worker = 6;
+  // Midr Lua
+  MidrLua midr_lua = 7;
+}
+
+// AdaptiveConcurrency
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto#extensions-filters-http-adaptive-concurrency-v3-adaptiveconcurrency
+// https://github.com/envoyproxy/envoy/blob/a4ad9c26197ee93b20a5df1aba91aa522f6820c8/api/envoy/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto#L93
+message AdaptiveConcurrency {
+  // enabled
+  google.protobuf.BoolValue enabled = 1;
+
+  // oneof
+  oneof concurrency_controller_config {
+    // gradient_controller_config
+    GradientControllerConfig gradient_controller_config = 2;
+  }
+}
+
+// GradientControllerConfig
+//https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto#envoy-v3-api-msg-extensions-filters-http-adaptive-concurrency-v3-gradientcontrollerconfig
+message GradientControllerConfig {
+  // ConcurrencyLimitCalculationParams
+  message ConcurrencyLimitCalculationParams {
+    // The period of time samples are taken to recalculate the concurrency limit.
+    google.protobuf.Duration concurrency_update_interval = 1;
+    // The allowed upper-bound on the calculated concurrency limit
+    google.protobuf.UInt32Value max_concurrency_limit = 2;
+  }
+
+  // Parameters controlling the periodic minRTT recalculation.
+  message MinimumRTTCalculationParams {
+    // The time interval between recalculating the minimum request round-trip time. Has to be
+    // positive.
+    google.protobuf.Duration interval = 1;
+
+    // The number of requests to aggregate/sample during the minRTT recalculation window before
+    // updating. Defaults to 50.
+    google.protobuf.UInt32Value request_count = 2;
+
+    // Randomized time delta that will be introduced to the start of the minRTT calculation window.
+    // This is represented as a percentage of the interval duration. Defaults to 15%.
+    //
+    // Example: If the interval is 10s and the jitter is 15%, the next window will begin
+    // somewhere in the range (10s - 11.5s).
+    Percent jitter = 3;
+
+    // The concurrency limit set while measuring the minRTT.
+    google.protobuf.UInt32Value min_concurrency = 4;
+  }
+
+  // sample aggregate percentile
+  Percent sample_aggregate_percentile = 1;
+
+  // concurrency_limit_params
+  ConcurrencyLimitCalculationParams concurrency_limit_params = 2;
+
+  // min_rtt_calc_params
+  MinimumRTTCalculationParams min_rtt_calc_params = 3;
+}
+
+// TestTrafficRouting
+message TestTrafficRouting {
+  // RouteMatch
+  message RouteMatch {
+    // prefix
+    google.protobuf.StringValue prefix = 1;
+    // headers
+    repeated HeaderMatcher headers = 2;
+  }
+
+  // enabled
+  google.protobuf.BoolValue enabled = 1;
+
+  // Timeout
+  google.protobuf.Duration timeout = 2;
+
+  // RouteMatch
+  RouteMatch route_match = 3;
+
+  // OnEgress
+  // if true, test_traffic_routing is enabled on egress of upstream callers
+  google.protobuf.BoolValue on_egress = 4;
+}
+
+// Configuration for access logging.
+message AccessLog {
+  // Percentage of debug-level access logs to generate.
+  FractionalPercent debug = 1;
+  // Percentage of sandbox-level access logs to generate.
+  FractionalPercent sandbox = 2;
+  // Percentage of local reply access logs to generate.
+  FractionalPercent local_reply = 3;
+}
+
+// Configuration for distributed tracing.
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-msg-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-tracing
+message Tracing {
+  // Whether tracing is enabled.
+  google.protobuf.BoolValue enabled = 1;
+  // Percentage of client requests to sample for tracing.
+  Percent client_sampling = 2;
+  // Percentage of requests to randomly sample for tracing.
+  Percent random_sampling = 3;
+  // Overall percentage of requests to sample for tracing.
+  Percent overall_sampling = 4;
+}
+
+// Configuration for circuit breakers.
+message CircuitBreakers {
+  // Thresholds for circuit breaker activation.
+  message Thresholds {
+    // The maximum number of connections that Envoy will make to the upstream cluster.
+    google.protobuf.UInt32Value max_connections = 1;
+
+    // The maximum number of pending requests that Envoy will allow to the upstream cluster.
+    google.protobuf.UInt32Value max_pending_requests = 2;
+
+    // The maximum number of parallel requests that Envoy will make to the upstream cluster.
+    google.protobuf.UInt32Value max_requests = 3;
+
+    // The maximum number of parallel retries that Envoy will allow to the upstream cluster.
+    google.protobuf.UInt32Value max_retries = 4;
+
+    // If true, stats will be published that expose the number of resources remaining until the circuit breakers open.
+    google.protobuf.BoolValue track_remaining = 5;
+  }
+
+  // Threshold configuration for the circuit breaker.
+  Thresholds thresholds = 1;
+}
+
+// Represents a metric configuration
+message Metric {
+  // Name of the metric.
+  string name = 1;
+  // Port number for accessing the metric.
+  int32 port = 2;
+  // Path for accessing the metric.
+  string path = 3;
+  // HTTP protocol options specific to this service.
+  HttpProtocolOptions http_protocol_options = 4;
+}
+
+// Represents a probe configuration
+message Probe {
+  // Name of the probe.
+  string name = 1;
+  // Port number for the probe.
+  uint32 port = 2;
+  // Path for the probe.
+  string path = 3;
+  // HTTP protocol options specific to this service.
+  HttpProtocolOptions http_protocol_options = 4;
+}
+
+// Represents a service configuration
+message IngressService {
+  // Name of the service.
+  string name = 1;
+  // Protocol used by the service.
+  Protocol protocol = 2;
+  // Port number for the service.
+  uint32 port = 3;
+  // HTTP protocol options specific to this service.
+  HttpProtocolOptions http_protocol_options = 4;
+  // HTTP2ProtocolOptions
+  Http2ProtocolOptions http2_protocol_options = 5;
+  // Route Timeout
+  google.protobuf.Duration route_timeout = 6;
+  // Shadow
+  Shadow shadow = 7;
+  // Endpoints
+  repeated IngressServiceEndpoint endpoints = 8;
+}
+
+// Slow Start
+message SlowStart {
+  // enabled
+  google.protobuf.BoolValue enabled = 1;
+
+  // window
+  google.protobuf.Duration slow_start_window = 2;
+
+  //aggression
+  google.protobuf.DoubleValue aggression = 3;
+
+  // min_weight_percent
+  Percent min_weight_percent = 4;
+}
+
+// IngressServiceEndpoint
+message IngressServiceEndpoint {
+  // name
+  string name = 1;
+
+  // headers
+  repeated HeaderMatcher headers = 2;
+}
+
+// Shadow
+message Shadow {
+  // ShadowEndpoint
+  message ShadowEndpoint {
+    // path
+    string path = 1;
+
+    // sampling_percentage
+    FractionalPercent sampling_percentage = 2;
+  }
+
+  // enabled
+  google.protobuf.BoolValue enabled = 1;
+  // endpoints
+  repeated ShadowEndpoint endpoints = 2;
+}
+
+// Http2ProtocolOptions
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-msg-config-core-v3-http2protocoloptions
+message Http2ProtocolOptions {
+  // max concurrent streams
+  google.protobuf.UInt32Value max_concurrent_streams = 1;
+}
+
+// Represents a service configuration
+message EgressService {
+  // Name of the service.
+  string name = 1;
+  // Protocol used by the service.
+  Protocol protocol = 2;
+  // Port number for the service.
+  uint32 port = 3;
+
+  // Common HTTP protocol options for egress traffic.
+  HttpProtocolOptions common_http_protocol_options = 4;
+
+  // Route Timeout
+  google.protobuf.Duration route_timeout = 5;
+
+  // HTTP protocol options specific to this service.
+  Redirect redirect = 6;
+
+  // whether egress uses HTTP2 if HTTP protocol is specified
+  google.protobuf.BoolValue client_use_http2 = 7;
+}
+
+// Quota Worker
+message QuotaWorker {
+  // Enabled
+  google.protobuf.BoolValue enabled = 1;
+}
+
+// Redirect
+message Redirect {
+  // RedirectEndpoint
+  message RedirectEndpoint {
+    // Path
+    string path = 1;
+    // Headers
+    repeated HeaderMatcher headers = 2;
+    // Rollout 0 <= x <= 1
+    // https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#config-route-v3-weightedcluster
+    google.protobuf.DoubleValue rollout = 3;
+  }
+
+  // Enabled
+  google.protobuf.BoolValue enabled = 1;
+  // Entity Cache
+  google.protobuf.BoolValue entity_cache = 2;
+  // Endpoints
+  repeated RedirectEndpoint endpoints = 3;
+}
+
+// Header
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#envoy-v3-api-msg-config-route-v3-headermatcher
+message HeaderMatcher {
+  // Name
+  string name = 1;
+  // String Match
+  StringMatcher string_match = 2;
+  // Invert Match
+  google.protobuf.BoolValue invert_match = 5;
+}
+
+// StringMatcher
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/type/matcher/v3/string.proto#envoy-v3-api-msg-type-matcher-v3-stringmatcher
+message StringMatcher {
+  // match pattern
+  oneof match_pattern {
+    // exact
+    string exact = 1;
+    // prefix
+    string prefix = 2;
+    // contains
+    string contains = 3;
+    // The input string must match the regular expression specified here.
+    RegexMatcher safe_regex = 4;
+  }
+}
+
+// RegexMatcher
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/type/matcher/v3/regex.proto#envoy-v3-api-msg-type-matcher-v3-regexmatcher
+message RegexMatcher {
+  // The regex match string.
+  string regex = 1;
+}
+
+// Protocols supported by the mesh.
+enum Protocol {
+  // Unknown or unspecified protocol.
+  PROTOCOL_UNSPECIFIED = 0;
+
+  // HTTP protocol.
+  PROTOCOL_HTTP = 1;
+
+  // gRPC protocol.
+  PROTOCOL_GRPC = 2;
+}
+
+// HTTP protocol options for configuring connections.
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#config-core-v3-httpprotocoloptions
+message HttpProtocolOptions {
+  // Maximum duration of a connection.
+  google.protobuf.Duration max_connection_duration = 1;
+  // Optional maximum requests for both upstream and downstream connections.
+  // If not specified, there is no limit.
+  // Setting this parameter to 1 will effectively disable keep alive.
+  // For HTTP/2 and HTTP/3, due to concurrent stream processing, the limit is approximate
+  google.protobuf.UInt32Value max_requests_per_connection = 2;
+  // Idle timeout for connections.
+  google.protobuf.Duration idle_timeout = 3;
+}
+
+// GRPC Stats
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/grpc_stats/v3/config.proto#envoy-v3-api-msg-extensions-filters-http-grpc-stats-v3-filterconfig
+message GrpcStats {
+  // Stats for all methods
+  google.protobuf.BoolValue stats_for_all_methods = 1;
+  // Enable upstream stats
+  google.protobuf.BoolValue enable_upstream_stats = 2;
+  // Replace dots in gRPC service name
+  google.protobuf.BoolValue replace_dots_in_grpc_service_name = 3;
+  // Emit Filter State
+  google.protobuf.BoolValue emit_filter_state = 4;
+}
+
+// Represents the WebSocket configuration.
+message WebSocket {
+  // Indicates whether WebSocket support is enabled.
+  google.protobuf.BoolValue enabled = 1;
+}
+
+// Represents a percentage value.
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/type/v3/percent.proto#envoy-v3-api-msg-type-v3-percent
+message Percent {
+  // Percentage value between 0.0 and 100.0.
+  google.protobuf.DoubleValue value = 1;
+}
+
+// Represents a fractional percentage.
+// https://www.envoyproxy.io/docs/envoy/latest/api-v3/type/v3/percent.proto#type-v3-fractionalpercent
+message FractionalPercent {
+  // Numerator of the fractional percentage.
+  google.protobuf.UInt32Value numerator = 1;
+}
+
+// MeshConfigDefaults
+message MeshConfigDefaults {
+  // IngressDefaults
+  IngressDefaults ingress = 1;
+  // EgressDefaults
+  EgressDefaults egress = 2;
+}
+
+// IngressDefaults
+message IngressDefaults {
+  // IngressServiceDefaults
+  message IngressServiceDefaults {
+    // Route timeout
+    google.protobuf.Duration route_timeout = 1;
+    // Common HTTP Protocol Options
+    HttpProtocolOptions common_http_protocol_options = 2;
+    // Shadow
+    Shadow shadow = 3;
+  }
+  // Access log
+  AccessLog access_log = 1;
+  // Tracing
+  Tracing tracing = 2;
+  // Adaptive Concurrency
+  AdaptiveConcurrency adaptive_concurrency = 3;
+  // Common HTTP Protocol Options
+  HttpProtocolOptions common_http_protocol_options = 4;
+  // Websocket
+  WebSocket websocket = 5;
+  // Drain Timeout
+  google.protobuf.Duration drain_timeout = 6;
+  // Use Remote Address
+  google.protobuf.BoolValue use_remote_address = 7;
+  // TestTrafficRouting
+  TestTrafficRouting test_traffic_routing = 8;
+  // gRPC stats
+  GrpcStats grpc_stats = 9;
+  // Service Defaults
+  IngressServiceDefaults ingress_service_defaults = 10;
+  // Slow Start
+  SlowStart slow_start = 11;
+  // Outlier Detection
+  OutlierDetection outlier_detection = 12;
+  // Cache Advisor
+  CacheAdvisor cache_advisor = 13;
+}
+
+// Cache Advisor
+message CacheAdvisor {
+  // Enabled
+  google.protobuf.BoolValue enabled = 1;
+
+  // sampling_percentage
+  FractionalPercent sampling_percentage = 2;
+}
+
+// EgressDefaults
+message EgressDefaults {
+  // EgressServiceDefaults
+  message EgressServiceDefaults {
+    // Route timeout
+    google.protobuf.Duration route_timeout = 1;
+    // Common HTTP Protocol Options
+    HttpProtocolOptions common_http_protocol_options = 2;
+    // Redirect
+    Redirect redirect = 3;
+  }
+  // AccessLog
+  AccessLog access_log = 1;
+  // gRPC stats
+  GrpcStats grpc_stats = 2;
+  // Websocket
+  WebSocket websocket = 3;
+  // Quota worker
+  QuotaWorker quota_worker = 4;
+  // Tracing
+  Tracing tracing = 5;
+  // EgressService Defaults
+  EgressServiceDefaults egress_service_defaults = 6;
+  // MidrLua
+  MidrLua midr_lua = 7;
+}
+
+// Outlier Detection
+// See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/outlier_detection.proto
+message OutlierDetection {
+  // enabled
+  google.protobuf.BoolValue enabled = 1;
+
+  // The number of consecutive server-side error responses (for HTTP traffic,
+  // 5xx responses; for TCP traffic, connection failures; for Redis, failure to
+  // respond PONG; etc.) before a consecutive 5xx ejection occurs. Defaults to 5.
+  google.protobuf.UInt32Value consecutive_5xx = 2;
+
+  // The time interval between ejection analysis sweeps. This can result in
+  // both new ejections as well as hosts being returned to service. Defaults
+  // to 10000ms or 10s.
+  google.protobuf.Duration interval = 3 [(buf.validate.field).duration = {
+    gt {}
+  }];
+
+  // The base time that a host is ejected for. The real time is equal to the
+  // base time multiplied by the number of times the host has been ejected and is
+  // capped by :ref:`max_ejection_time<envoy_v3_api_field_config.cluster.v3.OutlierDetection.max_ejection_time>`.
+  // Defaults to 30000ms or 30s.
+  google.protobuf.Duration base_ejection_time = 4 [(buf.validate.field).duration = {
+    gt {}
+  }];
+
+  // The maximum % of an upstream cluster that can be ejected due to outlier detection. Defaults to 10% .
+  // Will eject at least one host regardless of the value if :ref:`always_eject_one_host<envoy_v3_api_field_config.cluster.v3.OutlierDetection.always_eject_one_host>` is enabled.
+  google.protobuf.UInt32Value max_ejection_percent = 5 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The % chance that a host will be actually ejected when an outlier status
+  // is detected through consecutive 5xx. This setting can be used to disable
+  // ejection or to ramp it up slowly. Defaults to 100.
+  google.protobuf.UInt32Value enforcing_consecutive_5xx = 6 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The % chance that a host will be actually ejected when an outlier status
+  // is detected through success rate statistics. This setting can be used to
+  // disable ejection or to ramp it up slowly. Defaults to 100.
+  google.protobuf.UInt32Value enforcing_success_rate = 7 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The number of hosts in a cluster that must have enough request volume to
+  // detect success rate outliers. If the number of hosts is less than this
+  // setting, outlier detection via success rate statistics is not performed
+  // for any host in the cluster. Defaults to 5.
+  google.protobuf.UInt32Value success_rate_minimum_hosts = 8;
+
+  // The minimum number of total requests that must be collected in one
+  // interval (as defined by the interval duration above) to include this host
+  // in success rate based outlier detection. If the volume is lower than this
+  // setting, outlier detection via success rate statistics is not performed
+  // for that host. Defaults to 100.
+  google.protobuf.UInt32Value success_rate_request_volume = 9;
+
+  // This factor is used to determine the ejection threshold for success rate
+  // outlier ejection. The ejection threshold is the difference between the
+  // mean success rate, and the product of this factor and the standard
+  // deviation of the mean success rate: mean - (stdev *
+  // success_rate_stdev_factor). This factor is divided by a thousand to get a
+  // double. That is, if the desired factor is 1.9, the runtime value should
+  // be 1900. Defaults to 1900.
+  google.protobuf.UInt32Value success_rate_stdev_factor = 10;
+
+  // The number of consecutive gateway failures (502, 503, 504 status codes)
+  // before a consecutive gateway failure ejection occurs. Defaults to 5.
+  google.protobuf.UInt32Value consecutive_gateway_failure = 11;
+
+  // The % chance that a host will be actually ejected when an outlier status
+  // is detected through consecutive gateway failures. This setting can be
+  // used to disable ejection or to ramp it up slowly. Defaults to 0.
+  google.protobuf.UInt32Value enforcing_consecutive_gateway_failure = 12 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // Determines whether to distinguish local origin failures from external errors. If set to true
+  // the following configuration parameters are taken into account:
+  // :ref:`consecutive_local_origin_failure<envoy_v3_api_field_config.cluster.v3.OutlierDetection.consecutive_local_origin_failure>`,
+  // :ref:`enforcing_consecutive_local_origin_failure<envoy_v3_api_field_config.cluster.v3.OutlierDetection.enforcing_consecutive_local_origin_failure>`
+  // and
+  // :ref:`enforcing_local_origin_success_rate<envoy_v3_api_field_config.cluster.v3.OutlierDetection.enforcing_local_origin_success_rate>`.
+  // Defaults to false.
+  google.protobuf.BoolValue split_external_local_origin_errors = 13;
+
+  // The number of consecutive locally originated failures before ejection
+  // occurs. Defaults to 5. Parameter takes effect only when
+  // :ref:`split_external_local_origin_errors<envoy_v3_api_field_config.cluster.v3.OutlierDetection.split_external_local_origin_errors>`
+  // is set to true.
+  google.protobuf.UInt32Value consecutive_local_origin_failure = 14;
+
+  // The % chance that a host will be actually ejected when an outlier status
+  // is detected through consecutive locally originated failures. This setting can be
+  // used to disable ejection or to ramp it up slowly. Defaults to 100.
+  // Parameter takes effect only when
+  // :ref:`split_external_local_origin_errors<envoy_v3_api_field_config.cluster.v3.OutlierDetection.split_external_local_origin_errors>`
+  // is set to true.
+  google.protobuf.UInt32Value enforcing_consecutive_local_origin_failure = 15 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The % chance that a host will be actually ejected when an outlier status
+  // is detected through success rate statistics for locally originated errors.
+  // This setting can be used to disable ejection or to ramp it up slowly. Defaults to 100.
+  // Parameter takes effect only when
+  // :ref:`split_external_local_origin_errors<envoy_v3_api_field_config.cluster.v3.OutlierDetection.split_external_local_origin_errors>`
+  // is set to true.
+  google.protobuf.UInt32Value enforcing_local_origin_success_rate = 16 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The failure percentage to use when determining failure percentage-based outlier detection. If
+  // the failure percentage of a given host is greater than or equal to this value, it will be
+  // ejected. Defaults to 85.
+  google.protobuf.UInt32Value failure_percentage_threshold = 17 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The % chance that a host will be actually ejected when an outlier status is detected through
+  // failure percentage statistics. This setting can be used to disable ejection or to ramp it up
+  // slowly. Defaults to 0.
+  //
+  // [#next-major-version: setting this without setting failure_percentage_threshold should be
+  // invalid in v4.]
+  google.protobuf.UInt32Value enforcing_failure_percentage = 18 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The % chance that a host will be actually ejected when an outlier status is detected through
+  // local-origin failure percentage statistics. This setting can be used to disable ejection or to
+  // ramp it up slowly. Defaults to 0.
+  google.protobuf.UInt32Value enforcing_failure_percentage_local_origin = 19 [(buf.validate.field).uint32 = {lte: 100}];
+
+  // The minimum number of hosts in a cluster in order to perform failure percentage-based ejection.
+  // If the total number of hosts in the cluster is less than this value, failure percentage-based
+  // ejection will not be performed. Defaults to 5.
+  google.protobuf.UInt32Value failure_percentage_minimum_hosts = 20;
+
+  // The minimum number of total requests that must be collected in one interval (as defined by the
+  // interval duration above) to perform failure percentage-based ejection for this host. If the
+  // volume is lower than this setting, failure percentage-based ejection will not be performed for
+  // this host. Defaults to 50.
+  google.protobuf.UInt32Value failure_percentage_request_volume = 21;
+
+  // The maximum time that a host is ejected for. See :ref:`base_ejection_time<envoy_v3_api_field_config.cluster.v3.OutlierDetection.base_ejection_time>`
+  // for more information. If not specified, the default value (300000ms or 300s) or
+  // :ref:`base_ejection_time<envoy_v3_api_field_config.cluster.v3.OutlierDetection.base_ejection_time>` value is applied, whatever is larger.
+  google.protobuf.Duration max_ejection_time = 22 [(buf.validate.field).duration = {
+    gt {}
+  }];
+
+  // The maximum amount of jitter to add to the ejection time, in order to prevent
+  // a 'thundering herd' effect where all proxies try to reconnect to host at the same time.
+  // See :ref:`max_ejection_time_jitter<envoy_v3_api_field_config.cluster.v3.OutlierDetection.base_ejection_time>`
+  // Defaults to 0s.
+  google.protobuf.Duration max_ejection_time_jitter = 23;
+}
+
+// PlacementType
+enum PlacementType {
+  // Wolt
+  PLACEMENT_TYPE_UNSPECIFIED = 0;
+  // Wolt
+  PLACEMENT_TYPE_WOLT = 1;
+  // Dash
+  PLACEMENT_TYPE_DASH = 2;
+  // Global
+  PLACEMENT_TYPE_GLOBAL = 3;
+  // Cells
+  PLACEMENT_TYPE_CELLS = 4;
+}
+
+// Placement
+message Placement {
+  // Placement Enum
+  PlacementType placement = 1;
+  // Global Cluster - used when placement = GLOBAL
+  google.protobuf.StringValue global_cluster = 10;
+}
+
+// MidrLua
+message MidrLua {
+  // Override
+  message MidrRoute {
+    // Enabled
+    google.protobuf.BoolValue enabled = 1;
+  }
+
+  // Route To Cell
+  MidrRoute route_to_cell = 1;
+  // Route To Dash
+  MidrRoute route_to_dash = 2;
+  // Route To Current
+  MidrRoute route_to_current = 3;
+  // Route To Wolt
+  MidrRoute route_to_wolt = 4;
+}

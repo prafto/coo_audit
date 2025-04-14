@@ -1,0 +1,73 @@
+syntax = "proto3";
+package async_platform_callback_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/async_platform_callback_service.v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.async_platform_callback_service";
+
+// This is the GRPC callback destination service that adopting services must
+//   implement in order to receive a callback using the GRPC protocol.
+service CallbackDestinationService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // The GRPC entry-point implemented by adopting services that
+  //   callback-service will call after next_start_time.
+  rpc TriggerEvent(TriggerEventRequest) returns (TriggerEventResponse);
+}
+
+// The request contains IDs assigned during event creation and the
+//   context assigned and understood only by the adopting service.
+//   Idempotency key should be event_id for one-shots, and should be
+//   (event_id + execution_number) for crons.
+message TriggerEventRequest {
+  // The eventId that was assigned during event creation.
+  string event_id = 1;
+
+  // The string assigned and understood only by the adopting service.
+  string context = 2;
+
+  // Time that this event was eligible to be triggered. This is a system
+  //   adjusted time that takes includes randomized jitter, recurring
+  //   specifications, and retries.  Note: NTP clockdrift is not accounted
+  //   for, so it is possible this event arrives a few seconds earlier.
+  google.protobuf.Timestamp adjusted_trigger_time = 3;
+
+  // The current execution number of this event chain.
+  //   For crons, the first cron instance will be 0, the second instance will be 1, etc.
+  //   For one-shots, this is always 0.
+  //   Note that if a cron instance has to retry, its retries will have
+  //   the same execution_number as the first attempt.
+  int64 execution_number = 4;
+}
+
+// String response given by the destination service.
+message TriggerEventResponse {
+  // deprecated due to typo
+  reserved 1;
+  reserved "reponse_details";
+
+  // String field assigned for response.
+  string response_details = 2;
+
+  // Set this to true to finalize the cron. When a cron is finalized, the cron
+  //   will never fire again, and the recurring event will no longer be active.
+  //
+  //   Prefer instead to use cron_valid_duration and/or max_executions for
+  //   cron finalization, but if it's necessary to finalize a cron
+  //   with custom logic, this field can be used instead.
+  //   This field is ignored for one-shot events.
+  bool should_finalize_cron = 3;
+}

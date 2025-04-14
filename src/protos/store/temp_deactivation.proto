@@ -1,0 +1,132 @@
+syntax = "proto3";
+package store_service;
+
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "store/common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.store";
+option java_generic_services = true;
+// currently unused
+option go_package = "store_service";
+
+/*
+ * TemporaryDeactivation object
+ *
+ * Things aren't always available, this applies to things in the real world 
+ * just as it does to DSJ. Stores need to take breaks, sometimes the tapioca
+ * pearls you love run out. We need to be able to represent that somehow.
+ * So for now all those cases and more live here. Someday we may think of
+ * a better way to do that, but for now this is how it's going to be.
+ * 
+ */
+message TemporaryDeactivation {
+
+    // standard auto-incrementing id db field
+    google.protobuf.UInt64Value id = 1;
+
+    // this guy is a little weird, the idea is that this guy identifies
+    // the database table to which target_id applies. In this way we have
+    // something that can generically apply to arbitrary db tables.
+    google.protobuf.StringValue target_ct_id = 2;
+
+    // ID in the table identified by target_ct_id
+    google.protobuf.UInt64Value target_id = 3;
+
+    google.protobuf.Timestamp created_at = 4;
+    // foreign key into User table
+    google.protobuf.UInt64Value created_by_id = 5;
+    google.protobuf.Timestamp end_time = 6;
+    google.protobuf.Timestamp scheduled_end_time = 7;
+    // foreign key into delivery table
+    google.protobuf.UInt64Value delivery_id = 8;
+    // Foreign key into TemporaryDeactivationReason table
+    google.protobuf.UInt64Value reason_id = 9;
+    google.protobuf.StringValue notes = 10;
+    // This one might be a little hairy, choices=[(tz, tz) for tz in pytz.common_timezones]
+    // one of PythonConstants.TimezoneChoices
+    google.protobuf.StringValue timezone = 11;
+}
+
+message TemporaryDeactivationRequest {
+  TemporaryDeactivation deactivation = 1;
+}
+
+message TemporaryDeactivationResponse {
+  TemporaryDeactivation deactivation = 1;
+}
+
+message FilterParams {
+   google.protobuf.StringValue target_ct_id = 1;
+   google.protobuf.UInt64Value target_id = 2;
+   google.protobuf.Timestamp created_at__lt = 3;
+   google.protobuf.Timestamp created_at__gt = 4;
+   google.protobuf.Timestamp end_time__lt = 5;
+   google.protobuf.Timestamp end_time__gt = 6;
+   google.protobuf.Timestamp scheduled_end_time__lt = 7;
+   google.protobuf.Timestamp scheduled_end_time__gt = 8;
+}
+
+service TemporaryDeactivationService {
+
+    /*
+     * Simple get by id method
+     */
+    rpc GetTemporaryDeactivation(GetRequest) returns (TemporaryDeactivationResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/temporary_deactivation/{id}"
+        };
+    }
+
+    /*
+     * Creation method. Takes a TemporaryDeactivation as its sole argument, returns the 
+     * created TemporaryDeactivation. The ID field will be ignored if specifified in the
+     * argument, if the TemporaryDeactivation is successfully created the ID field will
+     * be populated in the TemporaryDeactivation object that is returned. Possible 
+     * reasons we might fail to create a TemporaryDeactivation object include:
+     *  - The specified (target_ct_id, target_id) combination does not specify an extant
+     *    record
+     *  - The specified (target_ct_id, target_id) combination has already been temporarily
+     *    deactivated and will not become active again before the
+     *    specified scheduled_end_time
+     * The second restriction means that this endpoint is idempotent. In the case that a
+     * the temporary deactivation that would be created because of a request would have no
+     * effect due to one or more pre-existing temporary deactivations then we will return
+     * the pre-existing active temporary deactivation with the latest scheduled_end_time.
+     */
+    rpc CreateTemporaryDeactivation(TemporaryDeactivationRequest) returns (TemporaryDeactivationResponse) {
+        option (google.api.http) = {
+            put: "/api/v1/temporary_deactivation"
+            body: "*"
+        };
+    }
+
+    /*
+     * standard delete by ID method
+     */
+    rpc DeleteTemporaryDeactivation(DeleteRequest) returns (DeleteResponse) {
+        option (google.api.http) = {
+            delete: "/api/v1/temporary_deactivation/{id}"
+        };
+    }
+
+    /*
+     * Update method, provide an object and we will set all fields of the corresponding
+     * record to those in the provided object. Matching will be a done by the id field.
+     * The updated object will be returned
+     */ 
+     rpc UpdateTemporaryDeactivation(TemporaryDeactivationRequest) returns (TemporaryDeactivationResponse) {
+        option (google.api.http) = {
+            patch: "/api/v1/temporary_deactivation"
+            body: "*"
+        };
+     }
+
+     rpc FilterTemporaryDeactivations(FilterParams) returns (TemporaryDeactivationResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/temporary_deactivation"
+        };
+     }
+}

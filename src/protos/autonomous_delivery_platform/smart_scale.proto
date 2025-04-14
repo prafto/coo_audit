@@ -1,0 +1,185 @@
+syntax = "proto3";
+
+package autonomous_delivery_platform.v1;
+
+import "autonomous_delivery_platform/common.proto";
+import "common/common.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "smart_scale/smart_scale.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.autonomous_delivery_platform.v1";
+
+// Service that handles autonomous delivery logic for smartscale
+service AutonomousDeliverySmartScaleService {
+  option (doordash.api.service) = {
+    name: "smart-scale-service-adp-grpc"
+    url: "autonomous-delivery-platform-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["smart-scale-service"]
+    owner: {
+      name: "smart-scale"
+      id: "smart-scale-team"
+      slack_channel: "#ask-smart-scale"
+      email_alias: "smart-scale-sw-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+  // Gets provider's details for list of deliveries
+  rpc GetOrdersProviderDetails(GetOrdersProviderDetailsRequest) returns (GetOrdersProviderDetailsResponse);
+
+  // Reassign the order to a dasher
+  rpc ReassignToDasher(ReassignToDasherRequest) returns (ReassignToDasherResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/smart-scale-service/v1/reassign_to_dasher"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+
+  // GetDroneOrderDetails returns batch drone packing information for given delivery UUIDs.
+  rpc GetDroneOrderDetails(GetDroneOrderDetailsRequest) returns (GetDroneOrderDetailsResponse) {
+    option (google.api.http) = {
+      post: "/smart-scale-service/v2/get_drone_order_details"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+
+  // RecordDronePackagesWeight records list of package weights associated with a delivery.
+  rpc RecordDroneDeliveryWeights(RecordDroneDeliveryWeightsRequest) returns (RecordDroneDeliveryWeightsResponse) {
+    option (google.api.http) = {
+      post: "/smart-scale-service/v2/record_drone_delivery_details"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+}
+
+// Gets provider details of a list of orders
+message GetOrdersProviderDetailsRequest {
+  // Store id
+  int64 store_id = 1;
+  // Delivery id of the order
+  repeated int64 delivery_ids = 2;
+}
+
+// Returns provider details of a list of orders
+message GetOrdersProviderDetailsResponse {
+  // Delivery id of the order
+  repeated OrdersProviderDetails orders_provider_details = 1;
+}
+
+// Request to reassign order to human dashers
+message ReassignToDasherRequest {
+  // Order delivery uuid
+  string delivery_uuid = 1;
+}
+
+// Response to reassign order to human dashers
+message ReassignToDasherResponse {}
+
+// Request to batch fetch per drone packing information.
+message GetDroneOrderDetailsRequest {
+  // String delivery UUID.
+  repeated string delivery_uuids = 1;
+}
+
+// Response object containing per order drone packing information.
+message GetDroneOrderDetailsResponse {
+  // List of drone order details by delivery_uuid.
+  repeated DroneOrderDetail drone_order_details = 1;
+}
+
+// Contains information about packed items
+message DroneOrderDetail {
+  // String delivery UUID.
+  string delivery_uuid = 1;
+  // List of Packages in this delivery and its content.
+  repeated DronePackage drone_packages = 2;
+}
+
+// Contains information about package weight limits and order items inside the package.
+message DronePackage {
+  // String id of the drone vehicle
+  string vehicle_id = 1;
+  // Minimum weight requirement for package weight in grams.
+  int32 min_allowed_bag_weight_grams = 2;
+  // Maximum weight requirement for package weight in grams.
+  int32 max_allowed_bag_weight_grams = 3;
+  // List of objects in this package
+  repeated DroneObjectItem object_items = 4;
+  // Estimated weight of the package
+  float expected_weight_grams = 5;
+}
+
+// Contains information about order item and its objects in package
+message DroneObjectItem {
+  // Title of the item. It is not null when the item is non-object
+  google.protobuf.StringValue title = 1;
+  // Quantity of item, it is not null when the item is non-object
+  google.protobuf.Int32Value quantity = 2;
+  // Real objects contained in this item
+  repeated DroneObjectDetail objects = 3;
+}
+
+// Contains information about objects in package
+message DroneObjectDetail {
+  // Object name
+  string name = 1;
+  // Quantity of this object
+  int32 quantity = 2;
+  // The total weight of object times object quantity in the single item, if weight exists
+  google.protobuf.FloatValue total_weight = 3;
+  // First level options' names under this object
+  repeated string options = 4;
+}
+
+// Request to record package weighed by SmartScale.
+message RecordDroneDeliveryWeightsRequest {
+  // SmartScale device data.
+  smart_scale.v1.SmartScaleDeviceData device_data = 1;
+  // Integer ID of drone delivery store.
+  int64 store_id = 2;
+  // List of packages and its weights
+  repeated DronePackageWeight package_weights = 3;
+  // Delivery uuid
+  string delivery_uuid = 4;
+}
+
+// Contains information about package weight.
+message DronePackageWeight {
+  // String id of the drone vehicle
+  string vehicle_id = 1;
+  // Measured weight of the package in grams.
+  float measured_weight_grams = 2;
+  // Whether package is cancelled.
+  bool is_cancelled = 3;
+}
+
+// Drone delivery weight recorded response.
+message RecordDroneDeliveryWeightsResponse {}

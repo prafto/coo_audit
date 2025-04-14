@@ -1,0 +1,222 @@
+syntax = "proto3";
+package configurator;
+
+import "configurator/common.proto";
+import "configurator/fabricator.proto";
+import "configurator/octopus_common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.configurator.api";
+
+// Fabricator Configurations for Crystalball are derived from Configurator,
+// but with a lot of metdata that is unavailable on Configurator,
+// so we need to pull other metadata with Octopus via Scheduler in CrystalBall.
+// Octopus/Scheduler design: https://docs.google.com/document/d/1uD5wlwFCUKnRCoUSdSqhcyYv2-tjLAgHu6DVtX-SfJM/edit#heading=h.k6uvghxs1nl9
+// Configurator Protos: https://github.com/doordash/services-protobuf/tree/master/protos/configurator
+
+enum FabricatorSourceStatus {
+  // source is onboarded and actively scheduled
+  ACTIVE = 0;
+  // source is onboarded but not actively scheduled, for example: sensors for this source disabled.
+  INACTIVE = 1;
+  // source is in the progress of being deprecated
+  DELETE_IN_PROGRESS = 2;
+  // source is off-boarded
+  DELETED = 3;
+}
+
+// Pipeline run information
+message DagitPipelineInfo {
+  // Timestamp for when the pipeline last ran
+  google.protobuf.Timestamp run_time = 1;
+  // Status of the last run
+  string run_status = 2;
+}
+
+// Fabricator Source Filter
+message FabricatorSourceFilter {
+  // Specific Type Of Source Owner
+  string owner = 1;
+  // Specific Type Of Source Type
+  SourceType type = 2;
+  // Source name
+  string name = 3;
+  // source status
+  FabricatorSourceStatus status = 4;
+  // List of property filters
+  repeated FeaturePropertyFilter data = 5;
+}
+
+// Fabricator Feature Filter
+message FabricatorFeatureFilter {
+  // Specific Source Owner
+  string user = 1;
+  // Specific Sink
+  string sink = 2;
+  // Specific Source
+  string source_name = 3;
+  // Feature name
+  string name = 4;
+  // Entity name: can be multiple
+  repeated string entities = 5;
+  // List of property filters
+  repeated FeaturePropertyFilter data = 6;
+}
+
+// Fabricator Source Configuration
+message FabricatorSource {
+  // Fabricator Source Name
+  string name = 1;
+  // Fabricator Source Owner/Team Name
+  string owner = 2;
+  // Fabricator Source Type
+  SourceType type = 3;
+  // Entites in the Source
+  repeated Entity entities = 4;
+  // Timestamp for the last successful run (only for batched jobs)
+  google.protobuf.Timestamp last_successful_run = 5;
+  // Storage Configuration
+  StorageSpec storage_spec = 6;
+  // Compute Configuraiton
+  ComputeSpec compute_spec = 7;
+  // Metadata Configuration
+  MetadataSpec metadata_spec = 8;
+  // Upload groups for the Source
+  string upload_group = 9;
+  // Databricks/Compute url for job run
+  string job_run_url = 10;
+  // Dagit url for the job
+  string dagit_job_url = 11;
+  // Dagit sensor name
+  string dagit_sensor_name = 12;
+  // Dagit sensor status
+  string dagit_sensor_status = 13;
+  // Dagit pipeline metdata/info
+  repeated DagitPipelineInfo dagit_pipeline_runs = 14;
+  // Upstreams
+  repeated string upstreams = 15;
+  // Features in the given source table
+  repeated string features = 16;
+  // Models that rely on source table
+  repeated string models = 17;
+  // Downstreams
+  repeated string downstreams = 18;
+  // definition file path
+  string definition_file_path = 19;
+  // status
+  FabricatorSourceStatus source_status = 20;
+  // ml governance tags
+  repeated GovernanceMetadataTagType governance_tags = 21;
+  // ml governance review status
+  MLGovernanceReviewStatus ml_governance_review_status = 22;
+  // ml governance notes
+  string ml_governance_notes = 23;
+}
+
+// Fabricator Feature Proto
+message FabricatorFeature {
+  // Feature Name
+  string name = 1;
+  // Source Name
+  string source_name = 2;
+  // Feature Entities
+  repeated Entity entities = 3;
+  // Feature Type
+  DataType feature_type = 4;
+  // Materialize Spec
+  MaterializeSpec materialize_spec = 5;
+  // Feature Metadata
+  MetadataSpec metadata_spec = 6;
+  // Feature Upload Group
+  string upload_group = 7;
+  // Models Using the Feature
+  repeated string models = 8;
+  // Users watching the Feature
+  repeated string users = 9;
+  // Sinks of the Feature
+  repeated string sinks = 10;
+  // definition file path
+  string definition_file_path = 11;
+}
+
+// RPC Requests/Responses Below
+
+// Get Sources Request
+message FabricatorConnectorGetSourcesRequest {
+  // Optionally passed list of sources to fetch
+  repeated string source_names = 1;
+  // Filter Sources
+  FabricatorSourceFilter filter = 2;
+  google.protobuf.Int32Value page_number = 3;
+  google.protobuf.Int32Value page_size = 4;
+}
+
+// Get Sources Response
+message FabricatorConnectorGetSourcesResponse {
+  // Status Code
+  StatusCode code = 1;
+  // Fabricator Sources
+  repeated FabricatorSource sources = 2;
+  // Pagination
+  PageInfo page_info = 3;
+}
+
+// Get Features Request
+message FabricatorConnectorGetFeaturesRequest {
+  // Optionally passed list of features to fetch
+  repeated string feature_names = 1;
+  // Filter Features
+  FabricatorFeatureFilter filter = 2;
+  google.protobuf.Int32Value page_number = 3;
+  google.protobuf.Int32Value page_size = 4;
+}
+
+// Get Features Response
+message FabricatorConnectorGetFeaturesResponse {
+  // Status Code
+  StatusCode code = 1;
+  // Fabricator Sources
+  repeated FabricatorFeature features = 2;
+  // Pagination
+  PageInfo page_info = 3;
+}
+
+// Upsert Request: Fabricator Sources
+message FabricatorConnectorUpsertSourcesRequest {
+  // List of fabricator sources to be written
+  repeated FabricatorSource sources = 1;
+  // Set true for a dry run
+  bool dry = 2;
+  // Partially update by preserving columns
+  bool partial = 3;
+}
+
+// Upsert Request: Fabricator Features
+message FabricatorConnectorUpsertFeaturesRequest {
+  // List of fabricator features to be written
+  repeated FabricatorFeature features = 1;
+  // Set true for a dry run
+  bool dry = 2;
+}
+
+// Delete Request: Fabricator Features
+message FabricatorConnectorDeleteFeaturesRequest {
+  repeated string feature_names = 1;
+}
+
+// Delete Response: Fabricator Features
+message FabricatorConnectorDeleteFeaturesResponse {
+  StatusCode code = 1;
+}
+
+// Delete Request: Fabricator Sources
+message FabricatorConnectorDeleteSourcesRequest {
+  repeated string source_names = 1;
+}
+
+// Delete Response: Fabricator Sources
+message FabricatorConnectorDeleteSourcesResponse {
+  StatusCode code = 1;
+}

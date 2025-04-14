@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.drive.api.invoicing.tasks.business_onboarding.v1";
+option java_outer_classname = "Tasks";
+
+package com.doordash.drive.api.invoicing.tasks.business_onboarding.v1;
+
+import "google/protobuf/wrappers.proto";
+import "common/date.proto";
+import "drive_protobuf/invoicing/invoicing_groups/common.proto";
+import "drive_protobuf/common.proto";
+
+// Billing details to create a Netsuite account
+message BillingDetails {
+    google.protobuf.StringValue legal_name = 1;
+    google.protobuf.StringValue email = 2;
+    google.protobuf.StringValue street = 3;
+    google.protobuf.StringValue city = 4;
+    google.protobuf.StringValue state = 5;
+    google.protobuf.StringValue zipcode = 6;
+    drive.common.CountryCode country = 7;
+    drive.common.Currency currency = 8;
+}
+
+// When a business has been created, onboard them for invoicing.
+message BusinessPaymentOnboardingRequest {
+    // support either DSJ or Drive identifiers
+    oneof business_id {
+        int64 doorstep_business_id = 1;
+        string business_uuid = 2;
+    }
+
+    // To find if an invoicing group exists either by developer or business id
+    google.protobuf.Int64Value developer_id = 3;
+
+    // If a store is passed in, it will be added as a member to the invoicing group
+    oneof store_id {
+        int64 doorstep_store_id = 4;
+        string store_uuid = 5;
+    }
+
+    // default is false. If set to true, invoices are not automatically generated (rare use case).
+    bool should_invoice_manually = 6;
+
+    BillingDetails billing = 7;
+}
+
+enum BusinessPaymentOnboardingErrorCode {
+    // Unknown error
+    BUSINESS_PAYMENT_ONBOARDING_ERROR_CODE_UNSPECIFIED = 0;
+
+    // Without a valid business, no further action is taken
+    BUSINESS_PAYMENT_ONBOARDING_ERROR_CODE_BUSINESS_NOT_FOUND = 1;
+
+    // Without valid billing details, do not create invoicing groups / netsuite, etc
+    BUSINESS_PAYMENT_ONBOARDING_ERROR_CODE_INVALID_BILLING_DETAILS = 2;
+
+    // Should create an invoicing group, but unable to do so
+    BUSINESS_PAYMENT_ONBOARDING_ERROR_CODE_CANNOT_CREATE_INVOICING_GROUP = 3;
+
+    // Should create an onboarding rule, but unable to do so
+    BUSINESS_PAYMENT_ONBOARDING_ERROR_CODE_CANNOT_CREATE_ONBOARDING_RULE = 4;
+}
+
+enum BusinessPaymentOnboardingWarningCode {
+    // Unknown warning (default)
+    BUSINESS_PAYMENT_ONBOARDING_WARNING_CODE_UNSPECIFIED = 0;
+
+    // An existing invoicing group was found based on either developer or business
+    BUSINESS_PAYMENT_ONBOARDING_WARNING_CODE_EXISTING_INVOICING_GROUP = 1;
+
+    // An existing onboarding rule was found based on either developer or business
+    BUSINESS_PAYMENT_ONBOARDING_WARNING_CODE_EXISTING_ONBOARDING_RULE = 2;
+
+    // The existing invoicing group had a netsuite entity id, so a separate request to Netsuite was not sent.
+    BUSINESS_PAYMENT_ONBOARDING_WARNING_CODE_EXISTING_NETSUITE_ENTITY = 3;
+}
+
+// Errors/warnings/successful payment onboarding
+message BusinessPaymentOnboardingResponse {
+    // Errors from onboarding
+    message Error {
+        // Http status code
+        int32 code = 1;
+
+        // One of the generic errors listed in the enum.
+        BusinessPaymentOnboardingErrorCode error_code = 2;
+
+        // Detailed error message.
+        string error_message = 3;
+    }
+
+    // Warnings are where the majority of onboarding has proceeded, but
+    // states for some objects may be unexpected / require further inspection
+    message Warning {
+        BusinessPaymentOnboardingWarningCode warning_code = 1;
+        string warning_message = 2;
+    }
+
+    // One or more errors / warnings.
+    repeated Error errors = 1;
+    repeated Warning warnings = 2;
+
+    drive.api.invoicing.invoicing_groups.InvoicingGroup invoicing_group = 3;
+    drive.api.invoicing.invoicing_groups.InvoicingGroupOnboardingRule onboarding_rule = 4;
+}

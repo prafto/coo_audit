@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package eta_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/workflow.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.eta.service";
+
+// Defines the service interface for native Task model based Quoted ETA prediction.
+service TaskModelQuotedETAService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web-eta";
+
+  // The interface for predicting Quoted ETA of native Task model based requests.
+  rpc PredictQuotedETA(PredictQuotedETARequest) returns (PredictQuotedETAResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 30000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+// Defines the request messages for native Task model based Quoted ETA prediction
+message PredictQuotedETARequest {
+  // The workflow definition is centrally managed by Task Service
+  task_service.v2.WorkflowData workflow_data = 1;
+}
+
+// Defines the response messages for native Task model based Quoted ETA prediction
+message PredictQuotedETAResponse {
+  // The result of the Quoted ETA prediction is defined by the ETA Service
+  WorkflowPrediction workflow_prediction = 1;
+}
+
+// Defines the Quoted ETA prediction result
+message WorkflowPrediction {
+  // The name of the workflow as specified in the request
+  google.protobuf.StringValue workflow_name = 1;
+  // The predictions for each task group in the workflow
+  TaskGroupPredictions task_group_predictions = 2;
+  // The predictions for each task in the workflow
+  TaskPredictions task_predictions = 3;
+}
+
+// Represents the Quoted ETA prediction result for multiple task groups
+message TaskGroupPredictions {
+  // The key is the task group name, and the value is the corresponding prediction result
+  map<string, TaskGroupPrediction> task_group_predictions = 1;
+}
+
+// Represents the Quoted ETA prediction result for a single task group
+message TaskGroupPrediction {
+  // Represents the travel duration between the location of two tasks
+  message BetweenTaskTravelDuration {
+    // The total travel duration
+    google.protobuf.Duration total_duration = 1;
+  }
+  // Represents the travel duration by segments.
+  // The key is the segment in the format of "from_task_name::to_task_name"
+  // The first segment of each task group is special: "INITIAL::first_task_name"
+  map<string, BetweenTaskTravelDuration> travel_duration_by_segment = 1;
+}
+
+// Represents the Quoted ETA prediction result for multiple tasks
+message TaskPredictions {
+  // The key is in the format of "taskgroup_name::task_name", and the value is the corresponding prediction result
+  map<string, TaskPrediction> task_predictions = 1;
+}
+
+// Represents the Quoted ETA prediction result for a single task
+message TaskPrediction {
+  // Represents the duration of the pre-task phase
+  message PreTaskDuration {
+    // The value of the total duration
+    google.protobuf.Duration total_duration = 1;
+  }
+  // Represents the duration of the in-task phase
+  message InTaskDuration {
+    // The value of the total duration
+    google.protobuf.Duration total_duration = 1;
+  }
+  // Represents the duration of the post-task phase
+  message PostTaskDuration {
+    // The value of the total duration
+    google.protobuf.Duration total_duration = 1;
+  }
+  // Represents the preference for dasher to arrive at the destination, which in most cases
+  // represents the preference of the merchant.
+  // This does not represent the estimation of dash assignment or actual realistic dasher arrival time.
+  message PreferredDasherArrivalTimestamp {
+    // The timestamp of the preferred dasher arrival time
+    google.protobuf.Timestamp value = 1;
+  }
+  // Represents the time when the task is ready to be acted on
+  // This field is not set if such concept is not applicable to the task
+  message TaskReadyTimestamp {
+    // The timestamp of the task ready time
+    google.protobuf.Timestamp value = 1;
+  }
+  // Represents the required dasher ready time
+  // This field is not set if such concept is not applicable to the task
+  message RequiredDasherReadyTimestamp {
+    // The timestamp of the dasher ready time
+    google.protobuf.Timestamp value = 1;
+  }
+  // Represents the desired completion time of the task
+  message PreferredCompletionTimestamp {
+    // The timestamp of the desired completion time
+    google.protobuf.Timestamp value = 1;
+  }
+  // Represents the time after which the task can no longer be performed
+  // This field is not set if such concept is not applicable to the task
+  message RequiredCompletionTimestamp {
+    // The timestamp of the required completion time
+    google.protobuf.Timestamp value = 1;
+  }
+  // The pre-task duration prediction
+  PreTaskDuration pre_task_duration = 1;
+  // The in-task duration prediction
+  InTaskDuration in_task_duration = 2;
+  // The post-task duration prediction
+  PostTaskDuration post_task_duration = 3;
+  // The preferred dasher arrival time
+  PreferredDasherArrivalTimestamp preferred_dasher_arrival_timestamp = 4;
+  // The task ready time prediction
+  TaskReadyTimestamp task_ready_timestamp = 5;
+  // The desired completion time prediction
+  PreferredCompletionTimestamp preferred_completion_timestamp = 6;
+  // The required completion time
+  RequiredCompletionTimestamp required_completion_timestamp = 7;
+  // The required dasher ready time
+  RequiredDasherReadyTimestamp required_dasher_ready_timestamp = 8;
+}

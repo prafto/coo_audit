@@ -1,0 +1,408 @@
+syntax = "proto3";
+
+package expense_provider_service.v1;
+
+import "common/service_client_config.proto";
+import "delivery_event/delivery_event.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "expense_provider_service/expense_provider.proto";
+import "expense_provider_service/order.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/expense_provider_service/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.expenseproviderservice";
+
+/**
+ *  gRPC interface for service responsible for interacting with third-party expense providers
+ *   Metadata Keys:
+ *     - dd-api-secret (required): API key provisioned by DDfW team for your service to access the APIs.
+ *     - dd-obo-user-id (required): Currently-logged in user.
+ *     - dd-obo-consumer-id (required): Currently-logged in consumer.
+ *     - dd-experience-id (required): Experience of consumer (defaults to 'doordash' if not provided)
+ */
+service ExpenseProviderService {
+  option (doordash.api.service) = {
+    name: "expense-provider-service-web"
+    url: "expense-provider-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["expense-provider"]
+    api_key_name: "expense-provider-service-key"
+    owner: {
+      name: "expense-provider-service"
+      id: "doordash-for-work"
+      slack_channel: "#eng-work"
+      email_alias: "ddfw-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Return list of ExpenseProviders that we can send receipts to on behalf of a consumer
+  rpc GetExpenseProviders(GetExpenseProvidersRequest) returns (GetExpenseProvidersResponse) {
+    option (google.api.http) = {get: "/expense-provider/v1/expense-providers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Return list of Available Expense Providers V2
+  rpc GetExpenseProvidersV2(GetExpenseProvidersV2Request) returns (GetExpenseProvidersV2Response) {
+    option (google.api.http) = {get: "/expense-provider/v1/expense-providers-v2"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  /**
+   * Will call order gateway to verify orders belong to user
+   */
+  rpc GetOrderExportHistories(GetOrderExportHistoriesRequest) returns (GetOrderExportHistoriesResponse) {
+    option (google.api.http) = {get: "/expense-provider/v1/order-export-histories"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  /**
+   * Allow a consumer to initiate exports.  Note that the exporting will occur asynchronously.
+   */
+  rpc ExportOrders(ExportOrdersRequest) returns (ExportOrdersResponse) {
+    option (google.api.http) = {
+      post: "/expense-provider/v1/order-exports"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Heading towards deprecation, expense providers will be user-based, not consumer-based.
+  //  See GetUserExpenseProviderAuthInfos
+  rpc GetConsumerExpenseProvider(GetConsumerExpenseProviderRequest) returns (GetConsumerExpenseProviderResponse) {
+    option (google.api.http) = {get: "/expense-provider/v1/consumer-expense-provider"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Info about how to start authorization process (e.g. a redirect URI)
+  rpc InitiateExpenseProviderAuthorization(InitiateExpenseProviderAuthorizationRequest) returns (InitiateExpenseProviderAuthorizationResponse) {
+    option (google.api.http) = {
+      post: "/expense-provider/v1/initiate-expense-provider-authorization"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Gets called with specific authorization info required per expense provider
+  rpc AuthorizeExpenseProviderForUser(AuthorizeExpenseProviderForUserRequest) returns (AuthorizeExpenseProviderForUserResponse) {
+    option (google.api.http) = {
+      post: "/expense-provider/v1/authorize-expense-provider-for-user"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Who is the user authorized with?
+  rpc GetUserExpenseProviderAuthInfos(GetUserExpenseProviderAuthInfosRequest) returns (GetUserExpenseProviderAuthInfosResponse) {
+    option (google.api.http) = {get: "/expense-provider/v1/user-expense-provider-auth-infos"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Revoke DoorDash's access to the logged-in user's expense provider account.
+  rpc DeleteUserExpenseProviderAuthInfo(DeleteUserExpenseProviderAuthInfoRequest) returns (DeleteUserExpenseProviderAuthInfoResponse) {
+    option (google.api.http) = {delete: "/expense-provider/v1/delete-user-expense-provider-auth-info"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  /**
+   * BE use only - BE initiate the order exports when order status is delivered & business order & user has concur linked
+   * Allow a consumer to initiate exports.  Note that the exporting will occur asynchronously.
+   */
+  rpc InitiateOrderExport(InitiateOrderExportRequest) returns (InitiateOrderExportResponse) {
+    option (google.api.http) = {
+      post: "/expense-provider/v1/initiate-order-export"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// Generic for now, we should be sure to capture user/consumer with metadata
+//  so the service can provide available expense providers for a particular user's locale.
+message GetExpenseProvidersRequest {
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Determine whether ExpenseProvider needs name, etc.
+message GetExpenseProvidersResponse {
+  // Expense providers available for the consumer.
+  repeated ExpenseProvider expense_providers = 1;
+}
+
+// Generic for now, we can capture capture user/consumer with metadata
+// so the service can provide available expense providers for a particular user's locale.
+message GetExpenseProvidersV2Request {
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response for expense providers v2 with list of available expense providers
+message GetExpenseProvidersV2Response {
+  // Available expense providers
+  AvailableExpenseProviders available_expense_providers = 1;
+}
+
+/**
+ * Get ConsumerId from header
+ */
+message GetOrderExportHistoriesRequest {
+  // Orders whose histories should be returned in response.
+  repeated string order_uuids = 1;
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+/**
+ * Self explanatory
+ */
+message GetOrderExportHistoriesResponse {
+  /**
+   * Result pattern to allow for partial success/failure and eventual implementation of
+   *  error model as a `oneof` with the `export_history`.
+   */
+  message GetOrderExportHistoriesResult {
+    // Corresponds to an ID in the request.
+    string order_uuid = 1;
+    // Will be null if order does not have an export history
+    OrderExportHistory export_history = 2;
+  }
+  reserved 1;
+  /**
+   * Will return at most one OrderExportHistory per order.
+   *   No OrderExportHistory if we don't have a reference
+   *   to the order.
+   */
+  repeated GetOrderExportHistoriesResult results = 2;
+}
+
+/**
+ *  Queue orders up for export.  That part will happen asynchronously.
+ */
+message ExportOrdersRequest {
+  // Which orders to export?
+  repeated string order_uuids = 1;
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+  // Delivery details of each orders
+  repeated delivery_event.DeliveryContext delivery_context = 4 [(doordash.api.client.optional) = true];
+}
+
+/**
+ * Self-explanatory
+ */
+message ExportOrdersResponse {
+  /**
+   * Success/Failure mesage for each order_uuid specified in request.
+   */
+  message ExportOrderRequestResult {
+    // Which order UUID in request does this result correspond to?
+    string order_uuid = 2;
+
+    // TODO: include `error` with enum codes for more informative translatable errors.
+    oneof result {
+      // If successful then there'll be a order history with status=EXPORT_STATUS_PENDING
+      OrderExportHistory success = 1;
+    }
+  }
+
+  // Results of the bulk API request
+  repeated ExportOrderRequestResult order_export_results = 1;
+}
+
+// dd-obo-user-id Metadata key will be used to find the expense provider configuration
+message GetConsumerExpenseProviderRequest {
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// self-explanatory.
+message GetConsumerExpenseProviderResponse {
+  /**
+   * Field is absent if consumer has not configured an expense provider.
+   *  Field is present if consumer has ever configured an expense provider,
+   *  whether or not DoorDash's auth grant has expired.
+   */
+  ConsumerExpenseProvider consumer_expense_provider = 1;
+}
+
+// self-explanatory.
+message InitiateExpenseProviderAuthorizationRequest {
+  // expense provider
+  ExpenseProvider expense_provider = 1;
+
+  // source of the initiated auth request
+  reserved 2;
+  reserved "auth_source";
+
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 4 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Info required to initiate authorization flow.
+message InitiateExpenseProviderAuthorizationResponse {
+  // convenient for clients to get this information at the top level
+  ExpenseProvider expense_provider = 1;
+
+  // Specific messages for each provider to avoid trying to generalize auth flows
+  oneof provider_initiation_info {
+    // Info for concur.
+    ConcurAuthInitiationInfo concur_initiation_info = 2;
+  }
+}
+
+// info required to request auth for expense providers
+message AuthorizeExpenseProviderForUserRequest {
+  // Specific messages for each provider to avoid trying to generalize auth flows
+  oneof authorization_request_info {
+    // Info for Concur's Auth Grant (initiated from DoorDash)
+    ConcurAuthRequestInfo concur_auth_request_info = 1;
+    // Info for Concur's Password Grant (initiated from Concur's App Center)
+    ConcurPasswordGrantRequestInfo concur_password_grant_request_info = 2;
+  }
+
+  // source of the initiated auth request
+  reserved "auth_source";
+  reserved 3;
+
+  // removed has_active_business_profile field
+  reserved "has_active_business_profile";
+  reserved 4;
+
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 5 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 6 [(doordash.api.inject_id) = USER_ID];
+}
+
+// user auth info for expense provider
+message AuthorizeExpenseProviderForUserResponse {
+  // self-explanatory
+  UserExpenseProviderAuthInfo user_expense_provider_auth_info = 1;
+
+  // does user have an active business profile
+  google.protobuf.BoolValue has_active_business_profile = 2;
+}
+
+// dd-obo-user-id Metadata key will be used to find the expense provider configuration
+message GetUserExpenseProviderAuthInfosRequest {
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// self-explanatory.
+message GetUserExpenseProviderAuthInfosResponse {
+  /**
+   * This field is functionally a Set of expense-provider configurations.
+   *
+   * AuthInfo is absent if user has not configured a particular expense provider.
+   *  AuthInfo is present if user has ever configured an expense provider and not deleted it,
+   *   whether or not DoorDash's auth grant has expired.
+   */
+  repeated UserExpenseProviderAuthInfo user_expense_provider_auth_infos = 1;
+}
+
+// Revoke access to an expense provider
+message DeleteUserExpenseProviderAuthInfoRequest {
+  // Which configuration do you want to delete?
+  ExpenseProvider expense_provider = 1;
+
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Blank for now, error code will be returned if something went wrong.
+message DeleteUserExpenseProviderAuthInfoResponse {}
+
+// initiate order export
+message InitiateOrderExportRequest {
+  // order to export
+  google.protobuf.StringValue order_uuid = 1;
+  // consumer id of the request initiator
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // user id of the request initiator
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+// response for initiate order export request
+message InitiateOrderExportResponse {}

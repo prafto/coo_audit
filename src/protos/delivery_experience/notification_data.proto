@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package delivery_experience.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "postal_service/messaging.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "delivery.experience";
+
+/** Holds data about post-checkout notifications to be sent.
+ *
+ * Notifications are sent using postal service. See the postal service documentation for details
+ * on the format of the postal_service_request fields.
+ *   https://doordash.atlassian.net/wiki/spaces/Eng/pages/2821030158/Postal+Service+FAQs
+ */
+message NotificationData {
+  // At least one of push_data, sms_data, email_data and notification_hub_data is required
+
+  // The push notification to send.
+  PushData push_data = 1;
+  // The sms notification to send.
+  SmsData sms_data = 2;
+  // The email notification to send.
+  EmailData email_data = 3;
+  // The notification hub event to send.
+  NotificationHubData notification_hub_data = 9;
+
+  // Required. This must be a valid type from the notification event registry.
+  // It is used to keep track of which team owns the notification and configure settings for the notification.
+  google.protobuf.StringValue ui_event_type = 4;
+
+  // The name of the DIP delivery event category which this notification event was generated from.
+  // If this notification event did not come from a DIP event, leave this field null.
+  google.protobuf.StringValue source_delivery_event_category = 5;
+
+  // The UUID of the DIP delivery event which this notification event was generated from.
+  // If this notification event did not come from a DIP event, leave this field null.
+  // We log this to make debugging easier.
+  google.protobuf.StringValue source_delivery_event_uuid = 6;
+
+  // The timestamp when the thing this notification event is in response to happened.
+  //
+  // We use this to sort notification events before merging them together.
+  //
+  // If this notification event is in response to a DIP event, use the `created_at` timestamp of the DIP event.
+  //   DO NOT set it to the `updated_at` timestamp of the DIP event as they are different. For example for the
+  //   `ORDER_CREATED` DIP event, `created_at` is the timestamp of when the order was created in order service, whereas
+  //   `updated_at` is the timestamp of when the DIP event was written to the database.
+  //
+  // If this notification event didn't come from a DIP event, use the timestamp that is closest to the source as possible
+  //   for example, the timestamp of when a request came in or the timestamp of some other kafka event that
+  //   triggered this notification.
+  //
+  // This field is required. If none of the above situations apply, set this timestamp to the current time.
+  google.protobuf.Timestamp source_created_at = 7;
+
+  // The timestamp of when the grace period for conflict resolution should start - if multiple notifications from
+  // different teams are sent for the same DIP event, we want them to all have the same `source_updated_at`.
+  //
+  // If this notification event is in response to a DIP event, use the `updated_at` timestamp of the DIP event.
+  //   DO NOT set it to the `created_at` timestamp of the DIP event as they are different. For example for the
+  //   `ORDER_CREATED` DIP event, `created_at` is the timestamp of when the order was created in order service, whereas
+  //   `updated_at` is the timestamp of when the DIP event was written to the database.
+  //
+  // If this notification event came from a non-kafka DIP event, use the timestamp of the event it was in response to.
+  //
+  // This field is required. If none of the above situations apply, set this timestamp to the current time.
+  google.protobuf.Timestamp source_updated_at = 8;
+
+  /**
+   * A push notification to send.
+   *
+   * Encapsulates the postal service proto plus any post-checkout specific fields.
+   */
+  message PushData {
+    // request proto for postal service
+    postal_service.v1.SendPushRequest postal_service_request = 1;
+    // optional idempotency key if the caller wants customization
+    // on the default one provided by the service
+    // these have to be globally unique to make sure it does not collide with
+    // other teams.
+    google.protobuf.StringValue idempotency_key = 2;
+  }
+
+  /**
+   * An sms notification to send.
+   *
+   * Encapsulates the postal service proto plus any post-checkout specific fields.
+   */
+  message SmsData {
+    // request proto for postal service
+    postal_service.v1.SendSMSRequest postal_service_request = 1;
+    // optional idempotency key if the caller wants customization
+    // on the default one provided by the service
+    // these have to be globally unique to make sure it does not collide with
+    // other teams.
+    google.protobuf.StringValue idempotency_key = 2;
+  }
+
+  /**
+   * An email notification to send.
+   *
+   * Encapsulates the postal service proto plus any post-checkout specific fields.
+   */
+  message EmailData {
+    // request proto for postal service
+    postal_service.v1.SendEmailRequest postal_service_request = 1;
+    // optional idempotency key if the caller wants customization
+    // on the default one provided by the service
+    // these have to be globally unique to make sure it does not collide with
+    // other teams.
+    google.protobuf.StringValue idempotency_key = 2;
+  }
+
+  /**
+   * An notification hub event to send.
+   *
+   * Encapsulates the postal service proto plus any post-checkout specific fields.
+   */
+  message NotificationHubData {
+    // request proto for postal service
+    postal_service.v1.SendNotificationHubRequest postal_service_request = 1;
+    // optional idempotency key if the caller wants customization
+    // on the default one provided by the service
+    // these have to be globally unique to make sure it does not collide with
+    // other teams.
+    google.protobuf.StringValue idempotency_key = 2;
+  }
+}

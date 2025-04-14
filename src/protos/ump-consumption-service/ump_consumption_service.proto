@@ -1,0 +1,183 @@
+syntax = "proto3";
+package ump_consumption_service.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "om.doordash.rpc.ump_consumption_service";
+
+// Talleyrand controller service
+service UMPConsumptionService {
+  // Query Metric
+  rpc QueryMetric(QueryMetricRequest) returns (QueryMetricResponse);
+  // Cancel Metric Query
+  rpc CancelMetricQuery(CancelMetricQueryRequest) returns (CancelMetricQueryResponse);
+  // Fetch Metric Query Results
+  rpc FetchMetricQueryResults(FetchMetricQueryResultsRequest) returns (FetchMetricQueryResultsResponse);
+}
+
+// Time range filter
+message TimeRange {
+  // start time
+  google.protobuf.Timestamp start_time = 1;
+  // end time
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// Enum to define various supported time granularities
+enum TimeGrain {
+  // Unspecified
+  TIME_GRAIN_UNSPECIFIED = 0;
+  // Day
+  TIME_GRAIN_DAY = 1;
+  // Week
+  TIME_GRAIN_WEEK = 2;
+  // Month
+  TIME_GRAIN_MONTH = 3;
+  // Quarter
+  TIME_GRAIN_QUARTER = 4;
+  // Year
+  TIME_GRAIN_YEAR = 5;
+}
+
+// Enum to define status of the metrics query
+enum QueryStatus {
+  // Unspecified
+  QUERY_STATUS_UNSPECIFIED = 0;
+  // Started
+  QUERY_STATUS_QUEUED = 1;
+  // In progress
+  QUERY_STATUS_IN_PROGRESS = 2;
+  // Success
+  QUERY_STATUS_SUCCESS = 3;
+  // Error
+  QUERY_STATUS_ERROR = 4;
+}
+
+// Enum to define status of cancel query request
+enum CancelQueryStatus {
+  // Unspecified
+  CANCEL_QUERY_STATUS_UNSPECIFIED = 0;
+  // Success
+  CANCEL_QUERY_STATUS_SUCCESS = 1;
+  // Failure
+  CANCEL_QUERY_STATUS_FAILURE = 2;
+}
+
+// Query Type
+enum QueryType {
+  // Unknown
+  QUERY_TYPE_UNSPECIFIED = 0;
+  // Historical
+  QUERY_TYPE_HISTORICAL = 1;
+  // Forecast
+  QUERY_TYPE_FORECAST = 2;
+}
+
+// AdvancedMetricFilters
+message AdvancedMetricFilters {
+  // Added for forecast use cases and can be used only with ratio metrics
+  bool query_only_numerator = 1;
+  // Added for forecast use cases and can be used only with ratio metrics
+  bool query_only_denominator = 2;
+  // Added to support forecast use case - custom SQL for forecasting needs.
+  bool query_for_forecast = 3;
+}
+
+// Input for metric query
+message MetricQueryInput {
+  // list of metric ids
+  repeated string metric_ids = 1;
+  // list of dimension ids to group by
+  repeated string dimension_ids = 2;
+  // List of string representation of where clauses which will combined with AND.
+  // These can be valid SQL snippets on dimensions. Since we only support categorical
+  // dimensions, only IN clause and equals (=) are supported
+  // Examples: ["batching = true", "country IN ('US', 'MEX')"]
+  repeated string filters = 3;
+  //Time range for metrics
+  TimeRange time_range = 4;
+  // TimeGranularity of the result
+  TimeGrain time_grain = 5;
+  // list of columns to order by
+  repeated string order_bys = 6;
+  // Max number of rows in result
+  int32 limit = 7;
+  // Boolean flag to skip all caches and execute SQL on source
+  bool skip_cache = 8;
+  // Boolean flag to request only SQL without execution
+  bool fetch_only_sql = 9;
+  // Fully qualified table name to store results
+  string results_as_table = 10;
+  // Entity unit to aggregate by
+  // Example: Aggregate core_deliveries metric by consumer_id to get avg deliveries per consumer
+  string aggregate_entity_unit = 11;
+  // Misc filters
+  AdvancedMetricFilters advanced_filters = 12;
+  // List of entity unit identifier names to group the metric. You can either use this or aggregate_entity_unit, but not both.
+  // Eg: For "core_deliveries" metric, if you add consumer_id to this list, the SQL will return one row for each consumer_id with
+  // the number of deliveries made by each consumer. However, with aggregate_entity_unit, there will be a second level of AVG
+  // aggregation and there will single value to return the overall average number of deliveries made per consumer
+  repeated string group_by_entity_units = 13;
+}
+
+// Request for metric query
+message QueryMetricRequest {
+  // metric query input
+  MetricQueryInput query_input = 1;
+  // Id of the user who triggered the query
+  string user_id = 2;
+  // Query type
+  QueryType query_type = 3;
+}
+
+// Response for metric query
+message QueryMetricResponse {
+  // id of the query which can be used to fetch the results
+  string query_id = 1;
+  // Generated SQL for the query input
+  string sql = 2;
+}
+
+// QueryMetadata
+message QueryMetadata {
+  // sql
+  string sql = 1;
+  // Snowflake query id
+  string sql_query_id = 2;
+  // Query type
+  QueryType query_type = 3;
+}
+
+// Request to fetch metric results
+message FetchMetricQueryResultsRequest {
+  // id of the query
+  string query_id = 1;
+}
+
+// Response for fetch metric results
+message FetchMetricQueryResultsResponse {
+  // status of the query execution
+  QueryStatus status = 1;
+  // all details of the SQL execution
+  QueryMetadata query_metadata = 2;
+  // JSON representation of the query result dataframe
+  string results = 3;
+  // error message
+  string error_msg = 4;
+}
+
+// Request to cancel the metric query
+message CancelMetricQueryRequest {
+  // id of the query
+  string query_id = 1;
+}
+
+// Request to cancel the metric query
+message CancelMetricQueryResponse {
+  // status
+  CancelQueryStatus status = 1;
+  // Detailed message for the status
+  string message = 2;
+}

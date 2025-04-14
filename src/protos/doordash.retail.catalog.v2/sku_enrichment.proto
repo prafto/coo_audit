@@ -1,0 +1,334 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package doordash.retail.catalog.v2;
+
+import "doordash.retail.baseline_sku.v1/baseline_sku.proto";
+import "doordash.retail.catalog.crdb.v1/product_item.proto";
+import "doordash.retail.catalog.v2/attribute_extraction.proto";
+import "doordash.retail.catalog.v2/prime_content.proto";
+import "doordash.retail.catalog.v2/product_template_assignment.proto";
+import "doordash.retail.catalog.v2/quality_signal.proto";
+import "doordash.retail.catalog.v2/upc_lookup.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/doordash/retail/catalog/v2";
+
+// Final Enriched SKU needed by ER
+message FinalEnrichedSku {
+  // enriched SKU id
+  google.protobuf.StringValue enriched_sku_id = 1;
+  // mx supplied id
+  google.protobuf.StringValue merchant_supplied_id = 2;
+  // final enriched SKU content in MPC/UMP format
+  doordash.retail.catalog.crdb.v1.ProductItem sku_content = 3;
+  // enriched SKU origin identifier
+  EnrichedSkuOriginIdentifier origin_identifier = 4;
+  // the time the final enriched sku is created
+  google.protobuf.Timestamp created_at = 5;
+  // [optional] baseline sku attributes
+  baseline_sku.v1.BaselineSKUAttributes baseline_sku_attributes = 6;
+}
+
+// Enriched SKU
+message EnrichedSku {
+  // enriched SKU id
+  google.protobuf.StringValue enriched_sku_id = 1;
+  // enriched SKU stage
+  EnrichedSkuStage enriched_sku_stage = 2;
+  // parent enriched SKU stage(s)
+  repeated EnrichedSkuStage parent_enriched_sku_stages = 3;
+  // enriched SKU content
+  EnrichedSkuContent enriched_sku_content = 4;
+  // enriched SKU origin identifier
+  EnrichedSkuOriginIdentifier origin_identifier = 5;
+  // workflow type
+  WorkflowType workflow_type = 6;
+  // creation timestamp
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// Enriched SKU Content
+message EnrichedSkuContent {
+  // baseline sku - starting point of enriched sku
+  doordash.retail.baseline_sku.v1.BaselineSKUProduct baseline_sku = 1;
+  // 3rd party data from looking up upc of baseline sku
+  repeated doordash.retail.catalog.v2.UpcData upc_data = 2;
+  // final enriched sku
+  doordash.retail.catalog.crdb.v1.ProductItem sku_content = 3;
+  // enriched SKU attributes - used for enrichment by individual attribute
+  repeated EnrichedSkuAttribute enriched_sku_attributes = 4;
+  // item matcher result - used for Ops checking
+  repeated ItemMatcherResult item_matcher_results = 5;
+  // Quality Signal for The Enriched SKU
+  QualitySignal quality_signal = 6;
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 7;
+  // attribute extraction result
+  AttributeExtractionResult attribute_extraction_result = 8;
+  // prime match result
+  repeated PrimeMatchResult prime_match_result = 9;
+  // product template assignment
+  doordash.retail.catalog.v2.ProductTemplateAssignment product_template_assignment = 10;
+}
+
+// Details for each result in Item Matcher
+message ItemMatcherResult {
+  // Item Id of ItemMatcherCandidate
+  google.protobuf.StringValue item_id = 1;
+  // Flag to indicate whether it's a confident item match
+  google.protobuf.BoolValue is_confident_match = 2;
+  // Confidence score from the model
+  google.protobuf.FloatValue score = 3;
+}
+
+// Prime Match Result
+message PrimeMatchResult {
+  // Prime Content identifier
+  PrimeContentIdentifier identifier = 1;
+  // Prime Content verification status
+  PrimeContentVerificationStatus verification_status = 2;
+  // Prime match confidence
+  google.protobuf.StringValue confidence = 3;
+  // Confidence score from the model
+  float score = 4;
+}
+
+// Enriched SKU Stage
+message EnrichedSkuStage {
+  // enriched SKU stage id
+  google.protobuf.StringValue enriched_sku_stage_id = 1;
+  // enriched SKU stage name
+  google.protobuf.StringValue enriched_sku_stage_name = 2;
+}
+
+// Enriched SKU Attribute
+message EnrichedSkuAttribute {
+  // attribute name
+  AttributeName attribute_name = 1;
+  // attribute values - one or more.
+  //      in the final stage, there will only be one attribute value for a given attribute.
+  //      in processing stages, there can be multiple attribute values for a given attribute
+  //          e.g. brand value from DSML and brand value from raw mx SKU
+  repeated EnrichedSkuAttributeValue attribute_values = 2;
+}
+
+// Enriched SKU Attribute Value
+message EnrichedSkuAttributeValue {
+  // attribute value
+  oneof attribute_value {
+    // string value
+    google.protobuf.StringValue string_value = 1;
+    // boolean value
+    google.protobuf.BoolValue boolean_value = 2;
+    // int value
+    google.protobuf.Int32Value int_value = 3;
+    // double value
+    google.protobuf.DoubleValue double_value = 4;
+    // timestamp value
+    google.protobuf.Timestamp timestamp_value = 5;
+  }
+
+  // attribute source
+  EnrichedSkuAttributeSource attribute_source = 20;
+}
+
+// source where enriched SKU content comes from
+message EnrichedSkuAttributeSource {
+  // attribute source name
+  google.protobuf.StringValue attribute_source_name = 1;
+  // attribute source metadata
+  EnrichedSkuAttributeSourceMetadata attribute_source_metadata = 2;
+  // attribute source type
+  AttributeSourceType attribute_source_type = 3;
+}
+
+// metadata of sku attribute source
+message EnrichedSkuAttributeSourceMetadata {
+  // source metadata
+  oneof source_metadata {
+    // dsml source metadata
+    DsmlEnrichedSkuAttributeSourceMetadata dsml_source_metadata = 1;
+    // ops source metadata
+    OpsEnrichedSkuAttributeSourceMetadata ops_source_metadata = 2;
+  }
+}
+
+// dsml source metadata
+message DsmlEnrichedSkuAttributeSourceMetadata {
+  // ML model id
+  google.protobuf.StringValue model_id = 1;
+  // ML model version
+  google.protobuf.StringValue model_version = 2;
+}
+
+// ops source metadata
+message OpsEnrichedSkuAttributeSourceMetadata {
+  // user id
+  google.protobuf.StringValue user_id = 1;
+}
+
+// origin identifier of enriched SKU
+message EnrichedSkuOriginIdentifier {
+  // business id
+  google.protobuf.Int64Value business_id = 1;
+  // origin type
+  OriginType origin_type = 2;
+  // origin id = sku_hash_id if origin type = BaselineSKU, = ump_id if origin type = UMP
+  google.protobuf.StringValue origin_id = 3;
+  // origin version = sku_hash_version if origin type = BaselineSKU, = ump_version if origin type = UMP
+  google.protobuf.StringValue origin_version = 4;
+  // origin metadata
+  EnrichedSkuOriginMetadata origin_metadata = 5;
+}
+
+// metadata of sku origin
+message EnrichedSkuOriginMetadata {
+  // file path
+  google.protobuf.StringValue file_path = 1;
+}
+
+// workflow type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum WorkflowType {
+  // unspecified format
+  WORKFLOW_TYPE_UNSPECIFIED = 0;
+  // alcohol workflow
+  ALCOHOL = 1;
+  // drive workflow
+  DRIVE = 2;
+  // migration workflow
+  MIGRATION = 3;
+}
+
+// origin type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum OriginType {
+  // unspecified format
+  ORIGIN_TYPE_UNSPECIFIED = 0;
+  // baseline sku
+  BASELINE_SKU = 1;
+  // ump
+  UMP = 2;
+  // mpc - during migration
+  MPC = 3;
+  // mpc with sku hash used for ER
+  MPC_WITH_SKU_HASH = 4;
+}
+
+// attribute source type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum AttributeSourceType {
+  // unspecified format
+  ATTRIBUTE_SOURCE_TYPE_UNSPECIFIED = 0;
+  // mx
+  MX = 1;
+  // third party e.g. neilson
+  THIRD_PARTY = 2;
+  // dsml model
+  DSML = 3;
+  // entity resolution
+  ER = 4;
+  // ops
+  OPS = 5;
+}
+
+// attribute name enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum AttributeName {
+  // unspecified format
+  ATTRIBUTE_NAME_UNSPECIFIED = 0;
+  // mx supplied id
+  MX_SUPPLIED_ID = 1;
+  // item name
+  ITEM_NAME = 2;
+  // l1 name
+  L1_CATEGORY_NAME = 3;
+  // l2 name
+  L2_CATEGORY_NAME = 4;
+  // l3 name
+  L3_CATEGORY_NAME = 5;
+  // l4 name
+  L4_CATEGORY_NAME = 6;
+  // l5 name
+  L5_CATEGORY_NAME = 7;
+  // upc code
+  UPC = 8;
+  // price lookup code
+  PRICE_LOOKUP_CODE = 9;
+  // private label flag
+  PRIVATE_LABEL_FLAG = 10;
+  // brand name
+  BRAND_NAME = 11;
+  // size
+  SIZE = 12;
+  // is item an alcohol item
+  IS_ALCOHOL = 13;
+  // is item a weight item
+  IS_WEIGHT_ITEM = 14;
+  // unit of measurement
+  UNIT_OF_MEASUREMENT = 15;
+  // extended size
+  EXTENDED_SIZE = 16;
+  // cx show by
+  CX_SHOW_BY = 17;
+  // price by
+  PRICE_BY = 18;
+  // avg weight per each
+  AVG_WEIGHT_PER_EACH = 19;
+  // avg weight per unit of measurement
+  AVG_WEIGHT_UOM = 20;
+  // priority rank
+  PRIORITY_RANK = 21;
+  // short description
+  SHORT_DESCRIPTION = 22;
+  // description
+  DESCRIPTION = 23;
+  // disclaimer
+  DISCLAIMER = 24;
+  // allergen info
+  ALLERGEN_INFO = 25;
+  // dietary flag
+  DIETARY_FLAG = 26;
+  // is snap eligible
+  SNAP_ELIGIBLE = 27;
+  // is package fee eligible
+  IS_PACKAGE_FEE_ELIGIBLE = 28;
+  // package type
+  PACKAGE_TYPE = 29;
+  // is hsa or fsa eligible
+  IS_HASH_FSA_ELIGIBLE = 30;
+  // abv
+  ABV = 31;
+  // dimension
+  DIMENSION = 32;
+  // weight
+  WEIGHT = 33;
+  // product group
+  PRODUCT_GROUP = 34;
+  // wine vintage year
+  WINE_VINTAGE_YEAR = 35;
+  // place of origin
+  PLACE_OF_ORIGIN = 36;
+  // manufacturer
+  MANUFACTURER = 37;
+  // dd_sic
+  DD_SIC = 38;
+
+  // one or more secondary upc
+  SECONDARY_UPCS = 101;
+  // one or more image url
+  IMAGE_URLS = 102;
+  // one or more variant
+  VARIANTS = 103;
+  // one or more nutritional info
+  NUTRITIONAL_INFOS = 104;
+  // one or more ingredient
+  INGREDIENTS = 105;
+  // gtin_14 code
+  GTIN_14_CODE = 106;
+
+  // other attributes
+  OTHER_ATTRIBUTES = 201;
+}

@@ -1,0 +1,602 @@
+syntax = "proto3";
+
+package doordash.retail.fulfillment.planning_service.v1;
+
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "doordash.retail.fulfillment.intelligence_service.v1/intelligence_service.proto";
+import "doordash.retail.fulfillment.planning_service.v1/fulfillment_plan_event.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.retail.fulfillment";
+
+service FulfillmentPlanningService {
+  // creates a list of fulfillmentPlans async
+  rpc CreateFulfillmentPlansAsync(CreateFulfillmentPlansAsyncRequest) returns (CreateFulfillmentPlansAsyncResponse);
+  // build or retrieve a list of fulfillment plans
+  rpc GetFulfillmentPlans(GetFulfillmentPlansRequest) returns (GetFulfillmentPlansResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "retail-fulfillment-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "planning";
+  }
+  // check if a fulfillment plan can be adjusted
+  rpc GetFulfillmentPlanAdjustmentEligibility(GetFulfillmentPlanAdjustmentEligibilityRequest) returns (GetFulfillmentPlanAdjustmentEligibilityResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "retail-fulfillment-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "planning";
+  }
+  // process orchestration kafka events
+  rpc ProcessEvent(ProcessEventRequest) returns (ProcessEventResponse);
+  // get batch of fulfillment intents
+  rpc GetBatchFulfillmentIntents(GetBatchFulfillmentIntentsRequest) returns (GetBatchFulfillmentIntentsResponse);
+  // update fulfillment intent
+  rpc UpdateActivePlanForFulfillmentIntent(UpdateActivePlanForFulfillmentIntentRequest) returns (UpdateActivePlanForFulfillmentIntentResponse);
+  // get fulfillment plan events context
+  rpc GetBatchFulfillmentPlanEventsContext(GetBatchFulfillmentPlanEventsContextRequest) returns (GetBatchFulfillmentPlanEventsContextResponse);
+  // update fulfillment plan events context
+  rpc UpdateFulfillmentPlanEventsContext(UpdateFulfillmentPlanEventsContextRequest) returns (UpdateFulfillmentPlanEventsContextResponse);
+}
+
+// Request to process an event using FP Orchestration
+message ProcessEventRequest {
+  // Event type used to determine workflow
+  EventType event_type = 1;
+  // Payload type
+  PayloadType payload_type = 2;
+  // Payload of the event we are consuming
+  oneof payload {
+    // bytes payload
+    bytes bytes_payload = 3;
+    // string payload
+    google.protobuf.StringValue string_payload = 4;
+    // protobuf message
+    FulfillmentPlanEvent fulfillment_plan_event = 5;
+  }
+}
+
+// Response after processing event using FP Orchestration
+message ProcessEventResponse {
+  // Determines whether event was processed successfully
+  bool is_success = 1;
+  // Error message if process event fails
+  repeated google.protobuf.StringValue error_message = 2;
+  // Trace used for debugging
+  repeated google.protobuf.StringValue trace = 3;
+}
+
+message CreateFulfillmentPlansAsyncRequest {
+  string client_id = 1;
+  // Caller Identifier metadata used to cache fulfillment plan
+  GetPlansRequestIdentifier request_identifier = 2;
+  // customer information necessary for the optimization
+  CustomerContext customer_context = 3;
+  // List of skus for which a Fulfillment plan will be generated
+  repeated ItemSkuContext skus = 4;
+  // Constraints set by client on the fulfillment plan
+  repeated GetFulfillmentPlanConstraint constraints = 5;
+  // Developer flags that provide debugging and verbose responses
+  DeveloperFlags developer_flags = 6;
+}
+
+message CreateFulfillmentPlansAsyncResponse {
+  // acknowledges if the request was received
+  bool request_received = 1;
+  // Caller identifier information passed back, can use to locate your response
+  GetPlansRequestIdentifier request_identifier = 2;
+}
+
+// Request to check if a fulfillment plan can be adjusted
+message GetFulfillmentPlanAdjustmentEligibilityRequest {
+  // To avoid duplicate requests
+  string uuid = 1;
+  // client id calling API
+  string client_id = 2;
+  // Identifier to cache fulfillment plans
+  GetPlansRequestIdentifier request_identifier = 3;
+  // customer information necessary for the optimization
+  CustomerContext customer_context = 4;
+  // list of skus for which FulfilmentPlan needs to be generated
+  repeated ItemSkuContext skus = 5;
+}
+
+// Response to check if a fulfillment plan can be adjusted
+message GetFulfillmentPlanAdjustmentEligibilityResponse {
+  // Identifier to cache fulfillment plans
+  GetPlansRequestIdentifier request_identifier = 1;
+  // Eligibility of the adjustment
+  FulfillmentPlanAdjustmentEligibility adjustment_eligibility = 2;
+}
+
+// Fulfillment plan adjustment eligibility
+message FulfillmentPlanAdjustmentEligibility {
+  // Whether the adjustment is eligible
+  bool is_adjustment_eligible = 1;
+}
+
+message GetFulfillmentPlansRequest {
+  string client_id = 1;
+  // Caller Identifier metadata used to cache fulfillment plan
+  GetPlansRequestIdentifier request_identifier = 2;
+  // customer information necessary for the optimization
+  CustomerContext customer_context = 3;
+  // List of skus for which a Fulfillment plan will be generated
+  repeated ItemSkuContext skus = 4;
+  // Constraints set by client on the fulfillment plan
+  repeated GetFulfillmentPlanConstraint constraints = 5;
+  // Developer flags that provide debugging and verbose responses
+  DeveloperFlags developer_flags = 6;
+}
+
+// Request Identifier to cache fulfillment plans
+message GetPlansRequestIdentifier {
+  // We will cache with key: {identifier}{version}
+  oneof identifier {
+    string cart_id = 1;
+    string order_id = 3;
+    string delivery_uuid = 5;
+  }
+  // Version Id to store the version of the call
+  // For example, Call 1: cartId 1234 v81234(timestamp)  Call 2: cartId 1234 v81235(timestamp)
+  string version = 2;
+}
+
+// Request to get fulfillment plan events context by ids
+message GetBatchFulfillmentPlanEventsContextRequest {
+  // fulfillment plan events context identifier
+  repeated FulfillmentPlanEventsContextIdentifier identifiers = 1;
+}
+
+// Response to get fulfillment plan events context by ids
+message GetBatchFulfillmentPlanEventsContextResponse {
+  // fulfillment plan events context
+  repeated FulfillmentPlanEventsContext events_context = 1;
+}
+
+// Request to update fulfillment plan events context
+message UpdateFulfillmentPlanEventsContextRequest {
+  // fulfillment plan events context identifier
+  FulfillmentPlanEventsContextIdentifier identifier = 1;
+  // cx order context
+  CxOrderContext cx_order_context = 2;
+}
+
+// Response to update fulfillment plan events context
+message UpdateFulfillmentPlanEventsContextResponse {
+  // Determines whether event was updated successfully
+  bool is_success = 1;
+  // Error message if update request fails
+  repeated google.protobuf.StringValue error_message = 2;
+  // Trace used for debugging
+  repeated google.protobuf.StringValue trace = 3;
+}
+
+message CustomerContext {
+  // creator id
+  string user_id = 1;
+  // consumer id
+  string consumer_id = 2;
+  common.Location customer_location = 3;
+  // submarket id of Cx
+  string submarket_id = 4;
+  string district_id = 5;
+  // Used in place of store country name. Replace this once store country name is populated
+  string consumer_country_short_name = 6;
+  string locale = 7;
+  // user is a first time guest, based on auth cookies extracted from UG or BFF,
+  google.protobuf.BoolValue is_guest = 8;
+  // User has a DD employee, based on roles from identity service pulled from UG
+  google.protobuf.BoolValue is_employee = 9;
+}
+
+message ItemSkuContext {
+  // sku of item
+  string merchant_supplied_id = 1;
+  string store_id = 2;
+  string business_id = 3;
+  // Quantity of the item to be fulfilled
+  common.QuantityInfo quantity_info = 4;
+  // submarket id of the store
+  string submarket_id = 5;
+  // (optional) Menu Item Id is used for more reliable menu(inventory) lookup
+  google.protobuf.StringValue menu_item_id = 8;
+  reserved "l1_category_id";
+  reserved "l2_category_id";
+  reserved 6, 7;
+}
+
+// Filler to hold the plan constraint
+message GetFulfillmentPlanConstraint {
+  oneof constraints {
+    SkipStoreForPlanning skip_store = 1;
+    DeliveryTime within_delivery_time = 2;
+    bool from_same_merchant = 3;
+    CxPreferences cx_preferences = 4;
+    // payment method used for the order
+    PaymentMethod payment_method = 5;
+  }
+
+  message DeliveryTime {
+    // quoted delivery time
+    google.protobuf.Timestamp quoted_delivery_time = 1;
+    // start time of delivery window
+    google.protobuf.Timestamp delivery_window_start_time = 2;
+    // end time of delivery window
+    google.protobuf.Timestamp delivery_window_end_time = 3;
+    // whether order is asap
+    bool is_asap = 4;
+  }
+
+  message SkipStoreForPlanning {
+    repeated SkipStoreInfo skip_store_info = 1;
+  }
+
+  message CxPreferences {
+    // Preferred store flag
+    bool is_preferred_store = 1;
+  }
+
+  message SkipStoreInfo {
+    string store_id = 1;
+  }
+
+  // Payment method used for the order
+  message PaymentMethod {
+    money.SupplementalPaymentType type = 1;
+  }
+}
+
+message DeveloperFlags {
+  // Provide a verbose response to justify return value
+  google.protobuf.BoolValue explain = 1;
+  // Skip the highest level cache(should this skip ALL caches?, I don't think so)
+  google.protobuf.BoolValue skip_cache = 2;
+  // Skips all filtering logic (ex. filtering plans on based on INF Probabilities)
+  google.protobuf.BoolValue skip_filters = 3;
+  // Skips eligibility logic (ex. Will generate a fulfillment plan record even if it isn't eligible)
+  google.protobuf.BoolValue skip_eligibility_check = 4;
+  // Testing flag that will return an empty fulfillment plan list for testing no offers experience
+  google.protobuf.BoolValue return_no_valid_fulfillment_plans = 5;
+  // Testing flag that for if the request is a test request or not
+  google.protobuf.BoolValue is_test = 6;
+}
+
+message GetFulfillmentPlansResponse {
+  reserved 2;
+  reserved "fulfillment_plan_info";
+  // List of FulfillmentPlans sorted
+  repeated FulfillmentPlan fulfillment_plans = 1;
+  // Caller Identifier Metadata, this is just passed back from request
+  GetPlansRequestIdentifier call_identifier_metadata = 3;
+  // Developer debug information, only available with developerMode
+  DeveloperDebugInfo developer_debug_info = 4;
+  // fulfillment intent id - unique identifier for the fulfillment intent
+  // one fulfillment intent can have multiple fulfillment plans
+  google.protobuf.StringValue fulfillment_intent_id = 5;
+}
+
+message DeveloperDebugInfo {
+  // Information about the cache usage
+  google.protobuf.StringValue cache_info = 1;
+}
+
+message FulfillmentPlan {
+  reserved 3;
+  reserved "fulfillment_intent_id";
+  // Multiple components if supporting fulfillment from multiple stores, these can happen or be batched in parallel
+  repeated FulfillmentComponent fulfillment_components = 1;
+  // fulfillment plan id - unique identifier for this fulfillment plan
+  google.protobuf.StringValue fulfillment_plan_id = 2;
+}
+
+message FulfillmentComponent {
+  reserved 8;
+  reserved "item_details";
+
+  reserved 1, 2;
+  reserved "store_pickup_location";
+  reserved "consumer_pickup_location";
+  reserved "pickup_location";
+
+  reserved 3, 4;
+  reserved "dropoff_location";
+  reserved "store_dropoff_location";
+  reserved "consumer_dropoff_location";
+
+  FulfillmentCost fulfillment_cost = 5;
+  // Set of contraints for how this component will be executed
+  TransportationConstraints transportation_constraints = 6;
+  // Fulfillment protocol
+  FulfillmentProtocol fulfillment_protocol = 7;
+  // Items that will be fulfilled at this component
+  repeated ItemDetails items_fulfilled = 9;
+  // Pickup Location (most cases Store location)
+  oneof pickup_location_info {
+    StoreLocationInfo store_pickup_location_info = 10;
+    CustomerLocationInfo consumer_pickup_location_info = 11;
+  }
+  // Drop off Location (in most cases Cx location)
+  oneof drop_off_location_info {
+    StoreLocationInfo store_dropoff_location_info = 12;
+    CustomerLocationInfo consumer_dropoff_location_info = 13;
+  }
+  reserved 14;
+  reserved "delivery_fee_display_string";
+}
+
+message StoreLocationInfo {
+  string store_id = 1;
+  string business_id = 2;
+  string submarket_id = 3;
+  string business_name = 4;
+  string business_vertical_id = 5;
+  string menu_id = 6;
+  string store_name = 7;
+}
+
+message CustomerLocationInfo {
+  string consumer_id = 1;
+}
+
+message FulfillmentCost {
+  // Starting off we will use distance as our only measurement of cost, adding a penalties to distance
+  double distance_to_customer = 1;
+  FulfillmentFees fulfillment_fees = 2;
+  money.MonetaryFields items_cost = 3;
+}
+
+message FulfillmentFees {
+  DeliveryFees delivery_fees = 1;
+}
+
+message DeliveryFees {
+  // Localized string describing the delivery fee (ex: "0$ delivery fee" or "1.99$ delivery fee")
+  string delivery_fee_display_string = 1;
+}
+
+message ItemDetails {
+  reserved "sku";
+  reserved 1;
+  // A number from 0 to 1, representing the probability of being in stock
+  double item_availability_probability = 2;
+  // sku of item
+  string merchant_supplied_id = 3;
+  // Quantity of the item to be fulfilled
+  common.QuantityInfo quantity_info = 4;
+  // Item name
+  string item_name = 5;
+  money.MonetaryFields item_cost = 6;
+  string item_image_url = 7;
+  string menu_item_id = 8;
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 9;
+  // Replacement Item URPC
+  google.protobuf.StringValue dd_sic = 10;
+}
+
+message TransportationConstraints {
+  repeated doordash.retail.fulfillment.intelligence_service.v1.NewVerticalsDeliveryOption delivery_options = 1;
+  // duration of the delivery
+  google.protobuf.Duration delivery_duration = 2;
+}
+
+// Fulfillment plan events context
+message FulfillmentPlanEventsContext {
+  // fulfillment intent identifier
+  VersionedIdentifier versioned_identifier = 1;
+  // cx order context
+  CxOrderContext cx_order_context = 2;
+}
+
+// Cx order context
+message CxOrderContext {
+  reserved 2;
+  reserved "version";
+  // order_uuid of the FP
+  google.protobuf.StringValue order_uuid = 1;
+  // order_uuid of the FP
+  google.protobuf.StringValue cx_cart_uuid = 7;
+  // version
+  google.protobuf.Int64Value order_version = 6;
+  // create time of this event
+  google.protobuf.Timestamp order_created_at = 3;
+  // adjusted time of this event
+  google.protobuf.Timestamp order_adjusted_at = 4;
+  // create time of this event
+  google.protobuf.Timestamp order_canceled_at = 5;
+  // store id
+  string store_id = 8;
+  // business id
+  string business_id = 9;
+  // submarket id
+  string submarket_id = 10;
+  // business vertical id
+  string business_vertical_id = 11;
+}
+
+message FulfillmentPlanEventsContextIdentifier {
+  oneof id {
+    google.protobuf.StringValue fulfillment_intent_id = 1;
+    google.protobuf.StringValue order_uuid = 2;
+  }
+}
+
+enum FulfillmentProtocol {
+  FULFILLMENT_PROTOCOL_UNSPECIFIED = 0;
+  MX_PICK = 1;
+  DASHER_PICK = 2;
+  SHOPPER_PICK = 3;
+}
+
+enum PayloadType {
+  // Please specify a payload type
+  PAYLOAD_TYPE_UNSPECIFIED = 0;
+  // Protobuf payload type
+  PAYLOAD_TYPE_PROTOBUF = 1;
+  // Protobuf payload type
+  PAYLOAD_TYPE_PROTOBUF_MESSAGE = 2;
+}
+
+enum EventType {
+  // Please specify an event type
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // Customer order created event type
+  EVENT_TYPE_CX_ORDER_CREATED = 1;
+  // Customer order canceled event type
+  EVENT_TYPE_CX_ORDER_CANCELED = 4;
+  // Customer order adjusted event type
+  EVENT_TYPE_CX_ORDER_ADJUSTED = 5;
+  // Merchant order cancelled event type
+  EVENT_TYPE_MX_ORDER_CANCELLED = 2;
+  // Merchant order store closed event type
+  EVENT_TYPE_MX_ORDER_STORE_CLOSED = 3;
+  // Refresh alternate plans event type
+  EVENT_TYPE_REFRESH_ALTERNATE_PLANS = 6;
+  // Optimizer change event type
+  EVENT_TYPE_OPTIMIZER_PLAN_CHANGE = 7;
+  // Delivery Pick up event type
+  EVENT_TYPE_DELIVERY_PICKUP = 8;
+  // Order Cart Adjustment Completed Event Type
+  EVENT_TYPE_ORDER_CART_ADJUSTMENT_COMPLETED = 9;
+}
+
+// object for a selected fulfillment plan
+message SelectedFulfillmentPlan {
+  // fulfillment plan id
+  google.protobuf.StringValue fulfillment_plan_id = 1;
+  // Multiple components if supporting fulfillment from multiple stores, these can happen or be batched in parallel
+  repeated SelectedFulfillmentComponent selected_fulfillment_components = 2;
+  // FulfillmentState
+  FulfillmentState fulfillment_state = 3;
+  // Fulfillment Intent version
+  VersionedIdentifier versioned_id = 4;
+  reserved 5;
+  reserved "fulfillment_plan_adjustment";
+
+  // FulfillmentState
+  enum FulfillmentState {
+    // Default state
+    FULFILLMENT_STATE_UNSPECIFIED = 0;
+    // Initial state
+    FULFILLMENT_STATE_INITIATED = 1;
+    // Order cannot be updated
+    FULFILLMENT_STATE_COOLDOWN = 2;
+    // Order fulfilled
+    FULFILLMENT_STATE_FULFILLED = 3;
+    // Order failed/cancelled, need to revise fulfillment plan
+    FULFILLMENT_STATE_CANCELLED = 4;
+  }
+}
+
+// object for a selected fulfillment component
+message SelectedFulfillmentComponent {
+  // Selected Fulfillment plan component id (can simply be delivery_uuid)
+  google.protobuf.StringValue component_id = 1;
+  // when selected fulfillment plan component is in locked state, we will set a lock expiration time
+  google.protobuf.Timestamp lock_expired_at = 7;
+  // Fulfillment plan Adjustment
+  FulfillmentPlanAdjustment fulfillment_plan_adjustment_info = 8;
+  // Pickup Location (most cases Store location)
+  oneof pickup_location_info {
+    // store pick up location
+    StoreLocationInfo store_pickup_location_info = 2;
+    // consumer pick up location
+    CustomerLocationInfo consumer_pickup_location_info = 3;
+  }
+  // Drop off Location (in most cases Cx location)
+  oneof drop_off_location_info {
+    // store dropoff location
+    StoreLocationInfo store_dropoff_location_info = 4;
+    // consumer dropoff location
+    CustomerLocationInfo consumer_dropoff_location_info = 5;
+  }
+  // state of the selected fulfillment component
+  FulfillmentPlanComponentState fulfillment_component_state = 6;
+
+  // FulfillmentState
+  enum FulfillmentPlanComponentState {
+    // Default state
+    FULFILLMENT_PLAN_COMPONENT_STATE_UNSPECIFIED = 0;
+    // Initial state
+    FULFILLMENT_PLAN_COMPONENT_STATE_INITIATED = 1;
+    // Delivery can't be assigned to Dx
+    FULFILLMENT_PLAN_COMPONENT_STATE_LOCKED = 2;
+    // Order fulfilled
+    FULFILLMENT_PLAN_COMPONENT_STATE_FULFILLED = 3;
+    // MX Order failed/cancelled
+    FULFILLMENT_PLAN_COMPONENT_STATE_CANCELLED = 4;
+  }
+}
+
+// message on this history of adjustments to this order
+message FulfillmentPlanAdjustment {
+  // Selected Fulfillment plan component id that was affected (can simply be delivery_uuid)
+  repeated google.protobuf.StringValue affected_component_ids = 1;
+  // Adjustment occurred at
+  google.protobuf.Timestamp adjustment_occurred_at = 2;
+  // Type of Adjustment
+  reserved 'adjustment_type';
+  reserved 3;
+  // Type of Adjustment
+  FulfillmentPlanAdjustmentTypeEnum fp_adjustment_type = 4;
+
+  enum FulfillmentPlanAdjustmentTypeEnum {
+    // Default state
+    FULFILLMENT_ADJUSTMENT_UNSPECIFIED = 0;
+    // Hero
+    FULFILLMENT_ADJUSTMENT_HERO = 1;
+    // Backup Fulfilled
+    FULFILLMENT_ADJUSTMENT_BACKUP_FULFILLMENT = 2;
+    // Optimized for extended HULK
+    FULFILLMENT_ADJUSTMENT_OPTIMIZED_FOR_EXTENDED_HULK = 3;
+    // Automatically Reordered
+    FULFILLMENT_ADJUSTMENT_AUTOMATIC_REORDER = 4;
+    // One-click reordered
+    FULFILLMENT_ADJUSTMENT_ONE_CLICK_REORDER = 5;
+  }
+}
+
+// Versioned ID to ensure that DR published decision is occurring on the correct version
+message VersionedIdentifier {
+  // either cx order id or FI id
+  google.protobuf.StringValue fulfillment_intent_id = 1;
+  // version
+  google.protobuf.Int64Value version = 2;
+}
+
+// Request to get batch of fulfillment intents
+message GetBatchFulfillmentIntentsRequest {
+  // list of fulfillment intent ids
+  repeated string fulfillment_intent_ids = 1;
+}
+
+// Response to get batch of fulfillment intents
+message GetBatchFulfillmentIntentsResponse {
+  // list of fulfillment intents
+  repeated FulfillmentIntent fulfillment_intents = 1;
+}
+
+// Request to update fulfillment intents and selected fulfillment plans
+message UpdateActivePlanForFulfillmentIntentRequest {
+  // id of the fulfillment intent
+  VersionedIdentifier intent_id = 1;
+  // new active fulfillment plan
+  google.protobuf.StringValue fulfillment_plan_id = 2;
+}
+
+// Response to update fulfillment intents and selected fulfillment plans
+message UpdateActivePlanForFulfillmentIntentResponse {
+  // Determines whether the update for fulfillment intent was successfully passed to kafka events queue
+  bool is_success = 1;
+}
+
+message FulfillmentIntent {
+  // versioned id for DR and version verification
+  VersionedIdentifier intent_id = 1;
+  // selected fulfillment plan associated with this fulfillment intent
+  SelectedFulfillmentPlan selected_fulfillment_plan = 2;
+  // list of candidate fulfillment plans for this fulfillment intent
+  repeated FulfillmentPlan candidate_fulfillment_plans = 3;
+}

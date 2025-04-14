@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package doordash.payment.payout.v2;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payment/common.proto";
+import "payout_service/payout_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payment.payout.v2";
+
+// service that handles anything related to transfers
+service TransferService {
+  // used to delete a transfer
+  rpc DeleteTransfer(DeleteTransferRequest) returns (DeleteTransferResponse);
+  // used to create a transfer
+  rpc CreateTransfer(CreateTransferRequest) returns (CreateTransferResponse);
+  // Used to sync transfer status with payment provider
+  rpc SyncTransferStatus(SyncTransferStatusRequest) returns (SyncTransferStatusResponse);
+}
+
+// message to use when deleting a transfer
+message DeleteTransferRequest {
+  // ID transfer
+  google.protobuf.Int64Value transfer_id = 1;
+
+  // Manual delete reason
+  google.protobuf.StringValue manual_transfer_reason = 2;
+
+  // Deleted by id
+  google.protobuf.StringValue deleted_by_id = 3;
+}
+
+// response received deleting a transfer
+message DeleteTransferResponse {}
+
+// message to use when create a transfer
+message CreateTransferRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // if not given, will default to null
+  google.protobuf.Timestamp balance_start_timestamp = 2;
+  // if not given, will default to "now"
+  google.protobuf.Timestamp balance_end_timestamp = 3;
+  // type of payout to be created (e.g. onDemand or scheduled)
+  doordash.payout_service.PayoutType payout_type = 4; // optional
+  // createTransfer Mode
+  CreateTransferMode create_mode = 5; // optional
+  // should be initiated as weekly pay or not
+  google.protobuf.BoolValue is_weekly_pay = 6; // optional
+  // payout provider
+  doordash.payout_service.PayoutProvider payout_provider = 7; // optional
+  // if auto submit after creation
+  google.protobuf.BoolValue submit_after_creation = 8; // optional
+  // the user id submit the transfer
+  google.protobuf.StringValue submitted_by_user_id = 9; // optional
+  // the user id who created the transfer
+  google.protobuf.StringValue created_by_user_id = 10; // optional
+  // manual transfer reason
+  google.protobuf.StringValue manual_transfer_reason = 11; // optional
+}
+
+// response received creating a transfer
+message CreateTransferResponse {
+  // transfer data
+  Transfer transfer = 1;
+  // error code
+  google.protobuf.StringValue error_code = 2;
+}
+
+// message to use when syncing transfer status with payment provider
+message SyncTransferStatusRequest {
+  // transfer id
+  google.protobuf.Int64Value transfer_id = 1;
+}
+
+// response when syncing transfer status with payment provider
+message SyncTransferStatusResponse {}
+
+// data for transfer
+message Transfer {
+  // transfer id
+  google.protobuf.Int64Value id = 1;
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 2;
+  // amount
+  google.protobuf.UInt64Value amount = 3;
+  // currency
+  doordash.payment.common.Currency currency = 4;
+  // adjustments
+  google.protobuf.StringValue adjustments = 5;
+  // created at
+  google.protobuf.Timestamp created_at = 6;
+  // submitted at
+  google.protobuf.Timestamp submitted_at = 7;
+  // submitting at
+  google.protobuf.Timestamp submitting_at = 8;
+  // deleted at
+  google.protobuf.Timestamp deleted_at = 9;
+  // created by id
+  google.protobuf.StringValue created_by_id = 10;
+  // submitted by id
+  google.protobuf.StringValue submitted_by_id = 11;
+  // deleted by id
+  google.protobuf.StringValue deleted_by_id = 12;
+  // method
+  google.protobuf.StringValue method = 13;
+  // transfer status
+  TransferStatus status = 14;
+  // transfer status error code
+  google.protobuf.StringValue status_code = 15;
+  // should retry on failure
+  google.protobuf.BoolValue should_retry_on_failure = 16;
+  // statement description
+  google.protobuf.StringValue statement_description = 17;
+  // manual transfer reason
+  google.protobuf.StringValue manual_transfer_reason = 18;
+}
+
+// enum for transfer status
+enum TransferStatus {
+  // unspecified
+  TRANSFER_STATUS_UNSPECIFIED = 0;
+  // When a Payout is created on DD, but also in the process of updating associated transactions
+  TRANSFER_STATUS_CREATING = 1;
+  // When a Payout is created on stripe side
+  TRANSFER_STATUS_CREATED = 2;
+  // When a Payout has been created on DD and ready for submission; Money is still in the SMA balance
+  TRANSFER_STATUS_NEW = 3;
+  // When a Payout has been created on DD, and submission to Stripe is in progress
+  TRANSFER_STATUS_SUBMITTING = 4;
+  //When a Payout is communicated to Stripe, but communication to Bank still in progress, money has left in SMA balance
+  TRANSFER_STATUS_PENDING = 5;
+  // When a Payout has been communicated to the Bank by Stripe
+  TRANSFER_STATUS_IN_TRANSIT = 6;
+  // When a Payout has deposited money into corresponding bank account
+  TRANSFER_STATUS_PAID = 7;
+  // When a Payout failed to deposited to bank account on bank side, money has re-entered SMA balance
+  TRANSFER_STATUS_FAILED = 8;
+  // When a Payout is confirmed to have been cancelled, money has re-entered SMA balance
+  TRANSFER_STATUS_CANCELLED = 9;
+  // When a Payout has been manually deleted, money is still in SMA balance.
+  TRANSFER_STATUS_DELETED = 10;
+  // When a Payout fails for a systemic issue e.g. Connection/Timeout/RateLimiting
+  TRANSFER_STATUS_ERROR = 11;
+}
+
+// enum for create transfer mode
+enum CreateTransferMode {
+  // unspecified
+  CREATE_TRANSFER_MODE_UNSPECIFIED = 0;
+  // daily arrear
+  CREATE_TRANSFER_MODE_DAILY_ARREAR = 1;
+  // weekly arrear
+  CREATE_TRANSFER_MODE_WEEKLY_ARREAR = 2;
+}

@@ -1,0 +1,169 @@
+syntax = "proto3";
+
+import "common/service_client_config.proto";
+import "geo-intelligence/region.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "AddressValidation";
+option java_package = "geo.intelligence.address_validation.proto";
+
+service AddressValidationService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+
+  rpc ValidateAddress(ValidateAddressRequest) returns (ValidateAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+}
+
+message ValidateAddressRequest {
+  oneof address_input {
+    ValidateById validate_by_id = 1;
+    ValidateByGooglePlaceId validate_by_google_place_id = 3;
+    // oneof to support extensibility.
+    // We may want to support formatted address in the future
+  }
+  // optional to run validation only for specific cart value
+  // cart_id NOT order_cart_id because order_cart_id is not available pre-checkout
+  google.protobuf.StringValue cart_id = 2;
+
+  // The consumer's location (lat/lon, speed, gps accuracy)
+  ConsumerLocation consumer_location = 4;
+}
+
+message ValidateById {
+  google.protobuf.StringValue address_id = 1;
+  // Consumer ID is optional, but should be provided when available; controls user-specific validation results.
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message ValidateByGooglePlaceId {
+  google.protobuf.StringValue google_place_id = 1;
+  // optional field, should be provided when used during delivery flow (delivery creation, delivery status)
+  // NOT needed when used for store creation, customer address creation
+  google.protobuf.StringValue delivery_correlation_id = 2;
+  // Consumer ID is optional, but should be provided when available; controls user-specific validation results.
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+message ValidateAddressResponse {
+  // Deprecated: Use user_actions field rather than user_action_type
+  repeated UserActionType user_action_type = 1 [deprecated = true];
+  repeated ValidationResult validation_result = 2;
+  CartMessage cart_message = 3;
+  repeated UserAction user_actions = 4;
+  // Smarty street record types
+  RecordType record_type = 5;
+  // Verifies whether a address type is classified as residential or commercial
+  RDI rdi = 6;
+}
+
+message CartMessage {
+  // severity
+  ValidationResultType banner_type = 1;
+  // banner message
+  google.protobuf.StringValue message = 2;
+  CartMessageCode code = 3;
+  // button text such as 'Edit Address'
+  google.protobuf.StringValue action_text = 4;
+}
+
+enum CartMessageCode {
+  MESSAGE_UNSPECIFIED = 0;
+  MESSAGE_ADDRESS_NOT_DELIVERABLE = 1;
+  MESSAGE_MULTI_UNIT_AREA_MISSING_SUBPREMISE = 2;
+  MESSAGE_MULTI_UNIT_AREA_INVALID_SUBPREMISE = 3;
+  MESSAGE_HIGH_ASAP_ND_AREA = 4;
+  MESSAGE_ADDRESS_NOT_DELIVERABLE_ALL_DELIVERIES_BLOCKED = 5;
+  MESSAGE_NEED_MANUAL_PIN = 6;
+  MESSAGE_CX_FAR_AWAY_FROM_ADDRESS = 7;
+}
+
+message ValidationResult {
+  ValidationCode validation_code = 1;
+  ValidationResultType result_type = 2;
+}
+
+// name of error (i.e. address_not_deliverable)
+enum ValidationCode {
+  CODE_UNSPECIFIED = 0;
+  CODE_ADDRESS_NOT_DELIVERABLE = 1;
+  CODE_MULTI_UNIT_AREA_MISSING_SUBPREMISE = 2;
+  CODE_MULTI_UNIT_AREA_INVALID_SUBPREMISE = 3;
+  CODE_HIGH_ASAP_ND_AREA = 4;
+  CODE_ADDRESS_RECORD_TYPE_LOW_CONFIDENCE = 5;
+  CODE_DIFFICULT_TO_NAVIGATE = 6;
+  CODE_INACCURATE_COORDINATES = 7;
+  CODE_CX_FAR_AWAY_FROM_ADDRESS = 8;
+}
+
+// what action the user should take based on their address
+enum UserActionType {
+  ACTION_TYPE_UNSPECIFIED = 0; // placeholder, required by GRPC enums
+  ACTION_TYPE_ADD_SUBPREMISE = 1; // User should set a subpremise
+  ACTION_TYPE_EDIT_SUBPREMISE = 2; // User should supply an alternate subpremise
+  ACTION_TYPE_PINDROP = 3; // User should set a manual pin
+  ACTION_TYPE_DROPOFF_INSTRUCTIONS = 4; // User should add dasher instructions
+  ACTION_TYPE_CURBSIDE_HANDOFF = 5; // User should select curbside handoff
+  ACTION_TYPE_SELECT_NEW_ADDRESS = 6; // Current address is not deliverable, select new address
+}
+
+enum ValidationResultType {
+  RESULT_TYPE_UNSPECIFIED = 0; // placeholder, required by GRPC enums
+  RESULT_TYPE_WARNING = 1; // non-blocking result
+  RESULT_TYPE_ERROR = 2; // blocking result
+  RESULT_TYPE_INFO = 3; // informational result
+}
+
+message UserAction {
+  UserActionType user_action_type = 1;
+  google.protobuf.BoolValue is_checkout_blocked = 2;
+}
+
+// List of record types: https://www.smarty.com/docs/cloud/us-street-api#metadata
+enum RecordType {
+  // mandatory enum field
+  RECORD_TYPE_UNSPECIFIED = 0;
+
+  // Address contains apartment or building sub-units.
+  RECORD_TYPE_HIGH_RISE = 1;
+
+  // Post office box
+  RECORD_TYPE_POST_OFFICE = 2;
+
+  // Rural route or Highway Contract; may have box number ranges.
+  RECORD_TYPE_RURAL_ROUTE = 3;
+
+  // Address contains a valid primary number range
+  RECORD_TYPE_STREET_ADDRESS = 4;
+}
+
+// List of possible delivery type classification results
+enum RDI {
+  // Could not determine the classification for this address
+  RDI_UNSPECIFIED = 0;
+
+  // The address is a residential address.
+  RDI_RESIDENTIAL = 1;
+
+  // The address is a business address.
+  RDI_COMMERCIAL = 2;
+}
+
+message ConsumerLocation {
+  // The consumer's lat/lon location
+  Coordinate coordinate = 1;
+
+  // The consumer's gps accuracy, in meters radius of 68% confidence. -1 indicates unavailable
+  // https://developer.android.com/reference/android/location/Location#getAccuracy()
+  double horizontal_accuracy = 2;
+
+  // The consumer's speed, in m/s. -1 indicates unavailable
+  double speed = 3;
+}

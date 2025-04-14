@@ -1,0 +1,442 @@
+syntax = "proto3";
+
+package review_service.web.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/review_service.web.v1";
+
+// ReviewService represents the gRPC service for generating reviews
+service ReviewService {
+  // GetReview retrieves a specific review and its contents
+  rpc GetReview(GetReviewRequest) returns (GetReviewResponse);
+  // CreateReview generates a review with the given inputs
+  rpc CreateReview(CreateReviewRequest) returns (CreateReviewResponse);
+  // ListReviews takes a filter and returns the reviews that match that filter
+  rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
+  // UpdateReview allows a review's contents to be updated/changed/re-requested
+  rpc UpdateReview(UpdateReviewRequest) returns (UpdateReviewResponse);
+  // PerformReview creates a decision on the given review
+  rpc PerformReview(PerformReviewRequest) returns (PerformReviewResponse);
+  // GetReviewHistory retrieves all update data for a given review (decisions are stored via GetReview, not here)
+  rpc GetReviewHistory(GetReviewHistoryRequest) returns (GetReviewHistoryResponse);
+}
+
+// User represents an individual user (Email, Okta ID, other)
+message User {
+  // UserType represents different types of users
+  enum UserType {
+    // USER_TYPE_UNSPECIFIED represents an unspecified user type
+    USER_TYPE_UNSPECIFIED = 0;
+    // USER_TYPE_EMAIL represents a user type of email address
+    USER_TYPE_EMAIL = 1;
+    // USER_TYPE_OKTA represents a user type of okta id
+    USER_TYPE_OKTA = 2;
+  }
+
+  // Identifier for the user
+  string id = 1;
+  // Type of user
+  UserType type = 2;
+}
+
+// Group represents a group identifier (Okta, other)
+message Group {
+  // GroupType represents the group types available
+  enum GroupType {
+    // GROUP_TYPE_UNSPECIFIED represents an unspecified type of group
+    GROUP_TYPE_UNSPECIFIED = 0;
+    // GROUP_TYPE_OKTA represents an okta auth group
+    GROUP_TYPE_OKTA = 1;
+  }
+
+  // Name of the group
+  string name = 1;
+  // Type of group
+  GroupType type = 2;
+}
+
+// UserOrGroup is an object to represent either a group or a user
+message UserOrGroup {
+  // entity represents whether this is a group or user
+  oneof entity {
+    // user represents that this is a user
+    User user = 1;
+    // group represents that this is a group
+    Group group = 2;
+  }
+}
+
+// Expression represents either an and (&&) or and or (||)
+// Examples:
+//   g1               : Expression(UserOrGroup("g1"))
+//   g1 && g2         : Expression(AndExpression(UserOrGroup("g1"), UserOrGroup("g2")))
+//   g1 || g2         : Expression(OrExpression(UserOrGroup("g1"), UserOrGroup("g2")))
+//   g1 || (g2 && g3) : Expression(OrExpression(UserOrGroup("g1"), AndExpression(UserOrGroup("g2"), UserOrGroup("g3")))
+message Expression {
+  // AndExpression represents a logical AND of l && r
+  message AndExpression {
+    // l represents one of the sides of this logical AND expression
+    Expression l = 1;
+    // r represents one of the sides of this logical AND expression
+    Expression r = 2;
+  }
+
+  // OrExpression represents a logical OR of l || r
+  message OrExpression {
+    // l represents one of the sides of this logical OR expression
+    Expression l = 1;
+    // r represents one of the sides of this logical OR expression
+    Expression r = 2;
+  }
+
+  // expression represents the structure of the expression
+  oneof expression {
+    // and represents if this is an AND expression
+    AndExpression and = 1;
+    // or represents if this is an OR expression
+    OrExpression or = 2;
+    // entity represents if this is a user or group
+    UserOrGroup entity = 3;
+  }
+}
+
+// ReviewCriteria specifies
+message ReviewCriteria {
+  // expression represents the criteria required for this review
+  Expression expression = 1;
+}
+
+// NotificationTriggerEvent represents types of different event triggers for notifications
+enum NotificationTriggerEvent {
+  // NOTIFICATION_TRIGGER_EVENT_UNSPECIFIED represents an unspecified trigger
+  NOTIFICATION_TRIGGER_EVENT_UNSPECIFIED = 0;
+  // NOTIFICATION_TRIGGER_EVENT_ON_CREATE represents to fire this notification on creation of the review
+  NOTIFICATION_TRIGGER_EVENT_ON_CREATE = 1;
+  // NOTIFICATION_TRIGGER_EVENT_ON_UPDATE represents to fire this notification on update of the review
+  NOTIFICATION_TRIGGER_EVENT_ON_UPDATE = 2;
+  // NOTIFICATION_TRIGGER_EVENT_ON_DECISION represents to fire this notification on any decision made for it
+  NOTIFICATION_TRIGGER_EVENT_ON_DECISION = 3;
+  // NOTIFICATION_TRIGGER_EVENT_ANY represents to fire this notification on any changes/events related to this review
+  NOTIFICATION_TRIGGER_EVENT_ANY = 4;
+  // NOTIFICATION_TRIGGER_EVENT_EXPIRED represents to fire this notification on the expiration of a review
+  NOTIFICATION_TRIGGER_EVENT_EXPIRED = 5;
+}
+
+// SlackMessage represents the contents of a slack message for a notification
+message SlackMessage {
+  // channel_id is DEPRECATED, was used for specific channel id from slack
+  google.protobuf.StringValue channel_id = 1 [deprecated = true];
+  // identifier represents a slack channel or user email to send the notification to
+  oneof identifier {
+    // channel represents the slack channel, can either be the name of the channel or id
+    google.protobuf.StringValue channel = 2;
+    // user_email represents the email of the user you wish to directly send a slack message to
+    google.protobuf.StringValue user_email = 3;
+  }
+}
+
+// Webhook represents a webhook to send notifications to
+message Webhook {
+  // webhook_url represents the url to send a notification to
+  google.protobuf.StringValue webhook_url = 1;
+}
+
+// Notification represents a notification of a given type to be sent for a review
+message Notification {
+  // notification represents the notification desired for this
+  oneof notification {
+    // slack represents a slack message type of notification
+    SlackMessage slack = 1;
+    // webhook represents a webhook type of notification
+    Webhook webhook = 2;
+  }
+}
+
+// NotificationPreference represents the data required for sending notifications to desired places at desired times for a review
+message NotificationPreference {
+  // notifications represents the config of all the notifications for this review
+  repeated Notification notifications = 1;
+  // trigger represents when we want this notification to fire
+  NotificationTriggerEvent trigger = 2;
+  // custom_template represents a custom string template this notification should use.
+  // available variables include $ID, $URL, $STATUS for the review id, url (below), and
+  // status of the review.
+  // if this is left blank it will use the default form of:
+  // "The review: $ID has been updated to the status: $STATUS, please see $URL for details."
+  google.protobuf.StringValue custom_template = 3;
+  // template_url represents the url that will be embedded in the custom_template above
+  // defaults to the devconsole reviews page for this review
+  google.protobuf.StringValue template_url = 4;
+}
+
+// ReviewType represents different types of reviews
+enum ReviewType {
+  // REVIEW_TYPE_UNSPECIFIED represents a review type that is unspecified
+  REVIEW_TYPE_UNSPECIFIED = 0;
+  // REVIEW_TYPE_DIFF represents a difference, usually contains a before/after repr of some resource
+  REVIEW_TYPE_DIFF = 1;
+  // REVIEW_TYPE_ACCESS represents a review of some type of access being granted
+  REVIEW_TYPE_ACCESS = 2;
+}
+
+// ReviewStatus represents different statuses that a review can be in
+enum ReviewStatus {
+  // REVIEW_TYPE_UNSPECIFIED represents an unspecified status
+  REVIEW_STATUS_UNSPECIFIED = 0;
+  // REVIEW_STATUS_PENDING_APPROVAL represents a review waiting for decisions to be made on it
+  REVIEW_STATUS_PENDING_APPROVAL = 1;
+  // REVIEW_STATUS_EXPIRED represents a review that has expired, meaning that reviewers did not approve/decline it in time
+  REVIEW_STATUS_EXPIRED = 2;
+  // REVIEW_STATUS_APPROVED represents a review that has been approved fully (all requirements have been made)
+  REVIEW_STATUS_APPROVED = 3;
+  // REVIEW_STATUS_DECLINED represents a review that has been declined
+  REVIEW_STATUS_DECLINED = 4;
+  // REVIEW_STATUS_PENDING_CHANGES represents a review that has had a "request for changes" made to it
+  REVIEW_STATUS_PENDING_CHANGES = 5;
+}
+
+// DiffContent represents the values available for a diff review
+message DiffContent {
+  // before represents a json block of values that represent what the diff was before this
+  google.protobuf.Struct before = 1;
+  // after represents a json block of values that represent what changes the review will have when approved
+  google.protobuf.Struct after = 2;
+}
+
+// AccessContent represents the values available for an access review
+message AccessContent {
+  // access_type is a string that represents the level or type of access that is being granted
+  google.protobuf.StringValue access_type = 1;
+  // accessee is a string representing who the access is being granted
+  google.protobuf.StringValue accessee = 2;
+  // values is a json struct for holding any additional data about this access request
+  google.protobuf.Struct values = 3;
+}
+
+// ReviewContent represents the content of a given review
+message ReviewContent {
+  // content is one of either diff or access
+  oneof content {
+    // diff is a difference/change of some resource
+    DiffContent diff = 1;
+    // access is requesting some type of access to a system
+    AccessContent access = 2;
+  }
+}
+
+// DecisionType represents different types of decisions reviewers can make
+enum DecisionType {
+  // DECISION_TYPE_UNSPECIFIED represents an unspecified decision
+  DECISION_TYPE_UNSPECIFIED = 0;
+  // DECISION_TYPE_APPROVE represents an approval of the review
+  DECISION_TYPE_APPROVE = 1;
+  // DECISION_TYPE_DECLINE represents a decline of the review
+  DECISION_TYPE_DECLINE = 2;
+  // DECISION_TYPE_REQUEST_CHANGES represents the reviewer asking for changes to the original request
+  DECISION_TYPE_REQUEST_CHANGES = 3;
+}
+
+// Decision represents a reviewer's decision on a review
+message Decision {
+  // id represents the uuid for this decision
+  google.protobuf.StringValue id = 1;
+  // review_id represents the parent review for which this decision was made
+  google.protobuf.StringValue review_id = 2;
+  // created_on represents the date this decision was created in UTC
+  google.protobuf.Timestamp created_on = 3;
+  // updated_on represents the date this decision was updated in UTC
+  google.protobuf.Timestamp updated_on = 4;
+  // decider represents the user who created the decision
+  User decider = 5;
+  // details represents any extra details left by the reviewer (reason for decline, approval next steps)
+  google.protobuf.StringValue details = 6;
+  // type represents what type of decision this is (approve/decline/request changes)
+  DecisionType type = 7;
+}
+
+// ReviewRequirements represents the different required and unallowed groups/users for a review
+message ReviewRequirements {
+  // criteria is the criteria required for this review
+  ReviewCriteria criteria = 1;
+  // not_reviewers is a list of users who are not able to make decisions on this review (ie: requester)
+  repeated User not_reviewers = 2;
+}
+
+// Review represents the data of a given review
+message Review {
+  // id is the uuid for this review
+  google.protobuf.StringValue id = 1;
+  // status is the current status for this review
+  ReviewStatus status = 2;
+  // created_on represents the date this review was created in UTC
+  google.protobuf.Timestamp created_on = 3;
+  // updated_on represents the date this review was last updated in UTC
+  google.protobuf.Timestamp updated_on = 4;
+  // tags represents a map of k/v's that are custom fields/tags for the review. used in filtering/looking up for specific teams/services
+  map<string, string> tags = 5;
+  // requester represents the user who made the request in the first place for this review
+  User requester = 6;
+  // requirements represents the approval requirements for this review
+  ReviewRequirements requirements = 7;
+  // content represents the actual content of the review
+  ReviewContent content = 8;
+  // sha represents the sha of the review contents
+  google.protobuf.StringValue sha = 9;
+  // decisions represent the different decisions made by reviewers for this review
+  repeated Decision decisions = 10;
+  // expire_seconds represents the seconds after creation that this review should be marked as expired
+  int64 expire_seconds = 11;
+  // notification_preferences represents the notification config for this review
+  repeated NotificationPreference notification_preferences = 12;
+}
+
+// CreateReviewRequest represents a request to generate a new review
+message CreateReviewRequest {
+  // requirements represent the desired requirements for this review
+  ReviewRequirements requirements = 1;
+  // content represents the actual content of this review
+  ReviewContent content = 2;
+  // notification_preferences represents the different notification preferences desired for this review
+  repeated NotificationPreference notification_preferences = 3;
+  // requester represents the user who's request has generated this review
+  User requester = 4;
+  // tags represents the internal tags that can be used to query this review
+  map<string, string> tags = 5;
+  // expire_seconds represents how many seconds after the review is created that this review will be set to expired in the event that
+  // no decisions are made. Default is 1 month
+  int64 expire_seconds = 6;
+  // nudge represents the config for when this review should remind involved users about it
+  repeated Nudge nudges = 7;
+}
+
+// CreateReviewResponse represents the response returned after a review is generated
+message CreateReviewResponse {
+  // id represents the id of review that was generated
+  google.protobuf.StringValue id = 1;
+}
+
+// GetReviewRequest represents the desired review to be fetched
+message GetReviewRequest {
+  // id represents the id of the desired review
+  google.protobuf.StringValue id = 1;
+}
+
+// GetReviewResponse represents the response from the service upon getting a review
+message GetReviewResponse {
+  // review represents the fetched review
+  Review review = 1;
+}
+
+// ListReviewsRequest represents a request to list several reviews that match a filter
+message ListReviewsRequest {
+  // ListReviewsFilter represents the different fields that can be used to filter down this request
+  message ListReviewsFilter {
+    // status represents the desired status wanted to list by
+    ReviewStatus status = 1 [deprecated = true];
+    // tags represents the desired tags for this listing
+    map<string, string> tags = 2;
+    // requester represents a desire to list reviews for a specific requester
+    User requester = 3;
+    // type represents the review type we want to list (diff vs access)
+    ReviewType type = 4;
+
+    // ListReviewsDataType is an enum for representing parts of a review to be included
+    enum ListReviewsDataType {
+      // LIST_REVIEWS_DATA_TYPE_UNSPECIFIED represents nothing, should not be used
+      LIST_REVIEWS_DATA_TYPE_UNSPECIFIED = 0;
+      // LIST_REVIEWS_DATA_TYPE_REQUIREMENT represents the review requirement data
+      LIST_REVIEWS_DATA_TYPE_REQUIREMENT = 1;
+      // LIST_REVIEWS_DATA_TYPE_NOTIFICATION_PREFERENCES represents the notification preferences for a review
+      LIST_REVIEWS_DATA_TYPE_NOTIFICATION_PREFERENCES = 2;
+      // LIST_REVIEWS_DATA_TYPE_DECISIONS represents the decisions that have been made for this review
+      LIST_REVIEWS_DATA_TYPE_DECISIONS = 3;
+    }
+    // included_data represents the desired data to be included in the list call. This is helpful
+    // if you only want specific pieces it can speed up queries
+    repeated ListReviewsDataType included_data = 5;
+    // statuses represents all the different review statuses to query when listing reviews
+    repeated ReviewStatus statuses = 6;
+  }
+  // filter represents the desired filter for the listing, required for the endpoint
+  ListReviewsFilter filter = 1;
+  // page_size represents how many results will be returned per fetch
+  int64 page_size = 2;
+  // next_page_token represents the token used for a paginated query
+  google.protobuf.StringValue next_page_token = 3;
+}
+
+// ListReviewsResponse represents the response given from the service when listing reviews
+message ListReviewsResponse {
+  // reviews represents all the reviews that match a given filter
+  repeated Review reviews = 1;
+  // page_token represents the end pointer of a given paginated query
+  google.protobuf.StringValue page_token = 2;
+}
+
+// UpdateReviewRequest represents a request to update a review
+message UpdateReviewRequest {
+  // content represents the new content desired for the review
+  ReviewContent content = 1;
+  // notification_preferences represents the desired notifications for this update
+  repeated NotificationPreference notification_preferences = 2;
+  // review_id represents the id of the review that is being updated
+  google.protobuf.StringValue review_id = 3;
+  // expire_seconds represents the time desired for this review to be expired. In this case a review might want to be
+  // updated to extend that time
+  int64 expire_seconds = 4;
+  // want to be able to update the status of a review, only works for certain cases like
+  // PENDING_APPROVAL -> PENDING_CHANGES & PENDING_CHANGES -> others.
+  ReviewStatus status = 5;
+}
+
+// UpdateReviewResponse represents the response after a successful request to update is completed
+message UpdateReviewResponse {
+  // review represents the structure of the review after updates are applied
+  Review review = 1;
+}
+
+// PerformReviewRequest represents a request to add a decision for a review
+message PerformReviewRequest {
+  // review_id represents the id of the review for which this is being done
+  google.protobuf.StringValue review_id = 1;
+  // decider represents who is generating this request
+  User decider = 2;
+  // type represents the type of decision being made (approve/decline/request changes)
+  DecisionType type = 3;
+  // details represents any additional details to go along with this decision (why declined, next steps after approve etc)
+  google.protobuf.StringValue details = 4;
+  // decider_groups is the groups this decider belongs to, useful for determining whether they can approve/decline a review
+  repeated google.protobuf.StringValue decider_groups = 5;
+}
+
+// PerformReviewResponse represents the response after a successful decision is made for a review
+message PerformReviewResponse {}
+
+// Nudge represents config for when a review should send a reminder about the review still needing to be reviewed
+message Nudge {
+  // targets represent the individual notifications that are desired to send for the nudge
+  repeated Notification targets = 1;
+  // message is a custom message which can be set to override the default message of when a nudge is sent out
+  google.protobuf.StringValue message = 2;
+  // NudgeSchedule represents the data necessary for defining a schedule around when a nudge should fire
+  message NudgeSchedule {
+    // delay_seconds is the number of seconds after a review is updated that this nudge will fire
+    int32 delay_seconds = 1;
+    // repeats is the number of times that this nudge will repeat this schedule
+    int32 repeats = 2;
+  }
+  // schedule represents the data for when this nudge should fire
+  NudgeSchedule schedule = 3;
+}
+
+// GetReviewHistoryRequest represents the request of the update history for a review
+message GetReviewHistoryRequest {
+  // id represents the id of the desired review history
+  google.protobuf.StringValue id = 1;
+}
+
+// GetReviewHistoryResponse represents the response of all the update history for a review
+message GetReviewHistoryResponse {}

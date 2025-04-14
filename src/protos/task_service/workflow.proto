@@ -1,0 +1,405 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package task_service.v2;
+
+import "common/service_client_config.proto";
+import "delivery_service/delivery_metadata.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/common.proto";
+import "task_service/eta_prediction.proto";
+import "task_service/task.proto";
+import "task_service/task_group.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.task_service";
+
+// CRUD endpoints for workflow/taskgroup/task
+service TaskService {
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+
+  rpc RegisterWorkflow(RegisterWorkflowRequest) returns (ActionResponse);
+  rpc GetWorkflowTemplate(GetWorkflowTemplateRequest) returns (GetWorkflowTemplateResponse);
+  rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  rpc CancelWorkflow(CancelWorkflowRequest) returns (ActionResponse);
+  rpc CancelTaskGroup(CancelTaskGroupRequest) returns (ActionResponse);
+  rpc CheckPickupGeofence(CheckPickupGeofenceRequest) returns (CheckPickupGeofenceResponse);
+  rpc CheckDropOffGeofence(CheckDropOffGeofenceRequest) returns (CheckDropOffGeofenceResponse);
+  rpc UpdateTaskGroup(UpdateTaskGroupRequest) returns (UpdateTaskGroupResponse);
+  rpc UpdateTaskGroups(UpdateTaskGroupsRequest) returns (UpdateTaskGroupsResponse);
+  rpc UpdateTaskGroupsV2(UpdateTaskGroupsV2Request) returns (UpdateTaskGroupsV2Response);
+  rpc UpdateTaskGroupV2(UpdateTaskGroupV2Request) returns (UpdateTaskGroupResponse);
+  rpc UpdateTask(UpdateTaskRequest) returns (UpdateResponse);
+  rpc SetTaskComplete(SetTaskCompleteRequest) returns (ActionResponse);
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
+  rpc GetWorkflowByIdempotencyKey(GetWorkflowByIdempotencyKeyRequest) returns (GetWorkflowResponse);
+  rpc GetStartUpProbe(GetStartUpProbeRequest) returns (GetStartUpProbeResponse);
+  rpc GetTaskGroup(GetTaskGroupRequest) returns (GetTaskGroupResponse);
+  // GetTaskGroups endpoint comes with server side throttle for the size of task groups.
+  rpc GetTaskGroups(GetTaskGroupsRequest) returns (GetTaskGroupsResponse);
+  rpc GetTaskGroupsByWorkflowId(GetTaskGroupsByWorkflowIdRequest) returns (GetTaskGroupsByWorkflowIdResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc GetTasksByTaskGroupId(GetTasksByTaskGroupIdRequest) returns (GetTasksByTaskGroupIdResponse);
+  rpc GetTaskGroupDeliveryMapping(GetTaskGroupDeliveryMappingRequest) returns (GetTaskGroupDeliveryMappingResponse);
+  rpc GetTaskGroupDeliveryMappings(GetTaskGroupDeliveryMappingsRequest) returns (GetTaskGroupDeliveryMappingsResponse);
+  rpc UpdateTaskGroupDeliveryMapping(UpdateTaskGroupDeliveryMappingRequest) returns (UpdateResponse);
+  //Fetch json data for task groups in task-debugger
+  rpc GetTaskGroupJsonData(GetTaskGroupJsonDataRequest) returns (GetTaskGroupJsonDataResponse);
+  rpc CreateTaskGroupsInExistingWorkflows(CreateTaskGroupsInExistingWorkflowsRequest) returns (CreateTaskGroupsInExistingWorkflowsResponse);
+  // Updates the reattempt and return state of a canonical task group and updates the shiftRoute.
+  rpc UpdateReattemptReturnStates(UpdateReattemptReturnStatesRequest) returns (UpdateReattemptReturnStatesResponse);
+}
+
+message GetStartUpProbeRequest {}
+
+message GetStartUpProbeResponse {
+  bool ready = 1;
+}
+
+message RegisterWorkflowRequest {
+  WorkflowTemplate workflow_template = 1;
+}
+
+message GetWorkflowTemplateRequest {
+  google.protobuf.StringValue workflow_name = 1;
+}
+
+message GetWorkflowTemplateResponse {
+  WorkflowTemplate workflow_template = 1;
+}
+
+message CreateTaskGroupsInExistingWorkflowsRequest {
+  // Map of task groups to be added to various workflows, key = workflowId, value = new task group data
+  map<string, CreateTaskGroupData> task_group_data_to_be_created = 1;
+  // name of the client
+  google.protobuf.StringValue client_name = 2;
+  google.protobuf.StringValue context = 3;
+  // All workflows should have the same name
+  google.protobuf.StringValue workflow_name = 4;
+}
+
+message CreateTaskGroupData {
+  TaskGroupData task_group_data = 1;
+  google.protobuf.StringValue task_group_name = 2;
+  // task group id is used for idempotency check.
+  google.protobuf.StringValue task_group_id = 3;
+  // Only supporting deliveryEta for now.
+  task_service.v2.DeliveryEtaPrediction delivery_eta_prediction = 4;
+}
+
+message CreateTaskGroupsInExistingWorkflowsResponse {
+  repeated google.protobuf.StringValue task_group_id_created = 1;
+}
+
+message WorkflowTemplate {
+  google.protobuf.StringValue workflow_name = 1;
+  repeated TaskGroupTemplate task_groups = 2;
+  repeated google.protobuf.StringValue start_at = 3;
+}
+
+message TaskGroupTemplate {
+  repeated google.protobuf.StringValue next_task_groups = 1;
+  google.protobuf.StringValue task_group_name = 2;
+  // ex: CANONICAL_TASK_GROUP, DELIVERY_TASK_GROUP
+  google.protobuf.StringValue task_group_type = 3;
+  repeated TaskTemplate tasks = 4;
+  repeated google.protobuf.StringValue start_at = 5;
+}
+
+message TaskTemplate {
+  repeated google.protobuf.StringValue next_tasks = 1;
+  google.protobuf.StringValue task_name = 2;
+  // ex: PICKUP_TASK, DROPOFF_TASK
+  google.protobuf.StringValue task_type = 3;
+}
+
+message ExecuteWorkflowRequest {
+  WorkflowData workflow_data = 1;
+  TaskEtaPrediction task_eta_prediction = 2;
+}
+
+message WorkflowData {
+  google.protobuf.Int64Value market_id = 1;
+  google.protobuf.Int64Value submarket_id = 2;
+  google.protobuf.Int64Value starting_point_id = 3;
+  google.protobuf.BoolValue is_test = 4;
+  google.protobuf.StringValue idempotency_key = 5;
+  google.protobuf.StringValue workflow_name = 6;
+  // key - taskgroup_name
+  map<string, TaskGroupData> task_groups_data = 7;
+  // nested path as key - taskgroup_name::task_name
+  map<string, TaskData> tasks_data = 8;
+  google.protobuf.StringValue client_name = 9;
+}
+
+message Workflow {
+  google.protobuf.StringValue workflow_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Int64Value starting_point_id = 4;
+  google.protobuf.StringValue idempotency_key = 5;
+}
+
+message ExecuteWorkflowResponse {
+  oneof result {
+    Workflow data = 1;
+    Error error = 2;
+  }
+  repeated TaskGroup task_groups = 3;
+  // true if workflow was executed, false if it already exists
+  google.protobuf.BoolValue is_executed = 4;
+}
+
+message CancelWorkflowRequest {
+  google.protobuf.StringValue workflow_id = 1;
+}
+
+message CancelTaskGroupRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue cancel_reason_text = 2;
+}
+
+message UpdateTaskGroupRequest {
+  TaskGroupData task_group_data = 1;
+  google.protobuf.StringValue task_group_id = 2;
+  google.protobuf.FieldMask update_field_mask = 3;
+  google.protobuf.StringValue context = 4;
+  google.protobuf.StringValue creator = 5;
+}
+
+message UpdateTaskGroupV2Request {
+  google.protobuf.StringValue context = 1;
+  google.protobuf.StringValue creator = 2;
+  google.protobuf.StringValue task_group_id = 3;
+  repeated DataToUpdate data_to_update = 4;
+}
+
+message DataToUpdate {
+  reserved 2;
+  reserved "task_data";
+  oneof data {
+    TaskGroupData task_group_data = 1;
+    TaskData task_data_v2 = 4;
+  }
+  google.protobuf.FieldMask update_field_mask = 3;
+}
+
+message UpdateTaskGroupsV2Request {
+  repeated UpdateTaskGroupV2Request batch_requests = 1;
+}
+
+message UpdateTaskGroupResponse {
+  TaskGroupData task_group_data = 1;
+  google.protobuf.StringValue task_group_id = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message UpdateTaskGroupV2Response {
+  TaskGroupData task_group_data = 1;
+  google.protobuf.StringValue task_group_id = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message UpdateTaskGroupsRequest {
+  repeated UpdateTaskGroupRequest batch_requests = 1;
+}
+
+message UpdateTaskGroupsResponse {
+  repeated UpdateTaskGroupResponse batch_responses = 1;
+}
+
+message UpdateTaskGroupsV2Response {
+  reserved 1;
+  reserved "batch_responses";
+  repeated UpdateTaskGroupResponse response = 2;
+}
+
+message UpdateTaskRequest {
+  google.protobuf.StringValue task_id = 1;
+  TaskData task_data = 2;
+  google.protobuf.FieldMask update_field_mask = 3;
+  google.protobuf.StringValue context = 4;
+  google.protobuf.StringValue creator = 5;
+}
+
+message SetTaskCompleteRequest {
+  google.protobuf.StringValue task_id = 1;
+  google.protobuf.StringValue context = 2;
+  google.protobuf.StringValue creator = 3;
+}
+
+message GetWorkflowRequest {
+  google.protobuf.StringValue workflow_id = 1;
+}
+
+message GetWorkflowByIdempotencyKeyRequest {
+  google.protobuf.StringValue idempotency_key = 1;
+}
+
+message GetWorkflowResponse {
+  oneof result {
+    Workflow data = 1;
+    Error error = 2;
+  }
+}
+
+message GetTaskGroupRequest {
+  google.protobuf.StringValue task_group_id = 1;
+}
+
+message GetTaskGroupResponse {
+  oneof result {
+    TaskGroup data = 1;
+    Error error = 2;
+  }
+}
+
+message GetTaskGroupsRequest {
+  repeated google.protobuf.StringValue task_group_ids = 1;
+}
+
+message GetTaskGroupsResponse {
+  map<string, GetTaskGroupResponse> task_groups = 1;
+}
+
+message GetTaskGroupsByWorkflowIdRequest {
+  google.protobuf.StringValue workflow_id = 1;
+}
+
+message GetTaskGroupsByWorkflowIdResponse {
+  repeated GetTaskGroupResponse task_groups = 1;
+}
+
+message GetTaskRequest {
+  google.protobuf.StringValue task_id = 1;
+}
+
+message GetTaskResponse {
+  oneof result {
+    Task data = 1;
+    Error error = 2;
+  }
+}
+
+message GetTasksByTaskGroupIdRequest {
+  google.protobuf.StringValue task_group_id = 1;
+}
+
+message GetTasksByTaskGroupIdResponse {
+  repeated Task tasks = 1;
+}
+
+message GetTaskGroupDeliveryMappingRequest {
+  oneof identifier {
+    google.protobuf.StringValue task_group_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.Int64Value delivery_id = 3;
+  }
+}
+
+message GetTaskGroupDeliveryMappingResponse {
+  oneof result {
+    TaskGroupDeliveryMapping data = 1;
+    Error error = 2;
+  }
+}
+
+message GetTaskGroupDeliveryMappingsRequest {
+  oneof identifier {
+    TaskGroupIds task_group_ids = 1;
+    DeliveryUuids delivery_uuids = 2;
+    DeliveryIds delivery_ids = 3;
+  }
+}
+
+message TaskGroupDeliveryMappings {
+  repeated TaskGroupDeliveryMapping data = 1;
+}
+
+message GetTaskGroupDeliveryMappingsResponse {
+  oneof result {
+    TaskGroupDeliveryMappings mappings = 1;
+    Error error = 2;
+  }
+}
+
+message UpdateTaskGroupDeliveryMappingRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  TaskGroupDeliveryMapping data = 2;
+  google.protobuf.FieldMask update_field_mask = 3;
+}
+
+message UpdateResponse {
+  oneof result {
+    google.protobuf.Timestamp updated_at = 1;
+    Error error = 2;
+  }
+}
+
+message GetTaskGroupJsonDataRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  reserved 2;
+  reserved "error";
+}
+
+message GetTaskGroupJsonDataResponse {
+  google.protobuf.StringValue json_data = 1;
+  Error error = 2;
+}
+
+message CheckPickupGeofenceRequest {
+  reserved 2, 3, 4;
+  reserved "lat", "lng", "accuracy_meters";
+
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.DoubleValue lat_value = 5;
+  google.protobuf.DoubleValue lng_value = 6;
+  google.protobuf.DoubleValue accuracy_meters_value = 7;
+}
+
+message CheckPickupGeofenceResponse {
+  google.protobuf.BoolValue allowed = 1;
+  google.protobuf.BoolValue enforce_geofence = 2;
+}
+
+message CheckDropOffGeofenceRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.DoubleValue dasher_lat = 2;
+  google.protobuf.DoubleValue dasher_lng = 3;
+  google.protobuf.DoubleValue drop_off_lat = 4;
+  google.protobuf.DoubleValue drop_off_lng = 5;
+  google.protobuf.DoubleValue accuracy_meters_value = 6;
+  google.protobuf.DoubleValue drop_off_geofence_meters = 7;
+}
+
+message CheckDropOffGeofenceResponse {
+  google.protobuf.BoolValue allowed = 1;
+  google.protobuf.BoolValue requires_return_scan = 2;
+  google.protobuf.DoubleValue drop_off_distance_meters = 3;
+  google.protobuf.DoubleValue drop_off_distance_limit_meters = 4;
+}
+
+// Request for UpdateReattemptReturnStates
+message UpdateReattemptReturnStatesRequest {
+  // Mapping of task group id to state
+  map<string, UpdateReattemptReturnStateData> task_group_state_updates = 1;
+}
+
+// State Details for a Task Group ID
+message UpdateReattemptReturnStateData {
+  // state to be updates
+  ReattemptReturnState state = 1;
+  // reason (optional)
+  delivery_service.delivery_metadata.v1.UndeliverableOrderMetadata undeliverable_order_metadata = 2;
+}
+
+// Response for UpdateReattemptReturnStates
+message UpdateReattemptReturnStatesResponse {
+  repeated google.protobuf.StringValue successful_task_group_id = 1;
+  repeated google.protobuf.StringValue failed_task_group_id = 2;
+}

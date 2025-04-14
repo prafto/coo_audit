@@ -1,0 +1,289 @@
+syntax = "proto3";
+
+package doordash.merchant_analytics.service.v1.financials.v1;
+
+import "google/protobuf/wrappers.proto";
+import "merchant_analytics_service/common.proto";
+import "merchant_analytics_service/financials/common.proto";
+
+option go_package = "merchant_analytics/financials";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.merchant_analytics.v1.financials.v1";
+
+// Transactions > Summary
+service TransactionsService {
+  // Get Transactions Summary information (ex. Net Payout, Sales, Doordash Services, Amendments, etc.)
+  rpc GetTransactionsSummary(GetTransactionsSummaryRequest) returns (GetTransactionsSummaryResponse);
+  // Transactions > Table/List of Transactions
+  rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse);
+  // Transactions > Table/List of Transactions > Filter
+  rpc GetTransactionFilters(GetTransactionFiltersRequest) returns (GetTransactionFiltersResponse);
+}
+
+// Key Points:
+// (1) Transactions are pulled based on date range and store_id
+// (3) Store_Id supported for P0 - In the future, we may support multiple stores or business(es)
+message GetTransactionsSummaryRequest {
+  // start & end date range
+  DateRange date_range = 1;
+  // transaction request filter
+  TransactionsRequestFilters filters = 2;
+  // store id
+  google.protobuf.Int64Value store_id = 3;
+  // business id
+  google.protobuf.Int64Value business_id = 4;
+}
+
+// Represents "Global" Transaction Filters
+// (1) All filters are server-driven; will use strings for keys and values
+// (2) for revenue_centers, BE needs to be able to reverse the hash/slug (snake-case) -> KEY: 'in-store-b', DISPLAY: 'In-Store B')
+// (3) Made each filter field a FilterItem, but UI can just set the KEY (this makes it more clear what the BE is receiving)
+message TransactionsRequestFilters {
+  // "Marketplace", "Drive", "Storefront", etc.
+  doordash.merchant_analytics.service.v1.financials.v1.Filter channels = 1;
+  // "Order", "Fees", "Error Charge", "Adjustments" etc.
+  doordash.merchant_analytics.service.v1.financials.v1.Filter transaction_types = 2;
+  // "Cash", "External Payment", "Credit Card", etc.
+  doordash.merchant_analytics.service.v1.financials.v1.Filter payment_methods = 3;
+  // Pathfinder-specific; nested in “channels”
+  doordash.merchant_analytics.service.v1.financials.v1.Filter revenue_centers = 4;
+}
+
+// Common fields required for rendering Transaction and Payout Details > Transactions rendering
+// (1) UTC and Local are sent based on data stored in UDL; BE will always send both to FE
+// (2) Consolidate date-ranges into existing common proto "DateRange"
+message SummaryMetadata {
+  // store and business details
+  repeated StoreAndBusinessDetails store_and_business_details = 1;
+  // transaction start and end date
+  DateRange transactions_date = 2;
+}
+
+// Change Summary/Key Points:
+// (1) Remove comparison at this level
+// (2) Add SummaryMetadata to provide basic information about transaction (i.e.store details and date range)
+message GetTransactionsSummaryResponse {
+  // transaction summary
+  TransactionsSummary transactions_summary = 1;
+  // summary metadata
+  SummaryMetadata summary_metadata = 2;
+  // data source last updated
+  DataSourceLastUpdated data_source_last_updated = 3;
+}
+
+// Represents the Transactions Summary section
+// Change Summary/Key Points:
+// (1) Header hierarchy is needed in this representation; since UI is server-driven
+// (2) "header_tabs" is the highest level of hierarchy; "Net Payout"
+// (3) "summary_tabs" is the second level of hierarchy; "Sales", "Doordash Services", "Amendments",
+message TransactionsSummary {
+  // "Net Payout"
+  repeated SummaryTab header_tabs = 1;
+  // "Sales", "Doordash Services", "Amendments"
+  repeated SummaryTab summary_tabs = 2;
+}
+
+// Request to get a list of all transactions for a date range for a store/business
+// Change Summary/Key Points:
+// (1) At a minimum, we need "date_range" and "store_id"
+// (2) UI requirement to support URL filters (ex. revenue_centers, transaction_types, payment_methods) - these are server-driven hence why they are strings and not enum
+// (3) Need to support server-side pagination
+message GetTransactionsRequest {
+  // start and end date
+  DateRange date_range = 1;
+  // store id
+  google.protobuf.Int64Value store_id = 2;
+  // transaction request filter
+  TransactionsRequestFilters filters = 3;
+  // pagination
+  Page page = 4;
+  // business id
+  google.protobuf.Int64Value business_id = 5;
+}
+
+// Represents a Transaction Column
+// Change Summary/Key Points:
+// (1) Renamed this from "TransactionField" to "TransactionColumn" to better represent the data
+message TransactionColumn {
+  // "TRANSACTION_ID" (enum)
+  TransactionFieldName name = 1;
+  // "Transaction ID" (localized)
+  google.protobuf.StringValue display_string = 2;
+  // used to render an optional tooltip explaining what this column is (localized)
+  google.protobuf.StringValue description = 3;
+}
+
+// Represents a data about the Transaction
+// Change Summary/Key Points:
+// (1) Gets used in the columns and rows
+// (2) FE uses this enum to match the column to row data
+enum TransactionFieldName {
+  // unspecified
+  TRANSACTION_FIELD_NAME_TRANSACTION_FIELD_NAME_UNSPECIFIED = 0;
+  // transaction id
+  TRANSACTION_FIELD_NAME_TRANSACTION_ID = 1;
+  // date
+  TRANSACTION_FIELD_NAME_DATE = 2;
+  // time
+  TRANSACTION_FIELD_NAME_TIME = 3;
+  // order id
+  TRANSACTION_FIELD_NAME_ORDER_ID = 4;
+  // channel
+  TRANSACTION_FIELD_NAME_CHANNEL = 5;
+  // revenue center
+  TRANSACTION_FIELD_NAME_REVENUE_CENTER = 6;
+  // transaction type
+  TRANSACTION_FIELD_NAME_TRANSACTION_TYPE = 7;
+  // description
+  TRANSACTION_FIELD_NAME_DESCRIPTION = 8;
+  // payment type
+  TRANSACTION_FIELD_NAME_PAYMENT_TYPE = 9;
+  // subtotal
+  TRANSACTION_FIELD_NAME_SUBTOTAL = 10;
+  // tax
+  TRANSACTION_FIELD_NAME_TAX = 11;
+  // cusomter fees
+  TRANSACTION_FIELD_NAME_CUSTOMER_FEES = 12;
+  // customer fees tax
+  TRANSACTION_FIELD_NAME_CUSTOMER_FEES_TAX = 13;
+  // staff tips
+  TRANSACTION_FIELD_NAME_STAFF_TIPS = 14;
+  // commission
+  TRANSACTION_FIELD_NAME_COMMISSION = 15;
+  // commission tax
+  TRANSACTION_FIELD_NAME_COMMISSION_TAX = 16;
+  // merchant fees
+  TRANSACTION_FIELD_NAME_MERCHANT_FEES = 17;
+  // merchant fees tax
+  TRANSACTION_FIELD_NAME_MERCHANT_FEES_TAX = 18;
+  // error charges
+  TRANSACTION_FIELD_NAME_ERROR_CHARGES = 19;
+  // adjustments
+  TRANSACTION_FIELD_NAME_ADJUSTMENTS = 20;
+  // snap ebt
+  TRANSACTION_FIELD_NAME_SNAP_EBT = 21;
+  // net total
+  TRANSACTION_FIELD_NAME_NET_TOTAL = 22;
+  // payout id
+  TRANSACTION_FIELD_NAME_PAYOUT_ID = 23;
+  // discount
+  TRANSACTION_FIELD_NAME_DISCOUNT = 24;
+  // surcharge
+  TRANSACTION_FIELD_NAME_SURCHARGE = 25;
+  // marketing cost
+  TRANSACTION_FIELD_NAME_MARKETING_COST = 26;
+  // marketing credit
+  TRANSACTION_FIELD_NAME_MARKETING_CREDIT = 27;
+  // third-party contribution
+  TRANSACTION_FIELD_NAME_THIRD_PARTY_CONTRIBUTION = 28;
+}
+
+// Represents data required to render Transactions list table
+// Change Summary/Key Points:
+// (1) This represents server-driven data to render the table
+// (2) Columns - FE will honor the order provided by the BE list for horizontal sorting of the columns in the table
+// (3) Rows - FE will honor the order provided by the BE list (FE needs to ignore client-side sorting & pagination) for vertical sorting
+// (4) Rows - Ordering of items within the row objects themselves don't matter
+// (5) BE supports pagination (need total count)
+// (6) Refactor naming
+message GetTransactionsResponse {
+  // Columns to show in table (ordered): [{TRANSACTION_ID, DATE, TIME]
+  repeated TransactionColumn columns = 1;
+  // Rows to show in table (sorted by BE): [{{TRANSACTION_ID, "ID1"}, {DATE, "FEB 2"}, ...}, ...]
+  repeated Transaction transactions = 2;
+  // Total row count (needed to render pagination)
+  google.protobuf.Int32Value total_count = 3;
+}
+
+// Represents a Transaction
+// Change Summary/Key Points:
+// (1) A Transaction is made up of various fields (ex. one transaction has a transaction_id, date, time, order_id, etc.)
+// (2) This is server driven to decide what fields the UI should care about
+// (3) This should align with the columns sent back (i.e. if a column contains a field, so does the transaction) to render the transactions list table
+message Transaction {
+  // {{TRANSACTION_ID, "ID1"}, {DATE, "FEB 2", {TIME, 1:00pm}, ...}
+  repeated TransactionFields fields = 1;
+}
+
+// Represents a Transaction Field
+message TransactionFields {
+  // "TRANSACTION_ID" (enum)
+  TransactionFieldName name = 1;
+  // "ID1" (localized)
+  google.protobuf.StringValue value = 2;
+  // Next action on click
+  Action action = 3;
+}
+
+// Action Type
+enum ActionType {
+  // unspecified action type
+  ACTION_TYPE_UNSPECIFIED = 0;
+  // order details side sheet action type
+  ACTION_TYPE_SIDE_SHEET = 1;
+  // navigate action type, used to redirect to a page(eg:- payoutid will have this action type to navigate to payout details page
+  ACTION_TYPE_NAVIGATE = 2;
+}
+
+// Action
+message Action {
+  // action type
+  ActionType type = 1;
+  // payload
+  oneof payload {
+    // order details
+    OrderDetailsPayload data = 2;
+    // payout id
+    PayoutIdPayload payout_data = 3;
+  }
+}
+
+// Order Details Payload (part of Action)
+message OrderDetailsPayload {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // store id
+  google.protobuf.Int64Value store_id = 2;
+  // business id
+  google.protobuf.Int64Value business_id = 3;
+  // payout id
+  google.protobuf.Int64Value payout_id = 4;
+}
+
+// Payout Id Payload (part of Action)
+message PayoutIdPayload {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+  // business id
+  google.protobuf.Int64Value business_id = 2;
+}
+
+// Represents a Transaction Filter request (i.e. get filters we can apply to Transactions)
+// Change Summary/Key Points:
+// (1) FE will use this to render the global Transaction page filters (ex. Channel, Payment Method, Revenue Center, Transaction Type)
+// (1) BE will look at DV to list of keys, translate it to get friendly name, then return to client.
+message GetTransactionFiltersRequest {
+  // store id
+  google.protobuf.Int64Value store_id = 1;
+}
+
+// Represents a Transaction Filter response
+// Change Summary/Key Points:
+// (1) Server will drive all the values based on store (hence why we don't use enums)
+// (2) "revenue_centers" are user provided fields (used store_id to call pathfinder client)
+// (3) Refactor this to return “supported_request_filters” since the fields are the same
+message GetTransactionFiltersResponse {
+  // Global impacts “Summary” + “Transactions” table
+  TransactionsRequestFilters global_filters = 1;
+  // Only impacts “Transactions” table
+  TransactionsRequestFilters transactions_filters = 2;
+}
+
+// Data Source Last Updated
+message DataSourceLastUpdated {
+  // data source last refreshed at
+  google.protobuf.StringValue data_source_last_refreshed_at = 1;
+  // tooltip
+  google.protobuf.StringValue tooltip = 2;
+}

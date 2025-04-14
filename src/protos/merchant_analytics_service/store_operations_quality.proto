@@ -1,0 +1,589 @@
+syntax = "proto3";
+
+package doordash.merchant_analytics.service.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_analytics_service/cancellation_reasons.proto";
+import "merchant_analytics_service/common.proto";
+import "merchant_analytics_service/customer_feedback_analytics.proto";
+
+option go_package = "merchant_analytics";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.merchant_analytics.v1";
+
+service StoreOperationsQualityService {
+  rpc GetOperationsQualityMetricDetails(GetOperationsQualityMetricDetailsRequest) returns (GetOperationsQualityMetricDetailsResponse);
+  // Returns goals for each metric that merchant should be working to meet
+  rpc GetMerchantOperationsQualityMetricGoals(GetMerchantOperationsQualityMetricGoalsRequest) returns (GetMerchantOperationsQualityMetricGoalsResponse);
+  // Returns static data of metric score to the number of merchants for each score. Used to describe merchants current position in respect to all other merchants on the platform
+  // Response contains separate scales for businesses and stores
+  rpc GetOperationsQualityPercentiles(GetOperationsQualityPercentilesRequest) returns (GetOperationsQualityPercentilesResponse);
+  // Returns list of records for requested metric, that provide low level details about the metric
+  // For Avoidable Wait, Cancellations and Order Error rate this will be list of deliveries
+  // For Downtime metric response will contain list of store temp deactivations
+  // Supports data pagination via page and limit fields in the request and filtering of the records by category via data_filters request field
+  rpc GetOperationsQualityMetricBreakdown(GetOperationsQualityMetricBreakdownRequest) returns (GetOperationsQualityMetricBreakdownResponse);
+}
+
+message GetOperationsQualityMetricDetailsRequest {
+  // Filtering list of business ids
+  repeated int64 business_ids = 1;
+  // Filtering list of store ids
+  repeated int64 store_ids = 2;
+  // Filtering start date
+  google.protobuf.Timestamp active_start_date = 3;
+  // Filtering end date
+  google.protobuf.Timestamp active_end_date = 4;
+  // Control whether response will contain more more details or not
+  bool is_lite_version = 5;
+  // store filter granularity
+  StoreFilterGranularity store_filter_granularity = 6;
+  // Time granularity used for requested range
+  TimeFilterGranularity time_filter_granularity = 7;
+  // Controls whether response will contain new fields added in scope of Ops quality redesign. Temporary solution to simplify rollout of a large change.
+  // This flag would help coordinate enablement of the new functionality from single source
+  google.protobuf.BoolValue include_new_fields = 8;
+}
+
+message GetOperationsQualityMetricDetailsResponse {
+  AvoidableWaitMetric overall_avoidable_wait_metric = 1;
+  OrderErrorMetric overall_order_error_metrics = 2;
+  CustomerRatingMetric overall_customer_rating_metric = 3;
+  DowntimeMetric overall_downtime_metric = 4;
+  CancellationsMetric overall_cancellation_metric = 5;
+  repeated OperationsQualityMetricsDetails store_operation_quality_metrics = 6;
+}
+
+message OperationsQualityMetricsDetails {
+  int64 store_id = 1;
+  AvoidableWaitMetric avoidable_wait_metric = 2;
+  OrderErrorMetric order_error_metric = 3;
+  CustomerRatingMetric customer_rating_metric = 4;
+  DowntimeMetric downtime_metric = 5;
+  CancellationsMetric cancellations_metric = 6;
+}
+
+message AvoidableWaitMetric {
+  google.protobuf.DoubleValue metric_score = 2;
+  google.protobuf.DoubleValue previous_period_metric_score = 3;
+  repeated OrderLatenessByHour hourly_order_lateness = 4;
+  // Average dasher wait time in absolute minutes value
+  google.protobuf.DoubleValue dasher_wait = 5;
+  // Average dasher wait time in absolute minutes value for the period preceding requested one
+  google.protobuf.DoubleValue previous_dasher_wait = 6;
+  // Top 5 stores with highest avoidable wait. Applicable only for business/business group requests
+  repeated StoreRankingData store_rankings = 7;
+}
+
+message OrderLatenessByHour {
+  int32 local_hour = 1;
+  google.protobuf.DoubleValue avg_order_lateness = 2;
+}
+
+message OrderErrorMetric {
+  google.protobuf.DoubleValue total_errors = 1;
+  google.protobuf.DoubleValue sum_error_charges = 2;
+  google.protobuf.DoubleValue metric_score = 3;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue previous_period_metric_score = 4;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue missing_main_item = 5;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue missing_side_item = 6;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue special_instr_ignored = 7;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue incorrect_ingredients = 8;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue other_problem = 9;
+  // Error charges from M&I
+  money.MonetaryFields error_charges = 10;
+  // Error charges from M&I in previous time period
+  money.MonetaryFields error_charges_previous = 11;
+  // Top 5 items with highest order error rate
+  repeated MissingOrIncorrectItemSummary top_items_with_errors = 12;
+}
+
+message CustomerRatingMetric {
+  google.protobuf.DoubleValue metric_score = 2;
+  google.protobuf.DoubleValue previous_period_metric_score = 3;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_5_stars = 4;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_4_stars = 5;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_3_stars = 6;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_2_stars = 7;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_1_stars = 8;
+  // Total number of ratings received
+  google.protobuf.Int64Value total_ratings = 9;
+  // Total number of ratings received for the previous period
+  google.protobuf.Int64Value prev_total_ratings = 10;
+  // Top 5 Cx Feedback categories by number of CX reviews. Applicable only to store requests
+  repeated CxFeedbackCategoryCount top_improvement_areas = 11;
+  // Top 5 stores with the lowest average Cx rating. Applicable only for business/business group requests
+  repeated StoreRankingData store_rankings = 12;
+}
+
+message CancellationsMetric {
+  google.protobuf.DoubleValue cancelled_deliveries_subtotal = 1;
+  google.protobuf.DoubleValue metric_score = 2;
+  google.protobuf.DoubleValue previous_period_metric_score = 3;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_store_closed = 4;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_too_busy = 5;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_item_out_of_stock = 6;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_no_confirmation = 7;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_staff_requested_other = 8;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_too_long = 9;
+  // TODO: Deprecate
+  google.protobuf.DoubleValue num_cancels_other = 10;
+  google.protobuf.DoubleValue total_deliveries = 11;
+  // sales lost due to avoidable cancellations
+  money.MonetaryFields sales_lost = 12;
+  // sales lost due to avoidable cancellations in previous time period
+  money.MonetaryFields sales_lost_previous = 13;
+  // avoidable cancellations by mx friendly cancellation categories
+  repeated AvoidableCancellationCategoryCount avoidable_cancellations_by_category = 14;
+  // Breakdown on cancellations by CancellationsByCategoryDesc
+  repeated CancellationsByCategoryDesc cancellations_category_desc_count = 15;
+}
+
+message DowntimeMetric {
+  google.protobuf.DoubleValue metric_score = 1;
+  google.protobuf.DoubleValue previous_period_metric_score = 2;
+  google.protobuf.DoubleValue total_downtime = 3;
+  google.protobuf.DoubleValue total_uptime = 4;
+  // TODO: deprecate
+  repeated Deactivation deactivations = 5;
+  // Top 5 temp deactivations with highest duration in minutes. Will be returned only for store request
+  repeated Deactivation top_temp_deactivations = 6;
+  // Top 5 stores with highest downtime. Will be returned only for business/business group requests
+  repeated StoreRankingData store_rankings = 7;
+}
+
+message Deactivation {
+  // Should be set to one of the deactivation types temp, perm
+  oneof deactivation_reason {
+    TempDeactivationReasons reason = 1;
+    PermanentDeactivationReasons perm_reason = 4;
+  }
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp end_time = 3;
+}
+
+message GetMerchantOperationsQualityMetricGoalsRequest {
+  repeated int64 business_ids = 1;
+  repeated int64 store_ids = 2;
+}
+
+message GetMerchantOperationsQualityMetricGoalsResponse {
+  MetricMetadata overall_metrics_metadata = 1;
+  repeated MetricMetadata store_metrics_metadata = 2;
+}
+
+message MetricMetadata {
+  int64 id = 1;
+  MetricGoals goals = 2;
+}
+
+message MetricGoals {
+  google.protobuf.DoubleValue avoidable_wait_metric = 1;
+  google.protobuf.DoubleValue order_error_metric = 2;
+  google.protobuf.DoubleValue customer_rating_metric = 3;
+  google.protobuf.DoubleValue downtime_metric = 4;
+  google.protobuf.DoubleValue cancellations_metric = 5;
+}
+
+message GetOperationsQualityPercentilesResponse {
+  MetricsPercentiles businessesBuckets = 1;
+  MetricsPercentiles storesBuckets = 2;
+}
+
+message GetOperationsQualityPercentilesRequest {}
+
+message MetricsPercentiles {
+  repeated MetricPercentileBucket avoidable_wait_metric = 1;
+  repeated MetricPercentileBucket order_error_metric = 2;
+  repeated MetricPercentileBucket customer_rating_metric = 3;
+  repeated MetricPercentileBucket downtime_metric = 4;
+  repeated MetricPercentileBucket cancellations_metric = 5;
+}
+
+message MetricPercentileBucket {
+  google.protobuf.DoubleValue scoreThreshold = 1;
+  google.protobuf.DoubleValue bucket = 2;
+}
+
+message GetOperationsQualityMetricBreakdownRequest {
+  repeated google.protobuf.Int64Value business_ids = 1;
+  repeated google.protobuf.Int64Value store_ids = 2;
+  DateRange date_range = 3;
+  ExtendedDetailsMetricTypes metricType = 4;
+  OpsQualityBreakdownFilters data_filters = 5;
+  google.protobuf.BoolValue include_category_count = 6;
+  google.protobuf.Int32Value offset = 7;
+  google.protobuf.Int32Value limit = 8;
+  StoreFilterGranularity store_filter_granularity = 9;
+  // Time granularity used for requested range
+  TimeFilterGranularity time_filter_granularity = 10;
+}
+
+message DeactivationTypeFilters {
+  DeactivationTypes type = 1;
+  repeated google.protobuf.Int32Value categories = 2;
+}
+
+message OrderErrorTypeFilters {
+  repeated ErrorCategoryFriendly categories = 1;
+}
+
+message OpsQualityBreakdownFilters {
+  repeated google.protobuf.Int32Value category_filters = 1;
+  repeated DeactivationTypeFilters deactivation_types = 2;
+  // used for getting items/orders with errors and filtering them by a certain type
+  repeated OrderErrorTypeFilters order_error_types = 3;
+  // List of cancellation category filters
+  repeated CancellationCategoryDesc cancellation_category_filters = 4;
+}
+
+message GetOperationsQualityMetricBreakdownResponse {
+  // Total records across all categories
+  google.protobuf.Int64Value total_records = 1;
+  // Records count by category
+  repeated RecordByCategory records_by_category = 2;
+  // How many records to skip in the query
+  google.protobuf.Int32Value offset = 3;
+  // Max amount of records to return
+  google.protobuf.Int32Value limit = 4;
+  // Orders with missing or incorrect errors
+  repeated OrderError order_error = 5;
+  // Cancellation orders
+  repeated Cancellation cancellations = 6;
+  // Temporary deactivations
+  repeated Downtime downtime = 7;
+  // Orders with avoidable dasher wait
+  repeated AvoidableWait avoidable_wait = 8;
+  // Temporary field for orders by cancellation category count. Will be deprecated once migration to CancellationsByCategoryDesc is completed
+  CancellationsByCategoryDescBreakdown cancellations_by_category = 9;
+}
+
+message RecordByCategory {
+  // Category id, if applicable
+  google.protobuf.Int32Value category = 1;
+  // Number of records in specific category
+  google.protobuf.Int64Value records_count = 2;
+  // additional identifier for deactivation type - Perm/Temp. Will be deprecated
+  DeactivationTypes deactivation_type = 3;
+}
+
+message CancellationsByCategoryDescBreakdown {
+  // Total records across all categories
+  google.protobuf.Int32Value total_records = 1;
+  // Each category records count
+  repeated CancellationsByCategoryDesc category_count = 2;
+}
+
+message AvoidableWait {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue customer_name = 2;
+  google.protobuf.Int32Value order_items_count = 3;
+  google.protobuf.Int32Value estimated_prep_time_min = 4 [deprecated = true];
+  google.protobuf.Int32Value actual_prep_time_min = 5 [deprecated = true];
+  google.protobuf.Timestamp created_at = 6 [deprecated = true];
+  google.protobuf.StringValue store_name = 7;
+  google.protobuf.Int64Value store_id = 8;
+  google.protobuf.Int32Value avoidable_wait = 9;
+  google.protobuf.StringValue order_created_time = 10;
+  google.protobuf.StringValue merchant_estimated_prep_time = 11;
+  google.protobuf.StringValue dasher_arrive_time = 12;
+  google.protobuf.StringValue dasher_leave_time = 13;
+  google.protobuf.StringValue store_timezone = 14;
+}
+
+message Downtime {
+  google.protobuf.StringValue created_at = 1;
+  google.protobuf.StringValue start_time = 2;
+  google.protobuf.StringValue end_time = 3;
+  DeactivationTypes type = 4;
+  google.protobuf.StringValue notes = 5;
+  google.protobuf.Int64Value store_id = 6;
+  google.protobuf.DoubleValue duration_min = 7;
+  // Reason should be set based on the type of deactivation(permanent or temporary) and should not be both
+  oneof deactivation_reason {
+    TempDeactivationReasons temp_reason = 8;
+    PermanentDeactivationReasons perm_reason = 9;
+  }
+  google.protobuf.StringValue store_name = 10;
+}
+
+message ItemError {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.Int32Value quantity = 2;
+}
+
+message OrderError {
+  // Delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Error Category Friendly (from ERROR_CATEGORY_FRIENDLY_FIELD)
+  ErrorCategoryFriendly category = 2;
+  // Customer comments or item name, based on the type of order error
+  google.protobuf.StringValue additional_info = 3;
+  // Customer initials
+  google.protobuf.StringValue customer_name = 4;
+  // Date when order was created
+  google.protobuf.StringValue created_at = 5;
+  // Amount that was charged to the merchant due to order error
+  google.protobuf.DoubleValue amount_charged = 6;
+  // List of items with errors
+  repeated ItemError items_at_fault = 7;
+  // Amount that was charged to the merchant due to order error with currency info
+  money.MonetaryFields amount_charged_monetary = 8;
+  // Store ID
+  google.protobuf.Int64Value store_id = 9;
+  // Store name
+  google.protobuf.StringValue store_name = 10;
+}
+
+message Cancellation {
+  // Id of the store
+  google.protobuf.Int64Value store_id = 1;
+  // Cancelled delivery uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+  // Cancellation reason(will be deprecated in favour of CancellationCategory)
+  CancellationReason category = 3;
+  // Initials of the customer cancelled the order
+  google.protobuf.StringValue customer_name = 4;
+  // Number of items in the order
+  google.protobuf.Int32Value order_items_count = 5;
+  // Date string when order was cancelled
+  google.protobuf.StringValue created_at = 6;
+  // Order subtotal
+  google.protobuf.DoubleValue amount_charged = 7;
+  // Name of the store
+  google.protobuf.StringValue store_name = 8;
+  // Order subtotal with currency information
+  money.MonetaryFields amount_charged_monetary = 9;
+  // cancellation category, will replace CancellationReason
+  CancellationCategoryDesc cancellation_category = 10;
+  // timestamp of the order cancel datetime
+  google.protobuf.Int64Value local_cancelled_at = 11;
+}
+
+// Used for store aggregation for Downtime, Wait and Cx Rating metrics
+message StoreRankingData {
+  // Store name
+  google.protobuf.StringValue name = 1;
+  // Metric score value for the store
+  google.protobuf.DoubleValue primary_value = 2;
+  // Secondary metric value(Downtime use-case where primary val -> downtime%, secondary val -> downtime minutes)
+  google.protobuf.DoubleValue secondary_value = 3;
+  // Store id
+  google.protobuf.Int64Value store_id = 4;
+}
+
+// Cancellations Category Result
+message AvoidableCancellationCategoryCount {
+  // Category
+  CancellationReason category = 1;
+  // Count
+  google.protobuf.Int64Value count = 2;
+}
+
+// Number of cancellations by CancellationCategoryDesc
+message CancellationsByCategoryDesc {
+  // CancellationCategoryDesc id
+  CancellationCategoryDesc category_desc = 1;
+  // Number of cancellations
+  google.protobuf.Int32Value count = 2;
+}
+
+// Customer feedback count by category
+message CxFeedbackCategoryCount {
+  // Customer feedback category id
+  CxReviewCategoryId category_id = 1;
+  // Number of customer reviews for this improvement category
+  google.protobuf.Int32Value reviews_count = 2;
+}
+
+// Item Missing And Incorrect Statistic
+message MissingOrIncorrectItemSummary {
+  // item image url
+  google.protobuf.StringValue image_url = 1;
+  // item name
+  google.protobuf.StringValue name = 2;
+  // amount missing
+  google.protobuf.Int64Value missing = 3;
+  // amount incorrect
+  google.protobuf.Int64Value incorrect = 4;
+  // amount ordered
+  google.protobuf.Int64Value ordered = 5;
+}
+
+enum ExtendedDetailsMetricTypes {
+  AVOIDABLE_WAIT = 0;
+  CANCELLATIONS = 1;
+  ORDER_ERRORS = 2;
+  DOWNTIME = 3;
+}
+
+// Categories of order errors that can be displayed in the operations quality UI for order accuracy metric categories breakdown
+enum ErrorCategoryFriendly {
+  // Wrong Order error. Will be used as a default category for any unrecognized error category
+  FRIENDLY_WRONG_ORDER = 0;
+  // Missing Item error
+  FRIENDLY_MISSING_ITEM = 1;
+  // Ingredient Error
+  FRIENDLY_INGREDIENT_ERROR = 2;
+  // Incorrect Size
+  FRIENDLY_INCORRECT_SIZE = 3;
+  // Incorrect Quantity
+  FRIENDLY_INCORRECT_QUANTITY = 4;
+  // Missing Side Item
+  FRIENDLY_MISSING_SIDE_ITEM = 5;
+  // Missing Sauce/Condiments
+  FRIENDLY_MISSING_SAUCE_CONDIMENTS = 6;
+  // Special Request Ignored
+  FRIENDLY_MISSING_SPECIAL_REQUEST_IGNORED = 7;
+}
+
+enum OrderErrorCategories {
+  MISSING_MAIN_ITEM = 0;
+  MISSING_SIDE_ITEM = 1;
+  SPECIAL_INSTRUCTION_IGNORED = 2;
+  INCORRECT_INGREDIENT = 3;
+  FOOD_QUALITY_ARRIVED_COLD = 4;
+  MISSING_CONDIMENTS_OR_SAUCE = 5;
+  INCORRECT_ITEM_RECEIVED = 6;
+  FOOD_PREPARED_UNSAFELY = 7;
+  FOOD_HANDLED_POORLY_BY_DASHER = 8;
+  ITEM_WRONG_SIZE = 9;
+  FOOD_QUALITY_NOT_TASTY = 10;
+  FOOD_CONTAINED_DIETARY_RESTRICTIONS = 11;
+  INCORRECT_QUANTITY = 12;
+  INCORRECT_SIZE = 13;
+  INGREDIENT_ERROR = 14;
+  MISSING_ITEM = 15;
+  NULL = 16;
+  POORLY_PACKAGED_OR_HANDLED = 17;
+  SPECIAL_INSTR_IGNORED_FOOD_STYLE_PREFERENCES = 18;
+  SPECIAL_REQUEST_IGNORED = 19;
+  TEMPERATURE_ISSUE = 20;
+  WASNT_TASTY = 21;
+  WRONG_ORDER_DELIVERED = 22;
+  FOOD_COOKED_INCORRECTLY = 23;
+  INCORRECT_INGREDIENTS = 24;
+  DASHMART_ONLY_ITEM_NOT_FOUND = 25;
+  INCORRECT_SIZE_QUANTITY_WEIGHT = 26;
+  NEVER_DELIVERED = 27;
+}
+
+enum DeactivationTypes {
+  EMPTY = 0;
+  PERMANENT = 1;
+  TEMPORARY = 2;
+}
+
+// Deactivation reasons that will be recognized in the ops quality page of the Mx Portal
+enum TempDeactivationReasons {
+  TEMP_OTHER = 0;
+  INCORRECT_STORE_HOURS = 22;
+  TEMP_OUT_OF_BUSINESS = 23;
+  RENOVATION = 24;
+  HOLIDAY = 25;
+  BAD_WEATHER = 26;
+  SPECIAL_EVENT = 27;
+  STORE_CLOSED_MERCHANT_REQUESTED = 28;
+  TOO_BUSY = 29;
+  TABLET_ISSUES = 30;
+  OTHER_PROTOCOL_ISSUES = 31;
+  DOES_NOT_WANT_PARTNERSHIP = 32;
+  MENU_UPDATE_REQUIRED = 33;
+  PAYMENT_ISSUES = 34;
+  PARTNER_ACTIVATED_TOO_EARLY = 35;
+  MERCHANT_SYSTEM_OUTAGE = 36;
+  ADDRESS_ISSUES = 37;
+  ITEMS_TEMP_UNAVAILABLE = 38;
+  STORE_OPEN_CANNOT_FULFILL_OTHER = 39;
+  INTERNAL_OUTAGE = 40;
+  TEMP_PURSUING_PARTNERSHIP = 41;
+  DOORDASH_NOT_FULFILLING_ORDERS_OTHER = 42;
+  STORE_CLOSED_DASHER_REPORTED = 67;
+  AUTO_TRIGGERED = 100;
+  OLO_AUTO_TRIGGERED = 133;
+  OLO_MERCHANT_TRIGGERED = 166;
+  UNHEALTHY_OPS_RATE = 181;
+  STORE_RESPONDED_CLOSED_TABLET = 199;
+  STORE_AUTO_CLOSED_NO_RESPONSE_TABLET = 200;
+  SP_UNDERSUPPLY_NP_AUTO_DEACTIVATE = 232;
+  HIGH_WAIT_IN_STORE = 265;
+  POS_OUTAGE_AUTO_TEMP_DEACTIVATION = 298;
+  AYO_LATE_OPEN = 331;
+  AYO_ALL_DAY_CLOSURE = 364;
+  AYO_EARLY_CLOSURE = 365;
+  KITCHEN_CAPACITY_REACHED_AUTO_TEMP_DEACTIVATION = 397;
+  POS_INTEGRATION_ISSUE = 430;
+  HIGH_ORDER_CANCELLATION = 463;
+  TABLET_IS_OFF = 496;
+}
+
+enum PermanentDeactivationReasons {
+  PERM_OTHER = 0;
+  PERM_OUT_OF_BUSINESS = 1;
+  PERM_PURSUING_PARTNERSHIP = 2;
+  BD_DEAL_IN_PROGRESS = 3;
+  MERCHANT_TAKE_DOWN = 4;
+  LOCAL_OPERATIONAL_ISSUES = 5;
+  OPERATIONAL_ISSUES = 6;
+  DELETE_STORE = 7;
+  PAYMENT_ISSUE = 8;
+  MENU_UPDATE = 9;
+  AWAITING_PARTNER_ACTIVATION = 10;
+  CASH_ONLY = 11;
+  CEASE_AND_DESIST = 12;
+  ORDER_MINIMUM = 13;
+  STRIPE_CHARGES_ENABLED_FALSE = 14;
+  UNSPECIFIED = 15;
+  PAYMENT_TRANSFER = 48;
+  DUPLICATE_STORE = 114;
+  MISMATCHED_BUSINESS = 115;
+  MENU_NEEDS_PICKUP = 116;
+  INCORRECT_ADDRESS = 117;
+  INACCESSIBLE_LOCATION = 118;
+  NOT_A_RESTAURANT = 119;
+  WEATHER_OR_NATURAL_DISASTER = 120;
+  DASHER_ISSUES = 121;
+  EXCLUSIVE_WITH_OTHER_SERVICE = 122;
+  HAS_INTERNAL_DELIVERY = 123;
+  IN_NEGOTIATION = 124;
+  REFUSES_TO_FULFILL_DOORDASH = 125;
+  TECHNICAL_ISSUES = 126;
+  LOW_OR_HIGH_VOLUME = 127;
+  POOR_QUALITY = 128;
+  MX_CHARGES_EXTRA_FEES = 129;
+  RED_CARD_NOT_ACCEPTED = 130;
+  MSA_PREVENTS_NON_PARTNERS = 131;
+  SP_REDRAW = 147;
+  FRAUDULENT_STORE = 180;
+  TOO_HIGH_VOLUME = 246;
+  NON_PARTNER_REQUESTING_TAKEDOWN = 247;
+  POOR_SUPPORT_QUALITY_PHOTOS = 248;
+  ISSUES_WITH_PAYMENT_SETUP = 249;
+  POOR_SUPPORT_QUALITY_ACCOUNT_MANAGER = 250;
+  PAYMENT_RECONSILLIATION_ISSUE_OR_PAYMENT_DISPUTE = 251;
+  POOR_SUPPORT_QUALITY_MENU = 252;
+  STORE_SELF_DISABLED_IN_THEIR_POS_PORTAL = 253;
+  POOR_SUPPORT_QUALITY_ACCOUNT_SETTINGS = 254;
+  STORE_POS_CONNECTIVITY_ISSUES = 255;
+}

@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package eta_service;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.eta.service";
+
+message DeliveryCreatedTrigger {}
+message DasherConfirmedTrigger {}
+message DasherConfirmedAtStoreTrigger {}
+message DasherUnassignedTrigger {}
+message DeliveryBatchedTrigger {}
+message OrderPickedUpTrigger {}
+message MerchantConfirmedOrderTrigger {}
+message MerchantMarkedOrderReadyTrigger {}
+message DeliveryDropoffTrigger {}
+message GeneralRefreshTrigger {}
+message DasherLocationTrigger {}
+message BundleOrderCreatedTrigger {
+  // Order Uuid of the newly created bundle order
+  string order_uuid = 1;
+}
+message SetAsapToScheduledTrigger {}
+message SetScheduledToAsapTrigger {}
+message ChangeDeliveryAddressTrigger {}
+message ConsumerRescheduleDeliveryTrigger {}
+message SwitchToPickupTrigger {}
+
+message EtaUpdateTrigger {
+  // Delivery Id
+  int64 delivery_id = 1;
+  // UTC Timestamp when eta update occurred
+  google.protobuf.Timestamp timestamp = 2;
+  // Trigger of ETA Change
+  oneof update_trigger {
+    // Delivery Created
+    DeliveryCreatedTrigger delivery_created = 3;
+    // Dasher Confirmed
+    DasherConfirmedTrigger dasher_confirmed = 4;
+    // Dasher At Store
+    DasherConfirmedAtStoreTrigger dasher_at_store = 5;
+    // Dasher Unassigned
+    DasherUnassignedTrigger dasher_unassigned = 6;
+    // Delivery Batched
+    DeliveryBatchedTrigger delivery_batched = 7;
+    // Order Picked Up
+    OrderPickedUpTrigger order_picked_up = 8;
+    // Merchant Confirmed Order
+    MerchantConfirmedOrderTrigger merchant_confirmed = 9;
+    // Merchant Confirmed Order Ready
+    MerchantMarkedOrderReadyTrigger order_ready = 10;
+    // Dasher Location Changed
+    DasherLocationTrigger dasher_location_update = 11;
+    // Delivery Dropped Off
+    DeliveryDropoffTrigger delivery_dropped_off = 12;
+    // Periodic ETA Refresh - for staleness
+    GeneralRefreshTrigger refresh = 13;
+    // Set Asap to Scheduled
+    SetAsapToScheduledTrigger set_asap_to_scheduled = 14;
+    // Set Scheduled to Asap
+    SetScheduledToAsapTrigger set_scheduled_to_asap = 15;
+    // Change Delivery Address
+    ChangeDeliveryAddressTrigger change_delivery_address = 16;
+    // Consumer Reschedule Delivery
+    ConsumerRescheduleDeliveryTrigger consumer_reschedule_delivery = 17;
+    // Switch to Pickup
+    SwitchToPickupTrigger switch_to_pickup = 18;
+  }
+}
+
+message EtaUpdateTriggerByOrderUuid {
+  // Order Uuid
+  string order_uuid = 1;
+  // UTC Timestamp when the triggering event detected
+  google.protobuf.Timestamp timestamp = 2;
+  // Trigger of ETA Change
+  oneof update_trigger {
+    // Bundle Order Created
+    BundleOrderCreatedTrigger bundle_order_created = 3;
+  }
+}
+
+message EtaUpdateEvent {
+  // UTC Timestamp when eta update occurred
+  google.protobuf.Timestamp server_timestamp = 1;
+  // Delivery Id
+  int64 delivery_id = 2;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 3;
+  // Time Delivery will complete (null if pickup order, eta updated in pickup_eta field)
+  EtaUpdate delivery_eta = 4;
+  // Time Order is ready to pickup by consumer or dasher
+  EtaUpdate pickup_eta = 5;
+  // Current Dasher Route
+  DasherRoute dasher_route = 6;
+  // Current Dasher Location
+  Location dasher_location = 7;
+  // ETA Update Trigger
+  EtaUpdateTrigger update_trigger = 8;
+  // unique event uuid for each eta update
+  google.protobuf.StringValue event_uuid = 9;
+}
+
+message DasherRoute {
+  // Dasher Route Point Representation
+  enum RoutePointType {
+    ROUTE_POINT_TYPE_UNSPECIFIED = 0;
+    PICKUP = 1;
+    DELIVER = 2;
+  }
+
+  message RoutePoint {
+    // Route Point Location
+    Location location = 1;
+    // Type of Route Point
+    RoutePointType type = 2;
+    // Delivery Id from Assignment-Service
+    google.protobuf.Int64Value delivery_id = 3;
+  }
+  // Route points are in order of assignment
+  repeated RoutePoint route_points = 1;
+}
+
+message Location {
+  // Latitude
+  double lat = 1;
+  // Longitude
+  double lng = 2;
+}
+
+message EtaUpdate {
+  enum DisplayType {
+    DISPLAY_TYPE_UNSPECIFIED = 0;
+    DISPLAY_TYPE_EXACT = 1;
+    DISPLAY_TYPE_RANGE = 2;
+  }
+  // ETA Prediction
+  google.protobuf.Timestamp eta = 1;
+  // ETA Range
+  EtaRange eta_range = 2;
+  // Recommended Display Type
+  DisplayType display_type = 3;
+
+  // Proactive lateness information
+  enum LatenessReason {
+    LATENESS_REASON_UNSPECIFIED = 0;
+    LATENESS_REASON_NOT_LATE = 1;
+    LATENESS_REASON_DASHER_CONFLAT = 2;
+    LATENESS_REASON_MERCHANT_PREP_TIME = 3;
+  }
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    ON_TIME = 1;
+    LATE = 2;
+  }
+  message ExpectedLateness {
+    // Reason for the lateness
+    LatenessReason reason = 1;
+    // The lateness time in seconds
+    int64 lateness_seconds = 2;
+    // State of the delivery
+    State state = 3;
+  }
+  // Max expected lateness of the delivery
+  ExpectedLateness max_expected_lateness = 4;
+
+  // Quoted delivery time
+  Eta quoted_delivery_time = 5;
+
+  // Real lateness information
+  DeliveryTimelinessDetails delivery_timeliness_details = 6;
+}
+
+message EtaRange {
+  // Min of prediction range
+  google.protobuf.Timestamp eta_min = 1;
+  // Max of prediction range
+  google.protobuf.Timestamp eta_max = 2;
+}
+message Eta {
+  // Single point ETA estimation
+  google.protobuf.Timestamp estimate = 1;
+  // Range of ETA estimation
+  EtaRange range = 2;
+}
+
+// Real delivery timeliness information
+message DeliveryTimelinessDetails {
+  // Primary lateness reason
+  PrimaryLatenessReason reason = 1;
+  // The state of the lateness reason
+  LatenessReasonState lateness_reason_state = 2;
+  // The state of the delivery timeliness
+  DeliveryTimelinessState delivery_timeliness_state = 3;
+}
+enum PrimaryLatenessReason {
+  // The lateness reason is unspecified
+  PRIMARY_LATENESS_REASON_UNSPECIFIED = 0;
+  // No lateness reason because we are not late
+  PRIMARY_LATENESS_REASON_NOT_LATE = 1;
+  // Merchant accepts order later than we estimated
+  PRIMARY_LATENESS_REASON_MX_ACCEPTS_ORDER_LATE = 2;
+  // Merchant prepares food later than we estimated
+  PRIMARY_LATENESS_REASON_MX_PREPARES_FOOD_LATE_GENERIC = 3;
+  // Merchant prepares food later than we initially estimated, and they explicitly updated us
+  PRIMARY_LATENESS_REASON_MX_PREPARES_FOOD_LATE_WITH_EXPLICIT_UPDATE = 4;
+  // Merchant prepares food later than we initially estimated, and they did not explicitly update us
+  PRIMARY_LATENESS_REASON_MX_PREPARES_FOOD_LATE_WITHOUT_EXPLICIT_UPDATE = 5;
+  // Dasher accepts order later than we estimated
+  PRIMARY_LATENESS_REASON_DX_ACCEPTS_ORDER_LATE = 6;
+  // Dasher finishes shopping later than we estimated
+  PRIMARY_LATENESS_REASON_DX_FINISHES_SHOPPING_LATE = 7;
+  // Dasher arrives at the merchant later than we estimated
+  PRIMARY_LATENESS_REASON_DX_TO_MX_LATE = 8;
+  // Dasher arrives at the consumer later than we estimated
+  PRIMARY_LATENESS_REASON_DX_TO_CX_LATE = 9;
+}
+enum LatenessReasonState {
+  // The lateness reason state is unspecified
+  LATENESS_STATE_UNSPECIFIED = 0;
+  // No lateness reason because we are not late
+  LATENESS_STATE_NOT_LATE = 1;
+  // The lateness reason is currently applicable
+  LATENESS_STATE_CURRENT = 2;
+  // The lateness reason has happened already in the past
+  LATENESS_STATE_PAST = 3;
+}
+enum DeliveryTimelinessState {
+  // The delivery state is unspecified
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  // The delivery is on time
+  DELIVERY_STATE_ON_TIME = 1;
+  // The delivery is early
+  DELIVERY_STATE_EARLY = 2;
+  // The delivery is late
+  DELIVERY_STATE_LATE = 3;
+  // The delivery is very late
+  DELIVERY_STATE_SEVERELY_LATE = 4;
+}

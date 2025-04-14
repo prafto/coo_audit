@@ -1,0 +1,578 @@
+syntax = "proto3";
+package doordash.delivery_intelligence_platform.v1;
+
+import "common/service_client_config.proto";
+import "delivery_event/common.proto";
+import "delivery_event/delivery_event.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/delivery_intelligence_platform";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.delivery_intelligence_platform";
+
+service DeliveryIntelligenceService {
+  option (service_client.client_config).service_name = "delivery-intelligence-platform";
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).retry_config.do_not_retry_grpc_code = 10;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 100;
+
+  rpc CreateDeliveryEvent(CreateDeliveryEventRequest) returns (CreateDeliveryEventResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  rpc CreateDelayedEvent(delivery_event.CreateDelayedEventRequest) returns (delivery_event.CreateDelayedEventResponse);
+  rpc GetDeliveryEvents(GetDeliveryEventsRequest) returns (GetDeliveryEventsResponse);
+  rpc GetDeliveryContext(GetDeliveryContextRequest) returns (GetDeliveryContextResponse);
+  rpc GetDeliveryContexts(GetDeliveryContextsRequest) returns (GetDeliveryContextsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+  rpc GetDeliveryEventsByDeliveryIdsAndCategories(GetDeliveryEventsByDeliveryIdsAndCategoriesRequest) returns (GetDeliveryEventsByDeliveryIdsAndCategoriesResponse);
+  rpc GetDeliveryEventByEventId(GetDeliveryEventByEventIdRequest) returns (GetDeliveryEventByEventIdResponse);
+
+  // api to query for realtime analytical data on delivery intel events
+  rpc QueryDeliveryIntelEvents(QueryDeliveryIntelEventsRequest) returns (QueryDeliveryIntelEventsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+  // RPC to validate a signal definition.
+  rpc ValidateSignalDefinition(ValidateSignalDefinitionRequest) returns (ValidateSignalDefinitionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // RPC to invalidate fresh fetch delivery context.
+  // Access to this path is heavily controlled. If you need access to this path, please reach out to our ask channel.
+  rpc InvalidateDeliveryContext(InvalidateDeliveryContextRequest) returns (InvalidateDeliveryContextResponse);
+
+  rpc GetAllDeliveryEventCategories(GetAllDeliveryEventCategoriesRequest) returns (GetAllDeliveryEventCategoriesResponse);
+  rpc GetDeliveryEventCategoryById(GetDeliveryEventCategoryByIdRequest) returns (GetDeliveryEventCategoryByIdResponse);
+  rpc CreateDeliveryEventCategory(CreateDeliveryEventCategoryRequest) returns (CreateDeliveryEventCategoryResponse);
+  rpc UpdateDeliveryEventCategory(UpdateDeliveryEventCategoryRequest) returns (UpdateDeliveryEventCategoryResponse);
+  rpc GetOrderDeliveryIdMappings(GetOrderDeliveryIdMappingsRequest) returns (GetOrderDeliveryIdMappingsResponse);
+  // This RPC returns the order and any associated order's delivery context(s) (bundles etc.)
+  rpc GetOrderAndAssociatedContexts(GetOrderAndAssociatedContextsRequest) returns (GetOrderAndAssociatedContextsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  // This RPC returns the order and any associated order's metadata for the given order
+  rpc GetOrderAndAssociatedExtendedMetadata(GetOrderAndAssociatedExtendedMetadataRequest) returns (GetOrderAndAssociatedExtendedMetadataResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Signal Related RPCs
+  rpc CreateSignalDefinition(CreateSignalDefinitionRequest) returns (SignalDefinition);
+  rpc GetSignalDefinition(GetSignalDefinitionRequest) returns (SignalDefinition);
+  rpc ListSignalDefinitions(ListSignalDefinitionsRequest) returns (ListSignalDefinitionsResponse);
+  rpc UpdateSignalDefinition(UpdateSignalDefinitionRequest) returns (SignalDefinition);
+  rpc DeleteSignalDefinition(DeleteSignalDefinitionRequest) returns (SignalDefinition);
+  rpc QueryAnalyticalEvents(QueryAnalyticalEventsRequest) returns (QueryAnalyticalEventsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // User Event RPCs
+  rpc GetUserEvents(GetUserEventsRequest) returns (GetUserEventsResponse);
+
+  // delete UI events
+  rpc DeleteDeliveryExtendedMetadata(DeleteDeliveryExtendedMetadataRequest) returns (DeleteDeliveryExtendedMetadataResponse);
+
+  // backfill events
+  rpc CreateBackfillEvent(CreateBackfillEventRequest) returns (CreateBackfillEventResponse);
+
+  // get latest consumer user order
+  rpc GetConsumerLatestOrders(GetConsumerLatestOrdersRequest) returns (GetConsumerLatestOrdersResponse);
+}
+
+message DeleteDeliveryExtendedMetadataRequest {
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+message DeleteDeliveryExtendedMetadataResponse {
+  google.protobuf.Int64Value deleted_rows = 1;
+}
+
+message SignalDefinition {
+  // The UUID of the signal.
+  google.protobuf.StringValue signal_uuid = 1;
+  // The query associated with this definition.
+  google.protobuf.StringValue query_definition = 2;
+  // Signal name.
+  google.protobuf.StringValue name = 3;
+  // service_owner of the signal; deduced from the RPC header.
+  google.protobuf.StringValue service_owner = 4;
+  // created_at timestamp for this signal.
+  google.protobuf.Timestamp created_at = 5;
+  // whether this signal is deleted.
+  google.protobuf.BoolValue is_deleted = 6;
+  // last updated_at timestamp for this signal.
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message CreateSignalDefinitionRequest {
+  // The query associated with this definition. This field has a 4000 character limit.
+  google.protobuf.StringValue query_definition = 1;
+  // Signal name. This field must be unique and smaller than 200 characters.
+  google.protobuf.StringValue name = 2;
+}
+
+message GetSignalDefinitionRequest {
+  google.protobuf.StringValue signal_name = 1;
+}
+
+message ListSignalDefinitionsRequest {
+  // If this value is null, the entire list will be returned.
+  google.protobuf.StringValue service_owner = 1;
+}
+
+message ListSignalDefinitionsResponse {
+  repeated SignalDefinition signal_definition_list = 1;
+}
+
+message UpdateSignalDefinitionRequest {
+  //The name of the signal that is to be updated.
+  google.protobuf.StringValue name = 1;
+
+  // [Optional] Updated query associated with this definition. This field has a 4000 character limit.
+  google.protobuf.StringValue query_definition = 2;
+  // [Optional] Updated signal name. This field must be unique and smaller than 128 characters.
+  google.protobuf.StringValue updated_name = 3;
+}
+
+message DeleteSignalDefinitionRequest {
+  google.protobuf.StringValue signal_name = 1;
+}
+
+message QueryAnalyticalEventsRequest {
+  google.protobuf.StringValue signal_name = 1;
+
+  // Limit on the number of results returned. Default is 1000.
+  google.protobuf.Int64Value limit = 2;
+}
+
+message QueryAnalyticalEventsResponse {
+  repeated RowValues responses = 1;
+  // total results available in database without limits
+  google.protobuf.Int64Value total_results = 2;
+}
+
+message OrderDeliveryIdentifier {
+  oneof identifier {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+  }
+}
+
+message OrderDeliveryIds {
+  google.protobuf.Int64Value delivery_id = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+  google.protobuf.StringValue order_uuid = 3;
+}
+
+message GetOrderDeliveryIdMappingsRequest {
+  repeated OrderDeliveryIdentifier order_delivery_identifier = 1;
+}
+
+message GetOrderDeliveryIdMappingsResponse {
+  repeated OrderDeliveryIds order_delivery_ids = 1;
+}
+
+message QueryDeliveryIntelEventsRequest {
+  google.protobuf.StringValue query = 1;
+  google.protobuf.Int64Value limit = 2;
+}
+
+message QueryDeliveryIntelEventsResponse {
+  repeated RowValues responses = 1;
+  // total results available in database without limits
+  google.protobuf.Int64Value total_results = 2;
+}
+
+message RowValues {
+  repeated StringRecord string_record = 1;
+  repeated BooleanRecord bool_record = 2;
+  repeated LongRecord long_record = 3;
+}
+
+message StringRecord {
+  google.protobuf.StringValue column_name = 1;
+  google.protobuf.StringValue column_value = 2;
+}
+
+message BooleanRecord {
+  google.protobuf.StringValue column_name = 1;
+  google.protobuf.BoolValue column_value = 2;
+}
+
+message LongRecord {
+  google.protobuf.StringValue column_name = 1;
+  google.protobuf.Int64Value column_value = 2;
+}
+
+message DeliveryIdentifier {
+  oneof identifier {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+    google.protobuf.Int64Value order_cart_id = 4;
+  }
+}
+
+message DeliveryIdentifierV2 {
+  oneof identifier {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+  }
+}
+
+message EventCategoryIdentifier {
+  oneof identifier {
+    google.protobuf.Int64Value id = 1;
+    google.protobuf.StringValue name = 2;
+  }
+}
+
+// delivery_event kafka topic event proto
+message DeliveryIntelEventMessage {
+  DeliveryIntelEvent delivery_event = 1;
+  delivery_event.DeliveryContext delivery_context = 2;
+}
+
+// delivery_event_secondary kafka topic event proto
+message DeliveryIntelEventSecondaryMessage {
+  DeliveryIntelEvent delivery_event = 1;
+  delivery_event.DeliveryContext delivery_context = 2;
+  DeliveryAdditionalFields additional_fields = 3;
+}
+
+// additional fields for T2 purposes (not included in the T0 producer)
+message DeliveryAdditionalFields {
+  // Cancellation Prediction Score for the delivery
+  google.protobuf.FloatValue cancellation_prediction_score = 1;
+}
+
+// Opaque key/value pairs associated with a delivery event
+// New keys must be approved and added to the allow list
+// The key will be unique per DeliveryEvent.
+message ExtendedMetadata {
+  google.protobuf.StringValue key = 1;
+  google.protobuf.Any value = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.StringValue event_uuid = 4;
+}
+
+// backfill kafka event proto
+message BackfillEvent {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Int32Value retries = 4;
+}
+
+message DeliveryIntelEvent {
+  // legacy eventId
+  google.protobuf.Int64Value event_id = 1;
+  google.protobuf.StringValue event_uuid = 2;
+  google.protobuf.Int64Value delivery_id = 3;
+  google.protobuf.StringValue delivery_uuid = 4;
+  google.protobuf.StringValue order_uuid = 5;
+  google.protobuf.StringValue event_category_name = 6;
+  google.protobuf.StringValue metadata = 7;
+  // user_id of event creator
+  google.protobuf.Int64Value created_by_id = 8;
+  google.protobuf.Timestamp created_at = 9;
+  repeated ExtendedMetadata extended_metadata = 10;
+  google.protobuf.Int64Value event_category_id = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.StringValue cart_uuid = 13;
+  google.protobuf.StringValue source_topic = 14;
+}
+
+message CreateDeliveryEventRequest {
+  // one of delivery_id, delivery_uuid, order_uuid is required
+  oneof id {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+  }
+  oneof category {
+    google.protobuf.StringValue category_name = 4;
+    google.protobuf.Int32Value category_id = 5;
+  }
+  // optional user_id of the event creator
+  google.protobuf.Int64Value creator_user_id = 6;
+  // optional JSON stringified format
+  google.protobuf.StringValue metadata = 7;
+  // optional caller should only specify for creating backdated events
+  google.protobuf.Timestamp created_at = 8;
+  // optional extendedMetadata to delivery event
+  repeated ExtendedMetadata extended_metadata = 9;
+
+  // Used to store opaque key/value pairs with a delivery event
+  // New keys must be approved and added to the allow list
+  // The key must be unique per EventRequest.
+  message ExtendedMetadata {
+    // required
+    google.protobuf.StringValue key = 1;
+    // required
+    google.protobuf.Any value = 2;
+  }
+
+  // The creator service name of the event.
+  google.protobuf.StringValue event_creator_service_name = 10;
+}
+
+message CreateDeliveryEventResponse {
+  google.protobuf.Int64Value event_id = 1;
+  google.protobuf.StringValue event_uuid = 2;
+}
+
+message GetDeliveryEventsRequest {
+  oneof id {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+    google.protobuf.Int64Value order_cart_id = 4;
+  }
+  repeated google.protobuf.StringValue extended_metadata_key = 5;
+}
+
+message GetDeliveryEventsResponse {
+  reserved 1;
+  delivery_event.DeliveryContext delivery_context = 2;
+  repeated DeliveryIntelEvent events = 3;
+}
+
+message GetDeliveryContextRequest {
+  oneof id {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+    google.protobuf.Int64Value order_cart_id = 4;
+  }
+  /* The locale for translation purposes (Optional - default to us-En) */
+  google.protobuf.StringValue locale = 5;
+
+  // If set to true, the returned delivery context will be of type - fresh fetch.
+  // Access to this path is heavily controlled. If you need access to this path, please reach out to our ask channel.
+  google.protobuf.BoolValue request_fresh_fetch = 6;
+}
+
+message GetDeliveryContextResponse {
+  delivery_event.DeliveryContext delivery_context = 1;
+  google.protobuf.Timestamp last_updated = 2;
+}
+
+message GetDeliveryContextsRequest {
+  reserved 1;
+  repeated DeliveryIdentifierV2 delivery_identifier = 2;
+  // If set to true, the returned delivery context will be of type - fresh fetch.
+  // Access to this path is heavily controlled. If you need access to this path, please reach out to our ask channel.
+  google.protobuf.BoolValue request_fresh_fetch = 3;
+}
+message GetDeliveryContextsResponse {
+  repeated delivery_event.DeliveryContext delivery_context = 1;
+}
+
+message GetDeliveryEventsByDeliveryIdsAndCategoriesRequest {
+  // For every delivery passed in, we will find all the events for that delivery for the event categories passed in
+  repeated DeliveryIdentifier delivery_identifier = 1;
+  repeated EventCategoryIdentifier event_category_identifier = 2;
+}
+
+message GetDeliveryEventsByDeliveryIdsAndCategoriesResponse {
+  repeated DeliveryIntelEvent events = 1;
+}
+
+message GetDeliveryEventByEventIdRequest {
+  oneof event_identifier {
+    int64 event_id = 1;
+    string event_uuid = 2;
+  }
+}
+
+message GetDeliveryEventByEventIdResponse {
+  DeliveryIntelEvent event = 1;
+}
+
+message DeliveryEventCategory {
+  int64 id = 1;
+  string name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.StringValue can_view = 5;
+  google.protobuf.StringValue can_create = 6;
+}
+
+message GetAllDeliveryEventCategoriesRequest {}
+
+message GetAllDeliveryEventCategoriesResponse {
+  repeated DeliveryEventCategory delivery_event_categories = 1;
+}
+message GetDeliveryEventCategoryByIdRequest {
+  int64 event_category_id = 1;
+}
+
+message GetDeliveryEventCategoryByIdResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+message CreateDeliveryEventCategoryRequest {
+  int64 id = 1;
+  string name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue can_view = 4;
+  google.protobuf.StringValue can_create = 5;
+}
+
+message CreateDeliveryEventCategoryResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+message UpdateDeliveryEventCategoryRequest {
+  int64 id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue can_view = 4;
+  google.protobuf.StringValue can_create = 5;
+}
+
+message UpdateDeliveryEventCategoryResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+/**
+ * FindUserEventsRequest is used to find user events for a given user.
+ * The user can be either a consumer or a dasher.
+ * Returns list of events for the given user. empty list if no events found.
+ */
+message GetUserEventsRequest {
+  google.protobuf.StringValue category_name = 1;
+  google.protobuf.Timestamp event_start = 2;
+  google.protobuf.Timestamp event_end = 3;
+
+  oneof user_id {
+    google.protobuf.StringValue consumer_id = 4;
+    google.protobuf.StringValue dasher_id = 5;
+  }
+}
+
+message UserEvent {
+  google.protobuf.StringValue event_uuid = 1;
+  google.protobuf.StringValue category_name = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.StringValue dasher_id = 4;
+  google.protobuf.StringValue order_uuid = 5;
+  google.protobuf.StringValue metadata = 6 [deprecated = true];
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8 [deprecated = true];
+}
+
+message GetUserEventsResponse {
+  reserved 1;
+  repeated UserEvent user_events = 2;
+}
+
+message InvalidateDeliveryContextRequest {
+  oneof id {
+    google.protobuf.Int64Value delivery_id = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+    google.protobuf.StringValue order_uuid = 3;
+  }
+}
+
+message InvalidateDeliveryContextResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message CreateBackfillEventRequest {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+}
+
+message CreateBackfillEventResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message GetOrderAndAssociatedContextsRequest {
+  oneof id {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.Int64Value order_cart_id = 2;
+  }
+
+  /* The locale for translation purposes (Optional - default to us-En) */
+  google.protobuf.StringValue locale = 3;
+}
+
+message GetOrderAndAssociatedContextsResponse {
+  // delivery context for the requested order_uuid
+  delivery_event.DeliveryContext original_delivery_context = 1;
+
+  // list of associated delivery contexts
+  repeated delivery_event.DeliveryContext associated_delivery_context = 2;
+}
+
+message GetOrderAndAssociatedExtendedMetadataRequest {
+  oneof id {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.Int64Value order_cart_id = 2;
+  }
+}
+
+message GetOrderAndAssociatedExtendedMetadataResponse {
+  // extended metadata for the original order
+  ExtendedMetadataList original_extended_metadata = 1;
+
+  // extended metadata for the associated orders mapped by order_uuid
+  map<string, ExtendedMetadataList> associated_extended_metadata = 2;
+}
+
+message ExtendedMetadataList {
+  repeated ExtendedMetadata extended_metadata = 1;
+}
+
+message ValidateSignalDefinitionRequest {
+  // The query associated with this definition.
+  google.protobuf.StringValue query_definition = 1;
+}
+
+message ValidateSignalDefinitionResponse {
+  oneof status {
+    SuccessfulSignalValidation successful_signal_validation = 1;
+    FailedSignalValidation failed_signal_validation = 2;
+  }
+}
+
+message SuccessfulSignalValidation {
+  google.protobuf.BoolValue is_success = 1;
+}
+
+message FailedSignalValidation {
+  repeated SignalValidationError signal_validation_error = 1;
+}
+
+message SignalValidationError {
+  google.protobuf.StringValue error_message = 1;
+  google.protobuf.Int64Value error_code = 2;
+}
+
+message GetConsumerLatestOrdersRequest {
+  oneof id {
+    google.protobuf.StringValue consumer_id = 1;
+    google.protobuf.StringValue email = 2;
+    google.protobuf.StringValue phone_number = 3;
+  }
+  google.protobuf.Int32Value num_orders = 4;
+}
+
+message ConsumerOrderInfo {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue order_uuid = 2;
+  google.protobuf.StringValue delivery_uuid = 3;
+  google.protobuf.Timestamp order_created_at = 4;
+}
+
+message GetConsumerLatestOrdersResponse {
+  repeated ConsumerOrderInfo consumer_order_info = 1;
+}

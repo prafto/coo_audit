@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package store_change_log.v1;
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "common/service_client_config.proto";
+import "merchant_data_service_store_service/store.proto";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.merchant_data_service_store_service.store_change_log.v1";
+option java_outer_classname = "StoreChangeLogProto";
+
+// Service to perform Grpc operations on query historical store and changelog
+service StoreChangeLogService {
+  option (service_client.client_config).service_name = "merchant-data-service";
+  option (service_client.client_config).service_app = "grpc-gateway";
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+
+  // Get store's changelog
+  // results are in desc order of end_time of StoreChangeLog
+  rpc GetStoreChangeLogsByStoreId (GetStoreChangeLogsByStoreIdRequest) returns (GetStoreChangeLogsByStoreIdResponse);
+  
+  // Get store's historical state based on fieldmask
+  // only support limited fields, please contact #eng-mx-platform for more information
+  rpc GetHistoricalStoreByStoreId (GetHistoricalStoreByStoreIdRequest) returns (GetHistoricalStoreByStoreIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+}
+
+// GetStoreChangeLogByStoreIdRequest
+message GetStoreChangeLogsByStoreIdRequest {
+  // id
+  google.protobuf.Int64Value store_id = 1;
+  // limit
+  google.protobuf.Int64Value limit = 3;
+  // get specifc context's changelog, empty/default means retrieve all
+  store_service.StoreChangeContext context = 1001;
+  // pagination offset, orders desc by StoreChangeLog's end_time, exclusive
+  // absent / default means now
+  google.protobuf.Timestamp before = 1002;
+}
+
+// StoreChangeLog
+message StoreChangeLog {
+  // id
+  google.protobuf.Int64Value store_id = 1;
+  // context
+  store_service.StoreChangeContext context = 2;
+  // time of the changes happened
+  google.protobuf.Timestamp end_time = 3;
+  // fields with values before the changes applied at end_time
+  repeated StoreChangeAttribute store_change_attributes = 4;
+}
+
+// StoreChangeAttribute
+message StoreChangeAttribute {
+  // field name
+  google.protobuf.StringValue field_name = 1;
+  // field value
+  google.protobuf.StringValue field_value = 2;
+}
+
+// GetStoreChangeLogByStoreIdResponse
+message GetStoreChangeLogsByStoreIdResponse {
+  // changelogs
+  repeated StoreChangeLog store_change_logs = 1;
+}
+
+// GetHistoricalStoreByStoreIdRequest
+message GetHistoricalStoreByStoreIdRequest {
+  // id
+  google.protobuf.Int64Value store_id = 1;
+  // for which speicif time in history you want the store state
+  google.protobuf.Timestamp target_time = 2;
+  // field_mask, used to retrieve only certain fields' historical state
+  // If field mask is null/empty, service will return current store object
+  // with no historical columns data.
+  // needs to be store_service.Store's mask 
+  // ex. order_protocol and dynamic_properties.delivery_service_level
+  google.protobuf.FieldMask mask = 3;
+}
+
+// GetHistoricalStoreByStoreIdResponse
+message GetHistoricalStoreByStoreIdResponse {
+  // store
+  store_service.Store store = 1;
+}

@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package autonomous_partner_api.doordash_endpoints.v3;
+
+import "autonomous_partner_api/doordash_endpoints_common.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.autonomous_partner_api.doordash_endpoints.v3";
+
+// Service to manage ADP DoorDash API fields
+service AutonomousPartnerApiDdV3Service {
+  // =======================================================
+  // Inbound Autonomous Platform Partner APIs
+  // =======================================================
+
+  // Regular check in from each vehicle to Doordash platform to give real time status on vehicle location and delivery status. If vehicle status has not been updated in the past 5 minutes, we will assume that vehicle is no longer available. In this case, ADP will send a `cancelDelivery` request to the vehicle and robot will no longer be assigned to the delivery
+  rpc UpdateVehiclesStatusV3(UpdateVehiclesStatusV3Request) returns (UpdateVehiclesStatusV3Response);
+
+  // After an order is assigned to vehicles with the /v1/delivery/assign, if partners want to replace some vehicle before the order is picked up from the merchant, it can call this API.
+  // After the call succeeds, partners can continue reporting the vehicle status of the latest vehicles in the /v1/delivery/update_vehicles_status. The delivery_status of the new vehicle should be the same or after the delivery_status of the original vehicle..
+  rpc ReplaceVehicleV3(ReplaceVehicleV3Request) returns (ReplaceVehicleV3Response);
+}
+
+// Request message to provide vehicle deliver status updates
+message UpdateVehiclesStatusV3Request {
+  // Required: Unique identifier of the delivery, null if robot is not assigned
+  string external_delivery_id = 1;
+  // Required: A list of statuses for vehicles associated with the external delivery ID
+  repeated autonomous_partner_api.doordash_endpoints_common.VehicleStatus vehicles_statuses = 2;
+}
+
+// Response to UpdateVehiclesStatus
+message UpdateVehiclesStatusV3Response {
+  // Optional: Populated field in response to delivery status in FAILED state.
+  repeated autonomous_partner_api.doordash_endpoints_common.DeliveryFailureInstruction delivery_failure_instructions = 1;
+  // Provider specific response fields
+  oneof additional_context {
+    // CityHopper specific response fields
+    autonomous_partner_api.doordash_endpoints_common.CityHopperUpdateVehiclesStatusResponseFields city_hopper_fields = 2;
+  }
+}
+
+// Replace vehicle request
+message ReplaceVehicleV3Request {
+  // Required: Delivery id provided at assignment
+  string external_delivery_id = 1;
+  // Required: Original vehicle id
+  string original_vehicle_id = 2;
+  // Required: New vehicle id
+  string new_vehicle_id = 3;
+  // Required: Estimated pickup time
+  google.protobuf.Timestamp estimated_merchant_pickup_time = 4;
+  // Required: Estimated duration of delivery from pick-up to drop-off in seconds
+  int32 eta_to_dropoff = 5;
+}
+
+// Replace vehicle response
+message ReplaceVehicleV3Response {
+  // Rejection reason options
+  enum ReplaceVehicleRejectionReason {
+    // Unspecified
+    REPLACE_VEHICLE_REJECTION_REASON_UNSPECIFIED = 0;
+    // Not allowed to replace vehicle after pickup
+    REPLACE_VEHICLE_REJECTION_REASON_NOT_ALLOWED_AFTER_PICKUP = 1;
+    // Merchant pickup late
+    REPLACE_VEHICLE_REJECTION_REASON_MERCHANT_PICKUP_LATE = 2;
+    // Dropoff late
+    REPLACE_VEHICLE_REJECTION_REASON_DROPOFF_LATE = 3;
+  }
+  // Replace rejection reason
+  ReplaceVehicleRejectionReason rejection_reason = 1;
+}

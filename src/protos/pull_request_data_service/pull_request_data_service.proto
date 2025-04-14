@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package pull_request_data_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/pull_request_data_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.pullrequestdataservice";
+
+// This is an example service for using Asgard server library in a Guice
+// environment.
+service PullRequestDataService {
+  // Example Hermes client config. The options not listed here use Hermes
+  // default. The following applies for all RPCs in the service, if not
+  // overridden on individual RPCs.
+
+  // Timeout after 1000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // List all open pull requests
+  rpc ListOpenPRs(ListOpenPRsRequest) returns (ListOpenPRsResponse);
+}
+
+/* Request for ListOpenPRs */
+message ListOpenPRsRequest {
+  // Filter Open PRs by repository
+  message RepositoryFilter {
+    // The name of the repository e.g. ('assets-service') to get open PRs for.
+    string repository = 10;
+    // An optinal allow list of reviewers (Github logins for users and teams) to filter by.
+    repeated string reviewers_allowlist = 20;
+  }
+  // Filter Open PRs by requested reviewer
+  message RequestedReviewerFilter {
+    // The name of the requested reviwer. (Github login for user or team)
+    string name = 10;
+  }
+  // Filter
+  oneof filter {
+    // The user ID (e.g. david.han) of the reviewer to get open PRs for.
+    RequestedReviewerFilter requested_reviewer = 10;
+    // The name of the repository e.g. ('assets-service') to get open PRs for.
+    RepositoryFilter repository = 20;
+  }
+  // Max number of items to return. By default, limited to 50.
+  int32 page_size = 30;
+}
+
+// Response for ListOpenPRs
+message ListOpenPRsResponse {
+  // List of pull requests that matches the request filters
+  repeated OpenPR pull_requests = 1;
+}
+/* ------------------------ */
+
+/**
+   Pull Request model containing fields that are stored in our
+   pull request DB
+*/
+message OpenPR {
+  // PR number for the pull request
+  int32 pr_number = 10;
+  // Title of the pull request
+  string title = 20;
+  // URL of the pull request
+  string url = 30;
+  // Repository name that the pull request was made in
+  string repo_name = 40;
+  // Author (e.g. david.han) of the pull request.
+  string author = 50;
+  // Github name of the pull request author.
+  string author_github_name = 60;
+  // The status of who needs to act next on the PR, assumed from PR timeline.
+  OpenPRTurnStatus turn_status = 70;
+  // List of Github names of request reviewers/teams
+  repeated string requested_reviewers = 80;
+  // Time that the first reviewer was requested for review.
+  google.protobuf.Timestamp first_reviewer_requested_at = 90;
+  // Time of first response (review or comment) by a human entity. Undefined if
+  // none.
+  google.protobuf.Timestamp first_reviewer_response_at = 100;
+  // Number of busines hours (in PST, to 1 decimal point) that the PR has waited
+  // until first response. Or, if first response hasn't happened yet, number of
+  // hours since a reviewer was first requested.
+  float business_hours_until_first_response = 110;
+}
+
+// The status of who needs to act next on the PR, assumed from PR timeline.
+enum OpenPRTurnStatus {
+  // Unspecified.
+  OPEN_PR_TURN_STATUS_UNSPECIFIED = 0;
+  // It's the reviewer's turn to respond.
+  OPEN_PR_TURN_STATUS_WAITING_ON_REVIEWER = 10;
+  // It's the author's turn to respond.
+  OPEN_PR_TURN_STATUS_WAITING_ON_AUTHOR = 20;
+}

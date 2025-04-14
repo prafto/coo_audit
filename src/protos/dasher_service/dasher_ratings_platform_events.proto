@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package dasher_service.ratings_platform.v1;
+
+import "dasher_service/dasher_ratings_platform.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order_accuracy_service/delivery_quality.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.ratings_platform";
+
+// This event is used to update the dasher rating history.
+message DasherRatingHistoryUpdateEvent {
+  // The source of the event.
+  Source source = 1;
+  // Id of the dasher.
+  int64 dasher_id = 2;
+  // Each source will have different payload.
+  oneof payload {
+    // Delivery rating event triggered by delivery events.
+    DeliveryRatingEvent delivery_rating_event = 3;
+    // This event is triggered to prune dasher rating history if there are more than X events in history.
+    DasherRatingsHistoryPruneEvent dasher_ratings_history_prune_event = 4;
+    // This will be used when source is `SOURCE_BULK_WAIVE_EXCLUDE`.
+    DasherRatingsHistoryBulkWaiveExcludeEvent dasher_ratings_history_bulk_waive_exclude_event = 5;
+    // This will be used when source is `SOURCE_DELIVERY_EXPERIENCE_ISSUE`.
+    DasherRatingsDeliveryIssueEvent dasher_ratings_delivery_issue_event = 6;
+    // This will be used when source is `SOURCE_CUSTOMER_RATING_EVENT`.
+    CustomerRatingEvent customer_rating_event = 7;
+    // This will be used when source is `SOURCE_HIGH_QUALITY_RATING_SIGNAL`.
+    HighQualityRatingSignalEvent high_quality_rating_signal_event = 8;
+  }
+
+  // This is the source of the event. Example: Delivery event, Backfill, Reset etc.
+  enum Source {
+    // Unspecified source.
+    SOURCE_UNSPECIFIED = 0;
+    // This is event is triggered by delivery event.
+    SOURCE_DELIVERY_EVENT = 1;
+    // This event is triggered to clean up dasher rating history if there are more than X events in history.
+    SOURCE_PRUNE_RATING_HISTORY = 2;
+    // This event type is used for bulk waiving or excluding deliveries or delivery packages from ratings calculation.
+    SOURCE_BULK_WAIVE_EXCLUDE = 3;
+    // This event type is used for delivery issues (contract violation).
+    SOURCE_DELIVERY_EXPERIENCE_ISSUE = 4;
+    // This event type is used for when a customer rating related event occurs
+    SOURCE_CUSTOMER_RATING_EVENT = 5;
+    // This event type is used for high quality rating signals (Rx and DSD)
+    SOURCE_HIGH_QUALITY_RATING_SIGNAL = 6;
+  }
+}
+
+// This event is used to update the dasher rating.
+message DasherRatingUpdateEvent {
+  // Id of the dasher.
+  int64 dasher_id = 1;
+  // Rating types that need to be updated.
+  repeated RatingType rating_types = 2;
+}
+
+// Dasher rating event triggered by delivery events.
+message DeliveryRatingEvent {
+  // The delivery event type.
+  EventType event_type = 1;
+  // The delivery uuid.
+  string delivery_uuid = 2;
+  // The delivery package id that delivery belongs.
+  string delivery_package_id = 3;
+  // The delivery id.
+  int64 delivery_id = 4;
+  // If this delivery is excused from ratings calculation
+  bool is_excused = 5;
+  // the reason why the event is unassigned (only applicable for unassigned event)
+  google.protobuf.StringValue unassign_reason = 6;
+  // The timestamp on which this event was created
+  google.protobuf.Timestamp event_timestamp = 7;
+  // The type of delivery.
+  DeliveryType delivery_type = 8;
+  // Shift id of the delivery.
+  google.protobuf.Int64Value shift_id = 9;
+  // Addtional information/context regarding the delivery
+  DeliveryContext delivery_context = 10;
+
+  // The delivery event type.
+  enum EventType {
+    //  Unspecified delivery event type.
+    EVENT_TYPE_UNSPECIFIED = 0;
+    // driver assigned event
+    EVENT_TYPE_DRIVER_ASSIGNED = 1;
+    // driver unassigned event
+    EVENT_TYPE_DRIVER_UNASSIGNED = 2;
+    // driver dropped off event
+    EVENT_TYPE_DRIVER_DROPPED_OFF = 3;
+    // driver confirmed event
+    EVENT_TYPE_DRIVER_CONFIRMED = 4;
+    // revert delivered status event
+    EVENT_TYPE_REVERT_DELIVERED_STATUS = 5;
+    // driver picked up event
+    EVENT_TYPE_DRIVER_PICKED_UP = 6;
+    // driver enters merchant geo fence
+    EVENT_TYPE_DRIVER_ARRIVING_AT_MERCHANT = 7;
+  }
+}
+
+// Customer review created event
+message CustomerRatingEvent {
+  // The customer rating event type.
+  EventType event_type = 1;
+
+  // The data that is associated with the customer rating event.
+  CustomerRatingHistory.CustomerRatingData customer_rating_data = 2;
+
+  // The customer rating event type
+  enum EventType {
+    // Unspecified event type.
+    EVENT_TYPE_UNSPECIFIED = 0;
+    // Customer review created event.
+    EVENT_TYPE_CUSTOMER_REVIEW_CREATED = 1;
+    // Customer review updated event
+    EVENT_TYPE_CUSTOMER_REVIEW_UPDATED = 2;
+  }
+}
+
+// Dasher ratings history prune event
+message DasherRatingsHistoryPruneEvent {
+  // Id of the dasher.
+  int64 dasher_id = 1;
+
+  // List of rating types to clean the history for.
+  repeated RatingType rating_types = 2;
+}
+
+// Dasher ratings bulk waive event
+message DasherRatingsHistoryBulkWaiveExcludeEvent {
+  // Dasher ID for which the deliveries need to be waived or excluded from.
+  int64 dasher_id = 1;
+  // The list of delivery UUIDs that need to be waived or excluded.
+  repeated string delivery_uuid = 2;
+  // The list of delivery package IDs that need to be waived or excluded.
+  repeated string delivery_package_id = 3;
+
+  // The reason for waiving the deliveries. This will be written into the delivery status history meaning the delivery
+  // or the delivery package was waived.
+  google.protobuf.StringValue waive_reason = 4;
+  // The reason for excluding the deliveries. This will be written into the delivery status history meaning the delivery
+  // or the delivery package was excluded.
+  google.protobuf.StringValue exclude_reason = 5;
+
+  // The timestamp on which the waiver or exclusion was created.
+  google.protobuf.Timestamp timestamp = 6;
+
+  // List of rating types to waive/exclude.
+  repeated RatingType rating_types = 7;
+
+  // The reason for waiving the pickup
+  google.protobuf.StringValue pickup_waived_reason = 8;
+
+  // The reason for waiving the dropoff
+  google.protobuf.StringValue dropoff_waived_reason = 9;
+}
+
+// Dasher ratings delivery issue event
+message DasherRatingsDeliveryIssueEvent {
+  // The delivery id.
+  google.protobuf.Int64Value delivery_id = 1;
+  // The delivery issue type.
+  DeliveryIssueType delivery_issue_type = 2;
+  // The delivery issue status.
+  DeliveryIssueStatus delivery_issue_status = 3;
+  // The delivery phase.
+  DeliveryPhase delivery_phase = 4;
+  // The timestamp on which this event was created
+  google.protobuf.Timestamp event_timestamp = 5;
+  // risk_warning_id for Fraud CV.
+  google.protobuf.Int64Value risk_warning_id = 6;
+  // delivery_issue_id for Quality CV.
+  google.protobuf.Int64Value delivery_issue_id = 7;
+}
+
+// Event that captures updates to dasher ratings.
+message UpdatedDasherRatingsEvent {
+  // Id of the dasher for which the ratings are updated.
+  int64 dasher_id = 1;
+  // Updated ratings.
+  repeated UpdatedRating updated_ratings = 2;
+}
+
+// Updated rating type and value.
+message UpdatedRating {
+  // Rating type that was updated.
+  RatingType rating_type = 1;
+  // Rating value
+  google.protobuf.DoubleValue rating_value = 2;
+
+  // Metadata for ontime rating.
+  message OnTimeUpdatedRatingMetaData {
+    // ontime count
+    google.protobuf.Int32Value on_time_count = 1;
+    // late count
+    google.protobuf.Int32Value late_count = 2;
+    // excused count
+    google.protobuf.Int32Value excused_count = 3;
+  }
+
+  // Metadata for high quality rating.
+  message HighQualityRateMetadata {
+    // Number of deliveries without any issues
+    google.protobuf.Int32Value delivery_without_issues_count = 1;
+    // Number of deliveries with issues
+    google.protobuf.Int32Value delivery_issues_count = 2;
+  }
+
+  // metadata for the UpdatedRating
+  oneof metadata {
+    // meta_data for ontime rating
+    OnTimeUpdatedRatingMetaData on_time_rating_meta_data = 3;
+
+    // metadata for high quality rating
+    HighQualityRateMetadata high_quality_rating_meta_data = 4;
+  }
+}
+
+// The iguazu event that captures dasher rating disputes.
+message DasherRatingDisputeEvent {
+  // Id of the dasher for which the ratings are disputed.
+  int64 dasher_id = 1;
+  // Rating type that was disputed.
+  RatingType rating_type = 2;
+  // Dispute type.
+  DisputeType dispute_type = 3;
+  // The delivery package ID that's disputed.
+  google.protobuf.StringValue delivery_package_id = 4;
+  // The delivery UUID that is disputed. This can be used for rating that depend on delivery level info.
+  google.protobuf.StringValue delivery_uuid = 5;
+  // The dispute description which captures the free form text about the dispute.
+  google.protobuf.StringValue dispute_description = 6;
+  // The status of the dispute.
+  DisputeStatus dispute_status = 7;
+}
+
+// High Quality Rating Signals Event (DSD and Rx)
+message HighQualityRatingSignalEvent {
+  // The signal passed in by kafka event
+  order_accuracy_service.v1.DeliveryIssue delivery_issue = 1;
+}

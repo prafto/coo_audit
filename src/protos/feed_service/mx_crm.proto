@@ -1,0 +1,382 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package feed_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/prism/components/text.proto";
+import "component-catalog.common/prism/shared/icon.proto";
+import "component-catalog.cx/discovery/store_card/store_info/components/store_attributes.proto";
+import "component-catalog.cx/promo/badge.proto";
+import "doordash.api/annotations.proto";
+import "feed_service/common.proto";
+import "feed_service/menu.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_MULTIPLE_FILES
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.feed_service.mx_crm";
+
+// Mx Crm Service
+service MxCrmService {
+  option (doordash.api.service) = {
+    name: "feed-mx-crm-service"
+    url: "feed-service-web-loyalty.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["mx-crm"]
+    owner: {
+      name: "social-feed"
+      id: "social-proof"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "platform"}]
+  };
+
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  // Get a list of Mx Crm announcements by store id
+  rpc GetMxCrmAnnouncementsByStoreId(GetMxCrmAnnouncementsByStoreIdRequest) returns (GetMxCrmAnnouncementsByStoreIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 4000;
+  }
+
+  // Get a list of Mx Crm announcements
+  rpc GetMxCrmAnnouncements(GetMxCrmAnnouncementsRequest) returns (GetMxCrmAnnouncementsResponse) {
+    option (google.api.http) = {get: "/mx-crm/v1/announcements"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+      }
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+}
+
+// Mx Crm announcement
+message MxCrmAnnouncement {
+  // announcement id
+  google.protobuf.StringValue id = 1;
+  // A list of Mx Crm media
+  repeated MxCrmMedia media = 2;
+  // body
+  Body body = 3;
+  // action
+  Action action = 4;
+  // header
+  Header header = 5;
+  // logging
+  google.protobuf.Struct logging = 6;
+
+  // announcement header (separate from response header)
+  message Header {
+    // header title
+    google.protobuf.StringValue title = 1;
+    // thumbnail image
+    google.protobuf.StringValue thumbnail_image_url = 2;
+    // CTA deeplink
+    google.protobuf.StringValue cta_deeplink = 3;
+    // store attributes
+    component_catalog.cx.discovery.store_card.store_info.components.v1.StoreAttributes attributes = 4;
+  }
+
+  // announcement body
+  message Body {
+    // announcement title
+    google.protobuf.StringValue title = 1;
+    // announcement detail
+    google.protobuf.StringValue detail = 2;
+  }
+
+  // announcement action
+  message Action {
+    // action type
+    ActionType type = 1;
+    // action data
+    Data data = 2;
+
+    // action type
+    enum ActionType {
+      // unspecified
+      ACTION_TYPE_UNSPECIFIED = 0;
+      // carousel is nil and only the cta is available.
+      ACTION_TYPE_STORE_LINK = 1;
+      // contains an array of items, if no items are passed up then clients will fallback to showing the
+      // CTA.
+      ACTION_TYPE_ITEM_CAROUSEL = 2;
+    }
+
+    // action data
+    message Data {
+      // CTA title
+      google.protobuf.StringValue cta_title = 1;
+      // CTA deeplink
+      google.protobuf.StringValue cta_deeplink = 2;
+      // A list of Mx Crm items
+      repeated MxCrmItem item_carousel = 3;
+    }
+  }
+}
+
+// Mx Crm media
+message MxCrmMedia {
+  // media type
+  MediaType media_type = 1;
+  // media Url
+  google.protobuf.StringValue media_url = 2;
+  // media tags
+  repeated component_catalog.cx.promo.v1.Badge tags = 3;
+  // duration since media was upload
+  google.protobuf.StringValue duration_since_upload = 4;
+  // audio enabled
+  google.protobuf.BoolValue audio_enabled = 5;
+  // media thumbnail image to show when video has not yet loaded
+  google.protobuf.StringValue media_thumbnail_image_url = 6;
+  // audio approval status
+  google.protobuf.StringValue audio_approved = 7;
+  // audio type
+  google.protobuf.StringValue audio_type = 8;
+
+  // Media type enum.
+  enum MediaType {
+    // unspecified media type
+    MEDIA_TYPE_UNSPECIFIED = 0;
+    // Boxed image
+    MEDIA_TYPE_BOXED_IMAGE = 1;
+    // Full screen image
+    MEDIA_TYPE_FULL_SCREEN_IMAGE = 2;
+    // Boxed video
+    MEDIA_TYPE_BOXED_VIDEO = 3;
+    // Full screen video
+    MEDIA_TYPE_FULL_SCREEN_VIDEO = 4;
+  }
+}
+
+// Mx Crm item, copied from LoyaltyRewardItem.
+message MxCrmItem {
+  // item id
+  google.protobuf.StringValue id = 1;
+  // item name
+  google.protobuf.StringValue name = 2;
+  // item description
+  google.protobuf.StringValue description = 3;
+  // item display price
+  google.protobuf.StringValue price_display = 4;
+  // item image url
+  google.protobuf.StringValue image_url = 5;
+  // store id
+  google.protobuf.StringValue store_id = 6;
+  // menu id
+  google.protobuf.StringValue menu_id = 7;
+  // for quick add functionality
+  QuickAddContext quick_add_context = 8;
+  // badges
+  repeated Badge badges = 9;
+  // detail text
+  component_catalog.common.prism.components.v1.Text detail_text = 10;
+  // detail icon
+  component_catalog.common.prism.shared.v1.Icon detail_icon = 11;
+}
+
+// Get announcements by store id request
+message GetMxCrmAnnouncementsByStoreIdRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // primary announcement id
+  google.protobuf.StringValue primary_announcement_id = 3;
+}
+
+// Get announcements by store id response
+message GetMxCrmAnnouncementsByStoreIdResponse {
+  // announcement header
+  Header header = 1;
+  // a list of announcements under the business id.
+  repeated MxCrmAnnouncement announcements = 2;
+
+  // announcement header
+  message Header {
+    // header title
+    google.protobuf.StringValue title = 1;
+    // thumbnail image
+    google.protobuf.StringValue thumbnail_image_url = 2;
+  }
+}
+
+// Get announcements request
+message GetMxCrmAnnouncementsRequest {
+  // used for deprecated field numbers
+  reserved 4;
+  // used for deprecated field names
+  reserved "common_fields";
+  // a list of store ids
+  repeated google.protobuf.StringValue store_ids = 1;
+  // optional primary announcement id
+  google.protobuf.StringValue primary_announcement_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+  // submarket id
+  google.protobuf.StringValue submarket_id = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // lat
+  double lat = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // lng
+  double lng = 7 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // district id
+  int64 district_id = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // timezone
+  google.protobuf.StringValue time_zone = 9 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.timezone",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_time_zone",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // zipcode
+  google.protobuf.StringValue zip_code = 10 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.zipcode",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_zip_code",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // The country short name of the user's location.
+  google.protobuf.StringValue country_shortname = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // surface that corresponds with the request (e.g. immersive_feed, post_checkout)
+  google.protobuf.StringValue surface = 12;
+}
+
+// Get announcements store ids response
+message GetMxCrmAnnouncementsResponse {
+  // a list of announcements under the list of store ids, with primary announcement as the first item, if present.
+  repeated MxCrmAnnouncement announcements = 1;
+}

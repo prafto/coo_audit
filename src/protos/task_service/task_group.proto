@@ -1,0 +1,441 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package task_service.v2;
+
+import "common/date.proto";
+import "delivery_service/delivery_core.proto";
+import "delivery_service/delivery_fulfillment.proto";
+import "delivery_service/delivery_metadata.proto";
+import "delivery_service/eta_prediction.proto";
+import "drive_protobuf/configuration/configuration.proto";
+import "drive_protobuf/drive_order.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/common.proto";
+import "task_service/task.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.task_service";
+
+// Generic task group representation -- each field is a distinct column
+message TaskGroup {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue task_group_name = 2;
+  TaskGroupType task_group_type = 9;
+  TaskGroupData task_group_data = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  google.protobuf.Timestamp cancelled_at = 7;
+  google.protobuf.BoolValue is_test = 8;
+  // The time at which the task group is assignable. when this is set, apollo would start to give the task-group to deep-red
+  google.protobuf.Timestamp assignable_at = 10;
+  google.protobuf.StringValue workflow_id = 11;
+  google.protobuf.StringValue workflow_template_name = 12;
+}
+
+enum TaskGroupType {
+  TASK_GROUP_TYPE_UNSPECIFIED = 0;
+  TASK_GROUP_TYPE_GROUND_TRUTH = 1;
+  TASK_GROUP_TYPE_PARCEL = 2;
+  TASK_GROUP_TYPE_PARCEL_RETURN = 3;
+  TASK_GROUP_TYPE_JETS = 4;
+}
+
+// Task group blob -- most fields go here
+message TaskGroupData {
+  reserved 2;
+  reserved "ground_truth_task";
+  oneof task_group_data {
+    // legacy delivery task group, to support backwards compatibility
+    DeliveryTaskGroup delivery_task_group = 1;
+    // canonical task group schema for task native use cases
+    CanonicalTaskGroup canonical_task_group = 5;
+  }
+
+  google.protobuf.FieldMask updated_fields = 3;
+  google.protobuf.StringValue event_id = 4;
+}
+
+message CanonicalTaskGroup {
+  repeated Task tasks = 1 [(map_to_repeated_diff_message) = true];
+
+  AssignmentConstraint assignment_constraint = 2 [(map_to_nested_message) = true];
+  Geography geography = 9 [(map_to_nested_message) = true];
+  AssignmentStatus assignment_status = 10 [(map_to_nested_message) = true];
+  Financial financial = 11 [(map_to_nested_message) = true];
+  UpstreamContext upstream_context = 12 [(map_to_nested_message) = true];
+  LegacyIdentifiers legacy_identifiers = 13 [(map_to_nested_message) = true];
+  Timing timing = 14 [(map_to_nested_message) = true];
+  // this will be set for parcels only for now
+  repeated ReattemptReturnStateInfo reattempt_return_history = 15 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_data.reattempt_return_history"];
+
+  // TODO: these have been moved to the various subclasses and should be deprecated; for now will provide both
+  google.protobuf.Int64Value market_id = 3 [deprecated = true];
+  google.protobuf.Int64Value submarket_id = 4 [deprecated = true];
+  google.protobuf.Int64Value starting_point_id = 5 [deprecated = true];
+  google.protobuf.StringValue market_shortname = 6 [deprecated = true];
+  google.protobuf.StringValue currency = 7 [deprecated = true];
+  google.protobuf.StringValue country_code = 8 [deprecated = true];
+}
+
+message Timing {
+  // This is equivalent to quoted_delivery_time in the legacy model
+  google.protobuf.Timestamp preferred_completion_time = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.quoted_delivery_time"];
+
+  // This is the preferred_completion_time/quoted_delivery_time in the local timezone
+  date.Date active_date = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.active_date"];
+
+  // CreatedAt mapped to delivery task group CreatedAt
+  google.protobuf.Timestamp created_at = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.created_at"];
+}
+
+message LegacyIdentifiers {
+  // Legacy foreign keys and identifiers
+  int64 delivery_id = 1 [(map_to_field) = "DeliveryTaskGroup.delivery_data.delivery_id,DeliveryTaskGroup.delivery_audience_info.delivery_id,DeliveryTaskGroup.delivery_order_info.delivery_id,DeliveryTaskGroup.delivery_assignment_constraint.delivery_id"];
+  google.protobuf.StringValue delivery_uuid = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.delivery_uuid,DeliveryTaskGroup.delivery_audience_info.delivery_uuid,DeliveryTaskGroup.delivery_order_info.delivery_uuid,DeliveryTaskGroup.delivery_fulfillment.delivery_uuid"];
+  string public_id = 3 [(map_to_field) = "DeliveryTaskGroup.delivery_data.public_id"];
+  google.protobuf.StringValue idempotency_key = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.idempotency_key"];
+  // This relates to returns and redeliveries so we'll have to figure out if we can compute this on the fly by
+  // looking at the workflow
+  google.protobuf.Int64Value parent_delivery_id = 5; // TODO: figure out if we can compute this if so remove this field
+  google.protobuf.Int64Value delivery_assignment_constraint_id = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.id"];
+  google.protobuf.StringValue eta_prediction_id = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.eta_prediction_id"];
+  google.protobuf.StringValue parent_delivery_uuid = 8 [(map_to_function) = "parentDeliveryUuidToDeliveryTaskGroup"];
+  google.protobuf.BoolValue is_test = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.is_test"];
+}
+
+message Geography {
+  // Common geography.  Each task will have more specific geography as appropriate.
+  google.protobuf.Int64Value market_id = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.market_id"];
+  google.protobuf.Int64Value submarket_id = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.submarket"];
+  google.protobuf.Int64Value district_id = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.district_id"];
+  google.protobuf.Int64Value starting_point_id = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.starting_point_id"];
+  google.protobuf.StringValue starting_point_name = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.starting_point_name"];
+  google.protobuf.StringValue market_shortname = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.market_shortname"];
+  google.protobuf.StringValue state = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.state"];
+  google.protobuf.StringValue country_code = 8 [(no_map) = true];
+  string country_shortname = 9 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.country_shortname"];
+}
+
+// Constraints and preferences that affect how this TaskGroup can be assigned to any given dasher.
+message AssignmentConstraint {
+  reserved 1, 3;
+  reserved "dasher_training", "phone_os"; // deprecated dasher_training, phone_os
+
+  // TODO: document valid values
+  google.protobuf.StringValue phone_model = 2 [(no_map) = true];
+
+  // TODO: document valid values
+  repeated google.protobuf.Int64Value serviceable_vehicle_type_ids = 4 [(no_map) = true];
+
+  // The minimum age in years required for the dasher to be eligible for the task.
+  // Historically also known as min_age_requirement
+  google.protobuf.Int64Value min_age_required = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.min_age_requirement"];
+
+  // Instructs DeepRed to find a dasher as soon as is practical.  As opposed to scheduled orders, where DeepRed
+  // will use task_group_start_time and task_group_end_time to find a dasher in an efficient way without being late.
+  google.protobuf.BoolValue is_asap = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.is_asap"];
+
+  google.protobuf.Timestamp task_group_start_time = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.pickup_window_start_time"];
+  google.protobuf.Timestamp task_group_end_time = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.delivery_window_end_time"];
+
+  // TODO: figure out whether we should be using these legacy fields or whether the existing task_group windows are ok
+  //  google.protobuf.Timestamp pickup_window_start_time = X;
+  //  google.protobuf.Timestamp pickup_window_end_time = X; This field will be set empty for canonical task group if required we need to add it later
+  //  google.protobuf.Timestamp delivery_window_start_time = X; This field will be set empty for canonical task group if required we need to add it later
+  //  google.protobuf.Timestamp delivery_window_end_time = X;
+
+  // If set, DeepRed will not make an assignment and the only way is manually through THQ.
+  google.protobuf.BoolValue should_be_manually_assigned = 10 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.should_be_manually_assigned"];
+
+  // Constraints and preferences that affect how this TaskGroup can be assigned to any given dasher.
+  DasherConstraints dasher_constraints = 11 [(no_map) = true];
+
+  // TODO: this is still being set but we're pretty sure this is not a real feature anymore
+  // google.protobuf.BoolValue is_preassignable = X;
+
+  // TODO: document what values these can take -- why isn't this a repeated fields?  Is it JSON?
+  google.protobuf.StringValue serviceable_vehicle_types = 12 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.serviceable_vehicle_types"];
+
+  // Affects how ratings and acceptance rate are calculated.  If set, a dasher decline will not affect ratings or AR.
+  google.protobuf.BoolValue should_excuse_unassign = 13 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.should_excuse_unassign"];
+
+  // If set, assignment service will refuse to unassign a dasher after pickup.  This should usually be set given that
+  // if the dasher already has the delivery in hand, no other dasher will be able to fulfill.
+  google.protobuf.BoolValue should_ignore_unassign_after_pickup = 14 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.should_ignore_unassign_after_pickup"];
+
+  // Information provided to the dasher in the accept modal before they accept.
+  // TODO -- still in use?
+  delivery_service.core.DasherAcceptModalBadgeType accept_modal_badge_type = 15 [(map_to_exact_enum) = "DeliveryTaskGroup.delivery_order_info.accept_modal_badge_type"];
+  google.protobuf.StringValue accept_modal_additional_text = 16 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.accept_modal_additional_text"];
+
+  // Fulfillment type
+  // This appears to be an attempt to enumerate some existing fields in an extensible way so we might be able to power
+  // the legacy fields using this enumeration
+  // Actual values with any significant number: dasher, consumer_pickup, merchant_fleet, shipping, virtual, dd_pos_dine_in, dd_pods_take_out
+  google.protobuf.StringValue fulfillment_type = 17 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.fulfillment_type"];
+
+  google.protobuf.BoolValue single_store_batching = 18 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.single_store_batching"];
+  google.protobuf.Int32Value order_volume = 19 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.order_volume"];
+  google.protobuf.Int32Value max_batch_size = 20 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.max_batch_size"];
+  google.protobuf.Int32Value max_mins_allowed_on_road = 21 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.max_mins_allowed_on_road"];
+  repeated int32 preferred_dasher_equipment_ids = 22 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.preferred_dasher_equipment_ids"];
+  repeated delivery_service.core.DasherAttributePreference prefer_dasher_attributes = 23 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.prefer_dasher_attributes"];
+  repeated delivery_service.core.DasherEquipmentPreference prefer_dasher_equipment = 24 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.prefer_dasher_equipment"];
+  repeated delivery_service.core.DasherOnboardingPreference prefer_dasher_onboarding = 25 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.prefer_dasher_onboarding"];
+  repeated delivery_service.core.VehicleTypePreference prefer_vehicles = 26 [(map_to_repeated_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.prefer_vehicles"];
+  google.protobuf.Int32Value tradeoff_asap_cost = 27 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.tradeoff_asap_cost"];
+  google.protobuf.Int32Value tradeoff_asap_dasher_wait = 28 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.tradeoff_asap_dasher_wait"];
+  google.protobuf.StringValue experiment_info = 29 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.experiment_info"]; //Json Format
+  google.protobuf.StringValue force_batch_uuid = 30 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.force_batch_uuid"];
+  google.protobuf.BoolValue ignore_merchant_signals = 31 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.ignore_merchant_signals"];
+  google.protobuf.Int32Value forced_pickup_order_in_package = 32 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.forced_pickup_order_in_package"];
+  // figure out if this required or not and can be derived from task-group name or not
+  // google.protobuf.BoolValue is_dsd = 33;
+  // can be derived from upstream context
+  //google.protobuf.Int64Value business_vertical_id = 34;
+  google.protobuf.StringValue static_preferences = 35 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.static_preferences"]; //Json Format
+  delivery_service.core.ConstraintAttributes constraint_attributes = 36 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.constraint_attributes"];
+  google.protobuf.BoolValue can_be_batched = 37 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.can_be_batched"];
+  google.protobuf.StringValue soft_requirements = 38 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.soft_requirements"];
+  //TODO: investigate why this field is used and document
+  google.protobuf.BoolValue proactive_monitoring_required = 39 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.proactive_monitoring_required"];
+  // batch type: Standalone, Batch, Either
+  BatchType batch_type = 40;
+}
+
+// Contains system-provided information on the current assignment
+message AssignmentStatus {
+  // For now, this is a dasher, but we anticipate non-dashers, such as non-DD employees or drones, in the future
+  oneof labor_entity {
+    DasherShift dasher_shift = 1 [(map_to_nested_message) = true];
+  }
+
+  // True if this assignment was made through THQ (as opposed to DeepRed).
+  bool manually_assigned = 2 [(map_to_field) = "DeliveryTaskGroup.delivery_data.manually_assigned"];
+
+  google.protobuf.BoolValue is_preassign = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.is_preassign"];
+
+  // The time at which the assignment was made.  Can change and be unset. (dasher_assigned_time)
+  google.protobuf.Timestamp labor_entity_assigned_time = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_assigned_time"];
+
+  // The time at which the entity confirmed (accepted) the assignment.  Can change and be unset. (dasher_confirmed_time)
+  google.protobuf.Timestamp labor_entity_confirmed_time = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_confirmed_time"];
+
+  // if Dasher as more than one TaskGroup assigned at any time, this field will be set and will have the same batch id
+  // this field would be deprecated once Assignment service is fully migrated to task service and use TripId instead
+  google.protobuf.Int64Value batch_id = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.batch_id"];
+
+  // Restaurant-specific assignment heuristics -- these are kind of ugly
+  // TODO: document
+  google.protobuf.Int64Value onsite_estimated_prep_time = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.onsite_estimated_prep_time"];
+  google.protobuf.Timestamp estimated_store_prep_time = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.estimated_store_prep_time"];
+  google.protobuf.Timestamp onsite_estimated_prep_time_updated_at = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.onsite_estimated_prep_time_updated_at"];
+  google.protobuf.Timestamp store_order_confirmed_time = 10 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.store_order_confirmed_time"];
+  google.protobuf.Timestamp order_ready_time = 11 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.order_ready_time"];
+  google.protobuf.Int64Value estimated_assignment_latency = 12 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.estimated_assignment_latency"];
+  google.protobuf.Int64Value estimated_order_place_duration = 13 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.estimated_order_place_duration"];
+  google.protobuf.Int64Value estimated_assignment_to_pickup_duration = 14 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.estimated_assignment_to_pickup_duration"];
+  google.protobuf.Int64Value estimated_delivery_duration = 15 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.estimated_delivery_duration"];
+  // additional fields needed to publish unassign events, same as old model
+  UnassignFields unassign_fields = 16 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.unassign_fields"];
+  google.protobuf.Timestamp first_assignment_made_time = 17 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.first_assignment_made_time"];
+
+  google.protobuf.Timestamp cancelled_at = 18 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.cancelled_at"];
+}
+
+message Financial {
+  google.protobuf.StringValue currency = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.currency"];
+
+  // TODO: figure out and document what the difference is between subtotal and value_of_contents
+  google.protobuf.Int64Value value_of_contents = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.value_of_contents"];
+  google.protobuf.Int64Value subtotal = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.subtotal"];
+
+  google.protobuf.Int64Value pre_delivery_tip_amount = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.pre_delivery_tip_amount"];
+  google.protobuf.Int32Value fee_baserate = 5 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.fee_baserate"];
+  google.protobuf.Int64Value marketing_fee = 6 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.marketing_fee"];
+}
+
+// In general, we should endeavor not to use these fields and not to add to this object.  Instead of describing the type
+// of the delivery, developers should think about the features they need and add those in maximally reusable ways.  So
+// instead of looking at the business vertical to see if it's a pharma order, we should add a request for signature
+// requirements and return requirements.
+message UpstreamContext {
+  bool is_drive = 1 [(map_to_field) = "DeliveryTaskGroup.delivery_data.is_from_store_to_us"]; // Would replace is_from_store_to_us
+  google.protobuf.StringValue source = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.source"]; // Would kind of be nice to sort this and business_vertical out
+  google.protobuf.Int64Value business_vertical_id = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.business_vertical_id"];
+  google.protobuf.Int64Value store_order_cart_id = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.store_order_cart_id"];
+  google.protobuf.Int64Value order_cart_id = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.order_cart_id"];
+  google.protobuf.StringValue order_protocol_type = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.order_protocol_type"];
+  // check if we want to move this field to Assignment Constraints
+  google.protobuf.BoolValue consumer_pickup_auto_closed = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.consumer_pickup_auto_closed"];
+  google.protobuf.BoolValue is_group_cart_delivery = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.is_group_cart_delivery"];
+}
+
+// Phone Model Related Constraints for a task group
+message PhoneModelConstraints {
+  // minimum supported phone model for task. Assumes phone models are lexicographically ordered, with higher value
+  // meaning better model
+  google.protobuf.StringValue minimum_phone_model = 1;
+  // list of allowed phone models for task
+  repeated google.protobuf.StringValue allowed_phone_models = 2;
+  // list of disallowed phone models for task
+  repeated google.protobuf.StringValue disallowed_phone_models = 3;
+}
+
+// Dasher App version Constraints for a task group
+message DasherAppVersionConstraints {
+  // min supported ios app version in format compatible with com.fasterxml.jackson.core.util.VersionUtil
+  google.protobuf.StringValue min_supported_ios_app_version = 1;
+  // in supported android app version in format compatible with com.fasterxml.jackson.core.util.VersionUtil
+  google.protobuf.StringValue min_supported_android_app_version = 2;
+}
+
+// Dasher related assignment constraints for a task group
+message DasherConstraints {
+  // pointer to deep-red to check for dasher's eligibility for a task
+  google.protobuf.BoolValue should_check_dasher_task_eligibility = 1;
+  PhoneOS phone_os_supported = 2;
+  // Phone Model Constraints for a task group. This should replace phone_model field in the future
+  PhoneModelConstraints phone_model_constraints = 3;
+  // list of dashers who are eligible to the task, ignored if null, in effect of not null and empty
+  DasherList dasher_allow_list = 4;
+  // list of dashers who aren't eligible to the task, ignored if null, in effect of not null and empty
+  DasherList dasher_block_list = 5;
+  //Dasher App Version Constraints
+  DasherAppVersionConstraints dasher_app_version_constraints = 6;
+}
+
+// Dasher list specified in constraints
+message DasherList {
+  repeated google.protobuf.Int64Value dasher_id_list = 1;
+}
+
+message DeliveryTaskGroup {
+  delivery_service.core.DeliveryResponse delivery_data = 1;
+  delivery_service.core.DeliveryAudienceInfoResponse delivery_audience_info = 2;
+  delivery_service.core.DeliveryOrderInfoResponse delivery_order_info = 3;
+  delivery_service.delivery_fulfillment.v1.GetDeliveryFulfillmentResponse delivery_fulfillment = 4;
+  eta_prediction.ETAPredictionResponseV2 eta_prediction = 5;
+  delivery_service.core.DeliveryAssignmentConstraint delivery_assignment_constraint = 6;
+  AdditionalFields additional_fields = 7;
+  delivery_service.core.IsReturnDeliveryResponse return_delivery = 8;
+  delivery_service.core.GetDeliveryAbandonResponse abandoned_info = 9;
+  DasherProximityInfo dasher_proximity_info = 10;
+  RetailExtensionAttributes retail_extension_attributes = 11;
+  delivery_service.delivery_metadata.v1.DeliveryMetadata delivery_metadata = 12;
+  DriveFulfillmentData drive_fulfillment_data = 13;
+}
+
+message TaskGroupDeliveryMapping {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+  google.protobuf.Int64Value delivery_id = 3;
+  google.protobuf.Int64Value shift_id = 4;
+}
+
+// Delivery fields which are not exposed via gRPC responses
+message AdditionalFields {
+  reserved 18, 19, 29;
+  google.protobuf.Int64Value urgent_cutoff = 1;
+  google.protobuf.Timestamp first_assignment_made_time = 2;
+  google.protobuf.StringValue delivery_location = 3;
+  google.protobuf.Timestamp assignable_at = 4;
+  google.protobuf.Int64Value merchant_transaction_id = 5;
+  google.protobuf.Int32Value fee_baserate = 6;
+  google.protobuf.Int64Value marketing_fee = 7;
+  google.protobuf.StringValue partner_source = 8;
+  google.protobuf.BoolValue allow_unattended_delivery = 9;
+  google.protobuf.BoolValue is_curbside_dropoff = 10;
+  google.protobuf.BoolValue can_be_batched = 11;
+  google.protobuf.StringValue soft_requirements = 12;
+  google.protobuf.BoolValue is_from_partner_store = 13;
+  google.protobuf.Timestamp eta_prediction_updated_at = 14;
+  google.protobuf.BoolValue proactive_monitoring_required = 15;
+  google.protobuf.StringValue quoted_eta_id = 16;
+  google.protobuf.Timestamp quoted_merchant_pickup_time = 17;
+  google.protobuf.BoolValue has_return_delivery = 20;
+  google.protobuf.StringValue return_delivery_uuid = 21;
+  google.protobuf.Int64Value estimated_assignment_latency = 22;
+  google.protobuf.Int64Value estimated_order_place_duration = 23;
+  google.protobuf.StringValue per_starting_point = 24;
+  google.protobuf.Int64Value estimated_assignment_to_pickup_duration = 25;
+  google.protobuf.Int64Value estimated_delivery_duration = 26;
+  google.protobuf.StringValue vehicle_license_plate = 27;
+  UnassignFields unassign_fields = 28;
+  google.protobuf.Int64Value delivery_package_id = 30;
+  delivery_service.core.ParentDeliveryInfoV2 parent_delivery_info_v2 = 31;
+  delivery_service.delivery_fulfillment.v1.AssignmentSignals assignment_signals = 32;
+  google.protobuf.DoubleValue dropoff_lat = 33;
+  google.protobuf.DoubleValue dropoff_lng = 34;
+}
+
+// additional fields needed to publish unassign events
+message UnassignFields {
+  google.protobuf.StringValue unassign_reason = 1;
+  google.protobuf.BoolValue is_excused_unassign = 2;
+  google.protobuf.StringValue route_at_unassignment = 3;
+  google.protobuf.BoolValue is_unassigned_by_dasher = 4;
+  google.protobuf.Int64Value unassigned_shift_id = 5;
+  google.protobuf.BoolValue was_manually_assigned = 6;
+  google.protobuf.BoolValue should_be_manually_assigned = 7;
+  google.protobuf.Timestamp previous_dasher_confirmed_time = 8;
+  google.protobuf.Timestamp previous_dasher_at_store_time = 9;
+  google.protobuf.Timestamp previous_dasher_confirmed_at_store_time = 10;
+  google.protobuf.Timestamp previous_dasher_arriving_at_store_time = 11;
+  google.protobuf.Timestamp previous_dasher_arriving_at_consumer_time = 12;
+  google.protobuf.BoolValue is_revert_pickup = 13;
+  google.protobuf.BoolValue is_revert_dropoff = 14;
+}
+
+message DasherProximityInfo {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.Timestamp dasher_arrived_at_merchant_time = 2;
+  google.protobuf.Timestamp dasher_left_merchant_time = 3;
+  google.protobuf.Timestamp dasher_approaching_customer_wide_time = 4;
+  google.protobuf.Timestamp dasher_approaching_customer_time = 5;
+  google.protobuf.Timestamp dasher_approaching_customer_time_by_eta = 6;
+  google.protobuf.Timestamp dasher_left_customer_time = 7;
+  google.protobuf.Timestamp dasher_left_customer_wide_time = 8;
+  google.protobuf.BoolValue at_restaurant = 9;
+  google.protobuf.BoolValue at_customer = 10;
+  google.protobuf.BoolValue at_customer_wide = 11;
+}
+
+message RetailExtensionAttributes {
+  google.protobuf.Int64Value delivery_id = 1;
+  google.protobuf.StringValue retail_extension_attributes_guid = 2;
+  google.protobuf.BoolValue is_shop_and_deliver = 3;
+  google.protobuf.BoolValue staging_required = 4;
+  google.protobuf.StringValue order_fulfillment_method = 5;
+}
+
+message DriveFulfillmentData {
+  // Drive Order Response
+  drive_service.drive_order.DriveOrderResponse drive_order_response = 1;
+  // Dasher Fulfillment Configuration Response
+  com.doordash.drive.configuration.v1.GetDasherFulfillmentConfigurationResponse get_dasher_fulfillment_configuration = 2;
+}
+
+message AbandonTaskGroupStatus {
+  google.protobuf.Timestamp abandoned_at = 1;
+  google.protobuf.StringValue abandoned_reason = 2;
+  google.protobuf.StringValue abandoned_comment = 3;
+}
+
+// Type of Batching
+enum BatchType {
+  // Unspecified
+  BATCH_TYPE_UNSPECIFIED = 0;
+  // Standalone
+  BATCH_TYPE_STANDALONE = 1;
+  // Batched
+  BATCH_TYPE_BATCHED = 2;
+  // Either. Batch until risk arises, then switch to standalone offers.
+  BATCH_TYPE_EITHER = 3;
+}

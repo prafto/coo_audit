@@ -1,0 +1,296 @@
+syntax = "proto3";
+
+package dynamic_values_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dynamic-values-service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dynamic_values";
+
+// A service for evaluating Dynamic Values
+service DynamicValuesService {
+  // Configure the service name
+  option (service_client.client_config).service_name = "dynamic-values-service";
+
+  // Configured the app
+  option (service_client.client_config).service_app = "web";
+
+  // Retries in total for all endpoints
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Retry multiplier for all endpoints
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Evaluates dynamic values
+  rpc EvaluateNames(EvaluateNamesRequest) returns (EvaluateNamesResponse) {
+    // We are setting the timeout to be greater than our SLO target of 60ms
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+
+    // Wait 10ms for the retry, this totals to 70ms of waiting in total on 3 attempts
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+  }
+
+  // Evaluates dynamic values
+  rpc EvaluatePaths(EvaluatePathsRequest) returns (EvaluatePathsResponse) {
+    // We are setting the timeout to be greater than our SLO target of 1s
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+
+    // Wait 100ms for the retry, this totals to 700ms of waiting in total on 3 attempts
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 100;
+  }
+
+  // Run interleaving with fake data
+  rpc RunInterleave(RunInterleaveRequest) returns (RunInterleaveResponse) {
+    // We are setting the timeout to be greater than our SLO target of 1s
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+
+    // Wait 100ms for the retry, this totals to 700ms of waiting in total on 3 attempts
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 100;
+  }
+}
+
+// ---------- REQUESTS ---------------------------------------------------------------------------
+
+// Request for evaluating dynamic values by invididual names
+message EvaluateNamesRequest {
+  // The source paths of where to look for DVs
+  repeated string paths = 1;
+
+  // The name of the DVs to evaluate
+  repeated string names = 2;
+
+  // Context used to evaluate the DVs
+  Context context = 3;
+
+  // Options to configure evaluation
+  EvaluationOptions evaluation_options = 4;
+}
+
+// Request for evaluating all dynamic values found in a list of paths
+message EvaluatePathsRequest {
+  // An array of paths. All DVs found in the paths will be evaluated. This is not recursive
+  repeated string paths = 1;
+
+  // Context used to evaluate the DVs
+  Context context = 2;
+
+  // Options to configure evaluation
+  EvaluationOptions evaluation_options = 3;
+}
+
+// Request for firing off a fake interleave
+message RunInterleaveRequest {
+  // The number of items to interleave
+  int32 number_items = 1;
+
+  // The segment we expect to match in the backing Interleave Experiment
+  string segment = 2;
+}
+
+// ---------- RESPONSES --------------------------------------------------------------------------
+
+// Response Evaluate Names
+message EvaluateNamesResponse {
+  // Contains the results of the DV evaluations
+  EvaluationResult result = 1;
+}
+
+// Response Evaluate Paths
+message EvaluatePathsResponse {
+  // Contains the results of the DV evaluations
+  EvaluationResult result = 1;
+}
+
+// Request for firing off a fake interleave
+message RunInterleaveResponse {
+  // Size of the interwoven list
+  int32 number_items = 1;
+
+  // Number of exposures that will be sent
+  int32 number_exposures = 2;
+
+  // Number of competitive pairs
+  int32 number_competitive = 3;
+}
+
+// ---------- MESSAGES ---------------------------------------------------------------------------
+
+// An object for holding evaluation options
+message EvaluationOptions {
+  // If true exposures will be logged
+  bool exposure_enabled = 1;
+
+  // If true holdout/referenced exposures will be logged by DV Service. If false it is assumed the consuming service
+  // will utilized the 'additional exposures' on the 'Success Evaluation' to log holdout exposures
+  google.protobuf.BoolValue referenced_dv_exposure_enabled = 2;
+
+  // An optional field to set what time the evaluation is taking place. Will be inferred by service if omitted
+  google.protobuf.Int64Value evaluation_time_seconds = 3;
+}
+
+// An object containing contextual information to be used or was used during evaluation
+message Context {
+  // A map containing contextual information needed for evaluation
+  map<string, TypedValue> properties = 1;
+}
+
+// A union representing the different types of values DV supports
+message TypedValue {
+  // A union of different typed values
+  oneof value {
+    // String representation
+    string string_value = 1;
+
+    // Long representation
+    int64 long_value = 2;
+
+    // Double representation
+    double double_value = 3;
+
+    // Bool representation
+    bool bool_value = 4;
+
+    // Array representation
+    ScalarArray values = 5;
+  }
+}
+
+// A union representing the different scalars arrays. We cannot use repeated arrays directly in a oneof, thus the
+// we point to objects that contain repeated arrays instead
+message ScalarArray {
+  // A union of different typed arrays
+  oneof values {
+    // String representation
+    StringArray string_values = 1;
+
+    // Long representation
+    LongArray long_values = 2;
+
+    // Double representation
+    DoubleArray double_values = 3;
+  }
+}
+
+// An array of doubles
+message DoubleArray {
+  // The array of values
+  repeated double values = 1;
+}
+
+// An array of longs
+message LongArray {
+  // The array of values
+  repeated int64 values = 1;
+}
+
+// An array of strings
+message StringArray {
+  // The array of values
+  repeated string values = 1;
+}
+
+// Contains the result of DV evaluations
+message EvaluationResult {
+  // A map of evaluations keyed by DV name
+  map<string, SuccessEvaluation> success_evaluations = 1;
+
+  // A map of failed evaluations keyed by DV name
+  map<string, FailureEvaluation> failure_evaluations = 2;
+
+  // The context used to evaluate the DV. Could contain enriched context beyond what was passed
+  Context context = 3;
+}
+
+// Represents a single evaluation
+message SuccessEvaluation {
+  // The name of the DV
+  string name = 1;
+
+  // The value resulting from evaluation
+  TypedValue value = 2;
+
+  // Contains additional exposure context relevant to this invididual DV
+  Context exposure_context = 3;
+
+  // If true the underlying configuration has exposures enabled. Does not indicate if an expose log was created or not.
+  bool exposure_enabled = 4;
+
+  // When this DV attempts to send an exposures all DVs in this list should attempt to send an exposures as well
+  repeated string additional_exposures = 5;
+}
+
+// Represents a single failure evaluation
+message FailureEvaluation {
+  // The name of the DV
+  string name = 1;
+
+  // The reason there was a failure
+  string reason = 2;
+}
+
+// Event for evaluation logger
+message DVEvaluation {
+  // DV name
+  string name = 1;
+
+  // Segment name
+  string segment = 2;
+
+  // Variant name
+  string variant = 3;
+
+  // In rollout or not
+  bool in_rollout = 4;
+
+  // Exposure enabled or not
+  bool exposure_enabled = 5;
+
+  // DV version
+  int32 revision = 6;
+
+  // Service name
+  string service = 7;
+
+  // Start of the aggregation window
+  google.protobuf.Timestamp aggregation_start = 8;
+
+  // End of the aggregation window
+  google.protobuf.Timestamp aggregation_end = 9;
+
+  // Count of evaluations in the aggregation window
+  int64 count = 10;
+
+  // DV SDK version
+  string sdk_version = 11;
+}
+
+// Event for evaluation error logger
+message DVErrorEvaluation {
+  // DV name
+  string name = 1;
+
+  // Property key name
+  string key = 2;
+
+  // Type of error
+  string error_type = 3;
+
+  // DV version
+  int32 revision = 4;
+
+  // Service name
+  string service = 5;
+
+  // Start of the aggregation window
+  google.protobuf.Timestamp aggregation_start = 6;
+
+  // End of the aggregation window
+  google.protobuf.Timestamp aggregation_end = 7;
+
+  // Count of evaluations in the aggregation window
+  int64 count = 8;
+}

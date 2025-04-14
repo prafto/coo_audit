@@ -1,0 +1,324 @@
+syntax = "proto3";
+package social_service.v1;
+
+import "doordash.api/field_validate.proto";
+import "feed_service/mx_crm.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/common.proto";
+import "ratings_service/consumer_photo.proto";
+import "ratings_service/consumer_rating.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.social_service";
+
+// Definition for UI component that represents a user content card (with store metadata on the bottom).
+// Can range anywhere from a rating, to rating and review, to rating and review and images
+// In common proto, as meant to be shared across multiple surface areas
+message ProfileContentDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // title of content card, containing name of profile, and action: (e.g. "Cody Z shared a review with photos")
+    google.protobuf.StringValue title = 1;
+    // reviewed at timestamp
+    google.protobuf.Timestamp submitted_at_time = 2;
+    // review associated with post
+    ratings_service.ConsumerReview consumer_review = 3;
+    // images associated with user-reviewed content
+    repeated ImageContent images = 4;
+    // store metadata for the store associated with the user-reviewed content
+    StoreDetails store_details = 5;
+    // navigation uri to load store page associated with store in content card
+    google.protobuf.StringValue store_navigation_uri = 6;
+    // item metadata for items included in order associated with post (if verified)
+    repeated ratings_service.ConsumerReview.Item order_item_list = 7;
+    // videos associated with user-reviewed content
+    repeated feed_service.MxCrmAnnouncement videos = 8;
+  }
+}
+
+// Definition for UI component that represents the business ratings card
+message BusinessRatingsDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // title of content card
+    google.protobuf.StringValue title = 1;
+    // business metadata for the business associated with the user content
+    repeated BusinessDetails business_details = 2;
+    // title of content card modal
+    google.protobuf.StringValue modal_title = 3;
+  }
+}
+
+// metadata for store associated with user content
+message StoreDetails {
+  // store-level ratings metadata for store
+  ratings_service.StoreRatings store_ratings = 1;
+  // if store is eligible for dashpass -- used to toggle dashpass icon
+  google.protobuf.BoolValue is_dashpass_eligible = 2;
+  // store metadata display strings for store
+  repeated ContentRow metadata_line_items = 3;
+  // navigation uri to load store page associated with store in content card
+  google.protobuf.StringValue store_navigation_uri = 4;
+  // thumbnail image for this store
+  ImageContent thumbnail_image = 5;
+  // Display name for the store
+  google.protobuf.StringValue display_name = 6;
+}
+
+// metadata for business associated with user content
+message BusinessDetails {
+  // business id
+  google.protobuf.StringValue business_id = 1;
+  // thumbnail image for this business
+  ImageContent thumbnail_image = 2;
+  // Display name for the business
+  google.protobuf.StringValue display_name = 3;
+  // store id of the last review associated with the business id
+  google.protobuf.StringValue last_review_store_id = 4;
+  // navigation uri to the store of the last review associated with the business id
+  google.protobuf.StringValue last_review_store_navigation_uri = 5;
+  // num stars
+  google.protobuf.Int32Value num_stars = 6;
+}
+
+// All definitions below are to power BE-driven metadata line items. Meant to be reused across multiple surface areas
+
+// a row of content returned -- this is intentionally generic, and can represent a row of text, row of texts and images mixed, row of many content types mixed
+message ContentRow {
+  // id of content row
+  google.protobuf.StringValue id = 3;
+  // list of content cells that are in this content row, where each cell can be text, image, etc
+  repeated ContentCell content = 1;
+  // delimiter used to separate different content cells in this row
+  google.protobuf.StringValue delimiter = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// a wrapper around a specific type of content
+message ContentCell {
+  // id of content cell
+  google.protobuf.StringValue id = 5;
+  // the type of content: e.g. TEXT, IMAGE, TAG
+  CellType cell_type = 1;
+
+  // content that is contained in this wrapper
+  oneof content {
+    // set if content is a string of text
+    TextContent text_content = 2;
+    // set if content is an image
+    ImageContent image_content = 3;
+    // set if content is a tag
+    TagContent tag_content = 4;
+  }
+}
+
+// a string of text content
+message TextContent {
+  // the actual string of text
+  google.protobuf.StringValue text = 1;
+  // styling of text
+  TextStyle style = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // if icon exists, icon name for icon that is associated with text, which clients will then map to prism component
+  google.protobuf.StringValue icon_name = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // source to retrieve icon from (if icon_name field is set) -- to support icons from multiple sources
+  IconSource icon_source = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // if icon exists, positioning of icon relative to text (e.g. left or right)
+  Alignment icon_alignment = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Source of icon
+enum IconSource {
+  // no source specified -- default to prism component, or not show icon if prism component DNE
+  ICON_SOURCE_UNSPECIFIED = 0;
+  // icon to be retrieved from prism
+  ICON_SOURCE_PRISM = 1;
+  // icon to be retrieved from a remote uri
+  ICON_SOURCE_REMOTE_URI = 2;
+}
+
+// an image
+message ImageContent {
+  // the photo details -- deprecated, and only setting to support older client versions for creator profile
+  ratings_service.PhotoDetails photo_details = 1;
+  // shape of image
+  Shape shape = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // the alignment of the image
+  Alignment layout = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // text value for optional badge layered on top corner of image -- can add addl field in future if wish to specific left or right corner
+  google.protobuf.StringValue badge_text = 4 [
+    (doordash.api.validate.rules).missing_value = {action: IGNORE},
+    deprecated = true
+  ];
+  // title of image -- displayed on bottom of image
+  google.protobuf.StringValue title = 5;
+  // deprecated -- do not use
+  reserved 6;
+  reserved "subtitle";
+  // metadata that is displayed under title
+  ContentRow subtitle_contents = 9;
+
+  // actual image data of image
+  oneof image_data {
+    // set if content is an image that is retrieved from ratings service (UGC photo)
+    ratings_service.PhotoDetails photo_details_data = 7;
+    // set if content is a generic image, where only an image url and some other basic metadata is required
+    Image image_uri = 8;
+  }
+
+  // text value for optional badge layered on top corner of image, supports adding icons as well
+  repeated TagContent tags = 10 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// a tag
+message TagContent {
+  // the text content along with any icons.
+  TextContent text = 1;
+  // type of the tag
+  TagContentType type = 2;
+}
+
+// Enum describing the type of tag content.
+enum TagContentType {
+  // unspecified tag type
+  TAG_CONTENT_TYPE_UNSPECIFIED = 0;
+  // informational tag type
+  TAG_CONTENT_TYPE_INFORMATIONAL = 1;
+}
+
+// Image
+message Image {
+  //image url
+  google.protobuf.StringValue url = 1;
+}
+
+// text styling for text
+message TextStyle {
+  // override prism text style (if provided) -- can be used to change size and weight of font
+  google.protobuf.StringValue text_style = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // override prism text color (if provided)
+  google.protobuf.StringValue text_color = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// different content cell types
+enum CellType {
+  // unspecified cell type
+  CELL_TYPE_UNSPECIFIED = 0;
+  // text content
+  CELL_TYPE_TEXT = 1;
+  // image content
+  CELL_TYPE_IMAGE = 2;
+  // image content
+  CELL_TYPE_TAG = 3;
+}
+
+// different shapes
+enum Shape {
+  // unspecified shape
+  SHAPE_UNSPECIFIED = 0;
+  // shape that is rectangular, with rounded corners
+  SHAPE_ROUNDED = 1;
+  // completely circular shape
+  SHAPE_CIRCLE = 2;
+}
+
+// alignment types
+enum Alignment {
+  // unspecified alignment
+  ALIGNMENT_UNSPECIFIED = 0;
+  // center-aligned
+  ALIGNMENT_CENTER = 1;
+  // left-aligned
+  ALIGNMENT_LEFT = 2;
+  // right-aligned
+  ALIGNMENT_RIGHT = 3;
+}
+
+// Message representing a header
+message Header {
+  // the Title of this component
+  google.protobuf.StringValue title = 1;
+  // The description of this component
+  google.protobuf.StringValue description = 2;
+}
+
+// Message representing a consumer's contact info
+message ConsumerContactInfo {
+  // the type of contact info
+  ContactInfoType contact_info_type = 1;
+  // the contact info
+  google.protobuf.StringValue value = 2;
+}
+
+// Enum representing the type of contact info
+enum ContactInfoType {
+  // unspecified contact info type
+  CONTACT_INFO_TYPE_UNSPECIFIED = 0;
+  // email contact info
+  CONTACT_INFO_TYPE_EMAIL = 1;
+  // phone contact info
+  CONTACT_INFO_TYPE_PHONE_NUMBER = 2;
+}
+
+// data update success
+message DataUpdateSuccess {
+  // success or not
+  google.protobuf.BoolValue success = 1;
+}
+
+// data update error
+message DataUpdateError {
+  // error message
+  google.protobuf.StringValue error_message = 1;
+}
+
+// social list target interaction
+enum SocialListTargetInteraction {
+  // unspecified
+  SOCIAL_LIST_TARGET_INTERACTION_UNSPECIFIED = 0;
+  // upvote
+  SOCIAL_LIST_TARGET_INTERACTION_UPVOTE = 1;
+  // upvote cancel
+  SOCIAL_LIST_TARGET_INTERACTION_UPVOTE_CANCEL = 2;
+}
+
+// Banner type
+enum BannerType {
+  // unspecified
+  BANNER_TYPE_UNSPECIFIED = 0;
+  // upvote
+  BANNER_TYPE_INFORMATIONAL = 1;
+}
+
+// Banner message for displaying information on the profile page
+message Banner {
+  // title of the banner
+  google.protobuf.StringValue title = 1;
+  // subtitle of the banner
+  google.protobuf.StringValue subtitle = 2;
+  // icon associated with the banner
+  string icon = 3;
+  // Banner type
+  BannerType banner_type = 4;
+}

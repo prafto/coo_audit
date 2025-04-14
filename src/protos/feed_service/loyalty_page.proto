@@ -1,0 +1,1221 @@
+syntax = "proto3";
+package feed_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/shared/components/image.proto";
+import "doordash.api/annotations.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/menu.proto";
+import "feed_service/mx_crm.proto";
+import "feed_service/store_page.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/placements/placement_model.proto";
+import "growth/placements/placement_section.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "LoyaltyFeedAPI";
+option java_package = "com.doordash.rpc.feed_service.loyalty_page";
+
+// Service for rendering loyalty pages
+service LoyaltyPageService {
+  option (doordash.api.service) = {
+    name: "feed-loyalty-page-service"
+    url: "feed-service-web-loyalty.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "loyalty",
+      "feed"
+    ]
+    owner: {
+      name: "loyalty-service"
+      id: "teams-working-with-loyalty-service-"
+      slack_channel: "#ask-mx-loyalty-eng"
+      email_alias: "ocl-engineering@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  // Get loyalty program details page view for a store
+  rpc GetProgramDetailsPage(GetProgramDetailsPageRequest) returns (GetProgramDetailsPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // Gets the loyalty program account page for linking, signup, and unlinking for a store
+  rpc GetProgramAccountPage(GetProgramAccountPageRequest) returns (GetProgramAccountPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // Gets the loyalty reward item carousel list module for given store and consumer.
+  rpc GetLoyaltyRewardItemCarousel(GetLoyaltyRewardItemCarouselRequest) returns (GetLoyaltyRewardItemCarouselResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Gets the loyalty content for web
+  rpc GetLoyaltyContentForWeb(GetLoyaltyContentForWebRequest) returns (GetLoyaltyContentForWebResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // Gets the aggregate rewards main page
+  rpc GetAggregateRewardsPage(GetAggregateRewardsPageRequest) returns (GetAggregateRewardsPageResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/aggregate-rewards"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // Generate a pass that can be added to a Cx' phone to scan for loyalty
+  rpc CreateLoyaltyWalletPass(CreateLoyaltyWalletPassRequest) returns (CreateLoyaltyWalletPassResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Get the partner loyalty program intro page (e.g. PCO)
+  rpc GetPartnerProgramIntroPage(GetPartnerProgramIntroPageRequest) returns (GetPartnerProgramIntroPageResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/partner-program-intro"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // Get the partner loyalty program linking page (e.g. PCO)
+  rpc GetPartnerProgramLinkingPage(GetPartnerProgramLinkingPageRequest) returns (GetPartnerProgramLinkingPageResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/partner-program-linking"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // Get the partner loyalty program details page (e.g. PCO)
+  rpc GetPartnerProgramDetailsPage(GetPartnerProgramDetailsPageRequest) returns (GetPartnerProgramDetailsPageResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/partner-program-details"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // Get the partner loyalty program points activity page (e.g. PCO)
+  rpc GetPartnerProgramPointsActivityPage(GetPartnerProgramPointsActivityPageRequest) returns (GetPartnerProgramPointsActivityPageResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/points-activity"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+}
+
+// Get program details page request
+message GetProgramDetailsPageRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // optional store id
+  google.protobuf.StringValue store_id = 3;
+}
+
+// Get program details page response
+message GetProgramDetailsPageResponse {
+  // loyalty program and progress view
+  GetDoorDashLoyaltyProgramDetailViewDM doordash_loyalty_program_detail_view = 1;
+  // program id
+  google.protobuf.StringValue program_id = 2;
+  // program experience
+  common.Experience program_experience = 3;
+  // footer field
+  Footer footer = 4;
+  // footer
+  message Footer {
+    // call to action title
+    google.protobuf.StringValue cta_title = 1;
+    // call to action link/action_url
+    google.protobuf.StringValue cta_action = 2;
+  }
+}
+
+// The view for homegrown loyalty program details
+message GetDoorDashLoyaltyProgramDetailViewDM {
+  // reward progress summary view
+  RewardProgressSummaryViewDM reward_progress_summary_view = 1;
+  // program description view
+  ProgramExplanationViewDM program_explanation_view = 2;
+  // terms and conditions view
+  TermsAndConditionsViewDM terms_and_conditions_view = 3;
+  // reward banner view
+  RewardBanner reward_banner_view = 4;
+  // reward progress bar view
+  RewardProgressBar reward_progress_bar_view = 5;
+  // reward visit based progress bar view
+  VisitBasedRewardProgressBarDM visit_based_reward_progress_bar_view = 6;
+  // header view for loyalty page
+  HeaderViewDM header_view = 7;
+  // reward item list(optional)
+  RewardItemListViewDM reward_item_list_view = 8;
+  // reward type
+  RewardType reward_type = 9;
+  // OCL data
+  OmnichannelLoyaltyViewDM omnichannel_loyalty_linking_view = 10;
+
+  // reward progress summary view
+  message RewardProgressSummaryViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for progress summary
+    message Data {
+      // deprecated
+      google.protobuf.StringValue reward_name = 1;
+      // deprecated
+      google.protobuf.StringValue remaining_points_display_message = 2;
+      // example value: 75
+      google.protobuf.StringValue current_points = 3;
+      // example value: 0.75
+      google.protobuf.StringValue current_progress_on_scale_1 = 4;
+      // example value: 100 pts
+      google.protobuf.StringValue points_criteria = 5;
+      // example value: "Get a $X Store Reward for Every X Points"
+      google.protobuf.StringValue reward_status_text = 6;
+      // example value: "Get 1 point for every $1 spent"
+      google.protobuf.StringValue explanation_text = 7;
+      // the data to power the earned reward banner
+      EarnedRewardMessage earned_reward_message = 8;
+
+      // Messaging to power the "earned reward" banner
+      message EarnedRewardMessage {
+        // example value: "$X Reward Available"
+        google.protobuf.StringValue title = 1;
+        // example value: "Redeemable at Checkout"
+        google.protobuf.StringValue subtitle = 2;
+      }
+    }
+  }
+
+  // program description view
+  message ProgramExplanationViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for program description
+    message Data {
+      // description of rewards program
+      google.protobuf.StringValue explanation_text = 1;
+      // example value: How to Earn
+      google.protobuf.StringValue title = 2;
+      // example value: 10 points
+      google.protobuf.StringValue points_earned = 3;
+      /*
+         description of rewards program v2
+         new rewards program has dollars based text as opposed to points based text
+         additionally, this field will support the free item work the team is working on
+      */
+      google.protobuf.StringValue explanation_text_v2 = 4;
+    }
+  }
+
+  // terms and conditions view
+  message TermsAndConditionsViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for terms and conditions view
+    message Data {
+      // the main terms and conditions text, in markdown format
+      google.protobuf.StringValue terms_text = 1;
+    }
+  }
+
+  // reward banner view
+  message RewardBanner {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data field for banner content
+    message Data {
+      FacetV2 banners_carousel = 1; // DEPRECATED
+      google.protobuf.BoolValue is_reward_earned = 2; // required
+      google.protobuf.StringValue description_text = 3; // required
+      google.protobuf.StringValue incentive_amount = 4; // optional (only for dollars-off)
+    }
+  }
+
+  // reward progress bar view
+  message RewardProgressBar {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for displaying progress bar
+    message Data {
+      // example value: 0.75
+      google.protobuf.StringValue current_progress_on_scale_1 = 1;
+      // example value: $30
+      google.protobuf.StringValue incentive_criteria = 2;
+      // example value: "You're $4 away from this reward"
+      google.protobuf.StringValue reward_status_text = 3;
+    }
+  }
+
+  // visit based reward progress bar view
+  message VisitBasedRewardProgressBarDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for displaying visit based progress bar
+    message Data {
+      // example value: "10 orders"
+      google.protobuf.StringValue incentive_criteria = 1;
+      // example value: "You're 9 orders away from this reward"
+      google.protobuf.StringValue reward_status_text = 2;
+      // example value: 2
+      google.protobuf.UInt32Value current_orders = 3;
+      // example value: 10
+      google.protobuf.UInt32Value total_number_orders_for_reward = 4;
+    }
+  }
+
+  // header for program details page
+  message HeaderViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for progress summary
+    message Data {
+      // title of the rewards page, i.e. "Store Rewards"
+      google.protobuf.StringValue page_title = 1;
+      // name of the merchant
+      google.protobuf.StringValue merchant_name = 2;
+    }
+  }
+
+  // Reward items list
+  message RewardItemListViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // data fields for progress summary
+    message Data {
+      // Example: "Eligible items"
+      google.protobuf.StringValue title = 1;
+      // Example: "Limit of 1 per order"
+      google.protobuf.StringValue subtitle = 2;
+      // store rewards item list
+      RewardItemList reward_item_list = 3;
+
+      // reward item list within loyalty details page
+      message RewardItemList {
+        // deprecated. Use MxCrmItem below.
+        repeated StoreMenuItem content = 1 [deprecated = true];
+        // Mx Crm Item that will be used to display the items on loyalty details page.
+        repeated MxCrmItem item = 2;
+      }
+    }
+  }
+
+  // the type of reward configured for the program
+  enum RewardType {
+    // unspecified
+    REWARD_TYPE_UNSPECIFIED = 0;
+    // flat dollars off subtotal
+    REWARD_TYPE_DOLLARS_OFF = 1;
+    // discount on item
+    REWARD_TYPE_ITEM = 2;
+  }
+
+  // OCL details
+  message OmnichannelLoyaltyViewDM {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue type = 2;
+    google.protobuf.StringValue version = 3;
+    google.protobuf.UInt32Value sort_order = 4;
+    Data data = 5;
+
+    // ocl related data
+    message Data {
+      google.protobuf.StringValue icon = 1;
+      google.protobuf.StringValue title = 2;
+      google.protobuf.StringValue description = 3;
+      Button button = 4;
+
+      // Button for OCL Enrollment
+      message Button {
+        google.protobuf.BoolValue enabled = 1;
+        google.protobuf.StringValue enabled_title = 2;
+        google.protobuf.StringValue disabled_title = 3;
+        Content content = 4;
+
+        // Button Content for OCL Enrollment
+        message Content {
+          google.protobuf.StringValue title = 1;
+          google.protobuf.StringValue body1 = 2;
+          google.protobuf.StringValue body2 = 3;
+          google.protobuf.StringValue footer = 4;
+          ContentButton button = 5;
+
+          // Button for OCL Enrollment Popup
+          message ContentButton {
+            google.protobuf.BoolValue enabled = 1;
+            google.protobuf.StringValue enabled_title = 2;
+            google.protobuf.StringValue disabled_title = 3;
+          }
+        }
+      }
+    }
+  }
+}
+
+// request to get the program account page
+message GetProgramAccountPageRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // optional store id
+  google.protobuf.StringValue store_id = 3;
+  // the page type request
+  AccountPageType page_type = 4;
+}
+
+// the program account page response
+message GetProgramAccountPageResponse {
+  // the data model for the view of the page
+  GetProgramAccountPageViewDM program_account_page_view = 1;
+  // extra data that can help hydrate the page
+  ProgramMembershipData program_membership_data = 2;
+}
+
+// The message that wraps the display modules for the program account page
+message GetProgramAccountPageViewDM {
+  // logo card view
+  LogoCardViewDM logo_card_view = 1;
+  //  header view
+  HeaderViewDM header_view = 2;
+  // form fields view
+  FormFieldsViewDM form_fields_view = 3;
+  // actions view
+  ActionsViewDM actions_view = 4;
+  // terms and conditions view
+  TermsAndConditionsViewDM terms_and_conditions_view = 5;
+  // membership description view
+  BulletedListViewDM program_info = 6;
+  // checkbox item list view
+  CheckboxItemListViewDM checkbox_item_list_view = 7;
+}
+
+// CheckboxItemListViewDM to show items to render next to a checkbox
+message CheckboxItemListViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for CheckboxItemListView
+  message Data {
+    repeated CheckboxItemDM checkbox_items = 1;
+
+    // the checkbox item definition
+    message CheckboxItemDM {
+      google.protobuf.StringValue text = 1;
+      google.protobuf.BoolValue is_required = 2;
+    }
+  }
+}
+
+// BulletedListViewDM to show benefit details as bullet point
+message BulletedListViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for program info view
+  message Data {
+    // the line item list of program info
+    repeated BulletItemDM bullet_item = 1;
+
+    // the info item definition
+    message BulletItemDM {
+      google.protobuf.StringValue icon_type = 1;
+      google.protobuf.StringValue text = 2;
+    }
+  }
+}
+
+// logo card view
+message LogoCardViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for LogoCardView
+  message Data {
+    // the url of the Mx logo that goes within the card view
+    google.protobuf.StringValue logo_url = 1;
+  }
+}
+
+// header view
+message HeaderViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for header view
+  message Data {
+    // the title of the header
+    google.protobuf.StringValue title = 1;
+    // the subtitle of the header
+    google.protobuf.StringValue subtitle = 2;
+    // the a photo url in header
+    google.protobuf.StringValue header_photo_url = 3; // OPTIONAL
+    // the banner text
+    google.protobuf.StringValue banner_text = 4; // OPTIONAL
+    // the status of the user, such as "Active"
+    google.protobuf.StringValue status_text = 5; // OPTIONAL
+  }
+}
+
+// content view
+message ContentViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for content view
+  message Data {
+    // the title of the content
+    google.protobuf.StringValue title = 1;
+    // the list of string to display
+    repeated google.protobuf.StringValue content = 2;
+  }
+}
+
+// form fields view
+message FormFieldsViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for form fields view
+  message Data {
+    // the list of consumer input form fields to display
+    repeated ConsumerDataInput consumer_data_inputs = 1;
+  }
+
+  // a form field that takes in consumer data
+  message ConsumerDataInput {
+    // text above the input
+    google.protobuf.StringValue title = 1;
+    // text below the input
+    google.protobuf.StringValue subtitle = 2; // OPTIONAL
+    // the input type such as email or phone
+    InputType type = 3;
+    // whether or not this field should be pre-filled
+    google.protobuf.BoolValue should_prefill = 4;
+    // clients should have a default pre-filling mechanism, but must use this prefill overwrite from BE if it is available/set.
+    google.protobuf.StringValue prefill_value_overwrite = 5; // OPTIONAL
+    // whether or not this field should be editable; by default they should be editable
+    google.protobuf.BoolValue is_uneditable = 6; // OPTIONAL
+    // whether or not this field is optional; by default all fields are required
+    google.protobuf.BoolValue is_optional = 7; // OPTIONAL
+
+    // all possible input types
+    enum InputType {
+      // unspecified or unknown
+      INPUT_TYPE_UNSPECIFIED = 0;
+      // phone number
+      INPUT_TYPE_PHONE = 1;
+      // email
+      INPUT_TYPE_EMAIL = 2;
+      // first name
+      INPUT_TYPE_FIRST_NAME = 3;
+      // last name
+      INPUT_TYPE_LAST_NAME = 4;
+      // one time password
+      INPUT_TYPE_ONE_TIME_PASSWORD = 5;
+      // address
+      INPUT_TYPE_ADDRESS = 6;
+      // pin
+      INPUT_TYPE_PIN = 7;
+      // password
+      INPUT_TYPE_PASSWORD = 8;
+      // day
+      INPUT_TYPE_DAY = 9;
+      // month
+      INPUT_TYPE_MONTH = 10;
+      // year
+      INPUT_TYPE_YEAR = 11;
+      // date
+      INPUT_TYPE_DATE = 12;
+      // checkbox
+      INPUT_TYPE_CHECKBOX = 13;
+      // text
+      INPUT_TYPE_TEXT = 14;
+      // numeric
+      INPUT_TYPE_NUMERIC = 15;
+    }
+  }
+}
+
+// actions view
+message ActionsViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for actions view
+  message Data {
+    repeated Action actions = 1;
+  }
+
+  // representative of a button that can perform actions based on callback values
+  message Action {
+    // the action description/text
+    google.protobuf.StringValue action = 1;
+    // the type of action
+    ActionType type = 2;
+    // the callback page type called after action finishes
+    AccountPageType callback_page_type = 3; // OPTIONAL
+    // the URL of a webview to display if the callback account page type is WEBVIEW
+    google.protobuf.StringValue callback_webview_url = 4; // OPTIONAL
+
+    // The loyalty related actions that a certain button or UI element may perform
+    enum ActionType {
+      // unspecified action type
+      ACTION_TYPE_UNSPECIFIED = 0;
+      // skip any potential action and invoke callback immediately
+      ACTION_TYPE_SKIP = 1;
+      // link loyalty account
+      ACTION_TYPE_LINK = 2;
+      // unlink loyalty account
+      ACTION_TYPE_UNLINK = 3;
+      // create loyalty account
+      ACTION_TYPE_CREATE = 4;
+      // terminate the UI flow
+      ACTION_TYPE_TERMINATE = 5;
+      // sign in for loyalty rewards
+      ACTION_TYPE_SIGN_IN = 6;
+      // sign up for loyalty rewards
+      ACTION_TYPE_SIGNUP = 7;
+      // learn more about loyalty
+      ACTION_TYPE_LEARN_MORE = 8;
+      // chevron redirecting to loyalty
+      ACTION_TYPE_CHEVRON = 9;
+      // action to add membership purchase
+      ACTION_TYPE_ADD_PAID_MEMBERSHIP_PURCHASE = 10;
+      // action to remove membership purchase
+      ACTION_TYPE_REMOVE_PAID_MEMBERSHIP_PURCHASE = 11;
+      // verify one time password during loyalty linking
+      ACTION_TYPE_OTP_VERIFY = 12;
+      // action to send one time password, this is the button with style same as link
+      ACTION_TYPE_SEND_OTP = 13;
+      // action to resend one time password, its style is similar to signup
+      ACTION_TYPE_RESEND_OTP = 14;
+    }
+  }
+}
+
+// terms and conditions view
+message TermsAndConditionsViewDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  // the data fields for terms and conditions view
+  message Data {
+    // the text for terms and conditions
+    google.protobuf.StringValue terms_text = 1;
+    // optional hyperlink for terms and conditions
+    google.protobuf.StringValue terms_link = 2;
+  }
+}
+
+// the different types of pages that the account page can support
+enum AccountPageType {
+  // Can be UNSPECIFIED if client wants BE to figure out what screen to render by default.
+  ACCOUNT_PAGE_TYPE_UNSPECIFIED = 0;
+  // render the link page
+  ACCOUNT_PAGE_TYPE_LINK = 1;
+  // render the active membership page (which allows for unlinking)
+  ACCOUNT_PAGE_TYPE_ACTIVE = 2;
+  // render the account signup page
+  ACCOUNT_PAGE_TYPE_SIGNUP = 3;
+  // render the linking/creation confirmation page
+  ACCOUNT_PAGE_TYPE_CONFIRMATION = 4;
+  // render the unlinking confirmation
+  ACCOUNT_PAGE_TYPE_UNLINK_CONFIRMATION = 5;
+  // render some webview through a URL
+  ACCOUNT_PAGE_TYPE_WEBVIEW = 6;
+  // render the loyalty data for store page
+  ACCOUNT_PAGE_TYPE_STORE = 7;
+  // render the loyalty data for popup modal
+  ACCOUNT_PAGE_TYPE_LOYALTY_MODAL = 8;
+  // render the loyalty data for order cart
+  ACCOUNT_PAGE_TYPE_ORDER_CART = 9;
+  // render the loyalty data for the checkout page
+  ACCOUNT_PAGE_TYPE_CHECKOUT = 10;
+  // render the loyalty data for signup page for paid program
+  ACCOUNT_PAGE_TYPE_SIGNUP_PAID_PROGRAM = 11;
+  // render the one time password verification page
+  ACCOUNT_PAGE_TYPE_OTP_VERIFY = 12;
+}
+
+// Single reward item (TODO: this is still WIP)
+message LoyaltyRewardItem {
+  // item id
+  google.protobuf.StringValue id = 1;
+  // item name
+  google.protobuf.StringValue name = 2;
+  // item description
+  google.protobuf.StringValue description = 3;
+  // item display price
+  google.protobuf.StringValue price_display = 4;
+  // item image url
+  google.protobuf.StringValue image_url = 5;
+  // store id
+  google.protobuf.StringValue store_id = 6;
+  // menu id
+  google.protobuf.StringValue menu_id = 7;
+  // for quick add functionality
+  QuickAddContext quick_add_context = 8;
+}
+
+// generic program and membership data that client might need
+message ProgramMembershipData {
+  // the program_id that is needed for making loyalty API calls
+  google.protobuf.StringValue program_id = 2;
+}
+
+// request to get loyalty reward item carousel
+message GetLoyaltyRewardItemCarouselRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // optional store id
+  google.protobuf.StringValue store_id = 3;
+}
+
+// response of loyalty reward item carousel
+message GetLoyaltyRewardItemCarouselResponse {
+  // the list of reward items
+  repeated LoyaltyRewardItem content = 1;
+}
+
+// request to get loyalty content for web
+message GetLoyaltyContentForWebRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+  // experience the membership belongs to
+  common.Experience experience = 4;
+  // the page type request
+  AccountPageType page_type = 5;
+  // is guest user
+  google.protobuf.BoolValue is_guest_user = 6;
+  // current order points - used for orderCart and checkout
+  google.protobuf.Int32Value current_order_points = 7;
+}
+
+// response of loyalty content for web
+message GetLoyaltyContentForWebResponse {
+  // the view containing loyalty content to display
+  GetLoyaltyContentForWebViewDM loyalty_content_for_web_view = 1;
+}
+
+// The message that wraps the display modules for the loyalty web
+message GetLoyaltyContentForWebViewDM {
+  // logo card view
+  LogoCardViewDM logo_card_view = 1;
+  //  header view
+  HeaderViewDM header_view = 2;
+  // content view
+  ContentViewDM content_view = 3;
+  // actions view
+  ActionsViewDM actions_view = 4;
+  // terms and conditions view
+  TermsAndConditionsViewDM terms_and_conditions_view = 5;
+}
+
+// Request to get aggregate rewards main page
+message GetAggregateRewardsPageRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Cx submarket ID
+  google.protobuf.StringValue submarket_id = 2 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // Cx country short name (e.g. "CA")
+  google.protobuf.StringValue country_short_name = 3 [(doordash.api.inject) = {
+    field: "cx_geo_country_short_name",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// Response for aggregate rewards main page view
+message GetAggregateRewardsPageResponse {
+  // header view
+  Header header = 1;
+  // main body view
+  Body body = 2;
+  // empty state when user has no progress at any loyalty programs
+  EmptyState empty_state = 3;
+
+  // header
+  message Header {
+    // title
+    google.protobuf.StringValue title = 1;
+    // subtitle
+    google.protobuf.StringValue subtitle = 2;
+    // image url
+    google.protobuf.StringValue image_url = 3;
+  }
+
+  // body
+  message Body {
+    // list of reward sections we want to display
+    repeated doordash.growth.placements.v2.PlacementSection placement_sections = 1;
+    // footer
+    Footer footer = 2;
+    // list of additional sections below footer (e.g. partner rewards)
+    repeated doordash.growth.placements.v2.PlacementSection additional_placement_sections = 3;
+  }
+
+  // empty state
+  message EmptyState {
+    // title
+    google.protobuf.StringValue title = 1;
+    // subtitle
+    google.protobuf.StringValue subtitle = 2;
+    // image url
+    google.protobuf.StringValue image_url = 3;
+    // footer
+    Footer footer = 4;
+  }
+
+  // footer
+  message Footer {
+    // call to action title
+    google.protobuf.StringValue cta_title = 1;
+    // call to action link/action_url
+    google.protobuf.StringValue cta_action = 2;
+  }
+}
+
+// What template / content to be used in the pass
+enum LoyaltyWalletPassTemplate {
+  // We need this to pass the linter, but this will error
+  LOYALTY_WALLET_PASS_TEMPLATE_UNSPECIFIED = 0;
+  // An OCL store rewards pass
+  LOYALTY_WALLET_PASS_TEMPLATE_OMNICHANNEL = 1;
+}
+
+// request for creating a scannable Apple / Google Wallet Pass
+message CreateLoyaltyWalletPassRequest {
+  // business id for the Mx the pass is being generated for
+  google.protobuf.StringValue business_id = 1;
+  // store id the Cx is generating the pass from
+  google.protobuf.StringValue store_id = 2;
+  // background color of the pass
+  google.protobuf.StringValue background_color = 3;
+  // fall back to this content if it can't be determined by feed service
+  google.protobuf.StringValue default_scannable_content = 4;
+  // type of pass to be generated
+  LoyaltyWalletPassTemplate template = 5;
+}
+
+// response for creating a scannable Apple / Google Wallet Pass
+message CreateLoyaltyWalletPassResponse {
+  // raw pass data encoded as a ByteString
+  // for Apple Wallet this will be a .pkpass file
+  bytes pass = 1;
+}
+
+// request to get the partner program intro page (e.g. for PCO)
+message GetPartnerProgramIntroPageRequest {
+  // enum of the partner, used to identify which program to show
+  common.LoyaltyProviderType partner = 1;
+  // consumer id
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // Cx submarket ID
+  google.protobuf.StringValue submarket_id = 3 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // Cx country short name (e.g. "CA")
+  google.protobuf.StringValue country_short_name = 4 [(doordash.api.inject) = {
+    field: "cx_geo_country_short_name",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// response for the partner program intro page
+message GetPartnerProgramIntroPageResponse {
+  // deprecated, use header_icon instead
+  reserved 1;
+  reserved 'header_icon_url';
+
+  // Data for a bullet point
+  message Bullet {
+    // Icon for the bullet
+    oneof icon {
+      // Icon image URL
+      google.protobuf.StringValue image_url = 1;
+      // Icon prism name
+      google.protobuf.StringValue prism_name = 2;
+    }
+    // Bullet text
+    google.protobuf.StringValue title = 3;
+    // Bullet subtitle
+    google.protobuf.StringValue subtitle = 4;
+  }
+
+  // cover image URL
+  google.protobuf.StringValue cover_img_url = 2;
+  // title of the page
+  string title = 3;
+  // list of bullet points to show
+  repeated Bullet bullet_points = 4;
+  // url to redirect back to DD from third party auth
+  google.protobuf.StringValue third_party_auth_redirect_url = 5;
+  // text for the primary button
+  google.protobuf.StringValue primary_button_text = 6;
+  // whether the user is already linked to the program
+  bool is_program_linked = 7;
+  // icon used in the header
+  component_catalog.common.shared.components.v1.RemoteImage header_icon = 8;
+  // data to be passed to the external auth SDK, base64 encoded
+  google.protobuf.StringValue external_auth_sdk_data = 9;
+}
+
+// request to get the partner program linking page (e.g. for PCO)
+message GetPartnerProgramLinkingPageRequest {
+  // enum of the partner, used to identify which program to show
+  common.LoyaltyProviderType partner = 1;
+  // consumer id
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // Cx submarket ID
+  google.protobuf.StringValue submarket_id = 3 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // Cx country short name (e.g. "CA")
+  google.protobuf.StringValue country_short_name = 4 [(doordash.api.inject) = {
+    field: "cx_geo_country_short_name",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// response for the partner program linking page
+message GetPartnerProgramLinkingPageResponse {
+  // deprecated, use header_icon instead
+  reserved 1;
+  reserved 'header_icon_urls';
+
+  // signed in user info
+  message SignedInUserInfo {
+    // display user name
+    google.protobuf.StringValue name = 1;
+    // display phone number
+    google.protobuf.StringValue phone_number = 2;
+    // user email
+    google.protobuf.StringValue email = 3;
+    // title of this component, e.g. "Signed in to DoorDash as:"
+    google.protobuf.StringValue title = 4;
+  }
+
+  // cover image URL
+  google.protobuf.StringValue cover_img_url = 2;
+  // title of the page
+  string title = 3;
+  // description of the program
+  google.protobuf.StringValue description = 4;
+  // terms and conditions in markdown format
+  google.protobuf.StringValue terms_and_conditions_markdown = 5;
+  // whether the user is already linked to the program
+  bool is_program_linked = 6;
+  // user info for the signed in user
+  SignedInUserInfo signed_in_user_info = 7;
+  // text for the primary button
+  google.protobuf.StringValue primary_button_text = 8;
+  // icon used in the header
+  component_catalog.common.shared.components.v1.RemoteImage header_icon = 9;
+  // data to be passed to the external auth SDK, base64 encoded
+  google.protobuf.StringValue external_auth_sdk_data = 10;
+}
+
+// request to get the partner program details page (e.g. for PCO)
+message GetPartnerProgramDetailsPageRequest {
+  // enum of the partner, used to identify which program to show
+  common.LoyaltyProviderType partner = 1;
+  // consumer id
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// response for the partner program details page
+message GetPartnerProgramDetailsPageResponse {
+  // deprecated, use loyalty_points_summaries instead
+  reserved 3;
+  reserved 'loyalty_points_summary';
+
+  // Data for a loyalty offer banner
+  message LoyaltyBanner {
+    // Image URL for the banner in mobile-friendly size
+    string image_url = 1;
+    // Placeholkder if the image is not available
+    string placeholder_text = 2;
+    // Action URL for the banner, if any
+    google.protobuf.StringValue action_url = 3;
+    // Image URL for the banner in web-friendly size; if not provided, the mobile-friendly size will be used
+    google.protobuf.StringValue image_url_web = 4;
+  }
+
+  // Data for a bullet point
+  message Bullet {
+    // Icon for the bullet
+    oneof icon {
+      // Icon image URL
+      google.protobuf.StringValue image_url = 1;
+      // Icon prism name
+      google.protobuf.StringValue prism_name = 2;
+    }
+    // Bullet title
+    google.protobuf.StringValue title = 3;
+    // Bullet subtitle
+    google.protobuf.StringValue subtitle = 4;
+  }
+
+  // Data for a more option row
+  message MoreOptionRow {
+    // Title of the row
+    string title = 1;
+
+    // Data for the row
+    oneof data {
+      // Data for the points activity button
+      DeepLinkNavigate points_activity_button = 2;
+      // Data for the eligible stores section
+      EligibleStoresSection eligible_stores_section = 3;
+      // Data for the terms and exclusions section
+      TermsAndExclusionsSection terms_and_exclusions_section = 4;
+      // Data for the unlink section
+      UnlinkSection unlink_section = 5;
+    }
+
+    // Data for the points activity button
+    message DeepLinkNavigate {
+      // Path for the internal deep link, e.g. "store/12345"
+      google.protobuf.StringValue path = 1;
+    }
+
+    // Data for the eligible stores section
+    message EligibleStoresSection {
+      // Data for a store
+      message Store {
+        // Store name
+        string name = 1;
+        // Store image URL
+        google.protobuf.StringValue cover_square_img_url = 2;
+      }
+
+      // Title of the section
+      string title = 1;
+      // Subtitle of the section
+      google.protobuf.StringValue subtitle = 2;
+      // List of stores
+      repeated Store stores = 3;
+      // Text for the close button
+      google.protobuf.StringValue close_button_text = 4;
+    }
+
+    // Data for the terms and exclusions section
+    message TermsAndExclusionsSection {
+      // Title of the section
+      string title = 1;
+      // List of markdown strings for the section, each displayed in a new paragraph
+      repeated string subtitle_paragraph_markdowns = 2;
+      // Text for the close button
+      google.protobuf.StringValue close_button_text = 3;
+    }
+
+    // Data for the unlink section once the row is clicked
+    message UnlinkSection {
+      // Title of the section
+      string title = 1;
+      // Subtitle of the section
+      google.protobuf.StringValue subtitle = 2;
+      // Text for the confirm button
+      google.protobuf.StringValue confirm_button_text = 3;
+      // Text for the cancel button
+      google.protobuf.StringValue cancel_button_text = 4;
+    }
+  }
+
+  // icon used in the header
+  component_catalog.common.shared.components.v1.RemoteImage header_icon = 1;
+  // title of the page
+  string title = 2;
+  // title in the offer banners section
+  google.protobuf.StringValue offers_section_title = 4;
+  // list of offer banners
+  repeated LoyaltyBanner banners = 5;
+  // title in the earnings section
+  google.protobuf.StringValue earnings_section_title = 6;
+  // list of earnings bullets
+  repeated Bullet earnings_bullet_points = 7;
+  // title in the more options section
+  google.protobuf.StringValue more_options_section_title = 8;
+  // list of more option rows
+  repeated MoreOptionRow more_option_rows = 9;
+  // text for the primary button
+  google.protobuf.StringValue primary_button_text = 10;
+  // placement sections for the loyalty points summaries
+  repeated doordash.growth.placements.v2.PlacementSection loyalty_points_summaries = 11;
+}
+
+// request to get the partner program points activity page (e.g. for PCO)
+message GetPartnerProgramPointsActivityPageRequest {
+  // enum of the partner, used to identify which program to show
+  common.LoyaltyProviderType partner = 1;
+  // consumer id
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // token used for pagination
+  google.protobuf.StringValue token = 3;
+  // limit for the number of rows to return
+  google.protobuf.Int32Value limit = 4;
+}
+
+// response for the partner program points activity page
+message GetPartnerProgramPointsActivityPageResponse {
+  // data for a points activity row
+  message OrderLoyaltyPointsSummary {
+    // data for the info tag modal
+    message InfoTagModalData {
+      // title of the modal
+      string title = 1;
+      // list of markdown strings for the modal, each displayed in a new paragraph
+      repeated string subtitle_paragraph_markdowns = 2;
+      // Text for the close button
+      google.protobuf.StringValue close_button_text = 3;
+    }
+
+    // name of the store
+    string store_name = 1;
+    // display string for the order placed
+    google.protobuf.StringValue order_placed_display_string = 2;
+    // display string for the points
+    google.protobuf.StringValue points_display_string = 3;
+    // data for the optional info tag string
+    google.protobuf.StringValue info_tag_string = 4;
+    // data for the optional info tag modal
+    InfoTagModalData info_tag_modal_data = 5;
+  }
+
+  // data for when the page doesn't have any points activity
+  message EmptyState {
+    // page text of the empty state
+    string text = 1;
+    // image url of the empty state
+    google.protobuf.StringValue image_url = 2;
+  }
+
+  // icon used in the header
+  component_catalog.common.shared.components.v1.RemoteImage header_icon = 1;
+  // title of the page
+  string title = 2;
+  // title of the transactions section
+  google.protobuf.StringValue transactions_section_title = 3;
+  // list of order loyalty points summaries
+  repeated OrderLoyaltyPointsSummary loyalty_points_orders = 4;
+  // token for pagination; if null, no more data is available
+  google.protobuf.StringValue token = 5;
+  // empty state when there are no points activity
+  EmptyState empty_state = 6;
+}

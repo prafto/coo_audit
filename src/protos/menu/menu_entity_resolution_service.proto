@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package menu.entityresolution.v1;
+
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/entityresolution/v1/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menu.entityresolution.v1.grpc";
+
+/**
+ * Menu Entity Resolution Internal APIs
+ * Design Doc: https://docs.google.com/document/d/1sSWJ8fHDz1xb16_RjzIubaDWng8q0EBrKSYHks9ZPzs
+ */
+service MenuEntityResolutionService {
+  /**
+     * Entity Matching
+     * Design Doc: https://docs.google.com/document/d/15Ud9v3RaFZNdor0HG_Oamk8mOuN2lMKIyaV-QuYCtLU/edit#bookmark=id.yfpkmvmstmv1
+
+     * High-level Data Flow:
+     * - Input: A target entity, which can be either an item or an extra.
+     * - Output: Matched entities with similarity scores.
+  */
+  rpc MatchEntities(MatchEntitiesRequest) returns (MatchEntitiesResponse);
+
+  /**
+   * CORE IDENTITY RESOLUTION
+   *
+   * Assigns canonical_id(s) for a single input entity or a set of matched entities.
+   *
+   */
+  // ResolveIdentityForSingleEntity resolves the identity for a single entity.
+  rpc ResolveIdentityForSingleEntity(ResolveIdentityForSingleEntityRequest) returns (ResolveIdentityForSingleEntityResponse);
+  // ResolveIdentitiesForMatchedEntities resolves the identities for a group of matched entities.
+  rpc ResolveIdentitiesForMatchedEntities(ResolveIdentitiesForMatchedEntitiesRequest) returns (ResolveIdentitiesForMatchedEntitiesResponse);
+  // UpsertEmbeddingForEntity sets the embedding into menu crdb for an entity
+  rpc UpsertEmbeddingForEntity(UpsertEmbeddingForEntityRequest) returns (UpsertEmbeddingForEntityResponse);
+  // GetEmbeddingForEntity returns the embedding of the type
+  rpc GetEmbeddingForEntity(GetEmbeddingForEntityRequest) returns (GetEmbeddingForEntityResponse);
+}
+
+/**
+ * Represents a Embedding Type
+ */
+enum EmbeddingType {
+  // unspecified match criteria
+  EMBEDDING_TYPE_UNSPECIFIED = 0;
+  // Embedding by title
+  EMBEDDING_TYPE_ITEM_TITLE = 1;
+  // Embedding type photo
+  EMBEDDING_TYPE_PHOTO = 2;
+  // Embedding type description
+  EMBEDDING_TYPE_DESCRIPTION = 3;
+}
+
+/**
+ * Represents a get Embedding request
+ */
+message GetEmbeddingForEntityRequest {
+  // Canonical id for the entity
+  google.protobuf.StringValue canonical_id = 1;
+  // type
+  EmbeddingType type = 2;
+}
+
+/**
+ * Represents a get Embedding response
+ */
+message GetEmbeddingForEntityResponse {
+  // Canonical id for the entity
+  google.protobuf.StringValue canonical_id = 1;
+  // type
+  EmbeddingType type = 2;
+  // Embedding name
+  google.protobuf.StringValue vector_name = 3;
+  // embedding
+  repeated float embedding = 4;
+}
+
+/**
+ * Represents an upsert Embedding Request
+ */
+message UpsertEmbeddingForEntityRequest {
+  // Canonical id for the entity
+  google.protobuf.StringValue canonical_id = 1;
+  // type
+  EmbeddingType type = 2;
+  // aka i.e. also known as canonical id. It is used to link together duplicate entities
+  repeated google.protobuf.StringValue linked_canonical_ids = 3;
+  // MSIDs assigned to this entity
+  repeated google.protobuf.StringValue linked_merchant_supplied_ids = 4;
+  // Linked entity features
+  repeated google.protobuf.StringValue linked_entity_features = 5;
+  // Vector name
+  google.protobuf.StringValue vector_name = 6;
+  // embedding
+  repeated float embedding = 7;
+}
+
+/**
+ * Represents an upsert Embedding Response
+ */
+message UpsertEmbeddingForEntityResponse {
+  // canonical id of the request
+  google.protobuf.StringValue canonical_id = 1;
+}
+
+/**
+ * Represents a match criteria.
+ */
+enum MatchCriteria {
+  // unspecified match criteria
+  MATCH_CRITERIA_UNSPECIFIED = 0;
+  // match by title
+  MATCH_CRITERIA_TITLE = 1;
+  // match by entity description
+  MATCH_CRITERIA_DESCRIPTION = 2;
+  // match by msid
+  MATCH_CRITERIA_MSID = 3;
+}
+
+/**
+ * Represents a match value.
+ */
+message MatchValue {
+  // match criteria
+  MatchCriteria match_criteria = 1;
+  // match value
+  oneof match_value {
+    // string value to match
+    google.protobuf.StringValue string_match_value = 2;
+    // boolean value to match
+    google.protobuf.BoolValue boolean_match_value = 3;
+    // integer value to match
+    google.protobuf.Int32Value integer_match_value = 4;
+  }
+}
+
+/**
+ * Represents a target entity to match
+ */
+message TargetEntity {
+  // entity type of the target entity
+  EntityType entity_type = 1;
+  // entity id of the target entity
+  string entity_id = 2;
+  // values of the target entity to match
+  repeated MatchValue values_to_match = 3;
+}
+
+/**
+ * Request to send target entities in batches.
+ * Either 'store_menu_id' or 'business_id' must be provided.
+ */
+message MatchEntitiesRequest {
+  // store_menu_id/store_id
+  string store_menu_id = 1;
+  // business_id
+  string business_id = 2;
+  // target entities to match in batch
+  repeated TargetEntity target_entities = 3;
+
+  // min similarity score to filter the matched entities.
+  float matching_threshold = 4;
+}
+
+/**
+ * Represents a matched entity with a similarity score.
+ */
+message MatchedEntity {
+  // original target entity id
+  string target_entity_id = 1;
+  // matched store_menu_id
+  string matched_store_menu_id = 2;
+  // matched business_id
+  string matched_business_id = 3;
+  // matched entity id
+  string matched_entity_id = 4;
+  // matched entity type
+  EntityType matched_entity_type = 5;
+  // matched values of the target entity
+  repeated MatchValue matched_values = 6;
+  // similarity score indicating the match quality
+  float score = 7;
+  // whether the matched entity comes from the historical index
+  bool is_historical = 8;
+}
+
+/**
+ * Response that returns batches of matched entities.
+ */
+message MatchEntitiesResponse {
+  // a list of matched entities
+  repeated MatchedEntity matched_entities = 1;
+}
+
+/**
+ * Represents a resolved entity.
+ */
+message ResolvedEntity {
+  // store_menu_id/store_id
+  string store_menu_id = 1;
+  // business_id
+  string business_id = 2;
+  // menu_id
+  string menu_id = 3;
+  // entity id
+  string entity_id = 4;
+  // canonical id
+  string canonical_id = 5;
+  // representative id
+  string representative_id = 6;
+  // entity status
+  string entity_status = 7;
+  // all other attributes of the resolved entities for references
+  map<string, string> attributes_references = 8;
+}
+
+// Request to resolve the identity for a single entity.
+message ResolveIdentityForSingleEntityRequest {
+  // store_menu_id/store_id
+  string target_store_menu_id = 1;
+  // business_id
+  string target_business_id = 2;
+  // target entity to resolve
+  TargetEntity target_entity = 3;
+  // matched entity
+  MatchedEntity matched_entity = 4;
+}
+
+// Response that returns the resolved entity.
+message ResolveIdentityForSingleEntityResponse {
+  // resolved entity
+  ResolvedEntity resolved_entity = 1;
+}
+
+// Request to resolve the identities for a group of matched entities.
+message ResolveIdentitiesForMatchedEntitiesRequest {
+  // a group of matched entities to resolve
+  repeated MatchedEntity matched_entities = 3;
+}
+
+// Response that returns the resolved entities.
+message ResolveIdentitiesForMatchedEntitiesResponse {
+  // resolved entities
+  repeated ResolvedEntity resolved_entities = 1;
+}

@@ -1,0 +1,4000 @@
+syntax = "proto3";
+
+package case_management_service.v1;
+
+import "case-management-service/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.casemanagement";
+
+// Service for Case Management
+service CaseManagementService {
+  option (doordash.api.service) = {
+    name: "case-management-service"
+    url: "case-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["case-management-service"]
+    api_key_name: "CASE_MANAGEMENT_SERVICE_API_KEY_FOR_UNIFIED_GATEWAY"
+    owner: {
+      id: "opex-platform-for-managing-cases"
+      name: "case-management-service"
+      slack_channel: "#ask-case-management-platform"
+      email_alias: "team-case-management@doordash.com"
+    }
+    target_products: [
+      INTERNAL,
+      DX,
+      CX,
+      MX
+    ]
+  };
+
+  // Timeout after 10 seconds. Individual methods can override as appropriate.
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Creates a new incident assigning to appropriate owner.
+  rpc CreateIncident(CreateIncidentRequest) returns (CreateIncidentResponse) {
+    // Example for overriding per method default hermes timeouts. Update when we have better hold on values.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // Performs a callback action (Kafka Consumer)
+  rpc KafkaCallbackAction(KafkaCallbackActionRequest) returns (KafkaCallbackActionResponse) {
+    // Example for overriding per method default hermes timeouts. Update when we have better hold on values.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // Creates a Chat Case
+  rpc CreateChatCase(CreateChatCaseRequest) returns (CreateChatCaseResponse) {
+    // This makes a call to SFDC synchronously, and needs a large time out
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // Creates a Trust and Safety Case
+  rpc CreateTrustAndSafetyCase(CreateTrustAndSafetyCaseRequest) returns (CreateTrustAndSafetyCaseResponse) {
+    // This makes a call to SFDC synchronously, and needs a large time out
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // Creates a Trust and Safety Case
+  rpc CreateDrscSalesForceCase(CreateDrscSalesForceCaseRequest) returns (CreateDrscSalesForceCaseResponse) {
+    // This makes a call to SFDC synchronously, and needs a large time out
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+
+  // Update an existing incident.
+  rpc UpdateIncident(UpdateIncidentRequest) returns (UpdateIncidentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/{incident_id}/update"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Gets the incidents assigned to the provided user.
+  rpc GetAgentAssignedIncidents(GetAgentAssignedIncidentsRequest) returns (GetAgentAssignedIncidentsResponse);
+
+  // Polls for an incident, and if found, assigns to the provided user.
+  rpc PollIncidentAndAssign(PollIncidentAndAssignRequest) returns (PollIncidentAndAssignResponse) {
+    option deprecated = true;
+  }
+
+  // Loads specific incident
+  rpc GetIncidentById(GetIncidentByIdRequest) returns (GetIncidentByIdResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/incident/{incident_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation",
+          "perm_access_teammate_headquarters"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Attaches notes to a specific incident
+  rpc AttachNotes(AttachNotesRequest) returns (AttachNotesResponse);
+
+  // Attaches issue and resolution to an incident
+  rpc AttachIssueAndResolution(AttachIssueAndResolutionRequest) returns (AttachIssueAndResolutionResponse);
+
+  // Bulk Attach issues and resolutions to an incident
+  rpc BulkAttachIssuesAndResolutions(BulkAttachIssuesAndResolutionsRequest) returns (BulkAttachIssuesAndResolutionsResponse) {
+    // This may end up both loading from and updating back to Salesforce
+    option (service_client.client_method_config).response_attempt_timeout_millis = 15000;
+  }
+
+  // Attaches a Resolution. Will also execute any defined workflows and state transitions.
+  rpc AttachResolution(AttachResolutionRequest) returns (AttachResolutionResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/{incident_id}/attach-resolutions"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation",
+          "perm_access_teammate_headquarters"
+        ]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Resolved a specific incident.
+  rpc ResolveIncident(ResolveIncidentRequest) returns (ResolveIncidentResponse);
+
+  // Transfer a specific incident to a queue or another agent.
+  rpc TransferIncident(TransferIncidentRequest) returns (TransferIncidentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 12000;
+  }
+
+  // Update the incident status (SOLVED, CLOSED, OPEN, etc)
+  rpc UpdateIncidentStatus(UpdateIncidentStatusRequest) returns (UpdateIncidentStatusResponse);
+
+  // Attaches a note in a specific incident
+  rpc AddIncidentNote(AddIncidentNoteRequest) returns (AddIncidentNoteResponse);
+
+  // Updates a note in a specific incident
+  rpc UpdateIncidentNote(UpdateIncidentNoteRequest) returns (UpdateIncidentNoteResponse);
+
+  // Delete incident note
+  rpc DeleteIncidentNote(DeleteIncidentNoteRequest) returns (DeleteIncidentNoteResponse);
+
+  // Gets notes for a specific incident
+  rpc GetIncidentNotes(GetIncidentNotesRequest) returns (GetIncidentNotesResponse);
+
+  // Update Resolution.
+  rpc UpdateResolution(UpdateResolutionRequest) returns (UpdateResolutionResponse);
+
+  // Delete issue and Resolution (mark them inactive)
+  rpc DeleteIssueAndResolution(DeleteIssueAndResolutionRequest) returns (DeleteIssueAndResolutionResponse);
+
+  // Remove all resolutions of an issue (DB delete command)
+  rpc RemoveResolutionsFromIncident(RemoveResolutionsFromIncidentRequest) returns (RemoveResolutionsFromIncidentResponse);
+
+  // Get issues and resolutions for an incident
+  rpc GetIssuesAndResolutions(GetIssuesAndResolutionsRequest) returns (GetIssuesAndResolutionsResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/incident/{incident_id}/issues-and-resolutions"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get edit history.
+  rpc GetEditHistory(GetEditHistoryRequest) returns (GetEditHistoryResponse);
+
+  // Get list of support queues.
+  // Note: This does not contain the queue configuration, but is more for showing transfer options for support queues.
+  rpc GetSupportQueuesList(GetSupportQueuesListRequest) returns (GetSupportQueuesListResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/queues"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get list of support agents
+  rpc GetAgentsList(GetAgentsListRequest) returns (GetAgentsListResponse) {
+    option deprecated = true;
+  }
+
+  // Loads incidents, based on some filters
+  rpc GetIncidents(GetIncidentsRequest) returns (GetIncidentsResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incidents"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Returns the internal queues. Does not include all of the configuration associated with them.
+  rpc GetCaseQueues(GetCaseQueuesRequest) returns (GetCaseQueuesResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/list",
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Returns the configuration for a specific queue.
+  rpc GetCaseQueueConfiguration(GetCaseQueueConfigurationRequest) returns (GetCaseQueueConfigurationResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/queues/{queue_name}/configuration"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Queue Create operations
+  rpc CreateCaseQueue(CreateCaseQueueRequest) returns (CreateCaseQueueResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Update Case Queue. ONLY UPDATES NON-NULL FIELDS. If a top-level field is not sent, it stays unmodified
+  // Exposed via UG but note that only engineers or specialists can update queues.
+  rpc UpdateCaseQueue(UpdateCaseQueueRequest) returns (UpdateCaseQueueResponse) {
+    option (google.api.http) = {
+      put: "/case-management-service/v1/queues"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Updates the active version of queue
+  rpc UpdateCaseQueueActiveVersion(UpdateCaseQueueActiveVersionRequest) returns (UpdateCaseQueueActiveVersionResponse);
+
+  // Assigns a case to an agent.
+  // DEPRECATED - please use AssignCaseToAgentV2 which uses the correct UG HTTP path.
+  rpc AssignCaseToAgent(AssignCaseToAgentRequest) returns (AssignCaseToAgentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/{incident_id}/assign"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Assigns a case to an agent.
+  rpc AssignAnyCaseToAgent(AssignAnyCaseToAgentRequest) returns (AssignAnyCaseToAgentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/assign"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Unassigns a case from an agent.
+  rpc UnassignCaseFromAgent(UnassignCaseFromAgentRequest) returns (UnassignCaseFromAgentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/{incident_id}/unassign"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Create IssueAndResolutionConfiguration
+  rpc CreateIssueAndResolutionConfiguration(CreateIssueAndResolutionConfigurationRequest) returns (CreateIssueAndResolutionConfigurationResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/issues-and-resolutions/create"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Update IssueAndResolutionConfiguration
+  rpc UpdateIssueAndResolutionConfiguration(UpdateIssueAndResolutionConfigurationRequest) returns (UpdateIssueAndResolutionConfigurationResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/issues-and-resolutions/{id}"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Attaches an outbound phone call to a case.
+  // Also performs some tagging at Amazon Connect.
+  rpc AttachOutboundVoice(AttachOutboundVoiceRequest) returns (AttachOutboundVoiceResponse);
+
+  // Check whether the capacity status of a queue.
+  rpc IsCapacityFull(IsCapacityFullRequest) returns (IsCapacityFullResponse);
+
+  // Check whether a case should be deduped.
+  rpc ShouldCaseBeDeduped(ShouldCaseBeDedupedRequest) returns (ShouldCaseBeDedupedResponse);
+
+  // Return list of cases for which Cx/Dx contacted for given list of issue types
+  rpc GetCaseListOfRepeatContacts(GetCaseListOfRepeatContactsRequest) returns (GetCaseListOfRepeatContactsResponse);
+
+  // Process Amazon Connect Phone Transfer from external case service (SFDC) to CMP
+  rpc TransferAmazonConnectCaseToCmp(TransferAmazonConnectCaseToCmpRequest) returns (TransferAmazonConnectCaseToCmpResponse);
+  // Process Amazon Connect Phone Transfer from CMP to external case service (SFDC)
+  rpc TransferAmazonConnectCaseFromCmp(TransferAmazonConnectCaseFromCmpRequest) returns (TransferAmazonConnectCaseFromCmpResponse);
+
+  // A manual grpc request to trigger sql queue query to create cases
+  rpc TriggerSqlQueueCaseCreation(TriggerSqlQueueCaseCreationRequest) returns (TriggerSqlQueueCaseCreationResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/{queue_id}/sql/trigger-case-creation"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Preview endpoints, to allow testing a SQL Query and creating appropriate schema before queue creation.
+  // This will kick off a new query and return a preview job id
+  rpc PreviewSqlQuery(PreviewSqlQueryRequest) returns (PreviewSqlQueryResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/sql/preview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // This will provide the status of a kicked off preview job id
+  rpc GetPreviewSqlQueryStatus(GetPreviewSqlQueryStatusRequest) returns (GetPreviewSqlQueryStatusResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/queues/sql/preview/{query_id}/status"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // This will provide the results of a successful preview job id, including suggested schema and sample data
+  rpc GetPreviewSqlQueryResult(GetPreviewSqlQueryResultRequest) returns (GetPreviewSqlQueryResultResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/queues/sql/preview/{query_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Load CMP Incident History
+  rpc GetIncidentHistory(GetIncidentHistoryRequest) returns (GetIncidentHistoryResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/incident/history"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Send Incident Email
+  rpc SendIncidentEmail(SendIncidentEmailRequest) returns (SendIncidentEmailResponse);
+
+  // Whether the case data matches, including incident data, claimant, and resolution.
+  rpc DoesCaseDataMatch(DoesCaseDataMatchRequest) returns (DoesCaseDataMatchResponse);
+
+  // Get Incident Emails List
+  rpc GetIncidentEmails(GetIncidentEmailsRequest) returns (GetIncidentEmailsResponse);
+
+  // Get All Incidents Emails for incident ids
+  rpc GetAllIncidentEmailsForIncidentIds(GetAllIncidentEmailsForIncidentIdsRequest) returns (GetAllIncidentEmailsForIncidentIdsResponse);
+
+  // Get All Issues and Resolutions for incident ids
+  rpc GetAllIssuesAndResolutionsForIncidentIds(GetAllIssuesAndResolutionsForIncidentIdsRequest) returns (GetAllIssuesAndResolutionsForIncidentIdsResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incidents/issues-and-resolutions"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // GetAllSupportEmailTemplateConfiguration end point will provide all templates we have on the Notification portal
+  rpc GetAllSupportEmailTemplateConfigurations(GetAllSupportEmailTemplateConfigurationsRequest) returns (GetAllSupportEmailTemplateConfigurationsResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incidents/email-templates"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation",
+          "perm_access_teammate_headquarters"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Insert into Queue Auto Assignment so cases get assigned
+  rpc InsertQueueAutoAssignment(InsertQueueAutoAssignmentRequest) returns (InsertQueueAutoAssignmentResponse);
+
+  // Delete from Queue Auto Assignment
+  rpc DeleteQueueAutoAssignment(DeleteQueueAutoAssignmentRequest) returns (DeleteQueueAutoAssignmentResponse);
+
+  // Given a list of entity_ids (eg user IDs) and queues, return the resolution + queue/case metadata for each entity_id
+  // This endpoint filters to include only fraud queues (queue type = FWS.*)
+  rpc BulkGetEntityResolutionWithDetails(BulkGetEntityResolutionWithDetailsRequest) returns (BulkGetEntityResolutionWithDetailsResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incidents/resolutions"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Determine if we display the button for agents to initiate slack swarming
+  rpc EnableSlackSwarmingInitiation(EnableSlackSwarmingInitiationRequest) returns (EnableSlackSwarmingInitiationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+
+    option (google.api.http) = {
+      post: "/case-management-service/v1/swarming/enable"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Initiate a slack swarming
+  rpc InitiateSlackSwarming(InitiateSlackSwarmingRequest) returns (InitiateSlackSwarmingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+
+    option (google.api.http) = {
+      post: "/case-management-service/v1/swarming/initiate"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Gets Case History for a Cx or Dx and paginates
+  rpc GetCaseHistory(GetCaseHistoryRequest) returns (GetCaseHistoryResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/cases/history"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // UploadIncidentImages will be called by a rest point exposed to the nintex form
+  rpc UploadIncidentImages(UploadIncidentImagesRequest) returns (UploadIncidentImagesResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/incident/{incident_id}/uploadImage"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [
+        CX_USER,
+        DX_USER,
+        MX_USER,
+        DD_USER
+      ]
+      target_products: [
+        INTERNAL,
+        DX,
+        CX,
+        MX
+      ]
+    };
+  }
+
+  // Upsert decision to workflow mapping
+  rpc UpsertWorkflowToResolutionConfiguration(UpsertWorkflowToResolutionConfigurationRequest) returns (UpsertWorkflowToResolutionConfigurationResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/{queue_name}/workflow-to-resolution-configuration"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get Incident Evidences api
+  rpc GetIncidentEvidences(GetIncidentEvidencesRequest) returns (GetIncidentEvidencesResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/incident/{incident_id}/evidences"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get version history for a queue
+  rpc GetQueueConfigVersionHistory(GetQueueConfigVersionHistoryRequest) returns (GetQueueConfigVersionHistoryResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/queues/{queue_name}/history"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_queues_admin",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get Queues that the agent's cases belong to
+  rpc GetCaseQueuesForAgent(GetCaseQueuesForAgentRequest) returns (GetCaseQueuesForAgentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/queues/agent"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Bulk close incidents with resolutions.
+  rpc BulkCloseIncidents(BulkCloseIncidentsRequest) returns (BulkCloseIncidentsResponse);
+
+  // Process the survey response. This will send an Iguazu event; data storage is not handled by CMP.
+  rpc ProcessSurveyResponse(ProcessSurveyResponseRequest) returns (ProcessSurveyResponseResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/survey-response"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CLIENT_TOKEN]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Gets case history for the Merchant customer type.
+  // To be used by the Merchant Support Hub
+  rpc GetCaseHistoryForMerchant(GetCaseHistoryForMerchantRequest) returns (GetCaseHistoryForMerchantResponse);
+}
+
+// a user of CMP (frontend is probably THQ or fraud workstation)
+message CmpUser {
+  // user id
+  google.protobuf.StringValue user_id = 1;
+  // user email
+  google.protobuf.StringValue user_email = 2;
+}
+
+// context of the request (eg: who is sending request)
+message RequestContext {
+  // who is sending the request
+  CmpUser requester = 1;
+}
+
+// request object for UpsertWorkflowToResolutionConfiguration api
+message UpsertWorkflowToResolutionConfigurationRequest {
+  // queue name for which the mapping needs to be updated
+  google.protobuf.StringValue queue_name = 1;
+  // list of subcategory_id and workflow entry to be mapped
+  repeated ResolutionSubcategoryToWorkflowEntry resolution_subcategory_to_workflow_entries = 2;
+}
+
+// response object for UpsertWorkflowToResolutionConfiguration api
+message UpsertWorkflowToResolutionConfigurationResponse {
+  // The updated IssueAndResolutionConfiguration
+  IssueAndResolutionConfiguration config = 1;
+}
+
+// object for UpsertWorkflowToResolutionConfiguration api to pass pair of workflow ids to map to subcategory id
+message ResolutionSubcategoryToWorkflowEntry {
+  // subcategory_id . this is mapped to decision id for FWS
+  google.protobuf.StringValue subcategory_id = 1;
+  // Workflow to trigger
+  Workflow workflow = 2;
+}
+
+// Type of External case identifier like Salesforce
+enum ExternalCaseType {
+  // Unspecified case type.
+  EXTERNAL_CASE_TYPE_UNSPECIFIED = 0;
+  // Salesforce case type
+  EXTERNAL_CASE_TYPE_SALESFORCE = 1;
+  // Fraud Cases
+  EXTERNAL_CASE_TYPE_FRAUD = 2;
+}
+
+// Type of Kafka Callback Action to perform
+enum CallbackActionType {
+  // Unspecified case type.
+  CALLBACK_ACTION_TYPE_UNSPECIFIED = 0;
+  // Query has completed.
+  CALLBACK_ACTION_TYPE_QUERY_COMPLETION = 1;
+}
+
+// External case identifier info for like Salesforce (id and type)
+message ExternalCaseIdentifier {
+  // External case id like salesforceId
+  google.protobuf.StringValue external_case_id = 1;
+  // case type i.e. Salesforce
+  ExternalCaseType external_case_type = 2;
+  // external case number used specifically if its a salesforce case number
+  google.protobuf.StringValue external_case_number = 3;
+}
+
+// Request to load incidents for a specific user
+message GetAgentAssignedIncidentsRequest {
+  // Agent to load
+  google.protobuf.StringValue agent_id = 1;
+  // State filter
+  IncidentState state = 2;
+  // Max count to return
+  google.protobuf.Int32Value max_count = 3;
+
+  // for migration purposes: check with RDP (source of truth) to see if the agent has no assigned cases,
+  // if that's true then then we return empty list
+  /* optional */
+  bool return_empty_if_no_rdp_cases = 4;
+}
+
+// Response from loading incidents from a specific number
+message GetAgentAssignedIncidentsResponse {
+  // The incidents retrieved
+  repeated Incident incidents = 1;
+}
+
+// Request to poll an incident and assign.
+message PollIncidentAndAssignRequest {
+  option deprecated = true;
+  // Updated owner that should be assigned to
+  google.protobuf.StringValue agent_id = 1;
+  // Skills that this agent has. Will include queue in here.
+  google.protobuf.StringValue skill = 2;
+}
+
+// Response from polling and assigning incident.
+// In case of no incidents available based on the Ax skillset, will throw grpc NOT_FOUND.
+// In case of concurrent modification, will throw UNAVAILABLE, and client should retry.
+// Subsequent call can be made to GetIncidentById to retrieve more of the model.
+message PollIncidentAndAssignResponse {
+  option deprecated = true;
+  // The incident ID that has been assigned.
+  google.protobuf.StringValue incident_id = 1;
+}
+
+// Loads an incident by id.
+message GetIncidentByIdRequest {
+  // incident id to fetch
+  google.protobuf.StringValue incident_id = 1;
+}
+
+// Response for loading an incident by id.
+message GetIncidentByIdResponse {
+  // The incident.
+  Incident incident = 1;
+}
+
+// Request to attach notes to a specific incident.
+message AttachNotesRequest {
+  // Incident id.
+  google.protobuf.StringValue incident_id = 1;
+  // notes id.
+  google.protobuf.StringValue notes = 2;
+}
+
+// Response for attaching notes to a specific incident.
+message AttachNotesResponse {
+  // Notes id.
+  google.protobuf.StringValue notes_id = 1;
+}
+
+// Request to attach an issue and resolution to an incident.
+message AttachIssueAndResolutionRequest {
+  // Incident ID
+  google.protobuf.StringValue incident_id = 1;
+  // What the problem is - ex. never delivered
+  google.protobuf.StringValue issue_detail = 2;
+  // what the problem is, but from drop-down
+  google.protobuf.StringValue issue_type = 3;
+  // What the solution is - ex. credits applied
+  google.protobuf.StringValue resolution_detail = 4;
+  // What the solution is, but from drop-down
+  google.protobuf.StringValue resolution_type = 5;
+  // Json Object to store extra information related to the specific issue
+  google.protobuf.StringValue issue_metadata = 6;
+  // Object to store extra information related to the specific resolution
+  google.protobuf.StringValue resolution_metadata = 7;
+  // Agent Id
+  google.protobuf.StringValue agent_id = 8;
+}
+
+// Response from attaching an issue and resolution to an incident.
+message AttachIssueAndResolutionResponse {
+  // Issue id
+  google.protobuf.StringValue issue_id = 1;
+  // Resolution id
+  google.protobuf.StringValue resolution_id = 2;
+}
+
+// issue object
+message IssueRequest {
+  // description
+  google.protobuf.StringValue description = 1;
+  // issue detail
+  google.protobuf.StringValue issue_detail = 2 [deprecated = true];
+  // issue type - higher level
+  google.protobuf.StringValue issue_type = 3 [deprecated = true];
+  // metadata
+  google.protobuf.StringValue metadata = 4;
+  // resolution request
+  ResolutionRequest resolution_request = 5 [deprecated = true];
+  // resolution requests
+  repeated ResolutionRequest resolution_requests = 6;
+  // issue category - highest level (Item Issues, Delivery Issues)
+  google.protobuf.StringValue issue_category = 7;
+  // issue subcategory - sub level (Item Quality, Incorrect, Missing)
+  google.protobuf.StringValue issue_subcategory = 8;
+  // issue description - lowest level (Food Arrived Cold, Incorrect item received, Dasher was rude, Other)
+  google.protobuf.StringValue issue_description = 9;
+}
+
+// resolution object
+message ResolutionRequest {
+  // description
+  google.protobuf.StringValue description = 1;
+  // resolution detail
+  google.protobuf.StringValue resolution_detail = 2 [deprecated = true];
+  // resolution type - higher level
+  google.protobuf.StringValue resolution_type = 3 [deprecated = true];
+  // metadata
+  google.protobuf.StringValue metadata = 4;
+  // resolution category - highest level
+  google.protobuf.StringValue resolution_category = 5;
+  // resolution subcategory - sub level
+  google.protobuf.StringValue resolution_subcategory = 6;
+  // resolution description - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description = 7;
+  // notes attached to resolution
+  google.protobuf.StringValue notes = 8;
+  // resolution subcategoryId - sub level
+  google.protobuf.StringValue resolution_subcategory_id = 9;
+  // resolution descriptionId - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description_id = 10;
+}
+
+// Request to attach multiple issues and resolutions to an incident.
+message BulkAttachIssuesAndResolutionsRequest {
+  // Incident ID
+  google.protobuf.StringValue incident_id = 1;
+  // Agent Id
+  google.protobuf.StringValue agent_id = 2;
+  // issue requests
+  repeated IssueRequest issue_requests = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+  // a flag to skip SFDC update logic in CMP, as SFDC update will be handled in solve/transfer case flow/endpoint as a part of I&R improvement
+  google.protobuf.BoolValue should_not_update_sfdc = 5;
+}
+
+// Request to attach a resolution
+message AttachResolutionRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 6;
+  // Incident ID
+  google.protobuf.StringValue incident_id = 1;
+  // Agent Id
+  google.protobuf.StringValue agent_id = 2;
+  // Resolution Request
+  ResolutionRequest resolution_request = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+  // When the incident was resolved, from external source.
+  google.protobuf.Timestamp resolved_at_override = 5;
+}
+
+// automated action status
+enum ActionStatus {
+  // Unspecified
+  ACTION_STATUS_UNSPECIFIED = 0;
+  // succeeded
+  ACTION_STATUS_SUCCEEDED = 1;
+  // failed
+  ACTION_STATUS_FAILED = 2;
+  // pending
+  ACTION_STATUS_PENDING = 3;
+  // skipped b/c we already had another resolution attached previously
+  ACTION_STATUS_SKIPPED = 4;
+  // none, no action fired
+  ACTION_STATUS_NONE = 5;
+}
+
+// Response to attach resolution
+message AttachResolutionResponse {
+  // Created Resolution ID
+  google.protobuf.StringValue resolution_id = 1;
+  // automated action status
+  ActionStatus action_status = 2;
+}
+
+// Error with details on what happened for the issue and resolution
+message Error {
+  // error description
+  google.protobuf.StringValue reason = 1;
+  // issue detail / resolution detail that failed
+  google.protobuf.StringValue detail = 2;
+  // issue type / resolution type that failed
+  google.protobuf.StringValue type = 3;
+}
+
+// Response from attaching multiple issues and resolutions to an incident.
+message BulkAttachIssuesAndResolutionsResponse {
+  // errors
+  repeated Error errors = 1;
+  // successful Issue ids
+  repeated google.protobuf.StringValue successful_issue_ids = 2;
+  // successful resolution_ids
+  repeated google.protobuf.StringValue successful_resolution_ids = 3;
+}
+
+// Request to resolve an incident
+message ResolveIncidentRequest {
+  // Incident ID
+  google.protobuf.StringValue incident_id = 1;
+}
+
+// Response to resolve incident
+message ResolveIncidentResponse {}
+
+// Different Incident Statuses
+enum IncidentState {
+  // Unspecified state.
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  // Incident has been created. There does not need to be any sort of assignment.
+  INCIDENT_STATE_CREATED = 1;
+  // Incident is awaiting assignment.
+  INCIDENT_STATE_AWAITING_ASSIGNMENT = 2 [deprecated = true];
+  // Incident has been assigned and is being worked on.
+  INCIDENT_STATE_ASSIGNED = 3 [deprecated = true];
+  // Incident has been resolved
+  INCIDENT_STATE_RESOLVED = 5;
+  // Incident has been closed
+  INCIDENT_STATE_CLOSED = 6;
+  // Incident is waiting for dd internal team to investigate
+  INCIDENT_STATE_WAITING_FOR_DD_INTERNAL_TEAM = 7;
+  // The ownership / state is not managed by CMP.
+  INCIDENT_STATE_EXTERNALLY_MANAGED = 8;
+  // Pending. Implies waiting on customer.
+  INCIDENT_STATE_PENDING = 9;
+  // Incident is in a failed state, likely during some automated action or automated expiration
+  INCIDENT_STATE_FAILED = 10;
+}
+
+// Agent work states
+enum AgentWorkState {
+  // Unspecified state.
+  AGENT_WORK_STATE_UNSPECIFIED = 0;
+  // New
+  AGENT_WORK_STATE_NEW = 1;
+  // Open
+  AGENT_WORK_STATE_OPEN = 2;
+  // Pending
+  AGENT_WORK_STATE_PENDING = 3;
+  // Transferred
+  AGENT_WORK_STATE_TRANSFERRED = 4;
+  // Reassigned
+  AGENT_WORK_STATE_REASSIGNED = 5;
+  // Solved
+  AGENT_WORK_STATE_SOLVED = 6;
+  // Closed
+  AGENT_WORK_STATE_CLOSED = 7;
+  // Abandoned
+  AGENT_WORK_STATE_ABANDONED = 8;
+  // Missed
+  AGENT_WORK_STATE_MISSED = 9;
+}
+
+// Incident sub state, each sub state is mapped to one state
+enum IncidentSubState {
+  reserved "INCIDENT_SUB_STATE_AUTOMATED_ACTION_WORKFLOW_FAILED";
+  reserved 13;
+  // Unspecified sub-state
+  INCIDENT_SUB_STATE_UNSPECIFIED = 0;
+  // sub-state not applicable
+  INCIDENT_SUB_STATE_NONE = 1;
+  /*
+   * Below sub-states are associated with state: CREATED
+   */
+  // The incident has been created and is awaiting review
+  INCIDENT_SUB_STATE_AWAITING_REVIEW = 2;
+  // The incident has a pending automated action associated with it, which was triggered upon incident creation
+  INCIDENT_SUB_STATE_AUTOMATED_ACTION_UPON_ENTRY_IN_PROGRESS = 3;
+  // Incident has been reviewed and is pending further review
+  INCIDENT_SUB_STATE_PENDING_FURTHER_REVIEW = 4;
+  // The incident has a pending automated action associated with it, which was triggered upon closing incident
+  INCIDENT_SUB_STATE_AUTOMATED_ACTION_UPON_DECISION_IN_PROGRESS = 14;
+  /*
+   * Below sub-states are associated with state: RESOLVED
+   */
+  // A decision has been reached and the case is closed
+  INCIDENT_SUB_STATE_DECISION_REACHED = 5;
+  // A decision has been reached via bulk review and the case is closed
+  INCIDENT_SUB_STATE_BULK_REVIEWED = 6;
+  // The incident was not reviewed within SLA and expired
+  INCIDENT_SUB_STATE_EXPIRED = 7;
+  /*
+   * Below sub-states are associated with state: FAILED
+   */
+  // The incident failed due to automated action which was triggered upon a decision being reached
+  INCIDENT_SUB_STATE_AUTOMATED_ACTION_UPON_DECISION_FAILED = 8;
+  // The incident failed due to automated action which was triggered upon case creation
+  INCIDENT_SUB_STATE_AUTOMATED_ACTION_UPON_CASE_CREATION_FAILED = 9;
+  // The incident was attempted to be closed during bulk review, but the automated action failed
+  INCIDENT_SUB_STATE_BULK_REVIEW_FAILED = 10;
+  // The incident was attempted to be expired, but the expiration failed
+  INCIDENT_SUB_STATE_EXPIRATION_FAILED = 11;
+
+  // This is associated with state: RESOLVED. The incident was transferred to a Salesforce queue and this CMP case is resolved, look at new SFDC case.
+  INCIDENT_SUB_STATE_TRANSFERRED_TO_SALESFORCE = 12;
+}
+
+// Audience is any entity associated with the case.
+message Audience {
+  // User Type
+  enum IncidentUserType {
+    // Unspecified user type
+    INCIDENT_USER_TYPE_UNSPECIFIED = 0;
+    // Consumer
+    INCIDENT_USER_TYPE_CONSUMER = 1;
+    // Dasher
+    INCIDENT_USER_TYPE_DASHER = 2;
+    // Merchant
+    INCIDENT_USER_TYPE_MERCHANT = 3;
+    // Agent
+    INCIDENT_USER_TYPE_AX = 4;
+  }
+  // User ID [TBD - User ID vs Consumer ID / Dasher ID / Merchant ID / Teammate Id]
+  google.protobuf.StringValue user_id = 1;
+  // User Type
+  IncidentUserType user_type = 2;
+  // Optional display name. May not always be present.
+  google.protobuf.StringValue display_name = 3;
+  // Optional email. May not always be present.
+  google.protobuf.StringValue email = 4;
+}
+
+// Request to Execute Kafka Consumer Callback Action
+message KafkaCallbackActionRequest {
+  // Action to perform
+  CallbackActionType callback_action_type = 1;
+  // Queue name
+  google.protobuf.StringValue queue_name = 2;
+  // Created at timestamp
+  google.protobuf.Timestamp created_at = 3;
+  // Query ID
+  google.protobuf.StringValue query_id = 4;
+  // Json Object to store extra information related to the specific callback action request
+  google.protobuf.StringValue callback_action_metadata = 6;
+  // Context of the request (eg: requester)
+  RequestContext context = 7;
+}
+
+// Request to Create an Incident
+message CreateIncidentRequest {
+  // [optional] Delivery UUID. For cases such as Dx Pay questions, may not be present.
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Details about the reporter / who created incident. Note the affected audience is much more relevant to the case than this.
+  Audience reporting_audience = 2;
+  // Details about who is impacted [ex. agent could have reported, but dx or cx would be impacted].
+  Audience affected_audience = 3;
+  // Category of the incident.
+  google.protobuf.StringValue category = 4;
+  // Description of the incident.
+  google.protobuf.StringValue description = 5;
+  // Channel that the reporter reached out on
+  Channel channel = 6;
+  // Additional data
+  google.protobuf.Struct additional_tags = 7;
+  // Any specifically agreed upon fields that are necessary for legacy case creation.
+  map<string, string> legacy_case_data = 8;
+  // Internal Queue Name. Note for external queue names, they should go in the external identifiers struction.
+  google.protobuf.StringValue queue_name = 9;
+  // In case this is being created from an external case, details on that.
+  ExternalCaseIdentifier external_case_identifier = 10;
+  // In case there is an external case identifier and queue name is not provided
+  // This will allow looking up the internal queue name.
+  google.protobuf.StringValue external_queue_name = 11;
+  // Flag to allow case to skip capacity limit.
+  google.protobuf.BoolValue skip_capacity_limit = 12;
+  // Flag to allow case to skip dedupping.
+  google.protobuf.BoolValue skip_dedup = 13;
+  // When the incident was created at, from external source.
+  google.protobuf.Timestamp created_at_override = 14;
+  // When the incident was updated at, from external source.
+  google.protobuf.Timestamp updated_at_override = 15;
+  // Snowflake query associated with this request
+  google.protobuf.StringValue query_id = 18;
+  // assigned agent id if available
+  oneof agent_identifier {
+    // Doordash Agent id that will have the case created and assigned to
+    google.protobuf.StringValue assigned_agent_id = 16;
+    // Agent email that will have the case created and assigned to
+    google.protobuf.StringValue assigned_agent_email = 17;
+  }
+}
+
+// Response from creating incident
+message CreateIncidentResponse {
+  // Newly created incident id.
+  google.protobuf.StringValue incident_id = 1;
+
+  // The salesforce case id [if a salesforce case was also created]
+  google.protobuf.StringValue salesforce_case_id = 2;
+
+  // [optional] If we were able to determine the salesforce queue, what that ID is
+  google.protobuf.StringValue salesforce_queue_id = 3;
+
+  // [optional] Estimated wait time
+  google.protobuf.Duration estimated_wait_time = 4;
+}
+
+// Response from executing Kafka callback action
+message KafkaCallbackActionResponse {
+  // successful callback?
+  google.protobuf.BoolValue success = 1;
+}
+
+// Request to update an incident
+message UpdateIncidentRequest {
+  // Incident id to be updated. Could be empty if it's from external source.
+  google.protobuf.StringValue incident_id = 1;
+  // Update the incident with fields that present in newFields.
+  Incident new_fields = 2; // external case identifier info
+  // external case identifier info.
+  ExternalCaseIdentifier external_case_identifier = 3;
+  // When the incident was updated at, from external source.
+  google.protobuf.Timestamp updated_at_override = 4;
+}
+
+// Response to update an incident
+message UpdateIncidentResponse {
+  // Incident id.
+  google.protobuf.StringValue incident_id = 1;
+  // Updated incident.
+  Incident updated = 2;
+}
+
+// Cross reference to a specific channel
+message Channel {
+  // Specific ID of the channel
+  google.protobuf.StringValue id = 1;
+  // Channel type
+  ChannelType type = 2;
+}
+
+// Full Incident Data Model
+// Note that some fields may not be settable by request, or returned on certain responses.
+message Incident {
+  // Incident ID. Note this cannot be set by end clients.
+  google.protobuf.StringValue incident_id = 1;
+
+  // [optional] Delivery UUID. For cases such as Dx Pay questions, may not be present.
+  google.protobuf.StringValue delivery_uuid = 2;
+
+  // Channel that the reporter reached out on
+  Channel channel = 3;
+
+  // When incident was created. Read-only.
+  google.protobuf.Timestamp created_at = 4;
+
+  // When incident was last updated. Read-only.
+  google.protobuf.Timestamp updated_at = 5;
+
+  // Category of the incident.
+  google.protobuf.StringValue category = 6;
+
+  // Description of the incident.
+  google.protobuf.StringValue description = 7;
+
+  // Agent that is assigned.
+  Audience assigned_agent_id = 8;
+
+  // Current state of the incident.
+  IncidentState incident_state = 9;
+
+  // Details about the reporter / who created incident
+  Audience reporting_audience = 10;
+
+  // Details about who is impacted [ex. agent could have reported, but dx or cx would be impacted].
+  Audience affected_audience = 11;
+
+  // Any additional tags associated with the incident
+  google.protobuf.Struct additional_tags = 12;
+
+  // Internal queue name that this case is a part of
+  google.protobuf.StringValue queue_name = 13;
+
+  // External case identifier (ex. fraud case number / salesforce case number)
+  ExternalCaseIdentifier external_case_identifier = 14;
+
+  // Last time the case transitioned to a solved status
+  google.protobuf.Timestamp solved_at = 15;
+
+  // Current sub-state of the incident.
+  IncidentSubState incident_sub_state = 16;
+}
+
+// amazon connect attributes used for transfer
+message AmazonConnectTransferAttributes {
+  // contact id
+  google.protobuf.StringValue contact_id = 1;
+  // new queue name we are transferring to
+  google.protobuf.StringValue new_queue_name = 2;
+  // five nine ani
+  google.protobuf.StringValue five_nine_ani = 3;
+  // five nine dnis
+  google.protobuf.StringValue five_nine_dnis = 4;
+}
+
+// Request to transfer an Incident to another queue or another agent
+message TransferIncidentRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // new queue id
+  google.protobuf.StringValue new_queue_id = 2;
+  // new agent id
+  google.protobuf.StringValue new_agent_id = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+  // email, transfer a incident to a user based on their email (Amazon Connect uses email and doesnt have Id)
+  google.protobuf.StringValue email = 5;
+  // Amazon Connect transfer attributes
+  AmazonConnectTransferAttributes amazon_connect_transfer_attributes = 6;
+  // a flag to trigger SFDC update logic, as SFDC update will be handled in transfer case flow/endpoint as a part of I&R improvement
+  google.protobuf.BoolValue should_update_sfdc = 7;
+  // field to update SFDC field "Customer Type"
+  google.protobuf.StringValue sfdc_customer_type = 8;
+  // field to update SFDC field "Issue Category"
+  google.protobuf.StringValue sfdc_issue_category = 9;
+  // field to update SFDC field "Issue"
+  google.protobuf.StringValue sfdc_issue = 10;
+  // field to update SFDC field "Resolution Category"
+  google.protobuf.StringValue sfdc_resolution_category = 11;
+  // field to update SFDC field "Resolution"
+  google.protobuf.StringValue sfdc_resolution = 12;
+  // field to tell the queue source for new_queue_id: one of (CMP, SFDC)
+  google.protobuf.StringValue new_queue_source = 13;
+  // note to be attached to the incident during transfer
+  google.protobuf.StringValue note = 14;
+}
+
+// Response from transferring an incident
+message TransferIncidentResponse {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // new queue id
+  google.protobuf.StringValue new_queue_id = 2;
+  // new agent id
+  google.protobuf.StringValue new_agent_id = 3;
+}
+
+// Request to update incident status
+message UpdateIncidentStatusRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // new status
+  IncidentState new_status = 2;
+  // new sub-status (for fraud cases only)
+  IncidentSubState new_sub_status = 5;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 3;
+  // agent_id
+  google.protobuf.StringValue agent_id = 4;
+  // a flag to trigger SFDC update logic, as SFDC update will be handled in solve case flow/endpoint as a part of I&R improvement
+  google.protobuf.BoolValue should_update_sfdc = 6;
+  // field to update SFDC field "Customer Type"
+  google.protobuf.StringValue sfdc_customer_type = 7;
+  // field to update SFDC field "Issue Category"
+  google.protobuf.StringValue sfdc_issue_category = 8;
+  // field to update SFDC field "Issue"
+  google.protobuf.StringValue sfdc_issue = 9;
+  // field to update SFDC field "Resolution Category"
+  google.protobuf.StringValue sfdc_resolution_category = 10;
+  // field to update SFDC field "Resolution"
+  google.protobuf.StringValue sfdc_resolution = 11;
+}
+
+// Response from updating incident status
+message UpdateIncidentStatusResponse {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // new status
+  IncidentState new_status = 2;
+  // new sub-status (for fraud cases only)
+  IncidentSubState new_sub_status = 3;
+}
+
+// incident note
+message IncidentNote {
+  // note id.
+  google.protobuf.StringValue note_id = 1;
+  // Incident id.
+  google.protobuf.StringValue incident_id = 2;
+  // note
+  google.protobuf.StringValue note = 3;
+  // agent_id
+  google.protobuf.StringValue agent_id = 4;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 5;
+  // updated at timestamp
+  google.protobuf.Timestamp updated_at = 6;
+  // agent user id who created the note
+  google.protobuf.StringValue creator_id = 7;
+  // agent name who created the note
+  google.protobuf.StringValue creator_name = 8;
+  // json metadata of a note that stores issues_ids, resolution_ids
+  google.protobuf.StringValue metadata = 9;
+}
+
+// Request to attach a note to a specific incident.
+message AddIncidentNoteRequest {
+  // Incident id.
+  google.protobuf.StringValue incident_id = 1;
+  // note id.
+  google.protobuf.StringValue note = 2;
+  // agent id.
+  google.protobuf.StringValue agent_id = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+  // additional metadata for the note in a map. can be issue_ids and resolution_ids linked to the note
+  google.protobuf.Struct metadata = 5;
+}
+
+// Response for attach a note to a specific incident.
+message AddIncidentNoteResponse {
+  // Note id.
+  google.protobuf.StringValue note_id = 1;
+}
+
+// Request to update incident note.
+message UpdateIncidentNoteRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // note id
+  google.protobuf.StringValue note_id = 2;
+  // note
+  google.protobuf.StringValue note = 3;
+  // agent id.
+  google.protobuf.StringValue agent_id = 4;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 5;
+}
+
+// Response for updating incident note
+message UpdateIncidentNoteResponse {
+  // Note id.
+  google.protobuf.StringValue note_id = 1;
+}
+
+// Request to delete incident note.
+message DeleteIncidentNoteRequest {
+  // note id
+  google.protobuf.StringValue note_id = 1;
+  // agent id.
+  google.protobuf.StringValue agent_id = 2;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 3;
+}
+
+// Response for delete incident note
+message DeleteIncidentNoteResponse {
+  // success?
+  google.protobuf.BoolValue success = 1;
+}
+
+// Request to get notes for a specific incident.
+message GetIncidentNotesRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 2;
+}
+
+// Response for getting notes for a specific incident.
+message GetIncidentNotesResponse {
+  // incident Notes
+  repeated IncidentNote notes = 1;
+}
+
+// issue object
+message Issue {
+  // issue_id
+  google.protobuf.StringValue issue_id = 1;
+  // incident_id
+  google.protobuf.StringValue incident_id = 2;
+  // description
+  google.protobuf.StringValue description = 3;
+  // issue detail
+  google.protobuf.StringValue issue_detail = 4 [deprecated = true];
+  // issue type - higher level
+  google.protobuf.StringValue issue_type = 5 [deprecated = true];
+  // note
+  google.protobuf.StringValue metadata = 6;
+  // created_at
+  google.protobuf.Timestamp created_at = 7;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 8;
+  // agent who last updated the Resolution
+  SupportAgent updated_by = 9;
+  // issue category - highest level (Item Issues, Delivery Issues)
+  google.protobuf.StringValue issue_category = 10;
+  // issue subcategory - sub level (Item Quality, Incorrect, Missing)
+  google.protobuf.StringValue issue_subcategory = 11;
+  // issue description - lowest level (Food Arrived Cold, Incorrect item received, Dasher was rude, Other)
+  google.protobuf.StringValue issue_description = 12;
+}
+
+// resolution object
+message Resolution {
+  // resolution_id
+  google.protobuf.StringValue resolution_id = 1;
+  // issue_id
+  google.protobuf.StringValue issue_id = 2;
+  // incident_id
+  google.protobuf.StringValue incident_id = 3;
+  // description
+  google.protobuf.StringValue description = 4;
+  // resolution detail
+  google.protobuf.StringValue resolution_detail = 5 [deprecated = true];
+  // resolution type - higher level
+  google.protobuf.StringValue resolution_type = 6 [deprecated = true];
+  // note
+  google.protobuf.StringValue metadata = 7;
+  // created_at
+  google.protobuf.Timestamp created_at = 8;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 9;
+  // agent who last updated the Resolution
+  SupportAgent updated_by = 10;
+  // resolution category - highest level
+  google.protobuf.StringValue resolution_category = 11;
+  // resolution subcategory - sub level
+  google.protobuf.StringValue resolution_subcategory = 12;
+  // resolution description - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description = 13;
+  // notes attached to resolution
+  google.protobuf.StringValue notes = 14;
+  // resolution subcategory id - sub level
+  google.protobuf.StringValue resolution_subcategory_id = 15;
+  // resolution description id - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description_id = 16;
+}
+
+// request of updating resolution
+message UpdateResolutionRequest {
+  // resolution id.
+  google.protobuf.StringValue resolution_id = 1;
+  // resolution
+  Resolution resolution = 2;
+  // agent id.
+  google.protobuf.StringValue agent_id = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+}
+
+// response of updating resolution
+message UpdateResolutionResponse {
+  // resolution id.
+  google.protobuf.StringValue resolution_id = 1;
+  // resolution
+  Resolution resolution = 2;
+}
+
+// Request of getting issues
+message GetIssuesAndResolutionsRequest {
+  // Incident id.
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 2;
+}
+
+// response of getting issues
+message GetIssuesAndResolutionsResponse {
+  // Incident id.
+  google.protobuf.StringValue incident_id = 1;
+  // issues
+  repeated Issue issues = 2;
+  // resolutions
+  repeated Resolution resolutions = 3;
+}
+
+// request of deleting issue and resolution
+message DeleteIssueAndResolutionRequest {
+  // issue_id to delete
+  google.protobuf.StringValue issue_id = 1;
+  // resolution_id to delete
+  google.protobuf.StringValue resolution_id = 2;
+  // agent_id
+  google.protobuf.StringValue agent_id = 3;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 4;
+}
+
+// Request to remove all resolutions for a given incident
+message RemoveResolutionsFromIncidentRequest {
+  // incident id to remove resolutions from
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 2;
+}
+
+// Response for removing all resolutions for a given incident
+message RemoveResolutionsFromIncidentResponse {
+  // success?
+  google.protobuf.BoolValue success = 1;
+}
+
+// Response of deleting issue and resolution
+message DeleteIssueAndResolutionResponse {
+  // issues_id deleted
+  google.protobuf.StringValue issue_id = 1;
+  // resolution_id deleted
+  google.protobuf.StringValue resolution_id = 2;
+}
+
+// Enum of tables that we are storing the history of changes for
+enum ParentHistoryTable {
+  // Unspecified table
+  PARENT_HISTORY_TABLE_UNSPECIFIED = 0;
+  // Issue table
+  PARENT_HISTORY_TABLE_ISSUE = 1;
+  // Resolution table
+  PARENT_HISTORY_TABLE_RESOLUTION = 2;
+  // Incident/case notes table
+  PARENT_HISTORY_TABLE_NOTES_AND_EVIDENCE = 3;
+}
+
+// Edit history event object
+message EditHistoryEvent {
+  // edit history row id
+  google.protobuf.StringValue edit_history_id = 1;
+  // id of the object we are looking at the edit history of (issue_id, resolution_id, notes_and_evidence_id, etc)
+  google.protobuf.StringValue table_row_id = 2;
+  // table of the object we are looking at the history of (issue, resolution, notes_and_evidence)
+  ParentHistoryTable table_name = 3;
+  // incident id.
+  google.protobuf.StringValue incident_id = 4;
+  // agent_id of last agent who updated event.
+  google.protobuf.StringValue updated_by = 5;
+  // new value of row after the db operation.
+  google.protobuf.StringValue new_row_value = 6;
+  // created at.
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// request to get edit history
+message GetEditHistoryRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 2;
+}
+
+// Response of getting edit history
+message GetEditHistoryResponse {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // list of edit history events
+  repeated EditHistoryEvent edit_history = 2;
+}
+
+// Support queue object
+message SupportQueue {
+  // Queue Type, with respect to transferring.
+  enum SupportQueueType {
+    // Unspecified / Unknown.
+    SUPPORT_QUEUE_TYPE_UNSPECIFIED = 0;
+    // Chat - Real Time (Sendbird).
+    SUPPORT_QUEUE_TYPE_CHAT = 1;
+    // Phone - Real Time (Amazon Connect).
+    SUPPORT_QUEUE_TYPE_PHONE = 2;
+    // Web - Non real time (Email / Web Form / Transferred. Agents can still make outbounds to customers).
+    SUPPORT_QUEUE_TYPE_WEB = 3;
+  }
+
+  // Audience of a queue that can be transferred to.
+  enum SupportQueueAudience {
+    // Unspecified / Unknown.
+    SUPPORT_QUEUE_AUDIENCE_UNSPECIFIED = 0;
+    // Consumer
+    SUPPORT_QUEUE_AUDIENCE_CONSUMER = 1;
+    // Dasher
+    SUPPORT_QUEUE_AUDIENCE_DASHER = 2;
+    // Merchant
+    SUPPORT_QUEUE_AUDIENCE_MERCHANT = 3;
+  }
+
+  // internal doordash queue id
+  google.protobuf.StringValue id = 1;
+  // internal salesforce queue id
+  google.protobuf.StringValue salesforce_id = 2;
+  // queue name
+  google.protobuf.StringValue name = 3;
+  // queue source, one of (CMP, SFDC)
+  google.protobuf.StringValue source = 4;
+  // queue type
+  SupportQueueType queue_type = 5;
+  // queue audience
+  SupportQueueAudience audience = 6;
+}
+
+// QueueFilter
+enum QueueFilter {
+  // Unspecified
+  QUEUE_FILTER_UNSPECIFIED = 0;
+  // Get all support queues
+  QUEUE_FILTER_GET_ALL_SUPPORT_QUEUES = 1;
+  // Only Sendbird Support Queues
+  QUEUE_FILTER_GET_ONLY_SUPPORT_SENDBIRD_QUEUES = 2;
+  // Queues that this case can be transferred to
+  QUEUE_FILTER_CASE_TRANSFERABLE = 3;
+}
+
+// request to get list of support queues
+message GetSupportQueuesListRequest {
+  // Filter specifies which queues you want to retrieve
+  QueueFilter queue_filter = 1;
+  // force refresh from salesforce and invalidate cache
+  google.protobuf.BoolValue force_refresh = 2;
+  // Current Incident UUID
+  google.protobuf.StringValue incident_uuid = 3;
+  // Current Agent ID
+  google.protobuf.StringValue agent_id = 4;
+}
+
+// Response to get list of support queues
+message GetSupportQueuesListResponse {
+  // list of support queues
+  repeated SupportQueue support_queues = 1;
+}
+
+// Support agent object
+message SupportAgent {
+  // internal doordash agent id
+  google.protobuf.StringValue id = 1;
+  // internal salesforce agent id
+  google.protobuf.StringValue salesforce_id = 2;
+  // agent name
+  google.protobuf.StringValue name = 3;
+
+  // todo: email?
+}
+
+// request to get list of agents
+message GetAgentsListRequest {
+  option deprecated = true;
+}
+
+// Response to get list of agents
+message GetAgentsListResponse {
+  option deprecated = true;
+  // list of support agents
+  repeated SupportAgent support_agents = 1;
+}
+
+// Request to load incidents by filterable parameters
+message GetIncidentsRequest {
+  // Struct of filters on fields to provide.
+  // The fields must be in the configurable schema for the queue, and specified as searchable.
+  google.protobuf.Struct filters = 1;
+  // Names of queue to filter against. Will only search for cases currently in this queue.
+  google.protobuf.StringValue queue_name = 2;
+  // Incident states to filter against
+  repeated IncidentState states = 3;
+  // Owner ID
+  repeated google.protobuf.StringValue owner_ids = 4;
+  // Created After
+  google.protobuf.Timestamp created_after = 5;
+  // Created Before
+  google.protobuf.Timestamp created_before = 6;
+  // Pagination options
+  PaginationOptions pagination_options = 7;
+  // for migration: if owner_ids is sent, check with RDP (source of truth) to see if the agent has no assigned cases,
+  // if that's true then then we return empty list
+  /* optional */
+  bool return_empty_if_no_rdp_cases = 8;
+
+  // Future PR: Sorting
+}
+
+// Response to Get Incidents
+message GetIncidentsResponse {
+  // List of Incidents
+  repeated Incident incidents = 1;
+  // Size of total results, used for pagination.
+  int32 total_results = 2;
+}
+
+// Replaces RDP's BulkGetEntityReviewStatusRequest: get a list of resolutions for a list of entity IDs
+message BulkGetEntityResolutionWithDetailsRequest {
+  // List of IDs, can be user_id, dasher_id, etc
+  repeated string entity_ids = 1;
+  // Entity type, eg: consumer, dasher
+  SchemaRow.EntityType entity_type = 2;
+  // list of queues to search for these entity IDs, if empty: search all queues
+  repeated string queue_names = 3;
+  // Time filter options, if not set, or set to epoch, then will not filter
+  case_management_service.v1.TimeFilterOptions time_filter_options = 4;
+}
+
+// Replaces RDP's EntityReview: resolution + some case/incident details for a single entity
+message EntityResolutionWithDetails {
+  // Resolution, including: decision_id (resolution_subcategory_id), reason_id (resolution_description_id), etc
+  // NOTE that this could be DefaultInstance with all fields unset if no resolution was found
+  Resolution resolution = 1;
+  // Queue name
+  google.protobuf.StringValue queue_name = 2;
+  // Queue display name
+  google.protobuf.StringValue queue_display_name = 3;
+  // Incident ID
+  google.protobuf.StringValue incident_id = 4;
+  // Incident Data AKA case details. Combines an incident's case_data with additional_tags
+  google.protobuf.Struct incident_data = 5;
+  // Incident State
+  IncidentState incident_state = 6;
+  // Incident sub state
+  IncidentSubState incident_sub_state = 7;
+  // When the incident was created
+  google.protobuf.Timestamp incident_created_at = 8;
+  // When the incident was expired, otherwise epoch if it did not expire
+  google.protobuf.Timestamp incident_expired_at = 9;
+}
+
+// Replaces RDP's BulkGetEntityReviewStatusResponse: a list of resolutions for a list of entity IDs
+message BulkGetEntityResolutionWithDetailsResponse {
+  // list of EntityResolutions, which is a Resolution + some case/incident details for a single entity
+  repeated EntityResolutionWithDetails entity_resolutions = 1;
+}
+
+// Request to load all queues
+// all filters are AND not OR
+message GetCaseQueuesRequest {
+  // [optional] queue teams filter
+  repeated CaseQueue.CaseQueueTeam teams = 1;
+  // [optional] queue audiences(aka pods) filter
+  repeated CaseQueue.CaseQueueAudience audiences = 2;
+  // [optional] queue types filter
+  repeated CaseQueue.CaseQueueType types = 3;
+  // Pagination options
+  PaginationOptions pagination_options = 7;
+  // Whether to include unresolved case count in response.
+  bool include_unresolved_case_count = 8;
+  // Whether to include inactive (archived/deleted) queues. Default is false
+  bool include_inactive_queues = 9;
+}
+
+// Idempotency Configuration
+message IdempotencyConfiguration {
+  // Indicates if Idempotency is enabled
+  bool enabled = 1;
+  // The namespace for dedupping, could be the unique queue name, or a shared namespace like `Dx`
+  string namespace = 2;
+  // Columns that are used for idempotency
+  repeated string columns = 3;
+  // The TTL for the idempotency
+  google.protobuf.Duration ttl = 4;
+  // idempotency keys to be exempted
+  repeated string exemptions = 5;
+}
+
+// Capacity Configuration
+message CapacityConfiguration {
+  // Enum for stategies for how to determine capacity per time window.
+  enum CapacityDetermination {
+    // Unspecified. Do not use this.
+    CAPACITY_DETERMINATION_UNSPECIFIED = 0;
+    // Manual, set by FOS.
+    CAPACITY_DETERMINATION_MANUAL = 1;
+    // Constant agent, assuming active agent number stay the same during time window.
+    CAPACITY_DETERMINATION_CONSTANT_AGENT = 2;
+  }
+  // Enum for action when capacity is full.
+  enum CapacityFullAction {
+    // Unspecified. Do not use this.
+    CAPACITY_FULL_ACTION_UNSPECIFIED = 0;
+    // Reject case creation.
+    CAPACITY_FULL_ACTION_REJECT = 1;
+    // replace the awaiting review case with the lowest priority if current has a higher priority.
+    CAPACITY_FULL_ACTION_REPLACE_LOWEST_PRIORITY = 2;
+  }
+  // Indicates if capacity is enabled
+  bool enabled = 1;
+  // Time window for capacity check
+  google.protobuf.Duration time_window = 2;
+  // Manual time key to capacity map
+  map<string, int32> time_to_capacity = 3;
+  // Strategy to determine capacity.
+  CapacityDetermination capacity_determination = 4;
+  // Strategy to treat a new incident when capacity is full.
+  CapacityFullAction capacity_full_action = 5;
+  // Capacity to be set in the current time window when agents are start coming online.
+  int32 warm_up_capacity = 6;
+}
+
+// Schema for a specific column.
+message SchemaRow {
+  // Enum for type of the column
+  enum SchemaType {
+    // Unspecified. Do not use this.
+    SCHEMA_TYPE_UNSPECIFIED = 0;
+    // String
+    SCHEMA_TYPE_STRING = 1;
+    // Number
+    SCHEMA_TYPE_NUMBER = 2;
+    // Boolean
+    SCHEMA_TYPE_BOOLEAN = 3;
+    // Timestamp
+    SCHEMA_TYPE_TIMESTAMP = 4;
+    // Date
+    SCHEMA_TYPE_DATE = 5;
+  }
+
+  // Some sub-set of possible entity types
+  enum EntityType {
+    // Unspecified / Unknown entity type
+    ENTITY_TYPE_UNSPECIFIED = 0;
+    // No entity type
+    ENTITY_TYPE_NONE = 1;
+    // User ID
+    ENTITY_TYPE_USER_ID = 2;
+    // Consumer ID
+    ENTITY_TYPE_CONSUMER_ID = 3;
+    // Dasher ID
+    ENTITY_TYPE_DASHER_ID = 4;
+    // Merchant ID
+    ENTITY_TYPE_MERCHANT_ID = 5;
+    // Delivery UUID
+    ENTITY_TYPE_DELIVERY_UUID = 6;
+    // Delivery ID
+    ENTITY_TYPE_DELIVERY_ID = 7;
+    // Store ID
+    ENTITY_TYPE_STORE_ID = 8;
+    // Payout ID
+    ENTITY_TYPE_PAYOUT_ID = 9;
+    // Cart UUID
+    ENTITY_TYPE_CART_UUID = 10;
+    // DDFW Team ID
+    ENTITY_TYPE_DDFW_TEAM_ID = 11;
+    // Payment Account ID
+    ENTITY_TYPE_PAYMENT_ACCOUNT_ID = 12;
+    // Dasher Applicant ID
+    ENTITY_TYPE_DASHER_APPLICANT_ID = 13;
+    // Email
+    ENTITY_TYPE_EMAIL = 14;
+    // Locale
+    ENTITY_TYPE_LOCALE = 15;
+    // Queue Name
+    ENTITY_TYPE_QUEUE_NAME = 16;
+    // Decision ID
+    ENTITY_TYPE_DECISION_ID = 17;
+    // Reason ID
+    ENTITY_TYPE_REASON_ID = 18;
+    // Dx applicant link
+    ENTITY_TYPE_DASHER_APPLICANT_UNIQUE_LINK = 19;
+    // CIV ID
+    ENTITY_TYPE_CIV_ID = 20;
+    // CARD_COUNTRY
+    ENTITY_TYPE_CARD_COUNTRY = 21;
+    // PAYER_COUNTRY
+    ENTITY_TYPE_PAYER_COUNTRY = 22;
+    // CARD_FINGERPRINT
+    ENTITY_TYPE_CARD_FINGERPRINT = 23;
+    // PAYMENT_METHOD_ID
+    ENTITY_TYPE_PAYMENT_METHOD_ID = 24;
+    // PASSED_ML_MODEL
+    ENTITY_TYPE_PASSED_ML_MODEL = 25;
+    // CARD_BIN
+    ENTITY_TYPE_CARD_BIN = 26;
+    // CARD_LAST_4
+    ENTITY_TYPE_CARD_LAST_4 = 27;
+    // CARD_BRAND
+    ENTITY_TYPE_CARD_BRAND = 28;
+    // CARD_TYPE
+    ENTITY_TYPE_CARD_TYPE = 29;
+    // REVIEW_EXPERIENCE
+    ENTITY_TYPE_REVIEW_EXPERIENCE = 30;
+    // CARD_SCAN_VENDOR
+    ENTITY_TYPE_CARD_SCAN_VENDOR = 31;
+    // GET_IMAGE_DETAILS
+    ENTITY_TYPE_GET_IMAGE_DETAILS = 32;
+    // BUSINESS_ID
+    ENTITY_TYPE_BUSINESS_ID = 33;
+    // SSMO_ONBOARDING_ID
+    ENTITY_TYPE_SSMO_ONBOARDING_ID = 34;
+    // ORDER_UUID
+    ENTITY_TYPE_ORDER_UUID = 35;
+  }
+  // Column name
+  string column = 1;
+  // Column Type
+  SchemaType type = 2;
+  // If required
+  bool required = 3;
+  // If it should be searchable
+  bool searchable = 4;
+  // Entity Type
+  EntityType entity_type = 5;
+}
+
+// Configuration of the schema for a queue.
+message SchemaConfiguration {
+  // How to handle fields that are not in the schema
+  enum UnknownFieldHandling {
+    // Unspecified behavior
+    UNKNOWN_FIELD_HANDLING_UNSPECIFIED = 0;
+    // Ignore unknown fields. They will not be persisted.
+    UNKNOWN_FIELD_HANDLING_IGNORE = 1;
+    // Put unknown fields in Case Data.
+    UNKNOWN_FIELD_HANDLING_PUT_IN_CASE_DATA = 2;
+    // Put unknown fields in Additional Tags.
+    UNKNOWN_FIELD_HANDLING_PUT_IN_ADDITIONAL_TAGS = 3;
+    // Throw an error.
+    UNKNOWN_FIELD_HANDLING_THROW = 4;
+  }
+  // The individual rows.
+  repeated SchemaRow schema = 1;
+  // Indicates how to handle fields that are unknown
+  UnknownFieldHandling unknown_field_handling = 2;
+  // Indicates if non-searchable fields should go in additional tags [true, unindexed] or case data [false, indexed].
+  bool non_searchable_fields_in_additional_tags = 3;
+}
+
+// Configuration around auto closing cases
+message AutoCloseConfiguration {
+  // if auto closing case is enabled
+  bool enabled = 1;
+  // Indicates how long after case creation to close unassigned cases.
+  google.protobuf.Duration auto_close_after = 2;
+
+  // Issue category to tag this as
+  google.protobuf.StringValue issue_category = 3;
+  // Issue subcategory to tag this as
+  google.protobuf.StringValue issue_subcategory = 4;
+  // Issue description to tag this as
+  google.protobuf.StringValue issue_description = 5;
+
+  // Resolution category to tag this as
+  google.protobuf.StringValue resolution_category = 6;
+  // Resolution subcategory to tag this as
+  google.protobuf.StringValue resolution_subcategory = 7;
+  // ID of the subcategory (AKA decision)
+  google.protobuf.StringValue resolution_subcategory_id = 9;
+  // Resolution description to tag this as
+  google.protobuf.StringValue resolution_description = 8;
+  // ID of the description (AKA reason)
+  google.protobuf.StringValue resolution_description_id = 10;
+}
+
+// Configuration around case assignment
+message CaseAssignmentConfiguration {
+  // Whether or not case assignment filters cases based on
+  // case creation date
+  bool assignable_case_max_age_enabled = 1;
+
+  // the maximum age of an assignable case
+  google.protobuf.Duration assignable_case_max_age = 2;
+}
+
+// Sort direction
+enum SortDirection {
+  // Unspecified
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  // asc
+  SORT_DIRECTION_ASC = 1;
+  // desc
+  SORT_DIRECTION_DESC = 2;
+}
+
+// field type
+enum FieldType {
+  // Unspecified
+  FIELD_TYPE_UNSPECIFIED = 0;
+  // string
+  FIELD_TYPE_STRING = 1;
+  // int
+  FIELD_TYPE_INT = 2;
+  // decimel
+  FIELD_TYPE_DECIMAL = 3;
+  // float
+  FIELD_TYPE_FLOAT = 4;
+  // timestamp like '2016-01-25 10:10:10'
+  FIELD_TYPE_TIMESTAMP = 5;
+}
+
+// Configuration for sort preference
+message SortPreference {
+  reserved "field_type";
+  reserved 3;
+
+  // sort by field in case details. if not set, created_at field by default.
+  google.protobuf.StringValue sort_by = 1;
+  // sort by which order direction
+  SortDirection sort_direction = 2;
+}
+
+// Configuration for a case queue
+message CaseQueueConfiguration {
+  // The details
+  CaseQueueDetails details = 1;
+  // The version number
+  int32 version_number = 2;
+  // Previous version to rollback to
+  google.protobuf.Int32Value previous_version = 3;
+  // Who created this record (user id)
+  google.protobuf.StringValue created_by = 4;
+  // Who created thhis record (email)
+  google.protobuf.StringValue created_by_email = 5;
+  // (Deprecated) SLA
+  google.protobuf.Duration sla = 6 [deprecated = true];
+  // In case this is a SQL queue, what the query is
+  google.protobuf.StringValue query = 7;
+  // Diff compared to previous_version
+  google.protobuf.StringValue diff = 8;
+  // Summary of what changed to previous_version
+  google.protobuf.StringValue change_fields = 9;
+  // TODO: Add default review columns. Will do as part of adding the choices.
+  // Created At
+  google.protobuf.Timestamp created_at = 10;
+
+  // Configuration around issue and resolutions
+  // Note: This may be shared amongst different queues.
+  IssueAndResolutionConfiguration issue_and_resolution_configuration = 11;
+
+  reserved 12;
+  reserved "sort_preference";
+}
+
+// Sentiment
+enum Sentiment {
+  // Unspecified
+  SENTIMENT_UNSPECIFIED = 0;
+  // Positive
+  SENTIMENT_POSITIVE = 1;
+  // Negative
+  SENTIMENT_NEGATIVE = 2;
+  // Neutral
+  SENTIMENT_NEUTRAL = 3;
+}
+
+// Details around what workflow to trigger
+message Workflow {
+  // Workflow ID
+  google.protobuf.StringValue workflow_id = 1 [deprecated = true];
+  // Workflow Node
+  google.protobuf.StringValue workflow_node = 2;
+  // Description about what this workflow automation does
+  // Note: This will not be automatically updated and in sync with workflow platform description.
+  google.protobuf.StringValue description = 3;
+  // Workflow UUID
+  google.protobuf.StringValue workflow_uuid = 4;
+}
+
+// Details around a Salesforce Resolution
+message SalesforceResolution {
+  // Resolution Category
+  google.protobuf.StringValue resolution_category = 1;
+  // Resolution
+  google.protobuf.StringValue resolution = 2;
+}
+
+// Resolution Description
+message ResolutionDescription {
+  // Description
+  google.protobuf.StringValue description = 1;
+  // Mapped Salesforce Resolution
+  SalesforceResolution salesforce_resolution = 2;
+  // Priority of this description
+  google.protobuf.Int32Value priority = 3;
+  // description id. Will be mapped to reason id in RDP
+  google.protobuf.StringValue description_id = 4;
+}
+
+// Resolution Subcategory
+message ResolutionSubcategory {
+  // Name
+  google.protobuf.StringValue subcategory = 1;
+  // Possible descriptions
+  repeated ResolutionDescription descriptions = 2;
+  // Priority
+  google.protobuf.Int32Value priority = 3;
+  // Workflow to trigger when this subcategory is utilized
+  Workflow workflow = 4;
+  // After applying this resolution, state that the case should be transitioned to
+  IncidentState transition_state = 5;
+  // After applying this resolution, sub-state that the case should be transitioned to
+  IncidentSubState transition_sub_state = 6;
+  // subcategory id . will be mapped to decision id in RDP
+  google.protobuf.StringValue subcategory_id = 7;
+}
+
+// Resolution Category
+message ResolutionCategory {
+  // Category
+  google.protobuf.StringValue category = 1;
+  // Sentiment
+  Sentiment sentiment = 2;
+  // Subcategories
+  repeated ResolutionSubcategory subcategories = 3;
+}
+
+// Details around a Salesforce Issue
+message SalesforceIssue {
+  // Issue Category
+  google.protobuf.StringValue issue_category = 1;
+  // Issue
+  google.protobuf.StringValue issue = 2;
+}
+
+// Issue Description
+message IssueDescription {
+  // Description
+  google.protobuf.StringValue description = 1;
+  // Mapped Salesforce Issue
+  SalesforceIssue salesforce_issue = 2;
+  // Priority of this description
+  google.protobuf.Int32Value priority = 3;
+}
+
+// Issue Subcategory
+message IssueSubcategory {
+  // Name
+  google.protobuf.StringValue subcategory = 1;
+  // Possible descriptions
+  repeated IssueDescription descriptions = 2;
+  // Priority
+  google.protobuf.Int32Value priority = 3;
+}
+
+// Resolution Category
+message IssueCategory {
+  // Category
+  google.protobuf.StringValue category = 1;
+  // Subcategories
+  repeated IssueSubcategory subcategories = 2;
+}
+
+// Configuration around how issues and resolutions can be defined
+message IssueAndResolutionConfiguration {
+  // Unique ID of the issue and resolution configuration.
+  // This can be shared amongst different queues.
+  google.protobuf.StringValue id = 1;
+  // Resolution Categories
+  repeated ResolutionCategory resolution_categories = 2;
+  // Issue Categories
+  repeated IssueCategory issue_categories = 3;
+}
+
+// Message indicating a cron-scheduled run
+message ScheduledRuns {
+  // Indicates if enabled
+  bool enabled = 1;
+  // Unique ID for this run schedule
+  google.protobuf.StringValue id = 2;
+  // The schedule, in cron syntax
+  google.protobuf.StringValue cron_schedule = 3;
+}
+
+// Flags associated with this queue, potentially indicating actions that CMP may want to perform.
+message QueueFlags {
+  // Indicates if delivery events should be published when creating a case
+  google.protobuf.BoolValue publish_delivery_event_on_create_case = 1;
+  // Indicates if delivery events should be published when resolving a case
+  google.protobuf.BoolValue publish_delivery_event_on_resolve_case = 2;
+  // Indicates if we trigger sending a survey out on solve
+  google.protobuf.BoolValue enable_trigger_survey_on_solve = 3;
+  // Indicates if query should be executed in trino (true) or snowflake (false).
+  // Only applicable for SQL Queues.
+  google.protobuf.BoolValue is_trino_query = 4;
+}
+
+// Details for a Case Queue
+message CaseQueueDetails {
+  // Kill switch status
+  enum KillSwitchStatus {
+    // Unspecified / unknown
+    KILL_SWITCH_STATUS_UNSPECIFIED = 0;
+    // Kill switch on, no cases allowed
+    KILL_SWITCH_STATUS_ON = 1;
+    // Kill switch off, cases are allowed
+    KILL_SWITCH_STATUS_OFF = 2;
+  }
+  // Configuration around Idempotency
+  IdempotencyConfiguration idempotency_configuration = 1;
+  // Configuration around capacity
+  CapacityConfiguration capacity_configuration = 4;
+  // Configuration around Schema
+  SchemaConfiguration schema_configuration = 2;
+  // Unassign After. Indicates if the case should
+  // auto-unassign this duration after the claim, plus up to ~1 minute of jitter.
+  google.protobuf.Duration unassign_after = 5;
+  // Configuration around auto-closing case
+  AutoCloseConfiguration auto_close_configuration = 6;
+  // Indicates if kill switch is enabled
+  KillSwitchStatus kill_switch_status = 7;
+  // DV Experiment name that controls whether cases get created and put into the queue for queues
+  google.protobuf.StringValue dv_create_case_experiment_name = 8;
+
+  // For SQL queues, the cron schedules to run the query
+  repeated ScheduledRuns run_schedules = 9;
+
+  // Workflow to trigger post case creation
+  Workflow post_case_creation_action = 10;
+
+  // Flags indicating configuration or behavior of this queue.
+  QueueFlags queue_flags = 11;
+
+  // Configuration around case assignment
+  CaseAssignmentConfiguration case_assignment_configuration = 12;
+
+  // How the cases are sorted, used for getting cases.
+  SortPreference sort_preference_configuration = 13;
+
+  reserved 3;
+}
+
+// Full representation of a Case Queue.
+// Note that some fields may not be populated, depending on what was requested.
+message CaseQueue {
+  // Team
+  enum CaseQueueTeam {
+    // Unspecified / Unknown
+    CASE_QUEUE_TEAM_UNSPECIFIED = 0;
+    // Strategy aNd Operations
+    CASE_QUEUE_TEAM_SNO = 1;
+    // FOS
+    CASE_QUEUE_TEAM_FOS = 2;
+    // Vendor team
+    CASE_QUEUE_TEAM_VENDOR = 3;
+    // FOS and Vendor
+    CASE_QUEUE_TEAM_FOS_AND_VENDOR = 4;
+    // Trust and safety
+    CASE_QUEUE_TEAM_TRUST_AND_SAFETY = 5;
+  }
+  // Queue Type
+  enum CaseQueueType {
+    // Unspecified
+    CASE_QUEUE_TYPE_UNSPECIFIED = 0;
+    // API. Replaced with more specific API ones below.
+    CASE_QUEUE_TYPE_API = 1 [deprecated = true];
+    // SQL. Replaced with more specific SQL ones below.
+    CASE_QUEUE_TYPE_SQL = 2 [deprecated = true];
+    // Indicates it is an API queue for Fraud Workstation
+    CASE_QUEUE_TYPE_FWS_API = 3;
+    // Indicates it is a SQL queue for fraud workstation
+    CASE_QUEUE_TYPE_FWS_SQL = 4;
+    // Indicates that queue is a proxy for Salesforce.
+    CASE_QUEUE_TYPE_SALESFORCE_PROXY = 5;
+    // Indicates it is an API queue for usage in THQ (ex. proactive outreach)
+    CASE_QUEUE_TYPE_THQ_API = 6;
+    // Indicates it is a SQL queue for use in THQ (ex. proactive outreach)
+    CASE_QUEUE_TYPE_THQ_SQL = 7;
+    // Indicates it is a hybrid SQL/API queue for Fraud Workstation
+    // This type can receive cases via API call AND SQL query
+    CASE_QUEUE_TYPE_FWS_HYBRID = 8;
+    // Indicates that the queue holds cases that are a proxy of SFDC.
+    // CMP should not be considered the source of truth for these.
+    CASE_QUEUE_TYPE_THQ_SALESFORCE_PROXY = 9;
+    // Indicates that the queue type is Amazon Connect / Voice Ordering.
+    CASE_QUEUE_TYPE_PHONE_VOICE_ORDERING = 10;
+    // Indicates that the queue type is Amazon Connect / Support
+    CASE_QUEUE_TYPE_PHONE_SUPPORT = 11;
+    // Indicates that the queue type is THQ / Chat
+    CASE_QUEUE_TYPE_THQ_CHAT = 12;
+    // indicates that the queue is THQ / Safety
+    CASE_QUEUE_TYPE_THQ_SAFETY = 13;
+    // Indicatates that the queue is THQ / Proactive
+    CASE_QUEUE_TYPE_THQ_PROACTIVE = 14;
+
+    /**
+     * If you are adding a new queue type, please ensure to keep the queue type groupings up to date in CMP at
+     * casemanagementservice/model/assignment/CaseQueue.kt
+     */
+  }
+  // Queue State
+  enum CaseQueueState {
+    // Unspecified
+    CASE_QUEUE_STATE_UNSPECIFIED = 0;
+    // Active
+    CASE_QUEUE_STATE_ACTIVE = 1;
+    // Archived
+    CASE_QUEUE_STATE_ARCHIVED = 2;
+    // Deleted
+    CASE_QUEUE_STATE_DELETED = 3;
+  }
+  // Audience
+  enum CaseQueueAudience {
+    // Unspecified
+    CASE_QUEUE_AUDIENCE_UNSPECIFIED = 0;
+    // Cx
+    CASE_QUEUE_AUDIENCE_CX = 1;
+    // Dx
+    CASE_QUEUE_AUDIENCE_DX = 2;
+    // Mx
+    CASE_QUEUE_AUDIENCE_MX = 3;
+    // Internal
+    CASE_QUEUE_AUDIENCE_INTERNAL = 4;
+  }
+  // The ID of the queue (ex. ddfw_review_queue_v0)
+  string id = 1;
+  // Display Name (ex. Consumer DDFW Review)
+  string display_name = 2;
+  // Queue Type (ex. API / SQL)
+  CaseQueueType queue_type = 3;
+  // Description (ex. DDFW Review Queue)
+  google.protobuf.StringValue description = 4;
+  // Time the queue was created
+  google.protobuf.Timestamp created_at = 5;
+  // The the queue was updated
+  google.protobuf.Timestamp updated_at = 6;
+  // State
+  CaseQueueState queue_state = 7;
+  // Team
+  CaseQueueTeam team = 8;
+  // Audience
+  CaseQueueAudience audience = 9;
+  // Active version of the case queue details
+  CaseQueueConfiguration active_case_queue_configuration = 10;
+  // Unresolved cases in the queue.
+  int32 unresolved_case_count = 11;
+  // expected aht in ms per case, used for capacity control
+  google.protobuf.Duration aht = 12;
+  // Channel Type
+  google.protobuf.StringValue channel_type = 13;
+}
+
+// Response to Get Case Queues
+message GetCaseQueuesResponse {
+  // Repeated list of queues. Note certain fields may not be fully populated.
+  repeated CaseQueue case_queues = 1;
+  // Size of total results, used for pagination.
+  int32 total_results = 2;
+}
+
+// Request to get a specific queue and it's detailed configuration
+message GetCaseQueueConfigurationRequest {
+  // queue name
+  string queue_name = 1;
+}
+
+// Response to Get a Case Queue
+message GetCaseQueueConfigurationResponse {
+  // The case queue
+  CaseQueue case_queue = 1;
+}
+
+// Request to create a new case queue. Note that some fields may not be used from the request.
+message CreateCaseQueueRequest {
+  // The case queue.
+  CaseQueue case_queue = 1;
+}
+
+// Response for creating a new case queue
+message CreateCaseQueueResponse {
+  // The newly created case queue.
+  CaseQueue case_queue = 1;
+}
+
+// Request to update a case queue. Note that some fields may not be used from the request.
+message UpdateCaseQueueRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 2;
+  // The case queue
+  CaseQueue case_queue = 1;
+}
+
+// Response to update case queue
+message UpdateCaseQueueResponse {
+  // The case queue
+  CaseQueue case_queue = 1;
+}
+
+// Response for updating the active version of a case queue
+message UpdateCaseQueueActiveVersionRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 3;
+  // the queue id
+  string queue_id = 1;
+  // The target version
+  int32 target_version = 2;
+}
+
+// Updates the active case version
+message UpdateCaseQueueActiveVersionResponse {
+  // The case queue
+  CaseQueue case_queue = 1;
+}
+
+// Request to assign a case to an agent
+message AssignCaseToAgentRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 8;
+  // Required: The DoorDash ID of the agent to assign to
+  google.protobuf.StringValue agent_id = 1;
+
+  // In case attempting to assign case by internal case id
+  google.protobuf.StringValue incident_id = 2;
+  // In case attempting to assign a specific case by external case id
+  ExternalCaseIdentifier external_case_id = 3;
+  // In case allowing the back end to assign any case from the provided queue
+  google.protobuf.StringValue queue_name = 4;
+
+  // Indicates the expected current owner.
+  // If not the StringValue is not set (ex. hasExpectedCurrentOwner == false), will allow updating
+  // regardless of previous owner. If the StringValue is set, will only update if the current owner matches.
+  // Empty string indicates require that the case is not assigned to an agent.
+  google.protobuf.StringValue expected_current_owner = 5;
+
+  // If set to a positive number, enforce max number of cases the agent can work on at a time
+  // Note that this enforcement only happens if the incident_id and external_case_id are not set.
+  int32 max_concurrent_cases = 6;
+  // When the incident was assigned at, from external source.
+  google.protobuf.Timestamp assigned_at_override = 15;
+
+  // for migration purposes: check with RDP (source of truth) to see if the agent has no assigned cases,
+  // if that's true then then we skip the max concurrent case check
+  /* optional */
+  bool skip_max_case_check_if_no_rdp_cases = 7;
+}
+
+// Response from Assigning a Case to an Agent
+message AssignCaseToAgentResponse {
+  // The incident after updating state.
+  // In case nothing is available to assign, when providing only a queue NOT_FOUND will be thrown.
+  // In case the current owner no longer matches the expectation, ABORTED will be thrown.
+  Incident incident = 1;
+}
+
+// Request to assign a case to an agent
+message AssignAnyCaseToAgentRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 1;
+  // Required: The DoorDash ID of the agent to assign to
+  string agent_id = 2 [(doordash.api.inject_id) = USER_ID];
+
+  // In case allowing the back end to assign any case from the provided queue
+  google.protobuf.StringValue queue_name = 3;
+
+  // Indicates the expected current owner.
+  // If not the StringValue is not set (ex. hasExpectedCurrentOwner == false), will allow updating
+  // regardless of previous owner. If the StringValue is set, will only update if the current owner matches.
+  // Empty string indicates require that the case is not assigned to an agent.
+  google.protobuf.StringValue expected_current_owner = 4;
+
+  // If set to a positive number, enforce max number of cases the agent can work on at a time
+  // Note that this enforcement only happens if the incident_id and external_case_id are not set.
+  int32 max_concurrent_cases = 5;
+  // When the incident was assigned at, from external source.
+  google.protobuf.Timestamp assigned_at_override = 6;
+
+  // for migration purposes: check with RDP (source of truth) to see if the agent has no assigned cases,
+  // if that's true then then we skip the max concurrent case check
+  /* optional */
+  bool skip_max_case_check_if_no_rdp_cases = 7;
+}
+
+// Response from Assigning a Case to an Agent
+message AssignAnyCaseToAgentResponse {
+  // The incident after updating state.
+  // In case nothing is available to assign, when providing only a queue NOT_FOUND will be thrown.
+  // In case the current owner no longer matches the expectation, ABORTED will be thrown.
+  Incident incident = 1;
+}
+
+// Unassign CaseFromAgentRequest
+message UnassignCaseFromAgentRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 6;
+  // In case attempting to unassign case by internal case id
+  google.protobuf.StringValue incident_id = 1;
+  // In case attempting to unassign a specific case by external case id
+  ExternalCaseIdentifier external_case_id = 2;
+  // In case allowing the back end to assign any case from the provided queue
+  google.protobuf.StringValue queue_name = 3;
+
+  // Indicates the expected current owner.
+  // Empty string indicates we don't care who it is, otherwise will only update if the current owner matches.
+  google.protobuf.StringValue expected_current_owner = 4;
+  // When the incident was unassigned at, from external source.
+  google.protobuf.Timestamp unassigned_at_override = 5;
+}
+
+// Unassign CaseFromAgentResponse
+message UnassignCaseFromAgentResponse {
+  // The incident after removing assignee
+  // In case the current owner does not match the expectation, ABORTED will be thrown.
+  Incident incident = 1;
+}
+
+// Create IssueAndResolutionConfiguration
+message CreateIssueAndResolutionConfigurationRequest {
+  // The IssueAndResolutionConfiguration id
+  google.protobuf.StringValue id = 1;
+  // Resolution Categories
+  repeated ResolutionCategory resolution_categories = 2;
+  // Issue Categories
+  repeated IssueCategory issue_categories = 3;
+}
+
+// Create IssueAndResolutionConfiguration
+message CreateIssueAndResolutionConfigurationResponse {
+  // The updated IssueAndResolutionConfiguration
+  IssueAndResolutionConfiguration config = 1;
+}
+
+// Update IssueAndResolutionConfiguration
+message UpdateIssueAndResolutionConfigurationRequest {
+  // The IssueAndResolutionConfiguration id
+  google.protobuf.StringValue id = 1;
+  // Resolution Categories
+  repeated ResolutionCategory resolution_categories = 2;
+  // Issue Categories
+  repeated IssueCategory issue_categories = 3;
+}
+
+// Update IssueAndResolutionConfiguration
+message UpdateIssueAndResolutionConfigurationResponse {
+  // The updated IssueAndResolutionConfiguration
+  IssueAndResolutionConfiguration config = 1;
+}
+
+// Type of Voice Outbound Contact (ex. who was contacted)
+enum VoiceOutboundContactType {
+  // Unspecified
+  VOICE_OUTBOUND_CONTACT_TYPE_UNSPECIFIED = 0;
+  // Dasher
+  VOICE_OUTBOUND_CONTACT_TYPE_DASHER = 1;
+  // Consumer
+  VOICE_OUTBOUND_CONTACT_TYPE_CONSUMER = 2;
+  // Merchant
+  VOICE_OUTBOUND_CONTACT_TYPE_MERCHANT = 3;
+}
+
+// Request to attach outbound voice
+message AttachOutboundVoiceRequest {
+  // CMP Case ID that the call was made against
+  google.protobuf.StringValue incident_id = 1;
+
+  // Identifier for the voice call at Amazon Connect.
+  google.protobuf.StringValue amazon_connect_contact_id = 2;
+
+  // DD User ID (from JWT Token) of the agent that made the outbound voice call
+  google.protobuf.StringValue agent_id = 3;
+
+  // Type of the contact.
+  VoiceOutboundContactType contact_type = 4;
+
+  // External Case Identifier (Ex. Salesforce Case ID).
+  ExternalCaseIdentifier external_case_identifier = 5;
+
+  // amazon connect instance id (Voice order or support)
+  google.protobuf.StringValue instance_id = 6;
+}
+
+// Response for attach outbound voice
+message AttachOutboundVoiceResponse {}
+
+// Request to check whether the capacity is full
+message IsCapacityFullRequest {
+  // Queue Name.
+  google.protobuf.StringValue queue_name = 1;
+}
+
+// Response to check whether the capacity is full
+message IsCapacityFullResponse {
+  // is capacity full?
+  google.protobuf.BoolValue is_full = 1;
+}
+
+// Request to check whether the case should be deduped
+message ShouldCaseBeDedupedRequest {
+  // Queue Name.
+  google.protobuf.StringValue queue_name = 1;
+  // Case data, some fields inside it is used for deduping.
+  google.protobuf.Struct case_data = 7;
+}
+
+// Response to check whether the case should be deduped
+message ShouldCaseBeDedupedResponse {
+  // should this case be deduped?
+  google.protobuf.BoolValue should_be_deduped = 1;
+}
+
+// Who is inbounding? Cx or Dx
+enum ContactType {
+  // Unspecified inbound type.
+  CONTACT_TYPE_UNSPECIFIED = 0;
+  // Consumer
+  CONTACT_TYPE_CONSUMER = 1;
+  // Dasher
+  CONTACT_TYPE_DASHER = 2;
+}
+
+// issue types
+enum IssueType {
+  // Unspecified issue type
+  ISSUE_TYPE_UNSPECIFIED = 0;
+  // Cx - Refund/Credit Inquiry
+  ISSUE_TYPE_CX_REFUND_CREDIT_INQUIRY = 1;
+  // Cx - Order Status Inquiries
+  ISSUE_TYPE_CX_ORDER_STATUS_INQUIRIES = 2;
+  // Cx - C&R Compensation Denied
+  ISSUE_TYPE_CX_C_R_COMPENSATION_DENIED = 3;
+  // Cx - DashPass Inquiries
+  ISSUE_TYPE_CX_DASHPASS_INQUIRIES = 4;
+  // Dx - Pay Inquiry - Missing, Adjustment
+  ISSUE_TYPE_DX_PAY_INQUIRY_MISSING_ADJUSTMENT = 5;
+  // Dx - Cancel + Unassign Order
+  ISSUE_TYPE_DX_CANCEL_UNASSIGN_ORDER = 6;
+  // Dx - DasherDirect Account Troubleshooting
+  ISSUE_TYPE_DX_DASHERDIRECT_ACCOUNT_TROUBLESHOOTING = 7;
+  // Dx - App Troubleshooting
+  ISSUE_TYPE_DX_APP_TROUBLESHOOTING = 8;
+  // Dx - Can't Get Active + Can't Access
+  ISSUE_TYPE_DX_CANT_GET_ACTIVE_CANT_ACCESS = 9;
+  // Dx - Deactivating + Reactivating
+  ISSUE_TYPE_DX_DEACTIVATING_REACTIVATING = 10;
+}
+
+// Contact whether Cx or Dx
+message Contact {
+  // type of caller inbounding - cx or dx
+  ContactType contact_type = 1;
+  // id, if consumerId or dasherId or deliveryId in the future
+  google.protobuf.StringValue contact_id = 2;
+}
+
+// object storing Repeat contact issue
+message RepeatContactIssue {
+  // cmp incident id
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 2;
+  // created_at
+  google.protobuf.Timestamp created_at = 3;
+  // user who contacted Doordash
+  Contact contact = 4;
+  // issue type
+  IssueType issue_type = 5;
+}
+
+// Request to return list of cases for which Cx/Dx contacted for given list of issue types
+message GetCaseListOfRepeatContactsRequest {
+  // info on the inbound contact - consumerId or dasherId
+  Contact contact = 1;
+  // issue types we are looking specifically to see if repeated contact for
+  repeated IssueType issue_types = 2;
+  // Date to start searching from
+  google.protobuf.Timestamp start_date_to_search_from = 3;
+}
+
+// Response to return list of cases for which Cx/Dx contacted for given list of issue types
+message GetCaseListOfRepeatContactsResponse {
+  // list of issues matching cx/dx id and filters
+  repeated RepeatContactIssue repeat_contact_issues = 1;
+}
+
+// kafka protobuf message format for Incident
+message IncidentAsyncRequest {
+  // name of service publishing to kafka
+  string event_creator_service_name = 1;
+  // Only one of the included entity within this "oneof" block can be set for a single Incident instance.
+  oneof request {
+    // kafka message that will create an incident
+    CreateIncidentRequest create_incident_request = 2;
+    // kafka message that will update an incident
+    UpdateIncidentRequest update_incident_request = 5;
+    // kafka message that will assigne a case to an agent
+    AssignCaseToAgentRequest assign_case_to_agent_request = 6;
+    // kafka message that will unassigne a case
+    UnassignCaseFromAgentRequest unassign_case_from_agent_request = 7;
+    // kafka message that will attach an resolution to a case.
+    AttachResolutionRequest attach_resolution_request = 8;
+    // kafka message that will update an resolution to a case.
+    UpdateResolutionRequest update_resolution_request = 9;
+    // kafka message that will trigger callback action.
+    KafkaCallbackActionRequest kafka_callback_action_request = 10;
+  }
+  // idempotency key to prevent duplicate requests
+  google.protobuf.StringValue idempotency_key = 3;
+  // created_at
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// Transfer to CMP queue from a different queue or new call originally from Amazon Connect
+message TransferAmazonConnectCaseToCmpRequest {
+  // create CMP incident request
+  CreateIncidentRequest create_incident_request = 1 [deprecated = true];
+  // boolean to indicate whether to close the external case we are transferring from
+  google.protobuf.BoolValue close_external_case = 2 [deprecated = true];
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 3;
+  // whether it is a new inbound call where we have to create a new cmp case
+  google.protobuf.BoolValue is_new_inbound_call_without_case = 4;
+  //new queue name
+  google.protobuf.StringValue new_queue_name = 5;
+  // whether the new queue is a CMP queue or SFDC queue
+  google.protobuf.StringValue new_queue_type = 6;
+  // amazon contact id
+  google.protobuf.StringValue contact_id = 7;
+  // agent email whos transferring the call
+  google.protobuf.StringValue updated_by = 8;
+  // if is_new_inbound_call is true and its a new call from AC to CMP, we need to create a new case
+  AmazonConnectAttributesForNewCmpCase attributes_for_new_cmp_case = 9;
+  // new ownerId we are transferring from SFDC to CMP
+  google.protobuf.StringValue new_owner_id = 10 [deprecated = true];
+  // new assigned agent id we are transferring to
+  oneof agent_identifier {
+    // Doordash Agent id that will have the case assigned to
+    google.protobuf.StringValue assigned_agent_id = 11;
+    // Agent email that will have the case assigned to
+    google.protobuf.StringValue assigned_agent_email = 12;
+  }
+}
+
+// attributes from amazon connect to send to cmp to create a new cmp incident.
+message AmazonConnectAttributesForNewCmpCase {
+  // ac instance type enum
+  enum AmazonConnectInstanceType {
+    // Unspecified
+    AMAZON_CONNECT_INSTANCE_TYPE_UNSPECIFIED = 0;
+    // Support
+    AMAZON_CONNECT_INSTANCE_TYPE_SUPPORT = 1;
+    // Voice Ordering
+    AMAZON_CONNECT_INSTANCE_TYPE_VOICE_ORDERING = 2;
+  }
+  // delivery_uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // subject
+  google.protobuf.StringValue subject = 2;
+  // account_id
+  google.protobuf.StringValue account_id = 3;
+  // dasher_id
+  google.protobuf.StringValue dasher_id = 4;
+  // dasher_name
+  google.protobuf.StringValue dasher_name = 5;
+  // merchant_name
+  google.protobuf.StringValue merchant_name = 6;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 7;
+  // consumer_name
+  google.protobuf.StringValue consumer_name = 8;
+  // contact_type
+  google.protobuf.StringValue contact_type = 9;
+  // language
+  google.protobuf.StringValue language = 10;
+  // initial_queue_name
+  google.protobuf.StringValue initial_queue_name = 11;
+  // initial_queue_id
+  google.protobuf.StringValue initial_queue_id = 12;
+  // previous_queue_name
+  google.protobuf.StringValue previous_queue_name = 13;
+  // previous_queue_id
+  google.protobuf.StringValue previous_queue_id = 14;
+  // type
+  google.protobuf.StringValue type = 15;
+  // platform
+  google.protobuf.StringValue platform = 16;
+  // record_type_id
+  google.protobuf.StringValue record_type_id = 17;
+  // Five9_ANI__c
+  google.protobuf.StringValue five_nine_ani = 18;
+  // Five9_DNIS__c
+  google.protobuf.StringValue five_nine_dnis = 19;
+  // Five9_IVR_Branch__c
+  google.protobuf.StringValue five_nine_ivr_branch = 20;
+  // Five9_Campaign__c
+  google.protobuf.StringValue five_nine_campaign = 21;
+  // DispatchRQResponse__c
+  google.protobuf.StringValue dispatch_rq_response = 22;
+  // Issue__c from IVR
+  google.protobuf.StringValue issue = 23;
+  // Issue_Type__c from IVR
+  google.protobuf.StringValue issue_type = 24;
+  // Description from IVR
+  google.protobuf.StringValue description = 25;
+  // ac instance type
+  AmazonConnectInstanceType ac_instance_type = 26;
+  // new fields for voice ordering start, no. 27 - 44
+  // case origin: phone, web, etc.
+  google.protobuf.StringValue case_origin = 27;
+  // the merchant's phone number
+  google.protobuf.StringValue merchant_phone_number = 28;
+  // the customer's phone number
+  google.protobuf.StringValue customer_phone_number = 29;
+  // priority: low, high
+  google.protobuf.StringValue priority = 30;
+  // customer type: Consumer, Dasher, Merchant
+  google.protobuf.StringValue customer_type = 31;
+  // resolution type: in voice ordering, it will be Storefront - Cx
+  google.protobuf.StringValue resolution_type = 32;
+  // vertical type: Storefront, Peer to Peer
+  google.protobuf.StringValue vertical_type = 33;
+  // country: United States, Canada, etc.
+  google.protobuf.StringValue country = 34;
+  // store id
+  google.protobuf.StringValue store_id = 35;
+  // business id
+  google.protobuf.StringValue business_id = 36;
+  // store pickup id - wrong name, deprecated
+  google.protobuf.StringValue store_pickup_id = 37 [deprecated = true];
+  // store delivery id - wrong name, deprecated
+  google.protobuf.StringValue store_delivery_id = 38 [deprecated = true];
+  // agent greeting
+  google.protobuf.StringValue agent_greeting = 39;
+  // store hours
+  google.protobuf.StringValue store_hours = 40;
+  // store pickup link
+  google.protobuf.StringValue store_pickup_link = 41;
+  // store delivery link
+  google.protobuf.StringValue store_delivery_link = 42;
+  // merchant website
+  google.protobuf.StringValue merchant_website = 43;
+  // agent instruction
+  google.protobuf.StringValue agent_instruction = 44;
+  // data collected by ai for voice ordering
+  AiVoiceData ai_voice_data = 45;
+  // new fields for voice ordering end, no. 27 - 45
+}
+
+// attributes for AI voice transfer data to CMP
+message AiVoiceData {
+  // customer first name
+  google.protobuf.StringValue customer_first_name = 1;
+  // customer last name
+  google.protobuf.StringValue customer_last_name = 2;
+  // customer address
+  google.protobuf.StringValue customer_address = 3;
+  // voice order type, delivery or pickup
+  google.protobuf.StringValue voice_order_type = 4;
+  // flag to indicate if the call is ai voice case transfer
+  google.protobuf.BoolValue is_ai_voice_transfer = 5;
+}
+
+// Response from transferring amazon connect phone call from external source to CMP
+message TransferAmazonConnectCaseToCmpResponse {
+  // Newly created CMP incident id.
+  google.protobuf.StringValue incident_id = 1;
+}
+
+// Phone Transfer from CMP Queue to SFDC or another CMP queue.
+// Used for CMP -> SFDC, CMP -> CMP
+message TransferAmazonConnectCaseFromCmpRequest {
+  // boolean to indicate whether to close the cmp_case we are transferring from
+  google.protobuf.BoolValue close_cmp_case = 1 [deprecated = true];
+  // cmp_incident_id to close
+  google.protobuf.StringValue cmp_incident_id = 2;
+  // salesforce queue id to transfer to to put in sfdc case object
+  google.protobuf.StringValue new_salesforce_queue_id = 3 [deprecated = true];
+  // agent email whos transferring the call
+  google.protobuf.StringValue updated_by = 4;
+  // new queue name
+  google.protobuf.StringValue new_queue_name = 5;
+  // whether the new queue is a CMP queue or SFDC queue or other
+  google.protobuf.StringValue new_queue_type = 6;
+  // amazon connect contact_id
+  google.protobuf.StringValue contact_id = 7;
+  // sometimes cmp incident is missing fields so we need AC to supplement that
+  AmazonConnectAttributesForNewCmpCase attributes_for_new_case = 8;
+  // new owner id that amazon connect determines to transfer to
+  google.protobuf.StringValue new_owner_id = 9 [deprecated = true];
+  // new assigned agent id we are transferring to
+  oneof agent_identifier {
+    // Doordash Agent id that will have the case assigned to
+    google.protobuf.StringValue assigned_agent_id = 10;
+    // Agent email that will have the case assigned to
+    google.protobuf.StringValue assigned_agent_email = 11;
+  }
+}
+
+// Response from transferring amazon connect phone call from CMP to external source
+message TransferAmazonConnectCaseFromCmpResponse {
+  // Current CMP case
+  google.protobuf.StringValue incident_id = 1;
+  // external case identifier info, from the external case that was created
+  ExternalCaseIdentifier external_case_identifier = 2 [deprecated = true];
+  // External case id like salesforceId
+  google.protobuf.StringValue external_case_id = 3;
+  // case type i.e. Salesforce
+  ExternalCaseType external_case_type = 4;
+}
+
+// Request for when we want to trigger sql query to run and create case in provided queue
+message TriggerSqlQueueCaseCreationRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 3;
+  // queue_id to trigger case creation
+  google.protobuf.StringValue queue_id = 1;
+  // an existing query id to retrieve cases to be created
+  google.protobuf.StringValue query_id = 2;
+}
+
+// Response for when we want to trigger sql query to run and create case in provided queue
+message TriggerSqlQueueCaseCreationResponse {
+  // Handle to the query id from snowflake
+  google.protobuf.StringValue run_handle = 1;
+}
+
+// Kicks off a SQL Query async
+message PreviewSqlQueryRequest {
+  // Query
+  google.protobuf.StringValue sql_query = 1;
+  // Expected queue name
+  google.protobuf.StringValue expected_queue_name = 2;
+}
+
+// Response to kicking off the async query.
+message PreviewSqlQueryResponse {
+  // The Query ID for the kicked off query
+  google.protobuf.StringValue query_id = 1;
+}
+
+// Request to get the status of a kicked off query
+message GetPreviewSqlQueryStatusRequest {
+  // Query ID
+  google.protobuf.StringValue query_id = 1;
+}
+
+// Response for checking the status of a test sql run
+message GetPreviewSqlQueryStatusResponse {
+  // Indicates if the query is still running
+  bool is_still_running = 1;
+  // Indicates if there was an error
+  bool is_an_error = 2;
+  // In case of error, the error message
+  google.protobuf.StringValue error_message = 3;
+  // In case of error code, the error code
+  google.protobuf.StringValue error_code = 4;
+}
+
+// Meant to be used when the count of results is known upfront. This allows you to display the number of pages
+//  beforehand and click a random one to jump to that. Better for smaller datasets
+message PagingOptions {
+  // Offset of the first record
+  int32 offset = 1;
+  // row limit
+  int32 limit = 2;
+}
+
+// In case of a successful test run, request to get sample schema
+message GetPreviewSqlQueryResultRequest {
+  // Query ID
+  google.protobuf.StringValue query_id = 1;
+  // Pagination
+  PagingOptions paging = 2;
+  // Expected queue name
+  google.protobuf.StringValue expected_queue_name = 3;
+}
+
+// Response with sample schema, for a successful test query run
+message GetPreviewSqlQueryResultResponse {
+  // Potential schema, based on the returned results
+  repeated SchemaRow schema_rows = 1;
+  // Sample rows, based on the query
+  repeated google.protobuf.Struct sample_data = 2;
+  // Total rows of the sql result, used for rendering in UI.
+  int32 total_rows = 3;
+}
+
+// Specific incident change record
+message IncidentHistoryChange {
+  // Name of the incident field that changed
+  google.protobuf.StringValue field_name = 1;
+  // Previous value
+  google.protobuf.StringValue old_value = 2;
+  // Updated value
+  google.protobuf.StringValue new_value = 3;
+}
+
+// Request to load CMP Incident History
+message GetIncidentHistoryRequest {
+  // Incident IDs
+  repeated google.protobuf.StringValue incident_ids = 1;
+  // Pagination options
+  PaginationOptions pagination_options = 2;
+}
+
+// Response to load CMP Incident History
+message GetIncidentHistoryResponse {
+  // Incident History
+  repeated IncidentHistory history = 1;
+}
+
+// Message representing a specific change on a CMP incident
+message IncidentHistory {
+  // ID of this change
+  google.protobuf.StringValue id = 1;
+  // Incident ID
+  google.protobuf.StringValue incident_id = 2;
+  // Timestamp the change was created
+  google.protobuf.Timestamp created_at = 3;
+  // Identifier for who made the change
+  google.protobuf.StringValue changed_by = 4;
+  // The list of changes that were made
+  repeated IncidentHistoryChange changes = 5;
+}
+
+// Message representing a Send Incident Email Request
+message SendIncidentEmailRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // will be used in scenario related salesforce cases
+  ExternalCaseIdentifier external_case_identifier = 2;
+  // Email Configuration
+  EmailConfiguration email = 3;
+}
+
+// Message representing a Send Incident Email Response
+message SendIncidentEmailResponse {
+  // message id returned by postal service
+  google.protobuf.StringValue message_id = 1;
+}
+
+// Message representing a Send Incident Email Response. we can add more fields are required
+message EmailConfiguration {
+  // template name
+  google.protobuf.StringValue template_name = 1;
+  // key value that will go into the template
+  map<string, google.protobuf.Value> template_fields = 2;
+  // Email addresses to send the email to.
+  repeated google.protobuf.StringValue to = 3;
+  // Email address to send the email from.
+  google.protobuf.StringValue from = 4;
+  // Name to use for the sender of the email.
+  google.protobuf.StringValue from_name = 5;
+  // subject of the email
+  google.protobuf.StringValue subject = 6;
+  // html body of the email
+  google.protobuf.StringValue html_body = 7;
+  // Uniquely identifies the email configuration.
+  google.protobuf.StringValue notification_campaign_id = 8;
+  // Attachments for the email.
+  repeated Attachment attachments = 9;
+}
+
+// Attachment for outbound email.
+message Attachment {
+  reserved 1, 2;
+  reserved "file_name", "content";
+  //  name of the attachment.
+  google.protobuf.StringValue name = 3;
+  // Content of the attachment.
+  google.protobuf.StringValue file_content = 4;
+  // file type
+  google.protobuf.StringValue file_type = 5;
+}
+
+// Agent with resolution.
+message AgentWithResolution {
+  // Required: The DoorDash ID of the agent to assign to.
+  google.protobuf.StringValue agent_id = 1;
+  // Resolution Request.
+  ResolutionRequest resolution_request = 3;
+}
+
+// Request to check if the case data is in sync.
+message DoesCaseDataMatchRequest {
+  // external case identifier info
+  ExternalCaseIdentifier external_case_identifier = 1;
+  // case translated to incident.
+  Incident case = 2;
+  // Resolution Requests with agents.
+  repeated AgentWithResolution agent_with_resolutions = 3;
+}
+
+// Response to check if the case data is in sync.
+message DoesCaseDataMatchResponse {
+  // Type of match status.
+  enum CaseDataMatchStatus {
+    // Unspecified match status.
+    CASE_DATA_MATCH_STATUS_UNSPECIFIED = 0;
+    // corresponding incident is not found.
+    CASE_DATA_MATCH_STATUS_NOT_FOUND = 1;
+    // incident data does not match.
+    CASE_DATA_MATCH_STATUS_MISMATCH = 2;
+    // incident data matches.
+    CASE_DATA_MATCH_STATUS_MATCH = 3;
+  }
+  // Type of mismatch part.
+  enum MismatchPart {
+    // Unspecified mismatch part.
+    MISMATCH_PART_UNSPECIFIED = 0;
+    // State mismatch.
+    MISMATCH_PART_CASE_STATE = 1;
+    // Sub state mismatch.
+    MISMATCH_PART_CASE_SUB_STATE = 2;
+    // Assigned agent id mismatch.
+    MISMATCH_PART_ASSIGNED_AGENT_ID = 3;
+    // Case data mismatch.
+    MISMATCH_PART_CASE_DATA = 4;
+    // Review mismatch.
+    MISMATCH_PART_REVIEW_DATA = 5;
+    // fields which belong in case_data are in additional_tags
+    MISMATCH_PART_SCHEMA_STORAGE = 6;
+  }
+  // Case data match status.
+  CaseDataMatchStatus match_status = 1;
+  // incident id, if found in cms, else not present.
+  google.protobuf.StringValue incident_id = 2;
+  // external case identifier info.
+  ExternalCaseIdentifier external_case_identifier = 3;
+  // mismatch parts.
+  repeated MismatchPart mismatch_parts = 4;
+}
+
+// Message representing a Send Incident Email Response. we can add more fields are required
+message CmpEmail {
+  // template name
+  google.protobuf.StringValue template_name = 1;
+  // Email addresses to send the email to.
+  repeated google.protobuf.StringValue to = 3;
+  // Email address to send the email from.
+  google.protobuf.StringValue from = 4;
+  // Name to use for the sender of the email.
+  google.protobuf.StringValue from_name = 5;
+  // text body of the email
+  google.protobuf.StringValue text_body = 6;
+  // html body of the email
+  google.protobuf.StringValue html_body = 7;
+  // timestamp when the request to postal service was created
+  google.protobuf.Timestamp created_at = 8;
+  // message Id returned by the postal service
+  google.protobuf.StringValue message_id = 9;
+  // subject created by the template [ to be used in getCmpEmail response]
+  google.protobuf.StringValue subject = 10;
+  // Whether the email has an attachment
+  google.protobuf.BoolValue has_attachment = 11;
+  // High level details about the attachments, if requested
+  repeated AttachmentMetadata attachments = 12;
+}
+
+// Metadata associated with an attachment
+message AttachmentMetadata {
+  // document id
+  google.protobuf.StringValue document_id = 1;
+  // title
+  google.protobuf.StringValue title = 2;
+  // file type
+  google.protobuf.StringValue file_type = 3;
+  // content size
+  google.protobuf.Int64Value content_size = 4;
+  // file extension
+  google.protobuf.StringValue file_extension = 5;
+  // signed url
+  google.protobuf.StringValue signed_url = 6;
+  // Name of user who created the attachment. May be a system user.
+  google.protobuf.StringValue created_by_name = 7;
+}
+
+// Message representing get all incidents emails for incident ids request
+message GetAllIncidentEmailsForIncidentIdsRequest {
+  // incident ids
+  repeated google.protobuf.StringValue incident_ids = 1;
+}
+
+// Message representing get all incidents emails for incident ids response
+message GetAllIncidentEmailsForIncidentIdsResponse {
+  // repeated list of all emails related by incident id for a delivery uuid
+  repeated IncidentEmails incident_emails = 1;
+}
+
+// message representing get all issues and resolutions for a incident ids request
+message GetAllIssuesAndResolutionsForIncidentIdsRequest {
+  // incident ids
+  repeated google.protobuf.StringValue incident_ids = 1;
+}
+
+// language of email template
+enum Language {
+  // Unspecified
+  LANGUAGE_UNSPECIFIED = 0;
+  // english
+  LANGUAGE_ENGLISH = 1;
+  // spanish
+  LANGUAGE_SPANISH = 2;
+  // french
+  LANGUAGE_FRENCH = 3;
+}
+
+// message representing request object for get all support email templates configuration
+message GetAllSupportEmailTemplateConfigurationsRequest {
+  // language of email template
+  Language email_template_language = 1;
+}
+
+// message representing response object for get all support email templates configuration
+message GetAllSupportEmailTemplateConfigurationsResponse {
+  // list of support email template configurations the notification platform will be supporting
+  repeated CmpAutomatedEmailTemplateConfiguration template_configurations = 1;
+}
+
+// details of Email Configuration that the UI will use to display list of available email template
+message CmpAutomatedEmailTemplateConfiguration {
+  // template id from notification portal
+  google.protobuf.StringValue template_id = 1;
+  // template names
+  google.protobuf.StringValue display_name = 2;
+  // campaign id from notification portal
+  google.protobuf.StringValue campaign_id = 3;
+  // Audience type
+  google.protobuf.StringValue audience_type = 4;
+  // tags associated with the template
+  repeated google.protobuf.StringValue tags = 5;
+  // list of copy values associated with the template
+  repeated CmpAutomateEmailsTemplateField template_fields = 6;
+  // description
+  google.protobuf.StringValue description = 7;
+  // language
+  google.protobuf.StringValue language = 8;
+  // country
+  google.protobuf.StringValue country = 9;
+}
+
+// an individual entry of the various copy value in the template
+message CmpAutomateEmailsTemplateField {
+  // template id from notification portal
+  google.protobuf.StringValue field_name = 1;
+  // should the end user provide the value
+  google.protobuf.BoolValue manual_entry = 2;
+}
+
+// message representing get all issues and resolutions for a incident ids response
+message GetAllIssuesAndResolutionsForIncidentIdsResponse {
+  // no need to put incident id right now as all issue and resolution proto have incident id associated
+  // repeated list of all issues related by incident id for a delivery uuid
+  repeated Issue issues = 2;
+  // repeated list of all resolutions related by incident id for a delivery uuid
+  repeated Resolution resolutions = 3;
+}
+
+// all cmp emails related to an incident
+message IncidentEmails {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // repeated List of Email Sent
+  repeated CmpEmail emails = 2;
+}
+
+// Message representing a Get Incident Emails Request
+message GetIncidentEmailsRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // will be used in scenario related salesforce cases
+  ExternalCaseIdentifier external_case_identifier = 2;
+}
+
+// Message representing a Get Incident Email Response
+message GetIncidentEmailsResponse {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // repeated List of Email Sent
+  repeated CmpEmail emails = 2;
+}
+
+// Creates Chat Case Request
+message CreateChatCaseRequest {
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Chat Issue Details
+  google.protobuf.StringValue chat_issue_details = 2;
+  // Subject
+  google.protobuf.StringValue subject = 3;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 4;
+  // Dasher ID
+  google.protobuf.StringValue dasher_id = 5;
+  // Chat Key
+  string chat_key = 6;
+  // SFDC Owner ID
+  google.protobuf.StringValue owner_id = 7;
+  // Customer Type
+  google.protobuf.StringValue customer_type = 8;
+  // Category Tag
+  google.protobuf.StringValue category_tag = 9;
+  // Escalating Message ID
+  google.protobuf.StringValue escalating_message_id = 10;
+  // Business ID
+  google.protobuf.StringValue business_id = 11;
+  // Store ID
+  google.protobuf.StringValue store_id = 12;
+  // Locale
+  google.protobuf.StringValue locale = 13;
+  // Phone Number
+  google.protobuf.StringValue phone_number = 14;
+  // Email
+  google.protobuf.StringValue email = 15;
+  // If requesting wait time
+  google.protobuf.BoolValue request_wait_time = 16;
+}
+
+// Creates Chat Case Response
+message CreateChatCaseResponse {
+  // Salesforce Case ID
+  google.protobuf.StringValue salesforce_case_id = 1;
+  // Incident ID
+  google.protobuf.StringValue incident_id = 2;
+  // Estimated wait time
+  google.protobuf.Duration estimated_wait_time = 3;
+  // Routed Owner ID
+  google.protobuf.StringValue routed_owner_id = 4;
+}
+
+// Creates DRSC SalesForce Case
+message CreateDrscSalesForceCaseRequest {
+  // Category Tags synonym to Alert_type_id in CMP
+  google.protobuf.StringValue category_tag = 1;
+  // Incident Description
+  google.protobuf.StringValue incident_description = 2;
+  // Customer Type
+  google.protobuf.StringValue customer_type = 3;
+  // alert store id
+  google.protobuf.StringValue alert_store_id = 4;
+  // store closed picture url
+  google.protobuf.StringValue store_closed_picture = 5;
+  // menu link
+  google.protobuf.StringValue menu_link = 6;
+  // Delivery ID
+  google.protobuf.Int64Value delivery_id = 7;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 8;
+  //Subject
+  google.protobuf.StringValue subject = 9;
+}
+
+// Response to DRSC SalesForce Case
+message CreateDrscSalesForceCaseResponse {
+  // Salesforce Case ID
+  google.protobuf.StringValue salesforce_case_id = 1;
+}
+
+// Creates a trust and safety case
+message CreateTrustAndSafetyCaseRequest {
+  // Category Tags
+  repeated google.protobuf.StringValue category_tags = 1;
+  // Incident Description
+  google.protobuf.StringValue incident_description = 2;
+  // Reporting User ID
+  google.protobuf.StringValue reporting_user_id = 3;
+  // Customer Type
+  google.protobuf.StringValue customer_type = 4;
+  // Delivery ID
+  google.protobuf.Int64Value delivery_id = 5;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 6;
+  // Dasher ID
+  google.protobuf.StringValue dasher_id = 7;
+  // Merchant ID
+  google.protobuf.StringValue merchant_id = 8;
+  // Channel
+  google.protobuf.StringValue channel = 10;
+  // Store ID
+  google.protobuf.StringValue store_id = 11;
+}
+
+// Response to create trust and safety case
+message CreateTrustAndSafetyCaseResponse {
+  // Salesforce Case ID
+  google.protobuf.StringValue salesforce_case_id = 1;
+}
+
+// request object for UploadIncidentImages
+message UploadIncidentImagesRequest {
+  // incident ids
+  google.protobuf.StringValue incident_id = 1;
+  // list of images in base64 encoded string format
+  repeated google.protobuf.StringValue images = 2;
+}
+
+// response object for UploadIncidentImages
+message UploadIncidentImagesResponse {
+  // count of images uploaded successfully
+  google.protobuf.Int64Value success_count = 1;
+}
+
+// request object for get case history
+message GetCaseHistoryRequest {
+  // pagination options
+  TimeFilterOptions time_filter_options = 1;
+
+  // how many cases to fetch (limit)
+  google.protobuf.Int32Value num_cases = 2;
+  // offset, along with num_cases, to paginate
+  google.protobuf.Int32Value offset = 6;
+
+  // user id of who we want to get case history for
+  oneof user_identifier {
+    // consumer id
+    google.protobuf.StringValue consumer_id = 3;
+    // dasher id
+    google.protobuf.StringValue dasher_id = 4;
+    // agent id
+    google.protobuf.StringValue agent_id = 5;
+  }
+
+  // Whether to include direct reports in the response when user_identifier is agent_id
+  google.protobuf.BoolValue include_direct_reports = 7;
+  // Filter options
+  FilterOptions filter_options = 8;
+  // Sort preference
+  SortPreference sort_preference = 9;
+
+  // todo if fraud agent only show fraud cases, and same for support
+}
+
+// agent information
+message AgentInformation {
+  reserved 2;
+  reserved "agent_id";
+  // agent name
+  google.protobuf.StringValue agent_name = 1;
+  // agent email
+  google.protobuf.StringValue email = 3;
+  // user id of the agent
+  google.protobuf.StringValue agent_user_id = 4;
+}
+
+// queue information
+message QueueInformation {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+  // queue display name
+  google.protobuf.StringValue queue_name = 2;
+}
+
+// case history object
+message CaseHistory {
+  // "Pretty" version of a case id - ex. the case number. Corresponding field in ERS: case_number
+  google.protobuf.StringValue case_number = 1;
+  // 18 digit case id
+  google.protobuf.StringValue case_id = 2;
+  // Case status
+  google.protobuf.StringValue status = 3;
+  // Case creation timestamp
+  google.protobuf.Timestamp created_at = 4;
+  // last modified date timestamp
+  google.protobuf.Timestamp last_modified_date = 5;
+  // Phone, web or chat case
+  ChannelType channel = 6;
+  // list of issues in case
+  repeated Issue issue_list = 7;
+  // list of resolutions in case
+  repeated Resolution resolution_list = 8;
+  // issue value in a Salesforce case
+  google.protobuf.StringValue salesforce_issue = 9;
+  // resolution value in a Salesforce case
+  google.protobuf.StringValue salesforce_resolution = 10;
+  // delivery identifier
+  DeliveryIdentifier delivery_identifier = 11;
+  // agent info
+  AgentInformation agent_info = 12;
+  // queue info
+  QueueInformation queue_info = 13;
+  // subject
+  google.protobuf.StringValue subject = 14;
+  // cx id
+  google.protobuf.StringValue consumer_id = 15;
+  // dx id
+  google.protobuf.StringValue dasher_id = 16;
+  // description
+  google.protobuf.StringValue description = 17;
+  // Case closed timestamp
+  google.protobuf.Timestamp closed_at = 18;
+  // Case solved timestamp
+  google.protobuf.Timestamp solved_at = 19;
+  // store id
+  google.protobuf.StringValue store_id = 20;
+  // business id
+  google.protobuf.StringValue business_id = 21;
+  // issue category value in a Salesforce case
+  google.protobuf.StringValue salesforce_issue_category = 22;
+  // Case assigned at timestamp
+  google.protobuf.Timestamp assigned_at = 23;
+}
+
+// response object for get case history
+message GetCaseHistoryResponse {
+  // list of cases in case history
+  repeated CaseHistory case_history_list = 1;
+  // total count of all cases in history
+  google.protobuf.Int32Value total_case_history_count = 2;
+}
+
+// Type of External case identifier like Salesforce
+enum EvidenceSourceType {
+  // Unspecified source type.
+  EVIDENCE_SOURCE_TYPE_UNSPECIFIED = 0;
+  // CMP EMAIL source type.
+  EVIDENCE_SOURCE_TYPE_CMP_EMAIL = 1;
+  // CHAT TRANSCRIPT source type.
+  EVIDENCE_SOURCE_TYPE_CHAT_TRANSCRIPT = 2;
+  // CHAT TRANSCRIPT source type.
+  EVIDENCE_SOURCE_TYPE_FRAUD = 3;
+  // CHAT TRANSCRIPT source type.
+  EVIDENCE_SOURCE_TYPE_USER_SUPPLIED = 4;
+}
+
+// response object for GetIncidentEvidences
+message IncidentEvidence {
+  reserved 4;
+  reserved "source_type";
+  // file name
+  google.protobuf.StringValue file_name = 1;
+  // file type
+  google.protobuf.StringValue file_type = 2;
+  // signed url
+  google.protobuf.StringValue signed_url = 3;
+  // source type
+  EvidenceSourceType source = 5;
+}
+
+// request object for GetIncidentEvidences
+message GetIncidentEvidencesRequest {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // source type filter. will send all source if no value is provided
+  repeated EvidenceSourceType source_type_filter = 2;
+}
+
+// response object for GetIncidentEvidences
+message GetIncidentEvidencesResponse {
+  // incident id
+  google.protobuf.StringValue incident_id = 1;
+  // list of available evidences
+  repeated IncidentEvidence incident_evidences = 2;
+}
+
+// request for GetQueueConfigVersionHistory
+message GetQueueConfigVersionHistoryRequest {
+  // Queue ID
+  google.protobuf.StringValue queue_name = 1;
+  // Pagination
+  PaginationOptions paging = 2;
+}
+
+// response for GetQueueConfigVersionHistory
+message GetQueueConfigVersionHistoryResponse {
+  // Queue Version History
+  repeated CaseQueueConfiguration queue_config_versions = 1;
+  // Total rows of the result, used for rendering in UI
+  int32 total_rows = 2;
+}
+
+// request for InsertQueueAutoAssignment
+message InsertQueueAutoAssignmentRequest {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+  // Strategy defining how assignment should work, ex. MICRO_BATCH_POLLING
+  google.protobuf.StringValue strategy = 2;
+}
+
+// response for InsertQueueAutoAssignment
+message InsertQueueAutoAssignmentResponse {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+  // Strategy defining how assignment should work, ex. MICRO_BATCH_POLLING
+  google.protobuf.StringValue strategy = 2;
+}
+
+// request for DeleteQueueAutoAssignment
+message DeleteQueueAutoAssignmentRequest {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+}
+
+// response for DeleteQueueAutoAssignment
+message DeleteQueueAutoAssignmentResponse {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+}
+
+// request for EnableSlackSwarmingInitiation
+message EnableSlackSwarmingInitiationRequest {
+  // agent email
+  google.protobuf.StringValue agent_email = 1;
+}
+
+// response for EnableSlackSwarmingInitiation
+message EnableSlackSwarmingInitiationResponse {
+  // whether or not we should display slack swarming butto
+  google.protobuf.BoolValue is_slack_swarming_enabled = 1;
+}
+
+// request for InitiateSlackSwarming
+message InitiateSlackSwarmingRequest {
+  // cmp_incident_id = uuid
+  google.protobuf.StringValue cmp_incident_id = 1;
+  // user_email
+  google.protobuf.StringValue user_email = 2;
+  // case_lob = Consumer / Dasher / Merchant / etc
+  google.protobuf.StringValue case_line_of_business = 3;
+  // additional_context = I need help resolving a Cx refund
+  google.protobuf.StringValue additional_context = 4;
+  // swarm_record_name = THQ initiated swarm
+  google.protobuf.StringValue swarm_record_name = 5;
+  // salesforce case number if its a salesforce case
+  google.protobuf.StringValue salesforce_case_number = 6 [deprecated = true];
+  // external case identifier
+  ExternalCaseIdentifier external_case_identifier = 7;
+}
+
+// response for InitiateSlackSwarming
+message InitiateSlackSwarmingResponse {
+  // slack thread url
+  google.protobuf.StringValue swarm_thread_url = 1;
+  // error message from sfdc
+  google.protobuf.StringValue error_message = 2;
+}
+
+// The request to get the queues that the agent's incidents belong to
+message GetCaseQueuesForAgentRequest {
+  // Agent ID (user id) of the supervisor, required
+  google.protobuf.StringValue agent_id = 1;
+  // Whether to include direct reports in the response
+  google.protobuf.BoolValue include_direct_reports = 2;
+  // incident created_at after/before
+  case_management_service.v1.TimeFilterOptions case_created_at_filter = 3;
+  // Agent email of the supervisor, required
+  google.protobuf.StringValue agent_email = 4;
+}
+
+// The response of GetIncidentQueuesForAgentRequest
+message GetCaseQueuesForAgentResponse {
+  // The Case Queues that the agent's incidents belong to
+  // basic meta data, like queue id, queue name, queue type, others like CaseQueueConfiguration not included.
+  repeated CaseQueue case_queues = 1;
+}
+
+// The request to bulk close incidents
+message BulkCloseIncidentsRequest {
+  // Context of the request (eg: requester)
+  RequestContext context = 5;
+  // Required - The params for the operation
+  BulkCloseParams params = 1;
+  // Required - The reason to apply to the resolution
+  google.protobuf.StringValue resolution_description_id = 2;
+  // Required - The decision to apply to the resolution
+  google.protobuf.StringValue resolution_subcategory_id = 3;
+  // Optional - The notes to apply to the resolution
+  google.protobuf.StringValue notes = 4;
+
+  // Parameters for bulk close
+  message BulkCloseParams {
+    // Required - Input method for the operation.
+    oneof input_method {
+      // Use this input object if we know what incident IDs to process.
+      BulkCloseWithIncidentIDs bulk_close_with_incident_ids = 1;
+      // Use this input object if we do not know what incident IDs to process.
+      BulkCloseWithQueueName bulk_close_with_queue_name = 2;
+    }
+    // Optional - Pass this flag if you want to skip the running of any auto actions.
+    // Defaults to false.
+    google.protobuf.BoolValue skip_auto_actions = 3;
+    // Optional - Pass this flag if you want to force the running of any auto actions.
+    // Defaults to false
+    google.protobuf.BoolValue force_auto_actions = 4;
+
+    // Bulk close using incident IDs
+    message BulkCloseWithIncidentIDs {
+      // Required - List of incident IDs
+      repeated google.protobuf.StringValue incident_ids = 1;
+    }
+
+    // Bulk close using queue name
+    message BulkCloseWithQueueName {
+      // Required - Name of the queue where we want to close cases.
+      google.protobuf.StringValue queue_name = 1;
+      // Optional - Pass this field if you want to target specific incident states for the bulk close operation.
+      // Defaults to CREATED.
+      repeated IncidentState states = 2;
+      // Optional - Close incidents that were created after this timestamp. Default is 4 weeks prior to now.
+      google.protobuf.Timestamp created_after = 3;
+      // Optional - Close incidents that were created before this timestamp. Default is now.
+      google.protobuf.Timestamp created_before = 4;
+      // Optional - Limit of how many records to process. Default is 100.
+      google.protobuf.Int32Value limit = 5;
+    }
+  }
+}
+
+// The response to bulk close incidents
+message BulkCloseIncidentsResponse {
+  // Successful output
+  repeated BulkCloseSuccess successes = 1;
+  // Error output
+  repeated BulkCloseError errors = 2;
+
+  // Bulk close success output
+  message BulkCloseSuccess {
+    // Incident ID
+    google.protobuf.StringValue incident_id = 1;
+  }
+
+  // Bulk close error output
+  message BulkCloseError {
+    // Incident ID
+    google.protobuf.StringValue incident_id = 1;
+    // Error reason
+    google.protobuf.StringValue error_reason = 2;
+  }
+}
+
+/**
+ * This message is used to process survey responses from Qualtrics.
+ * See: https://www.qualtrics.com/support/survey-platform/data-and-analysis-module/data/download-data/understanding-your-dataset/#Introduction
+ */
+message ProcessSurveyResponseRequest {
+  // survey_id of the survey response.
+  string survey_id = 1;
+  // CMP case ID associated with the survey.
+  string case_id = 2;
+  // Unique ID for each response.
+  string response_id = 3;
+  /*
+     Should be in https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date#date_time_string_format
+     Response date time.
+  */
+  string response_date_time = 4;
+
+  /**
+     Should be in https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date#date_time_string_format
+     Indicates when the respondents first clicked the survey link.
+  */
+  string response_start_date = 5;
+  /*
+     Should be in https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date#date_time_string_format
+     Indicates when the respondent submitted their survey.
+  */
+  string response_end_date = 6;
+  // Response finished.
+  string response_finished = 7;
+  // Response link.
+  string response_link = 8;
+  // Response progress.
+  string response_progress = 9;
+  // Response status.
+  string response_status = 10;
+  // The DoorDash user_id of the agent who handled the case at the time of the survey trigger.
+  string agent_user_id = 11;
+  // Support CSAT,csat,Link,SMS,Email.
+  string source = 12;
+  // Hard-coded survey_name in Qualtrics.
+  string survey_name = 13;
+  // Survey response in jsonString format.
+  string survey_response = 14;
+}
+
+// Process survey_response response
+message ProcessSurveyResponseResponse {
+  // Intentionally left blank
+}
+
+// request object for get case history for merchant
+message GetCaseHistoryForMerchantRequest {
+  // time filter options
+  TimeFilterOptions time_filter_options = 1;
+  // pagination options
+  PaginationOptions pagination_options = 2;
+  // store ids
+  repeated string store_ids = 3;
+  // business ids
+  repeated string business_ids = 4;
+  // case state filter list
+  repeated string state_filter_list = 5;
+}
+
+// response object for get case history for merchant
+message GetCaseHistoryForMerchantResponse {
+  // list of cases in case history
+  repeated CaseHistory case_history_list = 1;
+  // total count of all cases in history
+  google.protobuf.Int32Value total_case_history_count = 2;
+}

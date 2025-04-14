@@ -1,0 +1,433 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package task_service.v2;
+
+import "common/common.proto";
+import "common/date.proto";
+import "common/restriction_rules.proto";
+import "delivery_service/delivery_core.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.task_service";
+
+// Each Task connects a location with domain-specific data about the job to be done at that location.
+message Task {
+  reserved 1;
+  reserved "task_id";
+
+  // The task_data message combines a location with domain-specific data about the nature of the task.
+  TaskData task_data = 2 [(map_to_nested_message) = true];
+
+  // TODO: why do we have this if it's all one blob
+  google.protobuf.StringValue task_group_id = 3 [(no_map) = true];
+
+  // The time of creation of the task in the database
+  google.protobuf.Timestamp created_at = 4 [(no_map) = true];
+
+  // The time of last update of the task in the database
+  google.protobuf.Timestamp updated_at = 5 [(no_map) = true];
+
+  // The time of completion of the task, whether successful or unsuccessful.  For example, tasks that are abandoned,
+  // cancelled, or that require a return are considered completed.  This field simply represents that this task is
+  // not in progress any longer.
+  // ^^ TOOD: confirm with team
+  google.protobuf.Timestamp completed_at = 6 [(no_map) = true];
+
+  // A unique name describing the name of the task
+  // TODO: should we have some sort of guidelines on what this should look like?  If we don't we'll get a bunch of random test junk.
+  google.protobuf.StringValue task_name = 7 [(no_map) = true];
+}
+
+// Represents a location, instructions, and domain-specific data about the nature of the task.
+message TaskData {
+  reserved 1, 2;
+  reserved "store_pickup_task", "consumer_dropoff_task";
+  // Domain-specific data about the nature of the task.
+  oneof task_data {
+    PickupTask pickup_task = 6 [(map_to_nested_message) = true];
+    DropoffTask dropoff_task = 7 [(map_to_nested_message) = true];
+    GroundTruthTask ground_truth_task = 3 [(no_map) = true];
+  }
+  // The location of the task. TODO investigate how would we map both pickUp and dropOff location
+  TaskLocation task_location = 4 [(map_to_function) = "taskLocationToDeliveryTaskGroupLocation"];
+  repeated TaskInstruction task_instructions = 5 [(map_to_function) = "taskInstructionsToDeliveryTaskGroupInstructions"];
+  // metadata regarding audience of the task
+  oneof entity {
+    StoreEntity store_entity = 8 [(map_to_nested_message) = true];
+    ConsumerEntity consumer_entity = 9 [(map_to_nested_message) = true];
+  }
+  // The time the task needs to start (maps to pickup_window_start_time or delivery_window_start_time)
+  google.protobuf.Timestamp task_start_time = 10 [(map_to_function) = "taskStartTimeToDeliveryTaskGroup"];
+  // The time the task needs to end (maps to pickup_window_end_time or delivery_window_end_time)
+  google.protobuf.Timestamp task_end_time = 11 [(map_to_function) = "taskEndTimeToDeliveryTaskGroup"];
+}
+
+message PickupTask {
+  reserved 1, 2;
+  reserved "task_location", "fulfillment_time";
+
+  // TODO: document what this is and what it is used for
+  google.protobuf.Timestamp internally_calculated_pickup_time = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.internally_calculated_pickup_time"];
+
+  // Timestamp associated with a dasher swiping on the app to get to the pickup screen.
+  google.protobuf.Timestamp dasher_confirmed_at_store_time = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_confirmed_at_store_time"];
+
+  // Timestamp associated with a dasher swiping on the app once pickup is completed.
+  google.protobuf.Timestamp actual_pickup_time = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.actual_pickup_time"];
+
+  // need to investigate how we can set using custom options while mapping it back to delivery task group
+  repeated Item items = 6 [(map_to_repeated) = "DeliveryTaskGroup.delivery_order_info.items"];
+
+  // If items are provided this should match the count, but it can be set without items.
+  google.protobuf.Int64Value item_count = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.item_count"];
+
+  // Geofence triggers (dasher_arriving_at_store_time, dasher_at_store_time)
+  GeoFencePickUpProximityTimeLine geo_fence_proximity_time_line = 8;
+
+  // This is from DeliveryAudienceInfo.AccessibilityRequirements
+  // TODO: document what this actually does
+  google.protobuf.BoolValue has_accessibility_requirements = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.accessibility_requirements.pickup_address_has_accessibility_requirements"];
+}
+
+// GeoFenceProximityTimeLine represents the time line of dasher/entity proximity to geo fence
+message GeoFencePickUpProximityTimeLine {
+  // dasher_arrived_at_merchant_time, dasher_arriving_at_store_time, dasher_at_store_time
+  google.protobuf.Timestamp approaching_at = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_arriving_at_store_time,DeliveryTaskGroup.delivery_data.dasher_at_store_time,DeliveryTaskGroup.dasher_proximity_info.dasher_arrived_at_merchant_time"];
+  // dasher_left_merchant_time or dasher_left_customer_time
+  google.protobuf.Timestamp leaving_at = 2 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_left_merchant_time"];
+  // at_restaurant
+  google.protobuf.BoolValue at_restaurant = 3 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.at_restaurant"];
+}
+
+// Analog of DeliveryOrderItem
+message Item {
+  // A short description of the item.  TODO: do we show this to the dasher?
+  string name = 1 [(map_to_field) = "DeliveryTaskGroup.delivery_order_info.items.name"];
+
+  // A longer description that will be shown to the dasher.  TODO: how does this differ from item_description_for_dasher?
+  // Some discussion here https://docs.google.com/document/d/1pjM5GiUvEoHOVcUUZu9uv3BQocoE7OBn8Nos4YKUzfc/edit
+  string description = 2 [(map_to_field) = "DeliveryTaskGroup.delivery_order_info.items.description"];
+
+  ItemSizeWeightQuantity item_size_weight_quantity = 3 [(no_map) = true];
+
+  // In general skipping the NV fields but here we are using the more general restriction info from which we
+  // can calculate the legacy is_alcohol field
+  common.restriction_rules.v1.RestrictionInfoWRules restriction_info_w_rules = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.restriction_info_w_rules"];
+  google.protobuf.StringValue image_url = 11 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.image_url"];
+}
+
+// This captures a number of different ways to describe the size and weight of an item.  All fields should be
+// provided **per item**.  The expected units are in the name of the field.
+// m = meters
+// gm = grams
+message ItemSizeWeightQuantity {
+  common.QuantityInfo quantity = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.quantity"];
+
+  google.protobuf.DoubleValue width_m = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.dimensions.width_m"];
+  google.protobuf.DoubleValue height_m = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.dimensions.height_m"];
+  google.protobuf.DoubleValue length_m = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.dimensions.length_m"];
+
+  // During delivery creation, this should only be set when the upstream doesn't provide full dimensions.
+  // Otherwise it will be calculated from the width, height, and length fields.
+  google.protobuf.DoubleValue max_dimension_m = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.max_dimension_m"];
+
+  // During delivery creation, this should only be set when the upstream doesn't provide full dimensions.
+  // Otherwise it will be calculated from the width, height, and length fields.
+  google.protobuf.DoubleValue volume_cubic_meter = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_order_info.items.volume_cubic_meter"];
+
+  // Weight per item.
+  google.protobuf.DoubleValue weight_gm = 7; // TODO older model as total_weight_gm (product of per item weight * quantity)
+}
+
+enum HandoffProtocol {
+  HANDOFF_PROTOCOL_UNSPECIFIED = 0;
+  // Hand it to me
+  HANDOFF_PROTOCOL_HITM = 1;
+  // Contactless, is_contactless_delivery
+  HANDOFF_PROTOCOL_CONTACTLESS = 2;
+  // is_curbside_dropoff
+  HANDOFF_PROTOCOL_CURBSIDE = 3;
+}
+
+message DropoffTask {
+  reserved 1, 2;
+  reserved "task_location", "fulfillment_time";
+
+  DropoffFulfillmentRequirements dropoff_fulfillment_requirements = 3 [(map_to_nested_message) = true];
+
+  // TODO: document format and purpose
+  google.protobuf.StringValue dasher_notes = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_notes"];
+
+  // TODO: document what this is and what it is used for
+  google.protobuf.Timestamp internally_calculated_delivery_time = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.internally_calculated_delivery_time"];
+
+  // The time the dasher swiped the at-consumer screen.
+  google.protobuf.Timestamp dasher_confirmed_at_consumer_time = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_confirmed_at_consumer_time"];
+
+  // For HITM orders, specifies the time when the dasher left the order at the consumer location.
+  // TODO: document how we use this for drive return orders
+  // TODO: re-engineer this field.  This has always been a terrible field.
+  google.protobuf.Timestamp abandoned_at = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.abandoned_at"];
+
+  // The time the dasher successfully delivered the order.
+  google.protobuf.Timestamp actual_delivery_time = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.actual_delivery_time"];
+
+  // Geofence triggers
+  GeoFenceDropOffProximityTimeLine geo_fence_proximity_time_line = 9 [(map_to_nested_message) = true];
+
+  // This is from DeliveryAudienceInfo.AccessibilityRequirements
+  // TODO: document what this actually does
+  google.protobuf.BoolValue has_accessibility_requirements = 10 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.accessibility_requirements.dropoff_address_has_accessibility_requirements"];
+}
+
+// GeoFenceProximityTimeLine represents the time line of dasher/entity proximity to geo fence
+message GeoFenceDropOffProximityTimeLine {
+  //  dasher_approaching_customer_time, dasher_arriving_at_consumer_time
+  google.protobuf.Timestamp approaching_at = 1 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_approaching_customer_time,DeliveryTaskGroup.delivery_data.dasher_arriving_at_consumer_time"];
+  //  dasher_left_customer_time
+  google.protobuf.Timestamp leaving_at = 2 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_left_customer_time"];
+  // dasher_approaching_customer_wide_time (600 meters)
+  google.protobuf.Timestamp approaching_at_wide = 3 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_approaching_customer_wide_time"];
+  // dasher_left_customer_wide_time (600 meters)
+  google.protobuf.Timestamp leaving_at_wide = 4 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_left_customer_wide_time"];
+  // at_customer
+  google.protobuf.BoolValue at_customer = 5 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.at_customer"];
+  // at_customer_wide
+  google.protobuf.BoolValue at_customer_wide = 6 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.at_customer_wide"];
+  // dasher_approaching_customer_time_by_eta
+  google.protobuf.Timestamp approaching_at_by_eta = 7 [(map_to_exact_message) = "DeliveryTaskGroup.dasher_proximity_info.dasher_approaching_customer_time_by_eta"];
+}
+
+message DropoffFinalState {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_DELIVERED = 1;
+    STATE_ABANDONED = 2;
+    STATE_RETURNED = 3;
+  }
+  message AbandonReason {
+    google.protobuf.StringValue abandoned_reason = 1;
+    google.protobuf.StringValue abandoned_comment = 2;
+  }
+  message ReturnReason {
+    google.protobuf.StringValue return_reason = 1;
+    google.protobuf.StringValue return_comment = 2;
+  }
+
+  State state = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  oneof reason {
+    AbandonReason abandon_reason = 3;
+    ReturnReason return_reason = 4;
+  }
+}
+
+message DropoffFulfillmentRequirements {
+  // HITM or Contactless
+  HandoffProtocol handoff_protocol = 1 [(map_to_function) = "handoffProtocolToDeliveryTaskGroup"];
+
+  // If true, triggers the signature required flow on the dasher app during dropoff.
+  // TODO: there's a bunch of other behavior associated here, document it
+  google.protobuf.BoolValue signature_required = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.signature_required"];
+
+  // TODO: fix this -- we need a general "ID verfication" object here that covers all the cases
+  // AlcoholIdvFlow alcohol_idv_flow = 4;
+
+  // If greater than 0, triggers the cash on delivery flow on the dasher app during dropoff.
+  // google.protobuf.Int64Value cash_on_delivery = 5;
+
+  // Only set for return deliveries and triggers a flow on the dasher app that they need to check in
+  // with an agent at the parcels return facility and scan the package back in.
+  google.protobuf.BoolValue should_require_return_check_in = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.should_require_return_check_in"];
+
+  // Data used for the dasher handoffs service
+  repeated delivery_service.core.DeliveryEntityData delivery_entity_data = 7 [(map_to_repeated) = "DeliveryTaskGroup.delivery_audience_info.deliveryEntityData"];
+
+  // For hand-it-to-me orders -- requires dashers to trigger a support flow before leaving the order.
+  google.protobuf.BoolValue should_escalate_when_cx_unavailable = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.should_escalate_when_cx_unavailable"];
+
+  // For hand-it-to-me orders -- requires dashers to wait until this time before leaving the order.
+  google.protobuf.Timestamp dasher_wait_until = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.dasher_wait_until"];
+
+  google.protobuf.BoolValue allow_unattended_delivery = 10 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.allow_unattended_delivery"];
+}
+
+message GroundTruthTask {
+  reserved 3;
+  reserved "store_info";
+  oneof ground_truth_task {
+    TakePhotoTask take_photo_task = 1;
+    CollectStoreHoursTask collect_store_hours_task = 2;
+    MerchantFraudTask merchant_fraud_task = 4;
+    // Ground truth task for collecting property photos
+    CollectPropertyPhotosTask collect_property_photos_task = 5;
+    // Ground truth task for collecting eta prep times
+    CollectPrepTimesTask collect_prep_times_task = 6;
+    // Ground truth task for collecting area photos for a grocery store
+    TakeAreaPhotoTask take_area_photo_task = 9;
+  }
+  // Task name which will be shown on assignment modal, earning screen thq etc
+  google.protobuf.StringValue display_name = 7;
+  // Task type name which will be shown on assignment modal, earning screen thq etc, examples: "Collect Store Hours"
+  google.protobuf.StringValue task_type_display_name = 8;
+}
+
+// Ground truth task for collection photos of a building or landscape
+message CollectPropertyPhotosTask {
+  // List of requested property photos
+  repeated PropertyPhoto photos = 1;
+  // Address name of the property
+  string source_formatted_address = 2;
+  // Name of the property to collect photos from, Displayed on Dx Accept and Earning screens (+Anywhere where store name used)
+  string property_name = 3;
+
+  reserved 4;
+  reserved "property_type";
+  reserved 5;
+  reserved "building_id";
+  reserved 6;
+  reserved "poi_id";
+
+  // Address ID - Will not resolve address if this is present
+  google.protobuf.StringValue address_id = 7;
+  // Incentives for taking photos. Issued manually after ops review.
+  repeated Incentive incentives = 8;
+  // This will distinguish the photo taking task type.
+  google.protobuf.StringValue sub_task_type = 9;
+
+  // Incentive details
+  message Incentive {
+    // Type of incentive
+    enum IncentiveType {
+      // Issued for every side that passes validation
+      INCENTIVE_TYPE_PER_SIDE = 0;
+      // Issued if all the photos passes validation
+      INCENTIVE_TYPE_PER_TASK = 1;
+    }
+    // Type of incentive
+    IncentiveType type = 1;
+    // Incentive amount
+    double amount = 2;
+    // Turnaround time for receiving incentive
+    google.protobuf.StringValue pay_window = 3;
+  }
+}
+
+// Ground truth task to collect eta prep time information
+message CollectPrepTimesTask {
+  // field to collect average prep time
+  google.protobuf.Int64Value estimated_average_prep_time = 1;
+  // field to collect on average number of concurrent orders
+  google.protobuf.Int64Value number_of_concurrent_orders = 2;
+  // field to collect busiest times for merchant
+  google.protobuf.StringValue busy_peak_times = 3;
+  // field to collect impact level with prep times for number of distinct items
+  google.protobuf.StringValue number_of_distinct_items_impact = 4;
+  // field to collect impact level with prep times for dollar value
+  google.protobuf.StringValue total_dollar_value_impact = 5;
+  // field to collect impact level to merchant operations for dasher arrival time
+  google.protobuf.StringValue dasher_arrival_time_impact = 6;
+}
+
+// Property photo that is requested
+message PropertyPhoto {
+  // The angle for the photo. Building front, side, back, so on
+  string angle = 1;
+  // Freeform definition of the photo that needs to be taker
+  string details = 2;
+  // Sample images for the photo type
+  repeated string sample_images = 3;
+  // Tells whether this angle require multiple photos
+  bool requires_multiple_photos = 4;
+  // Is this photo optional
+  bool is_optional = 5;
+  // Sample bad images for the photo type
+  repeated string sample_bad_images = 6;
+  // Instructions for Dx to take photos
+  google.protobuf.StringValue instructions = 7;
+  // Description of the photo in bullet point format
+  repeated string description = 8;
+  // Has landscape sample images
+  bool has_landscape_images = 9;
+  // Photo guideline description
+  google.protobuf.StringValue photo_guideline_text = 10;
+  // Photo guideline photos
+  repeated PhotoGuidelineItem photo_guideline_items = 11;
+
+  // Photo guideline photo
+  message PhotoGuidelineItem {
+    // Url of sample image
+    string photo_url = 1;
+    // True is the provided image is landscape
+    bool is_landscape = 2;
+    // True if this is a good sample image
+    bool valid_photo = 3;
+    // Caption to display under the photo
+    string caption = 4;
+  }
+}
+
+message TakePhotoTask {
+  reserved 1;
+  reserved "number_of_aisles";
+}
+
+// Ground truth task for collecting area photos for a grocery store
+message TakeAreaPhotoTask {}
+
+message CollectStoreHoursTask {
+  // Deprecated task_instructions field and moved under GroundTruthTask
+  reserved 2;
+  reserved "task_instructions";
+  // Deprecated batch_type field and moved under GroundTruthTask
+  reserved 4;
+  reserved "batch_type";
+
+  // The email of the submitter of task - usually a DD operator
+  google.protobuf.StringValue submitter_email = 1;
+
+  // Event for which store hours are being collected
+  message Event {
+    reserved 3, 4;
+    reserved "store_open_time", "store_close_time";
+    // The date for which the store hours are being collected
+    date.Date event_date = 1;
+    // This will define the occasion for which the store hours are being collected - Easter, Christmas, etc.
+    google.protobuf.StringValue event_name = 2;
+    // The time the store opens on the event date (as shown to the dasher)
+    google.protobuf.Timestamp dd_store_open_time = 5;
+    // The time the store closes on the event date (as shown to the dasher)
+    google.protobuf.Timestamp dd_store_close_time = 6;
+    // The time the store opens on the event date (collected by Dx)
+    google.protobuf.Timestamp collected_store_open_time = 7;
+    // The time the store closes on the event date (collected by Dx)
+    google.protobuf.Timestamp collected_store_close_time = 8;
+  }
+
+  // The events for which the store hours are being collected
+  repeated Event events = 3;
+}
+
+// Mx fraud task
+message MerchantFraudTask {
+  // Mx contact name
+  google.protobuf.StringValue merchant_contact_name = 1;
+  // Mx contact email
+  google.protobuf.StringValue merchant_contact_email = 2;
+  // Mx contact phone number
+  google.protobuf.StringValue merchant_contact_phone = 3;
+  // Mx signup timestamp
+  google.protobuf.Timestamp merchant_signup_at = 4;
+  // Mx store id
+  google.protobuf.StringValue merchant_store_id = 5;
+  // Mx name
+  google.protobuf.StringValue merchant_name = 6;
+  // address id
+  google.protobuf.StringValue address_id = 7;
+}

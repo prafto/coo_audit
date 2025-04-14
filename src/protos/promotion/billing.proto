@@ -1,0 +1,365 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/ads_promos.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/placement.proto";
+import "promotion/pricing.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+// Payment protocol determines how Mx pay for ads/promo. This is a salesforce setting.
+enum PaymentProtocol {
+  // Invalid.
+  PAYMENT_PROTOCOL_UNSPECIFIED = 0;
+  // Monthly auto invoicing.
+  PAYMENT_PROTOCOL_AUTO_INVOICING = 1;
+  // Monthly manual invoicing.
+  PAYMENT_PROTOCOL_MANUAL_INVOICING = 2;
+  // Direct payout deduction.
+  PAYMENT_PROTOCOL_WITHHOLD = 3;
+  // Free of charge. The system can continue calculating the amount. But not charge to the Mx,
+  // neither withhold nor invoicing. This will help setup test campaigns.
+  PAYMENT_PROTOCOL_FREE = 4;
+}
+
+// Billing. It can be set at campaign or ad group level.
+// One billing configuration setup per (PricingModel, PricingType) combination.
+// This corresponds to one section of "Billing and Financial Settings" in CM:
+// Invoice one-time Fee, Invoice CPA, Invoice CPM, Invoice CPC, etc.
+message Billing {
+  // Reserved field for deprecated PaymentSettings field.
+  reserved 3;
+
+  // Pricing Model.
+  PricingModel pricing_model = 1;
+  // Pricing Type.
+  PricingType pricing_type = 2;
+
+  // Billing line items.
+  repeated BillingLineItem line_items = 4;
+  // Payment protocol
+  // Valid combinations:
+  //   PRICING_MODEL PAYMENT_PROTOCOL
+  //   ------------- ------------------------------------------------
+  //   FIXED_PRICE   AUTO_INVOICING, MANUAL_INVOICING, FREE
+  //   CPA           AUTO_INVOICING, MANUAL_INVOICING, WITHHOLD, FREE
+  //   CPM           AUTO_INVOICING, MANUAL_INVOICING, FREE
+  //   CPC           AUTO_INVOICING, MANUAL_INVOICING, FREE
+  //
+  PaymentProtocol payment_protocol = 5;
+
+  // Billing address. For HPB, this would be the Mx HQ address
+  google.protobuf.StringValue billing_address_id = 6;
+
+  // Billing line item.
+  // Sample settings:
+  // 1. Total placement campaign. Ops can specify the scope the rule applies, set the total placement fee
+  // in amount, and specify SFDC line item id.
+  // 2. Performance based (CPA, CPM, CPC) campaign using fixed rate price. Ops can specify the scope the rule applies,
+  // set fixed rate in amount, and specify SFDC line item id.
+  // 3. Performance based campaign using Auction price. Ops doesn't specify the scope. The billing rule applies to all
+  // impression/click events. The price was determined by bidding process. Only need to set SFDC line item id.
+  message BillingLineItem {
+    // Define billing criterion.
+    // As long as impression/click/conversion event meets the criteria, it will be charged according to
+    // the Pricing(pricing_model, pricing_type, amount). The data structure is optimized for billing purpose.
+    // If this is not set, it means apply to all.
+    BillingCriterion billing_criterion = 1;
+    // FLAT_FEE - flat fee, FIXED_RATE - flat rate, AUCTION - null, FREE - null
+    money.MonetaryFields amount = 2;
+    // Min amount for entire serving period. Not applicable for Flat fee.
+    money.MonetaryFields min_amount = 3;
+    // Max amount for entire serving period. Not applicable for Flat fee.
+    money.MonetaryFields max_amount = 4;
+    // Salesforce opportunity line item id. Not applicable for withhold.
+    google.protobuf.StringValue salesforce_opportunity_line_item_id = 5;
+    // Uniquely identifier, populated by Campaign Manager. Used by Flink job and invoicing process.
+    google.protobuf.StringValue id = 6;
+    // Set to true if max_amount has been reached.
+    google.protobuf.BoolValue is_max_amount_reached = 7;
+    // Billing profile, used for marketing fund
+    google.protobuf.StringValue billing_profile_id = 8;
+    // Funding object, used for marketing fund
+    money.Funding funding = 9;
+    // Max amount per day for entire serving period. Not applicable for Flat fee.
+    money.MonetaryFields daily_max_amount = 10;
+  }
+
+  // Billing criterion. Determine if the event matching the billing scope.
+  // Lists of billing criteria are predefined in the system per valid (PricingModel, PricingType) combination.
+  message BillingCriterion {
+    // Globally unique id.
+    int32 id = 1;
+    // Name
+    string name = 2;
+    // Matching criterion.
+    oneof criterion {
+      // Placement type.
+      Placement.PlacementType placement_type = 3;
+      // Custom surface, use placement_type whenever possible.
+      CustomSurface custom_surface = 4;
+    }
+  }
+
+  // Custom surface providing backward compatibility to total placement fee type. The usage should be
+  // limited. Please use PlacementType directly whenever possible.
+  enum CustomSurface {
+    // Unspecified.
+    CUSTOM_SURFACE_UNSPECIFIED = 0;
+    // Home Page Banner. Different from PLACEMENT_TYPE_HOME_PAGE_BANNER
+    // PLACEMENT_TYPE_HOME_PAGE_BANNER with landing_page_types (LANDING_PAGE_TYPE_HOMEPAGE, LANDING_PAGE_TYPE_DEFAULT_HOMEPAGE)
+    CUSTOM_SURFACE_HOME_PAGE_BANNER = 1;
+    // Sponsored Listing.
+    // Map to PLACEMENT_TYPE_CUISINE_FILTER, PLACEMENT_TYPE_KEYWORD_SEARCH
+    CUSTOM_SURFACE_SPONSORED_LISTING = 2;
+    // Vertical landing page.
+    // PLACEMENT_TYPE_HOME_PAGE_BANNER with landing_page_type LANDING_PAGE_TYPE_VERTICAL_LANDING_PAGE
+    CUSTOM_SURFACE_VERTICAL_LANDING_PAGE = 4;
+    // CRM
+    CUSTOM_SURFACE_CRM = 5;
+    // Other
+    CUSTOM_SURFACE_OTHER = 6;
+    // CPG
+    CUSTOM_SURFACE_CPG = 7;
+  }
+
+  // the budget/spending related information would be tracked per billing line item, the tracking component would
+  // possibly publish related event like BillingLineItemMaxAmountReached (published by CPM billing job), so that
+  // the downstream could take the proper actions. i.e., promotion service would consume the
+  // BillingLineItemMaxAmountReached event to deactivate the corresponding placements.
+  message BillingLineItemEvent {
+    // the event type represented by one of the enum values
+    BillingLineItemEventType type = 1;
+    // the enum for the event type
+    enum BillingLineItemEventType {
+      // invalid
+      BILLING_LINE_ITEM_EVENT_TYPE_UNSPECIFIED = 0;
+      // the max amount reached, one of the consumers would deactivate the placements for this to stop serving
+      BILLING_LINE_ITEM_EVENT_TYPE_MAX_AMOUNT_REACHED = 1;
+      // for future, daily budget reached etc.
+    }
+
+    // the event id, could be idempotent key
+    google.protobuf.StringValue event_id = 2;
+
+    // concrete events here correspond to the selected enum
+    oneof value {
+      // fired by cpm billing when max amount reached
+      BillingLineItemMaxAmountReached max_amount_reached = 3;
+    }
+    // the event timestamp
+    google.protobuf.Timestamp timestamp = 4;
+    // pricing model associated with the billing line item
+    PricingModel pricing_model = 5;
+  }
+
+  // the event fired when max amount of cost reached
+  message BillingLineItemMaxAmountReached {
+    // the campaign id that the line item belongs to, required
+    string campaign_id = 2;
+    // the related line item
+    BillingLineItem item = 3;
+  }
+}
+
+/**
+ * Billing Event for different types of events (CPA, CPC).
+ */
+message BillableEvent {
+  // campaign id of the billable event.
+  google.protobuf.StringValue campaign_id = 1;
+  // id of the ad group.
+  google.protobuf.StringValue ad_group_id = 2;
+  // ads event type of the billable event.
+  BillableEventType type = 3;
+  // id of the billable event.
+  google.protobuf.StringValue billable_event_id = 4;
+  // ads event id. this is used for dedupe.
+  google.protobuf.StringValue event_id = 5;
+  // event's id which saved in the event store.
+  google.protobuf.Int64Value event_store_id = 6;
+  // consumer who creates the ads event.
+  google.protobuf.StringValue consumer_id = 7;
+  // store which to ads event belongs.
+  google.protobuf.StringValue store_id = 8;
+  // collection of spending.
+  BillableAmounts billing_amount = 9;
+  // id of the billing line item.
+  google.protobuf.StringValue billing_line_item_id = 10;
+  // should be billable event invoiced?
+  google.protobuf.StringValue delivery_id = 11;
+  // placement type of the associated billing line item.
+  Placement.PlacementType placement_type = 12;
+  // start/triggered time for the ads event.
+  google.protobuf.Timestamp event_active_date = 13;
+  // created time for the billable event.
+  google.protobuf.Timestamp created_at = 14;
+  // updated time for the billable event.
+  google.protobuf.Timestamp updated_at = 15;
+  // billng method for the the billable event.
+  ads_promos.v1.BillingMethod billing_method = 16;
+
+  // type of the billable event type.
+  enum BillableEventType {
+    // unknown type.
+    BILLABLE_EVENT_TYPE_UNSPECIFIED = 0;
+    // the billable event is created from cpa event/s.
+    BILLABLE_EVENT_TYPE_CPA = 1;
+    // the billable event is created from cpm event/s.
+    BILLABLE_EVENT_TYPE_CPM = 2;
+    // the billable event is created from cpc_event/s.
+    BILLABLE_EVENT_TYPE_CPC = 3;
+    // the billable event is created from promo redemption
+    BILLABLE_EVENT_TYPE_CPR = 4;
+  }
+
+  // spending breakdown for the billable events.
+  message BillableAmounts {
+    // total amount of ads spending.
+    google.protobuf.Int32Value total_fee = 1;
+    // pure ads spending (eg. before tax).
+    google.protobuf.Int32Value total_subtotal_fee = 2;
+    // the amount for billable event to be invoiced.
+    google.protobuf.Int32Value total_ads_fee = 3;
+    // total amount of tax.
+    google.protobuf.Int32Value total_tax = 4;
+    // currency of the spend amount.
+    google.protobuf.StringValue currency = 5;
+    /*
+     * the raw amount from upstream.
+     * this raw fee may include/exclude tax fee depends on the country.
+     * (e.g US/CA exclude tax, AUS include tax)
+     */
+    google.protobuf.Int32Value raw_total_fee = 6;
+    // total amount of free credit
+    google.protobuf.Int32Value total_free_credit = 7;
+  }
+
+  // represents an auction of the ads event.
+  message Auction {
+    // id of the auction for ads event.
+    google.protobuf.StringValue id = 1;
+    // timestamp for the creation.
+    google.protobuf.Timestamp created_at = 2;
+  }
+
+  // cpa event detail.
+  message CpaEventDetail {
+    // timestamp for the order submission.
+    google.protobuf.Timestamp order_cart_submitted_at = 1;
+    // cost for the given order.
+    money.MonetaryFields order_subtotal = 2;
+    // timestamp for the order confirmation from Mx.
+    google.protobuf.Timestamp store_order_confirm_time = 3;
+    // an auction for the given cpa event.
+    Auction auction = 4;
+  }
+
+  // cpc event detail.
+  message CpcEventDetail {
+    // Id of an item if it's an item click
+    google.protobuf.StringValue item_id = 1;
+    // an auction for the given cpa event.
+    Auction auction = 2;
+    // Id of an collection where the ads in
+    google.protobuf.StringValue collection_id = 3;
+  }
+
+  // cpm event detail.
+  message CpmEventDetail {
+    // serial number for the cpm impression batch.
+    google.protobuf.Int32Value batch_serial = 1;
+    // an amount for the cpm event.
+    google.protobuf.Int32Value unit_amount = 2;
+    // cumulated cost for the cpm event.
+    google.protobuf.Int32Value cumulative_cost_unit_amount = 3;
+    // counts for the impression.
+    google.protobuf.Int32Value view_count = 4;
+  }
+
+  // cpr event detail
+  message CprEventDetail {
+    // redemption uuid
+    google.protobuf.StringValue redemption_id = 1;
+    // promo code for redemptions by code
+    google.protobuf.StringValue code = 2;
+    // store_order_cart_id of associated order
+    google.protobuf.StringValue store_order_cart_id = 3;
+    // order_cart_id of associated order
+    google.protobuf.StringValue order_cart_id = 4;
+    // order_uuid of associated order
+    google.protobuf.StringValue order_uuid = 5;
+    // num_applications for complex deals
+    google.protobuf.Int32Value num_applications = 6;
+    // funding source type of discount
+    google.protobuf.StringValue funded_by = 7;
+    // total promo discount received by cx
+    google.protobuf.Int32Value discount_value = 8;
+    // order placed time
+    google.protobuf.Timestamp order_cart_submitted_at = 9;
+    // flat platform fee associated with this redemption
+    google.protobuf.Int32Value platform_fee = 10;
+    // how much of the discount is being passed through to the merchant
+    google.protobuf.Int32Value discount_subsidy = 11;
+    // subtotal of the associated order
+    google.protobuf.Int32Value order_subtotal = 12;
+    // for cpg promos the amount from store order cart should not be used
+    google.protobuf.BoolValue override_order_cart_promo_fee = 13;
+    // for cpg promos, each item id in the order associated with promo discount
+    repeated google.protobuf.StringValue item_ids = 14;
+  }
+
+  // a detail of the billable event. the details should be matched with BillableEventType.
+  oneof event_detail {
+    // detail of the bounded cpa event.
+    CpaEventDetail cpa_detail = 17;
+    // detail of the bounded cpc event.
+    CpcEventDetail cpc_detail = 18;
+    // detail of the bounded cpm event.
+    CpmEventDetail cpm_detail = 19;
+    // detail of the bounded cpr event.
+    CprEventDetail cpr_detail = 24;
+  }
+
+  // ad click id.
+  google.protobuf.StringValue ad_click_event_id = 20;
+  // billing profile id for an event
+  google.protobuf.StringValue billing_profile_id = 21;
+  // advertiser id for a CPC event
+  google.protobuf.StringValue advertiser_id = 22;
+  // the id for ad in the Savvy model
+  google.protobuf.StringValue ad_id = 23;
+  // the id for the entity id, campaign id or enrichment id.
+  google.protobuf.StringValue entity_id = 25;
+  // the entity id type of the entity id.
+  BillableEventEntityIdType entity_id_type = 26;
+
+  // force update which will ignore any dedup logic
+  google.protobuf.BoolValue force_update = 27;
+  // event status: CREATE, CANCELLED, etc.
+  google.protobuf.StringValue event_status = 28;
+  // order life cycle event timestamp
+  google.protobuf.Timestamp mx_olc_event_timestamp = 29;
+
+  // BillableEventEntityIdType for entity id type
+  enum BillableEventEntityIdType {
+    // unknown type.
+    BILLABLE_EVENT_ENTITY_ID_TYPE_UNSPECIFIED = 0;
+    // the entity id is a campaign.
+    BILLABLE_EVENT_ENTITY_ID_TYPE_CAMPAIGN = 1;
+    // the entity id is an enrichment .
+    BILLABLE_EVENT_ENTITY_ID_TYPE_ENRICHMENT = 2;
+  }
+}

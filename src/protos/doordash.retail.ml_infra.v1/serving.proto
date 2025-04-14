@@ -1,0 +1,367 @@
+syntax = "proto3";
+
+package doordash.retail.ml_infra.v1;
+
+import "common/code.proto";
+import "doordash.retail.catalog.crdb.v1/global_product_item.proto";
+import "doordash.retail.catalog.v2/attribute_extraction.proto";
+import "doordash.retail.catalog.v2/common.proto";
+import "doordash.retail.catalog.v2/enriched_third_party_data.proto";
+import "doordash.retail.catalog.v2/metadata.proto";
+import "doordash.retail.catalog.v2/prime_content.proto";
+import "doordash.retail.catalog.v2/product_template_assignment.proto";
+import "doordash.retail.catalog.v2/sku_enrichment.proto";
+import "doordash.retail.catalog.v2/unique_global_product.proto";
+import "doordash.retail.catalog.v2/unique_global_product_content.proto";
+import "doordash.retail.catalog.v2/unique_merchant_product.proto";
+import "doordash.retail.catalog.v2/unique_merchant_product_content.proto";
+import "doordash.retail.ml_infra.v1/prime_match.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+
+// API definition for ML Infra Inference Service
+service MLInfraIServingService {
+  // Attribute Extraction API
+  rpc ExtractAttribute(ExtractAttributeRequest) returns (ExtractAttributeResponse);
+
+  // Product Categorization API
+  // rpc ProductCategorization(ProductionCategorizationRequest) returns (ProductionCategorizationResponse);
+
+  // Inference service API for Intra-Mx ESKUs
+  rpc IntraMerchantEntityResolution(IntraMerchantEntityResolutionRequest) returns (IntraMerchantEntityResolutionResponse);
+
+  // Inference service API for Product Template Assignment
+  rpc GetProductTemplateAssignment(GetProductTemplateAssignmentRequest) returns (GetProductTemplateAssignmentResponse);
+
+  // Inference service API for Prime Match
+  rpc GetPrimeMatch(GetPrimeMatchRequest) returns (GetPrimeMatchResponse);
+}
+
+// Step
+enum MLResultType {
+  // Unknown source
+  ML_RESULT_TYPE_UNSPECIFIED = 0;
+  // Intra-Mx ER
+  ML_RESULT_TYPE_INTRA_MX_ER = 1;
+  // ER job run
+  ML_RESULT_TYPE_ER_RUN = 2;
+  // product template assignment
+  ML_RESULT_TYPE_GET_PRODUCT_TEMPLATE_ASSIGNMENT = 3;
+  // attribute extraction
+  ML_RESULT_TYPE_EXTRACT_ATTRIBUTE = 4;
+  // prime match
+  ML_RESULT_TYPE_GET_PRIME_MATCH = 5;
+  // [DEPRECATED] prime content
+  ML_RESULT_TYPE_GET_PRIME_CONTENT = 6;
+  // prime content
+  ML_RESULT_TYPE_PRIME_CONTENT_GENERATION_BATCH = 7;
+}
+
+// Type of ER Run Result
+enum EntityResolutionRunResultType {
+  // Unknown source
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_UNSPECIFIED = 0;
+  // success
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_SUCCESS = 1;
+  // fail
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_FAIL = 2;
+  // UGP
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_UGP = 3;
+  // UMP
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_UMP = 4;
+  // URPC
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_URPC = 5;
+  // TPD
+  ENTITY_RESOLUTION_RUN_RESULT_TYPE_TPD = 6;
+}
+
+// Metadata of the caller cadence workflow
+message MLRequestMetaData {
+  // Callback token for reactivating the cadence workflow, it will be passed back
+  // in the response
+  google.protobuf.StringValue callback_token = 1;
+  // Request id for idempotent submission
+  google.protobuf.StringValue request_id = 2;
+  // Identifier of the caller, will be passed back and used for filtering
+  google.protobuf.StringValue caller = 3;
+  // Optional, the name of the model to used for inference request
+  google.protobuf.StringValue model_name = 4;
+}
+
+// DTO for UMP identifiers
+message UniqueMerchantProductIdentifier {
+  // dd_business_id
+  google.protobuf.Int64Value business_id = 1;
+  // ump id
+  google.protobuf.StringValue ump_id = 2;
+  // ump version
+  google.protobuf.Int64Value ump_version = 3;
+  // corresponding ESKU identifier(sku hash)
+  google.protobuf.StringValue sku_hash = 4;
+  // sku hash version
+  google.protobuf.StringValue sku_hash_version = 5;
+  // enriched SKU id (for ESKU identifier, should not be null)
+  google.protobuf.StringValue enriched_sku_id = 6;
+}
+
+// Intra-Mx ER request
+message IntraMerchantEntityResolutionRequest {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // List of enriched SKU
+  repeated doordash.retail.catalog.v2.FinalEnrichedSku enriched_sku = 2;
+}
+
+// Response to Intra-Mx ER request
+message IntraMerchantEntityResolutionResponse {
+  // Request id(ML infra side) for tracking
+  google.protobuf.StringValue request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async Intra-Mx ER callback
+message IntraMerchantEntityResolutionResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // ump identifiers(if not UMP found, the ump_id&version could be null)
+  repeated UniqueMerchantProductIdentifier ump_identifiers = 2;
+  // timestamp of the start time when the request was handled by ml infra.
+  google.protobuf.Timestamp start_time_request_handled_by_ml_infra = 3;
+}
+
+// DTO for Entity Resolution run
+message EntityResolutionRunResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // ER run id
+  google.protobuf.StringValue run_id = 2;
+  // databricks job run result type
+  EntityResolutionRunResultType result_type = 3;
+  // [Deprecate] ER UGP id
+  google.protobuf.StringValue ugp_id = 4;
+  // [Deprecate] ER UMP id
+  UniqueMerchantProductIdentifier ump_identifier = 5;
+  // DTO for UGP
+  repeated UniqueGlobalProductDTO ugp = 6;
+  // DTO for UMP
+  repeated UniqueMerchantProductDTO ump = 7;
+  // DTO for URPC
+  repeated GlobalProductItemDTO urpc = 8;
+  // Batch ID
+  google.protobuf.StringValue batch_id = 9;
+  // DTO for TPD
+  repeated ThirdPartyDataDTO tpd = 10;
+}
+
+// DTO for UGP in ER result
+message UniqueGlobalProductDTO {
+  // UGP Identity
+  doordash.retail.catalog.v2.UniqueGlobalProduct ugp = 1;
+  reserved 2;
+  reserved "ugp_content";
+  // UGP Content ID
+  google.protobuf.StringValue content_id = 3;
+  // UGP Content Type
+  doordash.retail.catalog.v2.ContentType content_type = 4;
+  // Business ID of the content SKU - only required by UMP content
+  google.protobuf.Int64Value content_business_id = 5;
+  // Version of the content SKU - only required by UMP content
+  google.protobuf.Int64Value content_version = 6;
+
+  // merged to ugp id, this will be the UGP that the current UGP get merged to.
+  google.protobuf.StringValue merged_to_ugp_id = 7;
+  // The global_catalog_id is the final/primary global catalog id that will be used for serving. If it is from created from URPC, it is equal to dd_sic in GlobalProductItem proto.
+  google.protobuf.StringValue global_catalog_id = 8;
+  // ugp status
+  doordash.retail.catalog.v2.UgpStatus ugp_status = 9;
+  // All other dd_sics that get mapped to this UGP node. This field is non-empty when more than one previously existing URPCs or UGPs are considered the same product in the latest run of entity resolution.
+  repeated string other_global_catalog_ids = 10;
+  // UGP metadata
+  doordash.retail.catalog.v2.UGPMetadata metadata = 11;
+  // Updated by
+  google.protobuf.StringValue updated_by = 12;
+}
+
+// DTO for UMP in ER result
+message UniqueMerchantProductDTO {
+  // UMP Identity
+  doordash.retail.catalog.v2.UniqueMerchantProduct ump = 1;
+  // The global_catalog_id is the final/primary global catalog id that will be used for serving. If it is from created from URPC, it is equal to dd_sic in GlobalProductItem proto.
+  google.protobuf.StringValue global_catalog_id = 2;
+  // UMP metadata
+  doordash.retail.catalog.v2.UMPMetadata metadata = 3;
+  // updated by
+  google.protobuf.StringValue updated_by = 4;
+}
+
+// DTO for TPD in ER result
+message ThirdPartyDataDTO {
+  // TPD Identity
+  // doordash.retail.catalog.v2.ThirdPartyData tpd = 1;
+  doordash.retail.catalog.v2.EnrichedThirdPartyData tpd = 1;
+
+  // The global_catalog_id is the final/primary global catalog id that will be used for serving. If it is from created from URPC, it is equal to dd_sic in GlobalProductItem proto.
+  google.protobuf.StringValue global_catalog_id = 2;
+  // TPD metadata
+  // Shares the same attributes as UMP metadata. Should probably convert to just 'SKUMetadata'
+  doordash.retail.catalog.v2.UMPMetadata metadata = 3;
+}
+
+// DTO for URPC in ER result
+message GlobalProductItemDTO {
+  // URPC
+  doordash.retail.catalog.crdb.v1.GlobalProductItem urpc = 1;
+}
+
+// Request to get product template assignment
+message GetProductTemplateAssignmentRequest {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  //  sku data
+  doordash.retail.catalog.v2.SkuWithMetadata sku = 2;
+}
+
+// Response to get product template assignment
+message GetProductTemplateAssignmentResponse {
+  // Request id(ML infra side) for tracking
+  google.protobuf.StringValue request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async product template assignment callback
+message GetProductTemplateAssignmentResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // template assignment result
+  repeated doordash.retail.catalog.v2.ProductTemplateAssignment template_assignments = 2;
+}
+
+// Attribute Extraction request
+message ExtractAttributeRequest {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // sku data
+  doordash.retail.catalog.v2.SkuWithMetadata sku_with_metadata = 2;
+  // product template assignment
+  doordash.retail.catalog.v2.ProductTemplateAssignment template_assignment = 3;
+}
+
+// Response to Attribute Extraction
+message ExtractAttributeResponse {
+  // Request id(ML infra side) for tracking
+  google.protobuf.StringValue request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async Attribute Extraction callback
+message ExtractAttributeResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // extraction results
+  doordash.retail.catalog.v2.AttributeExtractionResult attribute_extraction_result = 2;
+}
+
+// Wrapper DTO for ML callback
+message MLResult {
+  // ML request type
+  MLResultType result_type = 1;
+  // Request id(ML infra side) for tracking
+  google.protobuf.StringValue request_id = 2;
+  // Result
+  oneof result {
+    // Result of intra-mx er
+    IntraMerchantEntityResolutionResult intra_mx_er_result = 3;
+    // Result of databricks job run
+    EntityResolutionRunResult entity_resolution_run_result = 4;
+    // Result of product template assignment
+    GetProductTemplateAssignmentResult product_template_assignment_result = 5;
+    // Result of attribute extraction
+    ExtractAttributeResult extract_attribute_result = 6;
+    // Result of prime match
+    GetPrimeMatchResult get_prime_match_result = 7;
+    // [DEPRECATED] Result of prime content
+    GetPrimeContentResult get_prime_content_result = 8;
+    // Result of prime content generation batch
+    PrimeContentGenerationBatchResult prime_content_generation_batch_result = 9;
+  }
+}
+
+// Request for Prime Match
+message GetPrimeMatchRequest {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+
+  // Item to be matched
+  PrimeMatchItem item_to_be_matched = 2;
+}
+
+// Response for Prime Match
+message GetPrimeMatchResponse {
+  // Request id(ML infra side) for tracking
+  google.protobuf.StringValue request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async Prime Match callback
+message GetPrimeMatchResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // Results for PrimeMatchItem in the request
+  repeated PrimeMatchResult prime_contents = 2;
+  // Candidate selection algorithm
+  PrimeMatchCandidateSelectionAlgorithm candidate_selection_algorithm = 3;
+}
+
+// [DEPRECATED] DTO for async Prime Content callback
+message GetPrimeContentResult {
+  // Metadata of the ML request
+  MLRequestMetaData metadata = 1;
+  // Results for Prime Content
+  repeated doordash.retail.catalog.v2.PrimeContent prime_contents = 2;
+}
+
+// Type of PrimeContent generation result
+enum PrimeContentGenerationResultType {
+  // Unknown source
+  PRIME_CONTENT_GENERATION_RESULT_TYPE_UNSPECIFIED = 0;
+  // success
+  PRIME_CONTENT_GENERATION_RESULT_TYPE_SUCCESS = 1;
+  // fail
+  PRIME_CONTENT_GENERATION_RESULT_TYPE_FAIL = 2;
+}
+
+// DTO for batched Prime Content generation result
+message PrimeContentGenerationBatchResult {
+  // run id
+  google.protobuf.StringValue run_id = 1;
+  // batch id
+  google.protobuf.StringValue batch_id = 2;
+  // prime content generation result
+  repeated PrimeContentGenerationResult prime_content_generation_result = 3;
+}
+
+// DTO for Prime Content generation result per UGP cluster
+message PrimeContentGenerationResult {
+  // prime content generation result type per UGP cluster
+  PrimeContentGenerationResultType result_type = 1;
+  // UGP id
+  google.protobuf.StringValue ugp_id = 2;
+  // set as a list to support multi prime view in future, but currently it will be up to 1 value
+  repeated doordash.retail.catalog.v2.PrimeContent prime_contents = 3;
+  // stringified error message:
+  google.protobuf.StringValue error = 4;
+}

@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+// To prevent name collision "inside" of protobuf project
+// The package of the generated code will be overwritten by java_package
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package com.doordash.rpc.merchant.configuration.v1;
+
+import "common/organization_service.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_configuration_service/config_types.proto";
+
+// Please set to true when service definition exists in this proto
+option java_generic_services = true;
+// With is set to true, each "service" definition will be in its own class, instead of being nested into "wrapper class"
+// This is suggested to be set to true
+option java_multiple_files = true;
+// This defines the name of the "wrapper class", whch is usually not used at all when java_multiple_files=true.
+// If not defined, it will be generated based on your .proto filename, which might not be good due to conflict names.
+// So, for drive_golden.proto file, we call it DriveGoldenProtos
+option java_outer_classname = "ConfigurationProtos";
+// It is suggested to start package name with com.doordash.drive.grpc
+// The reason is that, a message name might be conflict with a class name defined in application code,
+// without the name "rpc", it would be hard to pick the correct one from the hints provided by your IDE.
+option java_package = "com.doordash.rpc.merchant.configuration";
+
+// configuration api. note: this is fundamentally different from the drive_protobuf config api.
+service ConfigurationsApiService {
+  // Create a new configuration
+  rpc CreateConfiguration(CreateConfigurationRequest) returns (CreateConfigurationResponse);
+  // Get a configuration. This will get the actual configuration attached to the related entity and not
+  // fully build out the configuration chain. eg: if I'm getting a store config, we will not look at business or
+  // developer.
+  rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
+  // Get an applied configuration, a configuration with all inheritance applied to it.
+  // eg: if I'm getting a store, we will look at the relevant business and developer configs and merge together
+  rpc GetAppliedConfiguration(GetAppliedConfigurationRequest) returns (GetAppliedConfigurationResponse);
+  // Returns whether the user is allowed to perform an action for a given entity for some config
+  rpc IsAllowed(IsAllowedRequest) returns (IsAllowedResponse);
+  // Creates a new config value based on a specific version value for a given entity id/entity type
+  rpc CreateConfigurationByVersion(CreateConfigurationByVersionRequest) returns (CreateConfigurationByVersionResponse);
+}
+
+// wrapper for configType, in case we want to make this repeated later
+message ConfigTypeWrapper {
+  // configType
+  rpc.merchant.configuration.types.v1.ConfigurationType config_type = 1;
+  // Optional. Field name under config_type. e.g. alcohol_enabled under DRIVE_FULFILLMENT_CONSTRAINTS
+  google.protobuf.StringValue subfield = 2;
+}
+
+// The request to check if a user is allowed to perform an action on an entity
+message IsAllowedRequest {
+  // configType
+  ConfigTypeWrapper config_type = 1;
+  // action
+  Action action = 2;
+  // MDS entity type
+  organization_service.v1.EntityType mds_entity_type = 3;
+  // The MDS model_id for which the check is performed
+  google.protobuf.Int64Value model_id = 4;
+  // The user ID who is performing this action, required
+  google.protobuf.Int64Value user_id = 5;
+  // Id of UMS user profile, required for non DoorDash employee user
+  google.protobuf.StringValue user_profile_id = 6;
+}
+
+// The response for is_allowed
+message IsAllowedResponse {
+  // is_allowed
+  google.protobuf.BoolValue is_allowed = 1;
+}
+
+// Create a new configuration for a given entity id and type
+message CreateConfigurationRequest {
+  // Related entity ID, the Id of the element we are attaching it to. Required.
+  google.protobuf.StringValue related_entity_id = 1;
+  // The entity type. Required.
+  EntityType related_entity_type = 2;
+  // Configuration Type Wrapper
+  rpc.merchant.configuration.types.v1.ConfigurationTypes configuration_types = 3;
+  // The user ID of the user making this change. Required.
+  google.protobuf.StringValue actor_id = 4 [deprecated = true];
+  // which service is doing the creation
+  CreateMethod create_method = 5;
+  // The user ID of the user making this change. Required.
+  google.protobuf.Int64Value user_id = 6;
+  // Id of UMS user profile, required for non DoorDash employee user
+  google.protobuf.StringValue user_profile_id = 7;
+  // The MDS model_id for which the check is performed, required for non biz/store entities
+  google.protobuf.Int64Value model_id = 8;
+}
+
+// Create a new configuration for a given entity id and type
+message CreateConfigurationResponse {
+  // data
+  Result data = 1;
+}
+
+// Get a configuration. This will get the actual configuration attached to the related entity and not
+// fully build out the configuration chain. eg: if I'm getting a store config, we will not look at business or
+// developer.
+message GetConfigurationRequest {
+  // Related entity ID, the id of the element we are attaching it to.
+  google.protobuf.StringValue related_entity_id = 1;
+  // The entity type
+  EntityType related_entity_type = 2;
+  // only select config types that are passed into this list
+  repeated rpc.merchant.configuration.types.v1.ConfigurationType configuration_types = 3;
+  // The user ID of the user making this change. Required.
+  google.protobuf.StringValue actor_id = 4;
+}
+
+// Get a configuration
+message GetConfigurationResponse {
+  // data
+  Result data = 1;
+}
+
+// Get an applied configuration, a configuration with all inheritance applied to it.
+// eg: if I'm getting a store, we will look at the relevant business and developer configs and merge together
+message GetAppliedConfigurationRequest {
+  // ordered list of where to load configuration from (entities to the left are more specific and override entities to the right)
+  repeated Entity entities = 1;
+  // only select config types that are passed into this list
+  repeated rpc.merchant.configuration.types.v1.ConfigurationType configuration_types = 2;
+  // The user ID of the user making this change. Required.
+  google.protobuf.StringValue actor_id = 3;
+}
+
+// Entity object
+message Entity {
+  // Related entity ID, the id of the element we are attaching it to.
+  google.protobuf.StringValue related_entity_id = 1;
+  // The entity type
+  EntityType related_entity_type = 2;
+}
+
+// Get the applied configuration
+message GetAppliedConfigurationResponse {
+  // data
+  Result data = 1;
+}
+
+// Result data holder
+message Result {
+  // Related entity ID, the id of the element we are attaching it to.
+  google.protobuf.StringValue related_entity_id = 1;
+  // The entity type
+  EntityType related_entity_type = 2;
+  // Configuration Type Wrapper
+  rpc.merchant.configuration.types.v1.ConfigurationTypes configuration_types = 3;
+}
+
+// Create a new configuration value, given an existing version for one configuration type
+message CreateConfigurationByVersionRequest {
+  // Related entity ID, the Id of the element we are attaching it to. Required.
+  google.protobuf.StringValue related_entity_id = 1;
+  // The entity type. Required.
+  EntityType related_entity_type = 2;
+  // version of this specific config. required.
+  google.protobuf.Int64Value version = 3;
+  // A single configuration type
+  rpc.merchant.configuration.types.v1.ConfigurationType configuration_type = 4;
+  // which service is doing the creation
+  CreateMethod create_method = 5;
+  // The user ID of the user making this change. Required.
+  google.protobuf.Int64Value user_id = 6;
+  // Id of UMS user profile, required for non DoorDash employee user
+  google.protobuf.StringValue user_profile_id = 7;
+  // The MDS model_id for which the check is performed, required for non biz/store entities
+  google.protobuf.Int64Value model_id = 8;
+}
+
+// Create a new configuration for a given entity id and type
+message CreateConfigurationByVersionResponse {
+  // data
+  Result data = 1;
+}
+
+// Supported types to attach with.
+enum EntityType {
+  // Nothing
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // Developer
+  ENTITY_TYPE_DEVELOPER = 1;
+  // Business
+  ENTITY_TYPE_BUSINESS = 2;
+  // Store
+  ENTITY_TYPE_STORE = 3;
+  // User
+  ENTITY_TYPE_USER = 4;
+  // Marketplace Integrations Provider
+  ENTITY_TYPE_PROVIDER = 5;
+  // Parcels facility
+  ENTITY_TYPE_FACILITY = 6;
+}
+
+// Action to be performed
+enum Action {
+  // Nothing
+  ACTION_UNSPECIFIED = 0;
+  // edit
+  ACTION_EDIT = 1;
+  // view
+  ACTION_VIEW = 2;
+}
+
+// Which service or tool created this config change
+enum CreateMethod {
+  // Nothing, will break
+  CREATE_METHOD_UNSPECIFIED = 0;
+  // Developer Portal
+  CREATE_METHOD_DEVELOPER_PORTAL = 1;
+  // Merchant portal
+  CREATE_METHOD_MERCHANT_PORTAL = 2;
+  // Our adhoc scripts repo
+  // https://github.com/doordash/mx-idea-adhoc-scripts/
+  CREATE_METHOD_MX_ADHOC_SCRIPTS = 3;
+}

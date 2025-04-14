@@ -1,0 +1,885 @@
+syntax = "proto3";
+
+package seo.service.v1;
+
+import "common/common.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.seo.service.v1";
+
+/*
+ * Request all data necessary to build a SEO page from client parameters.
+ */
+service SEOService {
+  option (doordash.api.service) = {
+    name: "seo-service-web-asgard"
+    url: "seo-service-web-asgard.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["seo"]
+    owner: {
+      name: "seo"
+      id: "seo-service-alerts"
+      slack_channel: "#eng-martech-seo"
+      email_alias: "eng-martech-seo@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "dd-city"},
+      {field: "dd-region"},
+      {field: "dd-region-code"},
+      {field: "dd-country"},
+      {field: "dd-country-code"},
+      {field: "dd-postal-code"},
+      {field: "dd-client-ip"},
+      {field: "dd-bot"},
+      {field: "dd-latitude"},
+      {field: "dd-longitude"}]
+  };
+
+  /* Get page data request */
+  rpc GetSEOPageData(GetSEOPageDataRequest) returns (GetSEOPageDataResponse);
+  /* Process control */
+  rpc ProcessControl(ProcessControlRequest) returns (ProcessControlResponse);
+  /* Store Page Cross Link */
+  rpc GetStorePageCrossLinks(GetStorePageCrossLinksRequest) returns (GetStorePageCrossLinksResponse);
+  /* Get Content Entries from Contentful */
+  rpc GetContentfulData(GetContentfulDataRequest) returns (GetContentfulDataResponse);
+  /* DEPRECATED Clear Redis Cache for Contentful Data Entries */
+  rpc DeleteContentfulEntryCache(DeleteContentfulEntryCacheRequest) returns (DeleteContentfulEntryCacheResponse);
+  /* Refresh Redis Cache for Contentful Data Entries */
+  rpc RefreshContentfulEntryCache(RefreshContentfulEntryCacheRequest) returns (RefreshContentfulEntryCacheResponse);
+  /* Get all Countries for Store Sitemap */
+  rpc GetStoreSitemapCountries(GetStoreSitemapCountriesRequest) returns (GetStoreSitemapCountriesResponse);
+  /* Get all States for a Country for Store Sitemap */
+  rpc GetStoreSitemapStates(GetStoreSitemapStatesRequest) returns (GetStoreSitemapStatesResponse);
+  /* Get all Cities for a State for Store Sitemap */
+  rpc GetStoreSitemapCities(GetStoreSitemapCitiesRequest) returns (GetStoreSitemapCitiesResponse);
+  /* Get Cuisines for Store Sitemap */
+  rpc GetSitemapCuisines(GetSitemapCuisinesRequest) returns (GetSitemapCuisinesResponse);
+  /* Get Stores for Store Sitemap */
+  rpc GetSitemapStores(GetSitemapStoresRequest) returns (GetSitemapStoresResponse);
+  /* Get Restaurant Guide for City-Cuisine pages */
+  rpc GetRestaurantGuide(GetRestaurantGuideRequest) returns (GetRestaurantGuideResponse);
+  /* Get Page Data for Sitemap */
+  rpc GetSitemapPageData(GetSitemapPageDataRequest) returns (GetSitemapPageDataResponse) {
+    option (google.api.http) = {get: "/seo/v1/sitemap"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: NONE
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+      }
+    };
+  }
+}
+
+/*
+ * Request to get all SEO page data based on client provided parameters.
+ */
+message GetSEOPageDataRequest {
+  /*-*/
+  string url = 1; /* Request URL */
+  /*-*/
+  common.Experience experience = 2; /* What it says */
+  /*-*/
+  google.protobuf.Int64Value user_id = 3; /* COPS:GetConsumer */
+  /*-*/
+  string client_ip = 4; /* What it says */
+  /*-*/
+  google.protobuf.DoubleValue lat = 5; /* Optional, if passed by client */
+  /*-*/
+  google.protobuf.DoubleValue lon = 6; /* Optional, if passed by client */
+  /*-*/
+  google.protobuf.StringValue locale = 7; /* Literal value from DD_Locale header, i.e. null assumes en-US */
+  /*-*/
+  google.protobuf.StringValue accept_lang = 8; /* Literal value from Accept-Lang header */
+  /*-*/
+  google.protobuf.Int32Value menu_item_limit = 9; /* Null means no limit */
+  /*-*/
+  google.protobuf.Int32Value store_limit = 10; /* Null means no limit */
+  /*-*/
+  google.protobuf.Int32Value store_offset = 11; /* Null means zero */
+  /*-*/
+  bool bot_indicator = 12; /* Set to true if the request is determined to originate from a bot */
+  /*-*/
+  google.protobuf.StringValue user_locale = 13; /* Locale from user setting, or null if not available */
+  /*-*/
+  bool use_pickup = 14; /* Determines whether to add pickup to the end of applicable store URLs */
+  /*-*/
+  Filters filters = 15; /* Filters when fetching stores */
+}
+
+/*
+ * A text or image hyper link
+ */
+message Link {
+  /*-*/
+  google.protobuf.StringValue title = 1; /* Optional textual name */
+  /*-*/
+  google.protobuf.StringValue image_url = 2; /* Canonical URL for image, e.g. https://doordash-static.s3.amazonaws.com/media/photos/85858c4a-8195-42b1-bf3d-90454e04f675-retina-large-jpeg */
+  /*-*/
+  string target = 3; /* href */
+  /*-*/
+  repeated Link sublinks = 4; /* used for city/region for example */
+}
+
+/*
+ * A single menu item.
+ */
+message MenuItem {
+  /*-*/
+  Link link = 1; /* Link to the menu image or text */
+  /*-*/
+  google.protobuf.StringValue info = 2; /* Optional description */
+  /*-*/
+  google.protobuf.Int32Value price = 3; /* Item price */
+  /*-*/
+  google.protobuf.Int32Value calories = 4; /* Calorie value */
+  /*-*/
+  google.protobuf.Int64Value id = 5; /* Menu item id */
+}
+
+/*
+ * A menu, e.g. "Popular items", or potentially, "Breakfast"
+ */
+message Menu {
+  /*-*/
+  google.protobuf.StringValue name = 1; /* Name of the item ["Popular items"?] */
+  /*-*/
+  repeated MenuItem menu_items = 2; /* Items in this menu */
+}
+
+/*
+ * Store rating info.
+ */
+message Rating {
+  /*-*/
+  double rating = 1; /* Store rating [0.0,5.0] */
+  /*-*/
+  int32 count = 2; /* Rating count [0,Infinity] */
+  /*-*/
+  int32 price_range = 3; /* Price rating [0,6] */
+  /*-*/
+  google.protobuf.StringValue num_ratings_display_string = 4; /* Display string of the rating numbers, e.g. 4k+ */
+}
+
+/*
+ * Store fee info.
+ */
+message Fee {
+  /*-*/
+  google.protobuf.Int32Value delivery_fee = 1; /* Delivery fee in cents */
+  /*-*/
+  google.protobuf.Int32Value service_fee = 2; /* Service fee in cents */
+  /*-*/
+  google.protobuf.StringValue delivery_fee_display_string = 3; /* Display string of delivery fee, e.g. $3.99 */
+}
+
+/*
+ * A store, aka restaurant.
+ */
+message Store {
+  /*-*/
+  string name = 1; /* "Taqueria La Michoacana" */
+  /*-*/
+  string notes = 2; /* "Gladwyne • Breakfast • $$" without the $$ (symbol from postal_address.country_code) */
+  /*-*/
+  Rating rating = 3; /* "4.8rating star131 ratings" */
+  /*-*/
+  common.Distance distance = 4; /* Optional distance from geo-location or geo-area center */
+  /*-*/
+  common.CommonAddress postal_address = 5; /* Store's postal address. Localized/formatted by client code */
+  /*-*/
+  repeated Menu menus = 6; /* [Is "Popular items" shown when count > 0?] */
+  /*-*/
+  repeated string categories = 7; /* Categories for store, needed for dsj proxy, delete this if not needed in seo FE */
+  /*-*/
+  string city_key = 8; /* Key to be used to group stores, primarily for the national pages */
+  /*-*/
+  google.protobuf.StringValue img_url = 9; /* Logotype image */
+  /*-*/
+  string id = 10; /* Store identity */
+  /*-*/
+  string store_url = 11; /* Normalized store URL with pickup added as parameter as applicable */
+  /*-*/
+  bool offers_pickup = 12; /* True if the store offers pickup */
+  /*-*/
+  google.protobuf.StringValue num_ratings_display_string = 13; /* Display string for rating count e.g. 4k+ */
+  /*-*/
+  google.protobuf.Int32Value eta = 14; /* ETA to user location in minute */
+  /*-*/
+  google.protobuf.StringValue display_distance = 15; /* Distance string from user location to store e.g. 0.8 mi */
+  /*-*/
+  repeated MenuItem popular_items = 16; /* A small number of popular items of the store */
+  /*-*/
+  repeated StoreTag tags = 17; /* Tags for the store, could be promotions or categories */
+  /*-*/
+  Fee fee = 18; /* Delivery and service fees, including raw number and display strings */
+  /*-*/
+  google.protobuf.BoolValue is_consumer_subscription_available = 19; /* True if store is DashPass eligible */
+  /* Sample reviews of the store */
+  repeated Review reviews = 20;
+}
+
+/*
+ * National response data, one element per city.
+ * Corresponding fields in the main response structure are unused when city data appears.
+ */
+message CityData {
+  /*-*/
+  string city_name = 1; /* Translated name of the city */
+  /*-*/
+  string city_url = 2; /* City URL, e.g. {dd}/food-delivery/{city.name}-{subnational.acronym}-restaurants/ */
+  /*-*/
+  string suggestions = 3; /* "Best breakfast in Gladwyne" */
+  /*-*/
+  string suggestion_summary = 4; /* "56 Breakfast restaurants in Gladwyne" */
+  /*-*/
+  repeated Store stores = 5; /* Collection of stores */
+  /*-*/
+  uint32 store_count = 6; /* Total number of matching stores */
+}
+
+/* A business, applicable for business queries */
+message Business {
+  /* Name of the business */
+  string name = 1;
+  /* Logotype? (McDonald's yellow arches on red) */
+  google.protobuf.StringValue cover_square_img = 2;
+  /* Simple logotype (McDonald's arches on white with trademark) */
+  google.protobuf.StringValue cover_img = 3;
+  /* Big picture of hamburger */
+  google.protobuf.StringValue header_image = 4;
+  /* Browse the McDonald's menu */
+  google.protobuf.StringValue menu_page_text = 5;
+  /* business/mcdonalds-123/menu/ */
+  google.protobuf.StringValue menu_page_link = 6;
+  /* Determine if a business is catering */
+  bool is_catering = 7;
+  /* Determine if a business is registered for pickup option */
+  bool offers_pickup = 8;
+  /* Vertical id of the business, eg. 0 -> restaurants, ... */
+  google.protobuf.Int64Value vertical_id = 9;
+}
+
+/*
+ * The full page response with all data to render the SEO page.
+ * Ref page: https://www.doordash.com/food-delivery/gladwyne-pa-restaurants/breakfast/
+ */
+message GetSEOPageDataResponse {
+  /*-*/
+  string effective_locale = 1; /* Actual locale deduced from request values, i.e. locale, accept_lang and/or geo location */
+  /*-*/
+  string canonical_url = 2; /* Proper, normalized URL to use in the canonical tag */
+  /*-*/
+  common.CommonAddress postal_address = 3; /* User's postal address, if available. Localized/formatted by client code */
+  /*-*/
+  string heading = 4; /* "Breakfast delivery in Gladwyne" */
+  /*-*/
+  string suggestions = 5; /* "Best breakfast in Gladwyne" */
+  /*-*/
+  string suggestion_summary = 6; /* "56 Breakfast restaurants in Gladwyne" [Is the "link matrix" static?] */
+  /*-*/
+  repeated Link alternatives = 7; /* All cuisine, Alcohol, ... */
+  /*-*/
+  repeated Store stores = 8; /* Collection of stores */
+  /*-*/
+  string footer = 9; /* Footer heading text */
+  /*-*/
+  repeated Link footer_links = 10 [deprecated = true]; /* DEPRECATED - We also deliver to these cities near Gladwyne */
+  /*-*/
+  string faqs = 11; /* Frequently asked questions (in json) */
+  /*-*/
+  string doordash_description = 12; /* DoorDash is food delivery anywhere you go... */
+  /*-*/
+  uint32 http_status = 13; /* Effective HTTP status code to return */
+  /*-*/
+  google.protobuf.StringValue status_message = 14; /* Optional status message (not set for 200) */
+  /*-*/
+  uint32 store_count = 15; /* Total number of matching stores */
+  /*-*/
+  bool stores_exhausted = 16; /* End of store list reached */
+  /*-*/
+  common.CommonAddress origin_address = 17; /* Geo location of either the food-delivery URL or majority city for near-me */
+  /*-*/
+  repeated CityData city_data = 18; /* National response data, only set when applicable */
+  /*-*/
+  Business business = 19; /* Only applicable for business queries */
+  /*-*/
+  string meta_description = 20; /* "Serving over 300 cities and ..." */
+  /*-*/
+  string meta_title = 21; /* "Food Delivery Near Me - Find Restaurants..." */
+  /*-*/
+  bool enable_itemlist_experiment = 22; /*  Flag to enable item list LD json for city pages. This should be a temporary change. */
+  /*-*/
+  FooterLinks internal_links = 23 [deprecated = true]; /* DEPRECATED */
+  /* Descriptions based on GAI */
+  repeated GaiDescription gai_descriptions = 24;
+  /* links to internal pages that are relevant to the current page */
+  repeated Link cross_links = 25;
+}
+
+/* What is says */
+enum ProcessControlType {
+  /*-*/
+  PROCESS_CONTROL_TYPE_UNSPECIFIED = 0;
+  /*-*/
+  PROCESS_CONTROL_TYPE_GET_POD_STATUS = 1;
+  /*-*/
+  PROCESS_CONTROL_TYPE_SET_POD_SCHEDULE = 2;
+  /*-*/
+  PROCESS_CONTROL_TYPE_KILL_POD = 3;
+  /*-*/
+  PROCESS_CONTROL_TYPE_SET_SITEMAP_MASTER = 4;
+  /*-*/
+  PROCESS_CONTROL_TYPE_GPA = 5;
+}
+
+/* What is says */
+message ProcessControlRequest {
+  /*-*/
+  ProcessControlType control_type = 1; /* Command */
+  /*-*/
+  uint32 request_id = 2; /* Unique request id to pair with response */
+  /*-*/
+  google.protobuf.StringValue pod_name = 3; /* Target pod, or unset for broadcast */
+  /*-*/
+  google.protobuf.Int32Value schedule = 4; /* Schedule for SET_POD_SCHEDULE command, otherwise ignored */
+}
+
+/* What is says */
+message ProcessControlResponse {
+  /*-*/
+  string pod_name = 1; /* Pod's hostname */
+  /*-*/
+  int32 schedule = 2; /* Currently registered schedule, or -1 if unassigned */
+  /*-*/
+  uint32 uptime = 3; /* Pod uptime in millis */
+  /*-*/
+  uint32 request_id = 4; /* From request */
+  /*-*/
+  ProcessControlType control_type = 5; /* From request */
+  /*-*/
+  bool ack = 6; /* Matching pod answers with true */
+  /*-*/
+  string sitemap_status = 7; /* Sitemap generator status */
+  /*-*/
+  google.protobuf.Int64Value sm_status_time = 8; /* Sitemap generator status time */
+  /*-*/
+  string gpa_status = 9; /* GPA feed status */
+  /*-*/
+  google.protobuf.Int64Value gp_status_time = 10; /* GPA feed status time */
+}
+
+/* What is says */
+message GetStorePageCrossLinksRequest {
+  /*-*/
+  string store_id = 1;
+  /*-*/
+  google.protobuf.StringValue locale = 2; /* Locale of referring page */
+}
+
+/* Returns footer links for store pages. */
+message GetStorePageCrossLinksResponse {
+  /*-*/
+  repeated Link nearby_cities = 1 [deprecated = true]; /* DEPRECATED */
+  /*-*/
+  repeated Link trending_stores = 2 [deprecated = true]; /* DEPRECATED */
+  /*-*/
+  repeated Link top_dishes_near_me = 3 [deprecated = true]; /* DEPRECATED */
+  /*-*/
+  repeated Link trending_categories = 4 [deprecated = true]; /* DEPRECATED */
+  /*-*/
+  repeated Link top_cuisines_near_me = 5 [deprecated = true]; /* DEPRECATED */
+  /*-*/
+  FooterLinks footer_links = 6; /* This will be the source of truth for this API as the rest of the properties will be deprecated */
+  /*-*/
+  string city = 7; /* city name */
+}
+
+/* Footer links for the seo and store pages */
+message FooterLinks {
+  /*-*/
+  repeated Link similar_cuisines = 1; /* Links to pages that have similar cuisines based on the request page */
+  /*-*/
+  repeated Link similar_dishes = 2; /* Links to pages that have similar dishes based on the request page */
+  /*-*/
+  repeated Link featured_restaurants = 3; /* links to featured restaurants based on search volume */
+  /*-*/
+  repeated Link featured_businesses = 4; /* links to featured businesses based on search volume */
+  /*-*/
+  repeated Link featured_cities = 5; /* links to featured cities based on search volume */
+  /*-*/
+  repeated Link nearby_cities = 6; /* links to nearby cities based on distance */
+  /*-*/
+  repeated Link top_cuisines = 7; /* links to top cuisines based on reviews */
+  /*-*/
+  repeated Link top_cuisines_in_city = 8; /* links to top cuisines in the city */
+  /*-*/
+  repeated Link nearby_city_cuisine = 9; /* links to nearby cities city cuisine pages */
+  /*-*/
+  repeated Link similar_cuisines_in_city = 10; /* links to similar cuisines in the city */
+  /*-*/
+  repeated Link other_nearby_stores = 11; /* links to other nearby stores */
+  /*-*/
+  repeated Link other_stores_of_same_cuisine = 12; /* links to other stores of the same cuisine */
+  /*-*/
+  repeated Link top_cities_for_cuisine = 13; /* links to top cities for the cuisine */
+  /*-*/
+  repeated Link similar_chains = 14; /* links to similar chains */
+  /*-*/
+  repeated StoreLite nearby_restaurants = 24; /* Information to show the store cards under nearby stores */
+}
+
+/* Minimal store information required to display store cards under "Restuarants Near you" */
+message StoreLite {
+  /*-*/
+  string name = 1; /* Store name */
+  /*-*/
+  common.Distance distance = 2; /* Distance to store */
+  /*-*/
+  int32 delivery_time = 3; /* Delivery time in minutes */
+  /*-*/
+  google.protobuf.DoubleValue delivery_fees = 4; /* Delivery fees in dollars */
+  /*-*/
+  google.protobuf.StringValue img_url = 5; /* Store image */
+  /*-*/
+  string url = 6; /* href */
+}
+
+/* Request to fetch pre-defined content based on given URL from Contentful CDN */
+message GetContentfulDataRequest {
+  /*-*/
+  string url = 1; /* Request URL */
+  /*-*/
+  google.protobuf.StringValue locale = 2; /* Literal value from DD_Locale header, i.e. null assumes en-US */
+  /*-*/
+  string client_ip = 3; /* What it says */
+  /*-*/
+  google.protobuf.DoubleValue lat = 4; /* Optional, if passed by client */
+  /*-*/
+  google.protobuf.DoubleValue lon = 5; /* Optional, if passed by client */
+}
+
+/* Return pre-defined content for given url */
+message GetContentfulDataResponse {
+  /*-*/
+  ContentEntry content_entry = 1; /* Content delivered by Contentful */
+  /* Content entry for logged-out home page */
+  LoggedOutHomePageEntry logged_out_home_page_entry = 2;
+  /* Title content id for current page */
+  ContentEntry title_content_entry = 3;
+}
+
+/* Content Entry defined by Contentful Website */
+message ContentEntry {
+  /*-*/
+  string id = 1; /* Content entry id string */
+  /*-*/
+  string name = 2; /* Content entry name */
+  /*-*/
+  string content = 3; /* Pre-defined content, use string type for proof of concept */
+  /*-*/
+  string description = 4; /* Pre-defined description, use string type for proof of concept */
+}
+
+/* DEPRECATED. Request to delete Redis Cache for Contentful Data Entry */
+message DeleteContentfulEntryCacheRequest {
+  /* Contentful Entry Type */
+  string entry_type = 1;
+  /* Contentful Entry ID */
+  string entry_id = 2;
+}
+
+/* DEPRECATED. Return list of deleted cache keys */
+message DeleteContentfulEntryCacheResponse {
+  /* List of cache keys */
+  repeated string keys = 1;
+}
+
+/* Request to refresh Redis Cache for Contentful Data Entry */
+message RefreshContentfulEntryCacheRequest {
+  /* Contentful Entry Type */
+  string entry_type = 1;
+  /* Contentful Entry ID */
+  string entry_id = 2;
+}
+
+/* Return list of updated cache keys */
+message RefreshContentfulEntryCacheResponse {
+  /* List of cache keys */
+  repeated string keys = 1;
+}
+
+/* Content Entry for Logged-Out Home Page */
+message LoggedOutHomePageEntry {
+  /* H1 Header */
+  string header = 1;
+  /* Desktop Hero Image */
+  string hero_image_desktop = 2;
+  /* Mobile Hero Image */
+  string hero_image_mobile = 3;
+  /* List of Value Prop Cards */
+  repeated ValuePropCard value_prop_cards = 4;
+  /* List of Rx SEO content blocks */
+  repeated SEOBlock rx_seo_blocks = 5;
+  /* List of New Vertical SEO content blocks */
+  repeated SEOBlock nv_seo_blocks = 6;
+  /* Dasher SEO block */
+  SEOBlock dx_seo_block = 7;
+  /* Merchant SEO block */
+  SEOBlock mx_seo_block = 8;
+  /* List of Top City CTAs */
+  repeated CTA top_cities = 9;
+  /* List of Top Cuisine CTAs */
+  repeated CTA top_cuisines = 10;
+  /* List of Top Chain CTAs */
+  repeated CTA top_chains = 11;
+}
+
+/* Value Prop Card for landing pages */
+message ValuePropCard {
+  /* Headline */
+  string headline = 1;
+  /* Blurb */
+  string blurb = 2;
+  /* CTA for Value Prop Card */
+  CTA value_prop_cta = 3;
+  /* Icon Image URL */
+  string icon = 4;
+}
+
+/* CTA tells the user to take some specified action */
+message CTA {
+  /* Text for action */
+  string cta_text = 1;
+  /* Redirect URL */
+  string cta_url = 2;
+}
+
+/* SEO content block */
+message SEOBlock {
+  /* H2 Header */
+  string header = 1;
+  /* Subheader */
+  string subheader = 2;
+  /* Copy */
+  string copy = 3;
+  /* CTA */
+  CTA cta = 4;
+  /* Use full-width image or not */
+  bool use_full_width_image = 5;
+  /* Use image alignment or not */
+  bool use_image_alignment = 6;
+  /* Image URL */
+  string image = 7;
+  /* Image URL for mobile devices */
+  string image_mobile = 8;
+  /* Footnote */
+  string footnote = 9;
+}
+
+/* Data model to represent a country in the store sitemap */
+message SitemapCountry {
+  /* Full country name */
+  string country = 1;
+  /* URL-friendly country name */
+  string url_friendly_country_name = 2;
+  /* Sitemap URL for Country */
+  string url = 3;
+}
+
+/* Request model to get all countries for store sitemap */
+message GetStoreSitemapCountriesRequest {}
+
+/* Response model to get all countries for store sitemap */
+message GetStoreSitemapCountriesResponse {
+  /* List of countries */
+  repeated SitemapCountry countries = 1;
+}
+
+/* Data model to represent a state in the store sitemap */
+message SitemapState {
+  /* Full state name */
+  string state = 1;
+  /* Country this state belongs to */
+  SitemapCountry country = 2;
+  /* URL-friendly state name */
+  string url_friendly_state_name = 3;
+  /* Sitemap URL for State */
+  string url = 4;
+}
+
+/* Request model to get all states for a country for store sitemap */
+message GetStoreSitemapStatesRequest {
+  /* Country to get states for */
+  SitemapCountry country = 1;
+}
+
+/* Response model to get all states for a country for store sitemap */
+message GetStoreSitemapStatesResponse {
+  /* List of states */
+  repeated SitemapState states = 1;
+}
+
+/* Request model to represent details about a specific page */
+message PageRequest {
+  /* Start character of the entity being requested */
+  string starting_character = 1;
+  /* Page being requested */
+  int32 page_number = 2;
+}
+
+/* Response model to represent details about a specific page */
+message PageResponse {
+  /* List of start characters */
+  repeated string starting_characters = 1;
+  /* List of page numbers */
+  repeated int32 page_numbers = 2;
+}
+
+/* Data model to represent a city in the store sitemap */
+message SitemapCity {
+  /* Full city name */
+  string city = 1;
+  /* State this city belongs to */
+  SitemapState state = 2;
+  /* URL-friendly city name */
+  string url_friendly_city_name = 3;
+  /* Sitemap URL for City */
+  string url = 4;
+}
+
+/* Request model to get all cities for a state for store sitemap */
+message GetStoreSitemapCitiesRequest {
+  /* State to get cities for */
+  SitemapState state = 1;
+  /* Page request, if any */
+  PageRequest page_request = 2;
+}
+
+/* Response model to get all cities for a state for store sitemap */
+message GetStoreSitemapCitiesResponse {
+  /* List of cities */
+  repeated SitemapCity cities = 1;
+  /* Page response, if any */
+  PageResponse page_response = 2;
+}
+
+/* Data model to represent a cuisine in the store sitemap */
+message SitemapCuisine {
+  /* Full cuisine name */
+  string cuisine_name = 1;
+  /* URL-friendly cuisine name */
+  string url_friendly_cuisine_name = 2;
+  /* Sitemap URL for Cuisine */
+  string url = 3;
+}
+
+/* Request model to get all cuisines for a city for store sitemap */
+message GetSitemapCuisinesRequest {
+  /* City to get cuisines for */
+  SitemapCity city = 1;
+}
+
+/* Response model to get all cuisines for a city for store sitemap */
+message GetSitemapCuisinesResponse {
+  /* List of cuisines */
+  repeated SitemapCuisine cuisines = 1;
+}
+
+/* Data model to represent a category in the new vertical store sitemap */
+message SitemapCategory {
+  /* Full category name */
+  string category_name = 1;
+  /* URL-friendly category name */
+  string url_friendly_category_name = 2;
+  /* Sitemap URL for Category */
+  string url = 3;
+}
+
+/* Request model to get stores matching some criteria for store sitemap */
+message GetSitemapStoresRequest {
+  /* City to get stores for */
+  SitemapCity city = 1;
+  /* Cuisine to get stores for */
+  SitemapCuisine cuisine = 2;
+  /* Page request, if any */
+  PageRequest page_request = 3;
+}
+
+/* Response model to get stores matching some criteria for store sitemap */
+message GetSitemapStoresResponse {
+  /* List of stores */
+  repeated Store stores = 1;
+  /* Page response, if any */
+  PageResponse page_response = 2;
+}
+
+/* Request to fetch restaurant guides for selected city-cuisine pages */
+message GetRestaurantGuideRequest {
+  /* Page URL */
+  string url = 1;
+  /* Literal value from DD_Locale header, i.e. null assumes en-US */
+  google.protobuf.StringValue locale = 2;
+}
+
+/* Return pre-defined CMS restaurant guides content and store info for given page */
+message GetRestaurantGuideResponse {
+  /* Title, loaded from CMS */
+  string title = 1;
+  /* Blurb, loaded from CMS */
+  string blurb = 2;
+  /* Original blog page url for redirect */
+  string blog_redirect_url = 3;
+  /* List of stores mentioned in the restaurant guide */
+  repeated RestaurantGuideStore stores = 4;
+}
+
+/* Store used for restaurant guides */
+message RestaurantGuideStore {
+  /* Store id */
+  google.protobuf.StringValue id = 1;
+  /* Store name */
+  google.protobuf.StringValue name = 2;
+  /* Number of ratings */
+  google.protobuf.Int64Value num_ratings = 3;
+  /* Average rating */
+  google.protobuf.DoubleValue avg_rating = 4;
+  /* Display string for number of ratings for store (e.g. "1,900+") */
+  google.protobuf.StringValue num_ratings_display_string = 5;
+  /* Absolute path of business header img url */
+  google.protobuf.StringValue header_img_url = 6;
+  /* Whether the store is Dashpass eligible */
+  google.protobuf.BoolValue is_consumer_subscription_eligible = 7;
+  /* Store website */
+  google.protobuf.StringValue store_website = 8;
+  /* Blurb, could be top review or short description for the store */
+  string blurb = 9;
+}
+
+/* Request model for Sitemap pages */
+message GetSitemapPageDataRequest {
+  /* Request URL */
+  string url = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+/* Data model for starting characters for an entity in store sitemap */
+message PageCharacterResponse {
+  /* Starting character of an entity */
+  string starting_character = 1;
+  /* URL for the entity's starting character */
+  string url = 2;
+}
+
+/* Data model for page numbers for an entity in store sitemap */
+message PageNumberResponse {
+  /* Page number */
+  int32 page_number = 1;
+  /* URL for the page number */
+  string url = 2;
+}
+
+/* Response model for Sitemap pages */
+message GetSitemapPageDataResponse {
+  /* List of countries in Sitemap */
+  repeated SitemapCountry sitemap_countries = 1;
+  /* Selected country for Sitemap */
+  SitemapCountry selected_country = 2;
+  /* List of states in Sitemap */
+  repeated SitemapState sitemap_states = 3;
+  /* Selected state for Sitemap */
+  SitemapState selected_state = 4;
+  /* List of cities in Sitemap */
+  repeated SitemapCity sitemap_cities = 5;
+  /* Starting characters for requested entity */
+  repeated PageCharacterResponse starting_characters = 6;
+  /* Page numbers for requested entity */
+  repeated PageNumberResponse page_numbers = 7;
+  /* Selected city for Sitemap */
+  SitemapCity selected_city = 8;
+  /* List of cuisines in Sitemap */
+  repeated SitemapCuisine sitemap_cuisines = 9;
+  /* Selected cuisine for Sitemap */
+  SitemapCuisine selected_cuisine = 10;
+  /* List of stores in Sitemap */
+  repeated Store stores = 11;
+  /* List of new vertical categories in Sitemap */
+  repeated SitemapCategory sitemap_categories = 12;
+  /* Selected new vertical category for Sitemap */
+  SitemapCategory selected_category = 13;
+}
+
+/* Model for an SEO page GAI description */
+message GaiDescription {
+  /* Title of the description */
+  google.protobuf.StringValue title = 1;
+  /* Text content of the description */
+  google.protobuf.StringValue text = 2;
+}
+
+/* Filters when querying stores for SEO pages */
+message Filters {
+  /* Set to true to only query dashpass eligible stores */
+  google.protobuf.BoolValue is_dashpass = 1;
+  /* Max rating number of the quried stores, 0.0 - 5.0, inclusive */
+  google.protobuf.DoubleValue rating_range_max = 2;
+  /* Min rating number of the quried stores, 0.0 - 5.0, inclusive, should be less than rating_range_max */
+  google.protobuf.DoubleValue rating_range_min = 3;
+  /* Max delivery ETA of stores, in seconds */
+  google.protobuf.DoubleValue eta_range_max = 4;
+  /* Set to true to only query stores with promotions */
+  google.protobuf.BoolValue has_offers = 5;
+  /* Set to true to only query stores that support pickup */
+  google.protobuf.BoolValue pickup_available = 6;
+}
+
+/* Tag of stores, could be promotions or categories */
+message StoreTag {
+  /* Text string of the tag, eg. "$5 off" */
+  string text = 1;
+  /* Tag component style on webpage */
+  TagStyle style = 2;
+  /* Tag Descriptions if any, eg. "$5 discount if more than $20 spent" */
+  google.protobuf.StringValue description = 3;
+  /* Boolean indicates the promotion of the tag is DashPass subscriber eligible only if true */
+  google.protobuf.BoolValue is_dashpass_subscriber_promo = 4;
+}
+
+/* Style of tag, determins how the tags look like */
+enum TagStyle {
+  /*-*/
+  TAG_STYLE_UNSPECIFIED = 0;
+  /* Gray background color and black text */
+  TAG_STYLE_INFORMATIONAL = 1;
+  /* Red background color and deep red text */
+  TAG_STYLE_HIGHLIGHT = 2;
+}
+
+/* Sample reviews of the store */
+message Review {
+  /* The review text sentence */
+  google.protobuf.StringValue review_text = 1;
+  /* Date of the review as a string, eg. 04/01/23 */
+  google.protobuf.StringValue date = 2;
+  /* The rating starts of this review, eg. 4 */
+  google.protobuf.Int32Value num_stars = 3;
+  /* Source of the review, eg. DOORDASH, means it is a DoorDash order */
+  google.protobuf.StringValue review_source = 4;
+  /* Reviewer's display name */
+  google.protobuf.StringValue reviewer_display_name = 5;
+}

@@ -1,0 +1,191 @@
+syntax = "proto3";
+package unified_profile_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "unified_profile_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.unified_profile_service.rpc.api";
+
+// This service is for Cx/Dx profile photo management
+service ProfilePhotoService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "unified-profile-service-api.service.prod.ddsd",
+    name_spaces: ["profile_photo"],
+    api_key_name: "UNIFIED_PROFILE_SERVICE_API_KEY",
+    owner: {
+      id: "social-proof"
+      name: "unified-profile-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX
+    ]
+  };
+
+  option (service_client.client_config).service_name = "unified-profile-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Upload profile photo for a user
+  rpc UploadProfilePhoto(UploadProfilePhotoRequest) returns (UploadProfilePhotoResponse) {
+    option (google.api.http) = {
+      post: "/profile_photo/v1/upload_profile_photo"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER
+      ]
+    };
+    // increasing the timeout for profile photo upload to 5 seconds, as it can take longer to upload a photo
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "dx_id"}]
+    };
+  }
+
+  // Batch get profile photo for a list of users
+  rpc BatchGetProfilePhotoForTargets(BatchGetProfilePhotoForTargetsRequest) returns (BatchGetProfilePhotoForTargetsResponse);
+
+  // Delete profile photo for a user
+  rpc DeleteProfilePhotoForTarget(DeleteProfilePhotoForTargetRequest) returns (DeleteProfilePhotoForTargetResponse) {
+    option (google.api.http) = {delete: "/profile_photo/v1/delete_profile_photo_for_target"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "dx_id"}]
+    };
+  }
+
+  // Manually reject profile photos and delete them from the system
+  rpc RejectProfilePhotos(RejectProfilePhotosRequest) returns (RejectProfilePhotosResponse);
+}
+
+// Request to upload profile photo
+message UploadProfilePhotoRequest {
+  // id of user to upload profile photo
+  string user_id = 1 [(doordash.api.inject_id) = USER_ID];
+  // account type, Dx or Cx
+  ProfilePhotoTargetType account_type = 2;
+  // photo to upload in bytes
+  ProfilePhoto profile_photo = 3;
+  // the url of the profile photo
+  google.protobuf.StringValue profile_photo_url = 4;
+  // flag for using moderation or not
+  google.protobuf.BoolValue enable_moderation = 5 [deprecated = true];
+  // flag for using moderation or not, by default all photos should be moderated
+  google.protobuf.BoolValue disable_moderation = 6;
+}
+
+// Response for upload profile photo
+message UploadProfilePhotoResponse {
+  // one of success or error response
+  oneof value {
+    // on success returns profile photo url
+    google.protobuf.StringValue profile_photo_url = 1;
+    // on error returns error code and error message
+    Error error = 2;
+  }
+}
+
+// Request to batch get profile photo for a list of users
+message BatchGetProfilePhotoForTargetsRequest {
+  // the targets of the profile photo
+  repeated ProfilePhotoTarget targets = 1;
+}
+
+// list of profile photo urls
+message ProfilePhotoUrls {
+  // list of urls
+  repeated google.protobuf.StringValue urls = 1 [deprecated = true];
+  // list of photo urls, each photo url maps to a target
+  repeated ProfilePhotoUrl photo_urls = 2;
+}
+
+// profile photo url
+message ProfilePhotoUrl {
+  // the target of the profile photo
+  ProfilePhotoTarget target = 1;
+  // the url of the profile photo
+  google.protobuf.StringValue url = 2;
+}
+
+// Response for batch get profile photo for a list of users
+message BatchGetProfilePhotoForTargetsResponse {
+  // one of success or error response
+  oneof value {
+    // on success returns profile photo urls
+    ProfilePhotoUrls profile_photo_urls = 1;
+    // on error returns error code and error message
+    Error error = 2;
+  }
+}
+
+// Request to delete profile photo
+message DeleteProfilePhotoForTargetRequest {
+  // the target type of the profile photo
+  ProfilePhotoTargetType target_type = 1;
+  // requester user id
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response for delete profile photo
+message DeleteProfilePhotoForTargetResponse {
+  // one of success or error response
+  oneof value {
+    // on success returns true
+    google.protobuf.BoolValue success = 1;
+    // on error returns error code and error message
+    Error error = 2;
+  }
+}
+
+// Request to reject profile photos
+message RejectProfilePhotosRequest {
+  // list of photo uuids to reject
+  repeated google.protobuf.StringValue photo_uuids = 1;
+}
+
+// Response to reject profile photos
+message RejectProfilePhotosResponse {
+  // one of success or error response
+  oneof value {
+    // on success returns true
+    google.protobuf.BoolValue success = 1;
+    // on error returns error code and error message
+    Error error = 2;
+  }
+}

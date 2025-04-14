@@ -1,0 +1,431 @@
+syntax = "proto3";
+package experience_reliability_service.dispatch_dasher_api;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "experience_reliability_service/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+// WARN: These APIs are specific for use in Dispatch UI.
+// These are not expected to be called by other microservices
+service DispatchDasherAPI {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  option (doordash.api.service) = {
+    name: "teammate-experience-service"
+    url: "teammate-experience-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["teammate-experience-service"]
+    api_key_name: "TEAMMATE_EXPERIENCE_SERVICE_API_KEY"
+    owner: {
+      name: "teammate-experience-service"
+      id: "teammate-experience-alerts"
+      slack_channel: "#ask-teammate-experience"
+      email_alias: "team-teammate-experience@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // This endpoint is for getting a list of dasher shifts during a time range.
+  rpc GetDasherShifts(GetDasherShiftsRequest) returns (GetDasherShiftsResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/get-dasher-shifts"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // This endpoint is for getting a list of dasher deliveries during a time range.
+  rpc GetDasherDeliveries(GetDasherDeliveriesRequest) returns (GetDasherDeliveriesResponse);
+
+  // This endpoint is for getting a list of dasher deliveries for a shift.
+  rpc GetShiftDeliveries(GetShiftDeliveriesRequest) returns (GetShiftDeliveriesResponse);
+
+  // This endpoint is for getting a list of recently rated deliveries.
+  rpc GetRecentlyRatedDeliveries(GetRecentlyRatedDeliveriesRequest) returns (GetRecentlyRatedDeliveriesResponse);
+
+  // This endpoint is for getting top dasher eligibility
+  rpc GetTopDasherEligibility(GetTopDasherEligibilityRequest) returns (GetTopDasherEligibilityResponse);
+
+  // This endpoint is for getting list of transactions (payout data)
+  rpc GetTransactionList(DispatchDasherTransactionListRequest) returns (DispatchDasherTransactionListResponse);
+
+  // This endpoint is for getting a list of dasher
+  rpc GetShiftTasks(GetShiftTasksRequest) returns (GetShiftTasksResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/get-shift-tasks"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+message GetDasherShiftsRequest {
+  google.protobuf.Int64Value dasher_id = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  google.protobuf.Int32Value limit = 4;
+}
+
+message GetDasherShiftsResponse {
+  repeated DispatchDasherShift shifts = 1;
+  google.protobuf.Int32Value completed_shifts = 2;
+  google.protobuf.Int32Value completed_deliveries = 3;
+  google.protobuf.DoubleValue rating = 4;
+  google.protobuf.Int32Value acceptance_rate = 5;
+  google.protobuf.Int32Value completion_rate = 6;
+  google.protobuf.Int32Value completed_tasks_groups = 7;
+}
+
+message GetShiftDeliveriesRequest {
+  google.protobuf.Int64Value shift_id = 1;
+}
+
+message GetShiftDeliveriesResponse {
+  repeated DispatchDasherDelivery deliveries = 1;
+}
+
+message GetShiftTasksRequest {
+  google.protobuf.Int64Value shift_id = 1;
+}
+
+message GetShiftTasksResponse {
+  repeated ShiftTask tasks = 1;
+}
+
+message ShiftTask {
+  // Shift task
+  oneof shift_task {
+    // Native dasher task
+    DasherTask task = 1;
+    // Legacy delivery model
+    DispatchDasherDelivery delivery = 2;
+  }
+}
+
+message DasherTask {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  DasherTaskStatus status = 3;
+  // Entity of the task
+  oneof entity {
+    DispatchDasherTaskConsumer consumer = 4;
+    DispatchDasherTaskStore store = 5;
+  }
+  map<string, google.protobuf.Timestamp> events = 6;
+}
+
+// Dasher task status
+enum DasherTaskStatus {
+  // unspecified
+  DASHER_TASK_STATUS_UNSPECIFIED = 0;
+  // task in progress
+  DASHER_TASK_STATUS_IN_PROGRESS = 1;
+  // task completed
+  DASHER_TASK_STATUS_COMPLETED = 2;
+  // task cancelled
+  DASHER_TASK_STATUS_CANCELLED = 3;
+}
+
+message GetDasherDeliveriesRequest {
+  google.protobuf.Int64Value dasher_id = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  google.protobuf.Int32Value limit = 4;
+}
+
+message GetDasherDeliveriesResponse {
+  repeated DispatchDasherDelivery deliveries = 1;
+}
+
+message GetRecentlyRatedDeliveriesRequest {
+  google.protobuf.Int64Value dasher_id = 1;
+  google.protobuf.Int32Value limit = 2;
+}
+
+message GetRecentlyRatedDeliveriesResponse {
+  repeated DispatchDasherDelivery deliveries = 1;
+}
+
+message TopDasherEligibilityTime {
+  google.protobuf.Int32Value month = 1;
+  google.protobuf.Int32Value year = 2;
+}
+
+message GetTopDasherEligibilityRequest {
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // optional
+  // if not included, we will check dasher's current track to top dasher
+  // if included, will attempt to look up historical top dasher status for the provided month
+  TopDasherEligibilityTime time = 2;
+}
+
+message GetTopDasherEligibilityResponse {
+  repeated TopDasherRequirements requirements = 1;
+}
+
+message ShiftStartingPoint {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+}
+
+message DispatchDasherShift {
+  money.MonetaryFields amount_deducted = 1;
+  google.protobuf.BoolValue auto_assign = 2;
+  google.protobuf.Timestamp check_in_time = 3;
+  google.protobuf.Timestamp check_out_time = 4;
+  google.protobuf.Timestamp close_out_time = 5;
+  money.MonetaryFields delivery_pay = 6;
+  money.MonetaryFields extra_amount_owed = 7;
+  google.protobuf.Int64Value id = 8;
+  google.protobuf.BoolValue is_base_pay_external = 9;
+  google.protobuf.BoolValue is_idle = 10;
+  google.protobuf.Int32Value num_deliveries = 11;
+  money.MonetaryFields rate_per_delivery = 12;
+  money.MonetaryFields reimbursement_amount = 13;
+  google.protobuf.Timestamp scheduled_end_time = 14;
+  google.protobuf.Timestamp scheduled_start_time = 15;
+  ShiftStartingPoint starting_point = 16;
+  money.MonetaryFields tip_amount = 17;
+  money.MonetaryFields total_pay = 18;
+  // sum of ratings of shift deliveries / num of deliveries with ratings
+  google.protobuf.DoubleValue rating = 19;
+  DasherEarningsMode dasher_earnings_mode = 20;
+  google.protobuf.Int32Value num_task_groups = 21;
+}
+
+// Dasher earnings mode
+enum DasherEarningsMode {
+  // unspecified
+  DASHER_EARNINGS_MODE_UNSPECIFIED = 0;
+  // earn_by_time
+  DASHER_EARNINGS_MODE_EARN_BY_TIME = 1;
+  // earn_per_offer
+  DASHER_EARNINGS_MODE_EARN_PER_OFFER = 2;
+}
+
+message DispatchDasherDelivery {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.Int64Value shift_id = 2;
+  google.protobuf.Int64Value dasher_user_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp accepted_at = 5;
+  google.protobuf.Timestamp dasher_at_store_time = 6;
+  google.protobuf.Timestamp dasher_confirmed_time = 7;
+  google.protobuf.Timestamp dasher_assigned_at = 8;
+  google.protobuf.Timestamp actual_pickup_time = 9;
+  google.protobuf.Timestamp actual_delivery_time = 10;
+  google.protobuf.Timestamp submitted_at = 11;
+  google.protobuf.StringValue timezone = 12;
+  google.protobuf.Int32Value rating = 13;
+  DispatchDasherDeliveryConsumer consumer = 14;
+  DispatchDasherDeliveryStore store = 15;
+  google.protobuf.StringValue consumer_review_uuid = 16;
+  google.protobuf.StringValue consumer_review_text = 17;
+  ConsumerReviewModerationStatus consumer_review_moderation_status = 18;
+  google.protobuf.StringValue consumer_review_moderation_reason = 19;
+  google.protobuf.Timestamp moderated_at = 20;
+}
+
+// Consumer review moderation status
+enum ConsumerReviewModerationStatus {
+  // unspecified
+  CONSUMER_REVIEW_MODERATION_STATUS_UNSPECIFIED = 0;
+  // approved
+  CONSUMER_REVIEW_MODERATION_STATUS_APPROVED = 1;
+  // rejected
+  CONSUMER_REVIEW_MODERATION_STATUS_REJECTED = 2;
+  // waived
+  CONSUMER_REVIEW_MODERATION_STATUS_WAIVED = 3;
+  // escalated
+  CONSUMER_REVIEW_MODERATION_STATUS_ESCALATED = 4;
+}
+
+message DispatchDasherDeliveryConsumer {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.StringValue last_name = 2;
+}
+
+message DispatchDasherDeliveryStore {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue timezone = 3;
+}
+
+message DispatchDasherTaskConsumer {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.StringValue last_name = 2;
+}
+
+message DispatchDasherTaskStore {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue timezone = 3;
+}
+
+// Criteria possibilities for Top Dasher
+enum TopDasherCriteria {
+  // unspecified
+  TOP_DASHER_CRITERIA_UNSPECIFIED = 0;
+  // Lifetime Deliveries
+  TOP_DASHER_CRITERIA_LIFETIME_DELIVERIES = 1;
+  // Deliveries in Qualifying Month
+  TOP_DASHER_CRITERIA_DELIVERIES_IN_QUALIFYING_MONTH = 2;
+  // Last 100 Rated Deliveries Average Rating
+  TOP_DASHER_CRITERIA_L100_AVERAGE_RATING = 3;
+  // Last 100 Assignments Acceptance Rate
+  TOP_DASHER_CRITERIA_L100_ACCEPTANCE_RATE = 4;
+  // Last 100 Deliveries Completion Rate
+  TOP_DASHER_CRITERIA_L100_COMPLETION_RATE = 5;
+}
+
+message TopDasherRequirements {
+  repeated TopDasherRequirement requirements = 1;
+  google.protobuf.BoolValue is_qualified = 2;
+}
+
+message TopDasherRequirement {
+  TopDasherCriteria criteria = 1;
+  google.protobuf.StringValue requirement = 2;
+  google.protobuf.StringValue achieved = 3;
+  google.protobuf.BoolValue is_achieved = 4;
+}
+
+/**
+   Below are messages related to the transactions list API
+*/
+message DispatchDasherTransactionJob {
+  // Time job was completed at
+  google.protobuf.Timestamp completed_at = 1;
+
+  // Time job was created at
+  google.protobuf.Timestamp created_at = 2;
+
+  // Description for job, usually a cancellation of some sort.
+  // Can be empty string, as some may feel `reason` field is sufficient.
+  // Provides more details to the reason (AKA dasher pay reason)
+  google.protobuf.StringValue description = 3;
+
+  // Job ID
+  google.protobuf.Int64Value id = 4;
+
+  // Enum string, such as "dasher-store-closed", "dasher-canceled-pay", "dasher-out-of-stock".
+  // AKA dasher pay reason
+  google.protobuf.StringValue reason = 5;
+
+  // Total pay of job
+  google.protobuf.Int32Value total_pay = 6;
+}
+
+message DispatchDasherTransactionShift {
+  // Shift check-in/start time
+  google.protobuf.Timestamp check_in_time = 1;
+
+  // Shift check-out/end time
+  google.protobuf.Timestamp check_out_time = 2;
+
+  // Amount dasher is paid for deliveries during the shift
+  google.protobuf.Int32Value delivery_pay = 3;
+
+  // Shift ID
+  google.protobuf.Int64Value id = 4;
+
+  // Whether this delivery paid the dasher using the dynamic pay model
+  google.protobuf.BoolValue is_on_dynamic_pay_model = 5;
+
+  // Number of deliveries
+  google.protobuf.Int32Value num_deliveries = 6;
+
+  // Pay rate per delivery
+  google.protobuf.Int32Value rate_per_delivery = 7;
+
+  // Scheduled end time for shift
+  google.protobuf.Timestamp scheduled_end_time = 8;
+
+  // Scheduled start time for shift
+  google.protobuf.Timestamp scheduled_start_time = 9;
+
+  // Location at start of shift
+  google.protobuf.Int64Value starting_point_id = 10;
+
+  // Tip made during shift
+  google.protobuf.Int32Value tip_amount = 11;
+
+  // Whether cash was directly paid to dasher or not
+  // NOTE: Upon investigation of Web, this does not appear
+  // to be used, but will be "archiving" just in case.
+  // google.protobuf.BoolValue contains_cash_on_delivery = 12;
+}
+
+message DispatchDasherTransaction {
+  // Amount of payout
+  google.protobuf.Int64Value amount = 1;
+
+  // Creation time of the payout
+  google.protobuf.Timestamp created_at = 2;
+
+  // Unique id of payout transaction id
+  google.protobuf.Int64Value id = 3;
+
+  // Shift info related to transaction payout
+  DispatchDasherTransactionShift shift = 4;
+
+  // Job info related to transaction payout
+  DispatchDasherTransactionJob job = 5;
+
+  // Target ID that links to this transaction
+  google.protobuf.Int64Value target_id = 6;
+
+  // Target type that links to this transaction
+  google.protobuf.StringValue target_type = 7;
+
+  // Unique transfer ID associated with this transaction
+  google.protobuf.Int64Value transfer_id = 8;
+}
+
+message DispatchDasherTransactionListRequest {
+  // ID of transfer payout
+  google.protobuf.Int64Value transfer_id = 1;
+}
+
+message DispatchDasherTransactionListResponse {
+  // List of transactions with shift and job data
+  repeated DispatchDasherTransaction transactions = 1;
+}

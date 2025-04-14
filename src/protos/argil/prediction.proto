@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package argil.v1;
+
+import "argil/logging.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.argil";
+
+// This proto definition is based on KServe prediction protocol
+// https://github.com/kserve/kserve/blob/master/docs/predict-api/v2/grpc_predict_v2.proto
+service ArgilPredictionService {
+  // Indicates if the inference server is able to receive
+  // and respond to inference requests.
+  rpc GetLiveness(GetLivenessRequest) returns (GetLivenessResponse);
+  // Indicates if the server is ready for inferencing.
+  rpc GetReadiness(GetReadinessRequest) returns (GetReadinessResponse);
+  // The ModelInfer API performs inference using the specified model.
+  rpc ModelInfer(ModelInferRequest) returns (ModelInferResponse);
+}
+
+// Request for Liveness
+message GetLivenessRequest {}
+
+// Response for Liveness
+message GetLivenessResponse {
+  // True if the inference server is live, false if not live.
+  bool alive = 1;
+}
+
+// Request for Readiness
+message GetReadinessRequest {}
+
+// Response for Readiness
+message GetReadinessResponse {
+  // True if the inference server is ready, false if not ready.
+  bool ready = 1;
+}
+
+// Request for Inference
+message ModelInferRequest {
+  // The name of the model to use for inferencing.
+  string model_name = 1;
+
+  // The version of the model to use for inference. If not given the
+  // server will choose a version based on the model and internal policy.
+  string model_version = 2;
+
+  // Optional identifier for the request. If specified will be
+  // returned in the response.
+  string request_id = 3;
+
+  // Optional inference parameters.
+  map<string, InferParameter> parameters = 4;
+
+  // The input tensors for the inference.
+  repeated InferInputTensor inputs = 5;
+
+  // The data contained in an input tensor can be represented in "raw"
+  // bytes form or in the repeated type that matches the tensor's data
+  // type. To use the raw representation 'raw_input_contents' must be
+  // initialized with data for each tensor in the same order as
+  // 'inputs'. For each tensor, the size of this content must match
+  // what is expected by the tensor's shape and data type. The raw
+  // data must be the flattened, one-dimensional, row-major order of
+  // the tensor elements without any stride or padding between the
+  // elements. Note that the FP16 and BF16 data types must be represented as
+  // raw content as there is no specific data type for a 16-bit float type.
+  //
+  // If this field is specified then InferInputTensor::contents must
+  // not be specified for any input tensor.
+  repeated bytes raw_input_contents = 7;
+
+  // The input tensors for the Sibyl model inference.
+  repeated SibylInferInputTensor sibyl_inputs = 8;
+
+  //iguazu topic for sending logs. if null the logging will not be sent
+  string iguazu_topic = 6;
+
+  //logging fraction
+  float logging_fraction = 9;
+}
+
+// An inference parameter value. The Parameters message describes a
+// “name”/”value” pair, where the “name” is the name of the parameter
+// and the “value” is a boolean, integer, or string corresponding to
+// the parameter.
+message InferParameter {
+  // The parameter value can be a string, an int64, a boolean
+  // or a message specific to a predefined parameter.
+  oneof parameter_choice {
+    // A boolean parameter value.
+    bool bool_param = 1;
+
+    // An int64 parameter value.
+    int64 int64_param = 2;
+
+    // A string parameter value.
+    string string_param = 3;
+  }
+}
+
+// Input tensor passed for model inference
+message InferInputTensor {
+  // The tensor name.
+  string name = 1;
+
+  // The tensor data type.
+  string datatype = 2;
+
+  // The tensor shape.
+  repeated int64 shape = 3;
+
+  // Optional inference input tensor parameters.
+  map<string, InferParameter> parameters = 4;
+
+  // The tensor contents using a data-type format. This field must
+  // not be specified if "raw" tensor contents are being used for
+  // the inference request.
+  InferTensorContents contents = 5;
+}
+
+// Input tensor passed for sibyl model inference
+message SibylInferInputTensor {
+  // The tensor name.
+  string name = 1;
+
+  // The tensor data type.
+  string datatype = 2;
+
+  // The tensor shape.
+  repeated int64 shape = 3;
+
+  // Optional inference input tensor parameters.
+  map<string, InferParameter> parameters = 4;
+
+  // The tensor contents using a data-type format. This field must
+  // not be specified if "raw" tensor contents are being used for
+  // the inference request.
+  repeated InferTensorContents contents = 5;
+}
+
+// The data contained in a tensor represented by the repeated type
+// that matches the tensor's data type. Protobuf oneof is not used
+// because oneofs cannot contain repeated fields.
+message InferTensorContents {
+  // Representation for BOOL data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated bool bool_contents = 1;
+
+  // Representation for INT8, INT16, and INT32 data types. The size
+  // must match what is expected by the tensor's shape. The contents
+  // must be the flattened, one-dimensional, row-major order of the
+  // tensor elements.
+  repeated int32 int_contents = 2;
+
+  // Representation for INT64 data types. The size must match what
+  // is expected by the tensor's shape. The contents must be the
+  // flattened, one-dimensional, row-major order of the tensor elements.
+  repeated int64 int64_contents = 3;
+
+  // Representation for UINT8, UINT16, and UINT32 data types. The size
+  // must match what is expected by the tensor's shape. The contents
+  // must be the flattened, one-dimensional, row-major order of the
+  // tensor elements.
+  repeated uint32 uint_contents = 4;
+
+  // Representation for UINT64 data types. The size must match what
+  // is expected by the tensor's shape. The contents must be the
+  // flattened, one-dimensional, row-major order of the tensor elements.
+  repeated uint64 uint64_contents = 5;
+
+  // Representation for FP32 data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated float fp32_contents = 6;
+
+  // Representation for FP64 data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated double fp64_contents = 7;
+
+  // Representation for BYTES data type. The size must match what is
+  // expected by the tensor's shape. The contents must be the flattened,
+  // one-dimensional, row-major order of the tensor elements.
+  repeated bytes bytes_contents = 8;
+}
+
+// Response for Inference
+message ModelInferResponse {
+  // The name of the model used for inference.
+  string model_name = 1;
+
+  // The version of the model used for inference.
+  string model_version = 2;
+
+  // The id of the inference request if one was specified.
+  string request_id = 3;
+
+  // Optional inference response parameters.
+  map<string, InferParameter> parameters = 4;
+
+  // The output tensors holding inference results.
+  repeated InferOutputTensor outputs = 5;
+
+  // The data contained in an output tensor can be represented in
+  // "raw" bytes form or in the repeated type that matches the
+  // tensor's data type. To use the raw representation 'raw_output_contents'
+  // must be initialized with data for each tensor in the same order as
+  // 'outputs'. For each tensor, the size of this content must match
+  // what is expected by the tensor's shape and data type. The raw
+  // data must be the flattened, one-dimensional, row-major order of
+  // the tensor elements without any stride or padding between the
+  // elements. Note that the FP16 and BF16 data types must be represented as
+  // raw content as there is no specific data type for a 16-bit float type.
+  //
+  // If this field is specified then InferOutputTensor::contents must
+  // not be specified for any output tensor.
+  repeated bytes raw_output_contents = 6;
+
+  //logging payload
+  PredictionLogging logging_payload = 7;
+
+  //iguazu logging sender status
+  map<string, string> logging_status = 8;
+}
+
+// An output tensor returned for an inference request.
+message InferOutputTensor {
+  // The tensor name.
+  string name = 1;
+
+  // The tensor data type.
+  string datatype = 2;
+
+  // The tensor shape.
+  repeated int64 shape = 3;
+
+  // Optional output tensor parameters.
+  map<string, InferParameter> parameters = 4;
+
+  // The tensor contents using a data-type format. This field must
+  // not be specified if "raw" tensor contents are being used for
+  // the inference response.
+  InferTensorContents contents = 5;
+}

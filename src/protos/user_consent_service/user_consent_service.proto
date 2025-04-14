@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package user_consent_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.user_consent_service";
+
+/**
+   UserConsentService - serves privacy-law related user opt-out status for both Cx and Dx.
+   A user can be both or either one of Cx and Dx, and can have separate privacy settings for each type.
+*/
+service UserConsentService {
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+  option (service_client.client_config).response_attempt_timeout_millis = 400;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Create or update consent for user
+  rpc CreateOrUpdateConsentForUser(CreateOrUpdateConsentForUserRequest) returns (CreateOrUpdateConsentForUserResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // An empty list of UserConsent is returned when the user has not provided their opt-out answer.
+  rpc GetConsentsByUserId(GetConsentsByUserIdRequest) returns (GetConsentsByUserIdResponse) {}
+
+  // An empty list of UserConsent is returned when the user has not provided their opt-out answer.
+  rpc GetConsentsByUserTypeAndId(GetConsentsByUserTypeAndIdRequest) returns (GetConsentsByUserTypeAndIdResponse) {}
+
+  /**
+     Why is user_id ambiguous in Segment?
+     A lot of clients mean different things when they supply 'user_id' in Segment.
+     Depending on the Segment Source (identified by Write Key), it may mean userId OR consumerId, vs userId OR dasher_id.
+     For this reason, this endpoint takes in a identifier that can mean either things and find the consent status using the OR logic.
+
+     E.g. Suppose there's Consumer A with user_id=1111. There's Consumer B with consumer_id=1111.
+     User A opted in, while user B has not. Segment events are being made for userId=1111.
+     Do we apply integration objects or not? Does this event mean user A or B?
+     In this case UCS returns TRUE for opt-out.
+  */
+  rpc GetConsentForAmbiguousSegmentUser(GetConsentForAmbiguousSegmentUserRequest) returns (GetConsentForAmbiguousSegmentUserResponse) {}
+
+  // Deprecated: use GetConsentForAmbiguousSegmentUser
+  rpc GetConsentForAmbiguousSegmentConsumer(GetConsentForAmbiguousSegmentConsumerRequest) returns (GetConsentForAmbiguousSegmentConsumerResponse) {}
+  // Deprecated: use GetConsentForAmbiguousSegmentUser
+  rpc GetConsentForAmbiguousSegmentDasher(GetConsentForAmbiguousSegmentDasherRequest) returns (GetConsentForAmbiguousSegmentDasherResponse) {}
+}
+
+// Privacy policies that Doordash has the compliance requirement to.
+enum ConsentPolicy {
+  // Unspecified.
+  CONSENT_POLICY_UNSPECIFIED = 0;
+  // Do not policy e.g. CCPA.
+  CONSENT_POLICY_DO_NOT_SELL = 1;
+  // Terms and Conditions for Social Signup ID-945
+  CONSENT_POLICY_TERMS_AND_CONDITIONS_SOCIAL = 2;
+  // Share location with the Dasher ID-2328
+  CONSENT_POLICY_CONSUMER_LOCATION_SHARING_WITH_DELIVERY_PERSON = 3;
+}
+
+// A user can have multiple user types and have a different privacy consent status per type.
+enum UidType {
+  // Unspecified.
+  UID_TYPE_UNSPECIFIED = 0;
+  // Consumer Doordash type.
+  UID_TYPE_CONSUMER = 1;
+  // Dasher type.
+  UID_TYPE_DASHER = 2;
+  // Consumer Caviar type.
+  UID_TYPE_CONSUMER_CAVIAR = 3;
+}
+
+// Version request logic for Get requests
+enum VersionRequestLogic {
+  // Unspecified.
+  VERSION_REQUEST_LOGIC_UNSPECIFIED = 0;
+  // Request all policy versions.
+  VERSION_REQUEST_LOGIC_ALL = 1;
+  // Request the latest opt-out response only regardless of the recency of versions.
+  VERSION_REQUEST_LOGIC_THE_LATEST = 2;
+}
+
+// User consent policy opt-out response.
+message UserConsent {
+  // Consent policy that the provided opt-out value corresponds to.
+  ConsentPolicy consent_policy = 1;
+  // Consent policy opt-out status that the user has provided. If null, the user has not provided a response yet.
+  google.protobuf.BoolValue opt_out = 2;
+  // Consent policy version in the form of "location:number".
+  //   e.g. CA:1, CA:2, VA:1 (California disclosure ver 1 & 2, and Virginia disclosure ver 1).
+  //   Each different state may come up with their own privacy law and the law wording can change, resulting in version 1, 2, etc.
+  string version = 3;
+}
+
+// User consent policy opt-out response per user type.
+message UserConsentWithId {
+  // User consent status.
+  UserConsent consent = 1;
+  // e.g. consumer_id or dasher_id depending on uid_type.
+  string uid = 2;
+  // e.g. Consumer or Dasher.
+  UidType uid_type = 3;
+}
+
+// Request to create or update a consent status for a user.
+message CreateOrUpdateConsentForUserRequest {
+  // e.g. consumer_id or dasher_id depending on uid_type.
+  string uid = 1;
+  // e.g. Consumer or Dasher.
+  UidType uid_type = 2;
+  // User consent status response that user is requesting to store.
+  UserConsent consent = 3;
+}
+
+// Response to create or update a consent status for a user.
+message CreateOrUpdateConsentForUserResponse {
+  // User consent status response that was stored.
+  UserConsentWithId consent = 1;
+  // user_id (from identity-service) belonging to the user.
+  string user_id = 2;
+}
+
+// When making a Get request for consents, you can specify which policy version to retrieve.
+message PolicyVersionGetRequestType {
+  // A note about oneof: if multiple values are set, the last set value as determined by the order in the proto
+  //   will overwrite all previous ones.
+  oneof req_type {
+    // Request for a specific single version.
+    string specific_version_request = 1;
+    // Request for either all or the latest.
+    VersionRequestLogic version_request_logic = 2;
+  }
+}
+
+// Request to get consent status of a user given a user id.
+message GetConsentsByUserIdRequest {
+  // user_id (from identity-service) belonging to the user.
+  string user_id = 1;
+  // Request to return opt-out status of specific consent policies. If null or empty, return all.
+  repeated ConsentPolicy consent_policies = 2;
+  // Policy version request type. If not given, it returns the latest.
+  PolicyVersionGetRequestType version_type = 3;
+  // For certain policies e.g. DO_NOT_SELL, you may request to have Segment integrations back.
+  // if this is supplied for irrelevant policies, the integration objects will be empty.
+  google.protobuf.StringValue segment_write_key = 4;
+}
+
+// Consent status response of a user given a user id.
+message GetConsentsByUserIdResponse {
+  // User consent status responses that user is requesting to get.
+  repeated UserConsentWithId consents = 1;
+  // user_id (from identity-service) belonging to the user.
+  string user_id = 2;
+  // If segment_write_key was specified in the request, it will return the corresponding integration objects for applicable policies.
+  // If the user is opted in, it's also empty.
+  map<string, bool> segment_integrations = 3;
+}
+
+// Request to get consent status of a user given a uid and uid_type.
+message GetConsentsByUserTypeAndIdRequest {
+  // e.g. consumer_id or dasher_id depending on uid_type.
+  string uid = 1;
+  // e.g. Consumer or Dasher.
+  UidType uid_type = 2;
+  // Request to return opt-out status of specific consent policies. If null or empty, return all.
+  repeated ConsentPolicy consent_policies = 3;
+  // Policy version request type
+  PolicyVersionGetRequestType version_type = 4;
+  // For certain policies e.g. DO_NOT_SELL, you may request to have Segment integrations back.
+  // if this is supplied for irrelevant policies, the integration objects will be empty.
+  google.protobuf.StringValue segment_write_key = 5;
+}
+
+// Consent status response of a user given a uid and uid_type.
+message GetConsentsByUserTypeAndIdResponse {
+  // User consent status responses that user is requesting to get.
+  repeated UserConsentWithId consents = 1;
+  // user_id (from identity-service) belonging to the user.
+  string user_id = 2;
+  // If segment_write_key was specified in the request, it will return the corresponding integration objects for applicable policies.
+  // If the user is opted in, it's also empty.
+  map<string, bool> segment_integrations = 3;
+}
+
+// Request to get consent for a user in regard to Segment Sources.
+message GetConsentForAmbiguousSegmentUserRequest {
+  // May or may not be actual user_id. Could be consumer_id or dasher_id, etc.
+  string segment_user_id = 1;
+
+  // Segment write key to identify the source
+  google.protobuf.StringValue segment_write_key = 2;
+
+  // What the segment_user_id could represent if not user_id
+  UidType uid_type = 3;
+}
+
+// Response to get consent for a user in regard to Segment Sources.
+message GetConsentForAmbiguousSegmentUserResponse {
+  // If multiple mismatching matches, UserConsentService applies OR logic. If no matches, return null.
+  google.protobuf.BoolValue opt_out = 1;
+
+  // Segment integration objects
+  map<string, bool> integrations = 2;
+}
+
+// Deprecated
+message GetConsentForAmbiguousSegmentConsumerRequest {
+  string segment_user_id = 1;
+  google.protobuf.StringValue segment_write_key = 2;
+}
+
+// Deprecated
+message GetConsentForAmbiguousSegmentConsumerResponse {
+  google.protobuf.BoolValue opt_out = 1;
+  map<string, bool> integrations = 2;
+}
+
+// Deprecated
+message GetConsentForAmbiguousSegmentDasherRequest {
+  string segment_user_id = 1;
+  google.protobuf.StringValue segment_write_key = 2;
+}
+
+// Deprecated
+message GetConsentForAmbiguousSegmentDasherResponse {
+  google.protobuf.BoolValue opt_out = 1;
+  map<string, bool> integrations = 2;
+}

@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package store_availability.v2;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "StoreStatusProto";
+option java_package = "com.doordash.merchantdataservice.storeavailability.protobuf.v2";
+
+// The merchant-facing V2 StoreStatusService
+service StoreStatusService {
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+
+  // Mx facing store status endpoint(single), provides detailed information of the availability status of a store.
+  // The product spec comes from this PRD
+  // https://docs.google.com/document/d/1t1FaT9JxzABTGs_78WBM4FOtUvIF7L_JoaH3xB-AbEo/edit
+  rpc GetMerchantStoreStatusByStoreId(GetMerchantStoreStatusByStoreIdRequest) returns (GetMerchantStoreStatusByStoreIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Mx facing store statuses endpoint(batch), provides detailed information of the availability status of a store.
+  // The product spec comes from this PRD
+  // https://docs.google.com/document/d/1t1FaT9JxzABTGs_78WBM4FOtUvIF7L_JoaH3xB-AbEo/edit
+  rpc GetMerchantStoreStatusesByStoreIds(GetMerchantStoreStatusesByStoreIdsRequest) returns (GetMerchantStoreStatusesByStoreIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+}
+
+// The request to get store status for a single store.
+message GetMerchantStoreStatusByStoreIdRequest {
+  // The requested store id
+  int64 store_id = 1;
+
+  // The requested store experiences
+  // If a store doesn't have such an experience, it will be skipped in the response
+  repeated common.Experience experiences = 2;
+
+  // Optional, the request's aggregation option,
+  MerchantStoreStatusAggregationOption option = 1001;
+}
+
+// The response for a single store+experience status request
+message GetMerchantStoreStatusByStoreIdResponse {
+  // The result list keyed with store_id + experience
+  repeated MerchantStoreStatusResult merchant_store_status_results = 1;
+}
+
+// The request to get store status for a list of stores.
+message GetMerchantStoreStatusesByStoreIdsRequest {
+  // The requested store ids.
+  repeated int64 store_ids = 1;
+
+  // Required, the requested experiences, if store does not have the requested experience,
+  // it will be filtered out in the result.
+  // If an empty list is passed in, it won't fetch any store status back.
+  repeated common.Experience experiences = 2;
+
+  // Optional, the request's aggregation option,
+  MerchantStoreStatusAggregationOption option = 1001;
+}
+
+// The response of get store status for a list of stores.
+message GetMerchantStoreStatusesByStoreIdsResponse {
+  // The list of results per requested.
+  repeated MerchantStoreStatusResult merchant_store_status_results = 1;
+}
+
+// Store status definition comes from this PRD
+// https://docs.google.com/document/d/1t1FaT9JxzABTGs_78WBM4FOtUvIF7L_JoaH3xB-AbEo/edit
+enum MerchantStoreStatus {
+  // Reserved for merchant store status unspecified.
+  MERCHANT_STORE_STATUS_UNSPECIFIED = 0;
+
+  // Merchant store status open, the store is available and open.
+  MERCHANT_STORE_STATUS_OPEN = 1;
+
+  // Merchant store status closed, the store is available but closed.
+  MERCHANT_STORE_STATUS_CLOSED = 2;
+
+  // Merchant store status paused, the store is not available and paused, it's a temporary status.
+  MERCHANT_STORE_STATUS_PAUSED = 3;
+
+  // Merchant store status deactivated, the store is not available and deactivated, it's relatively
+  // not a temporary status.
+  MERCHANT_STORE_STATUS_DEACTIVATED = 4;
+
+  // Merchant store status inactive, the store is not activated yet.
+  MERCHANT_STORE_STATUS_INACTIVE = 5;
+}
+
+// Aggregation option to config specific logic when calculating store status.
+message MerchantStoreStatusAggregationOption {
+  // Default is false. This excludes geo in the store status calculation.
+  google.protobuf.BoolValue exclude_geo = 1001;
+
+  // Default is false. This excludes paddings in the store status calculation.
+  google.protobuf.BoolValue exclude_paddings = 1002;
+
+  // Default is false. This enables the service to print out debug logs.
+  google.protobuf.BoolValue include_debug_log = 1003;
+}
+
+// It wrapper the store id to the list of merchant store status list relationship.
+message MerchantStoreStatusResult {
+  // The requested store Id.
+  int64 store_id = 1;
+
+  // The experience of the store is in.
+  common.Experience experience = 2;
+
+  // The list of store status details, a store could be in multiple status, and even the same
+  // status, it could have different details, with different end_times and reasons.
+  MerchantStoreStatusDetail merchant_store_status_details = 3;
+}
+
+// It wrapper the store status with more details explains why and how long would the store keep in this status.
+message MerchantStoreStatusDetail {
+  // The merchant store status from the enum value.
+  MerchantStoreStatus merchant_store_status = 1;
+
+  // The reason why the store is in this status.
+  string reason = 2;
+
+  // The list of store status reason details, that explains further for the reason listed above.
+  repeated MerchantStoreStatusReasonDetail merchant_store_status_reason_details = 3;
+
+  // Optional, the end time (timestamp) of this status.
+  google.protobuf.Timestamp end_time = 1001;
+
+  // Optional, the remaining seconds (absolute time duration) of this status.
+  int64 remaining_seconds = 1002;
+}
+
+// The wrapper that explains the reason of the status
+message MerchantStoreStatusReasonDetail {
+  // Optional, details in string.
+  string detail = 1001;
+
+  // Optional, reason details because it's a temporary deactivation.
+  StoreDeactivation store_temporary_deactivation = 1002;
+
+  // Optional, reason details because it's a permanent deactivation.
+  StoreDeactivation store_permanent_deactivation = 1003;
+}
+
+// The wrapper that holds all the store deactivation info.
+message StoreDeactivation {
+  // The store deactivation id.
+  string id = 1;
+
+  // The store deactivation reason.
+  string reason = 2;
+
+  // The store deactivation notes.
+  string notes = 3;
+
+  // When this store deactivation was created.
+  int64 created_at = 4;
+
+  // When will this store deactivation end.
+  int64 end_time = 5;
+
+  // The user id that created this store deactivation.
+  string created_by_id = 6;
+
+  // Optional, the specific experience that was deactivated.
+  common.Experience experience = 1001;
+}

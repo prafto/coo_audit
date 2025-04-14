@@ -1,0 +1,545 @@
+syntax = "proto3";
+package kaizen_platform.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "kaizen_modules/context_primitive.proto";
+import "kaizen_platform/identity.proto";
+import "kaizen_platform/workflow.proto";
+
+// go_package enabled for use in TAS go proxy
+option go_package = "github.com/doordash/services-protobuf/generated/kaizen_platform";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.kaizen_platform";
+
+// service for offering data for kaizen platform
+service DataAccessService {
+  // Timeout after 3000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  // Make a total 2 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+  option (doordash.api.service) = {
+    name: "kaizen"
+    url: "kaizen-platform-data-access-grpc.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["kaizen"]
+    api_key_name: "KAIZEN_PLATFORM_API_KEY"
+    owner: {
+      name: "performance_platform"
+      id: "performance-platform"
+      slack_channel: "#ask-performance-platform"
+      email_alias: "eng-performance-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Get test consumer
+  rpc GetTestConsumer(GetTestConsumerRequest) returns (GetTestConsumerResponse);
+
+  // Get test dasher
+  rpc GetTestDasher(GetTestDasherRequest) returns (GetTestDasherResponse);
+
+  // Get test merchant
+  rpc GetTestMerchant(GetTestMerchantRequest) returns (GetTestMerchantResponse);
+
+  // release test consumer
+  rpc ReleaseTestConsumer(ReleaseTestConsumerRequest) returns (ReleaseTestConsumerResponse);
+
+  // release test dasher
+  rpc ReleaseTestDasher(ReleaseTestDasherRequest) returns (ReleaseTestDasherResponse);
+
+  // release test merchant
+  rpc ReleaseTestMerchant(ReleaseTestMerchantRequest) returns (ReleaseTestMerchantResponse);
+
+  // get test data information
+  rpc GetTestDataInfo(GetTestDataInfoRequest) returns (GetTestDataInfoResponse);
+
+  // get test resource either from a pool or from a direct workflow run
+  rpc GetTestResource(GetTestResourceRequest) returns (GetTestResourceResponse) {
+    option (google.api.http) = {
+      post: "/kaizen/v1/get_test_resource"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+  }
+
+  // release test resource back to the pool or run cleanup workflow to release the resource
+  rpc ReleaseTestResource(ReleaseTestResourceRequest) returns (ReleaseTestResourceResponse) {
+    option (google.api.http) = {
+      post: "/kaizen/v1/release_test_resource"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // get raw test data from a pool, the origin of the raw test data is from a file which got populated into the pool through warm up in data provision phase
+  rpc GetRawTestData(GetRawTestDataRequest) returns (GetRawTestDataResponse);
+
+  // release raw test data back to the pool
+  rpc ReleaseRawTestData(ReleaseRawTestDataRequest) returns (ReleaseRawTestDataResponse);
+
+  // list active test resources either per request_uuid or per user identity
+  rpc ListActiveTestResource(ListActiveTestResourceRequest) returns (ListActiveTestResourceResponse);
+
+  // renew active test resource attribute either per request_uuid or per user identity, mainly for access token of test actor
+  rpc RenewActiveTestResourceAttribute(RenewActiveTestResourceAttributeRequest) returns (RenewActiveTestResourceAttributeResponse);
+}
+
+// test actor
+message TestActor {
+  // test id
+  string test_id = 1;
+
+  // market id
+  int32 market_id = 2;
+
+  // user id
+  string user_id = 3;
+
+  // user email
+  string user_email = 4;
+
+  // password
+  string password = 5;
+
+  // access token
+  string access_token = 6;
+
+  // refresh token
+  string refresh_token = 7;
+
+  // submarket id
+  int32 submarket_id = 8;
+
+  // district id
+  int32 district_id = 9;
+
+  // location
+  LatLongLocation location = 10;
+
+  // country
+  string country = 11;
+
+  // country shortname
+  string country_shortname = 12;
+
+  // address
+  string address = 13;
+}
+
+// consumer
+message Consumer {
+  // test actor
+  TestActor test_actor = 1;
+
+  // consumer id
+  string consumer_id = 2;
+
+  // default stripe payment method id
+  string default_stripe_payment_method_id = 3;
+}
+
+// dasher
+message Dasher {
+  // test actor
+  TestActor test_actor = 1;
+
+  // dasher id
+  string dasher_id = 2;
+
+  // The Dasher's Current Location
+  LatLongLocation location = 3;
+
+  // The Dasher's Starting Point
+  int64 starting_point_id = 4;
+}
+
+// A location represented by a latitude and longitude
+message LatLongLocation {
+  // latitude
+  double lat = 1;
+
+  // longitude
+  double lng = 2;
+}
+
+// merchant
+message Merchant {
+  // test actor
+  TestActor test_actor = 1;
+
+  // store id
+  string store_id = 2;
+
+  // promo code
+  string promo_code = 3;
+
+  // pickup promo code
+  string pickup_promo_code = 4;
+
+  // menu id
+  string menu_id = 5;
+
+  // category id
+  string category_id = 6;
+
+  // item ids
+  repeated string item_ids = 7;
+}
+
+// consumer experience, ie. doordash, storefront, drive, etc.
+enum ConsumerExperience {
+  // unspecified consumer experience
+  CONSUMER_EXPERIENCE_UNSPECIFIED = 0;
+
+  // doordash experience
+  CONSUMER_EXPERIENCE_DOORDASH = 1;
+}
+
+// request to get test consumer
+message GetTestConsumerRequest {
+  // market id
+  int32 market_id = 1;
+
+  // experience
+  ConsumerExperience experience = 2;
+
+  // test data pool id
+  string test_data_pool_id = 3;
+
+  // workflow execution id, the id of the workflow execution that is requesting the consumer
+  string workflow_execution_id = 4;
+}
+
+// response for get test consumer
+message GetTestConsumerResponse {
+  // consumer
+  Consumer consumer = 1;
+}
+
+// request to get test dasher
+message GetTestDasherRequest {
+  // market id
+  int32 market_id = 1;
+
+  // test data pool id
+  string test_data_pool_id = 2;
+
+  // workflow execution id, the id of the workflow execution that is requesting the dasher
+  string workflow_execution_id = 3;
+}
+
+// response for get test dasher
+message GetTestDasherResponse {
+  // dasher
+  Dasher dasher = 1;
+}
+
+// merchant vertical, ie. marketplace, storefront, drive, cng, etc.
+enum MerchantVertical {
+  // unspecified merchant vertical
+  MERCHANT_VERTICAL_UNSPECIFIED = 0;
+
+  // marketplace
+  MERCHANT_VERTICAL_MARKETPLACE = 1;
+}
+
+// request to get test merchant
+message GetTestMerchantRequest {
+  // market id
+  int32 market_id = 1;
+
+  // test data pool id
+  string test_data_pool_id = 2;
+
+  // merchant vertical
+  MerchantVertical merchant_vertical = 3;
+
+  // workflow execution id, the id of the workflow execution that is requesting the merchant
+  string workflow_execution_id = 4;
+
+  // whether this merchant is read-only, ie. operation such as closing/deactivating are not allowed
+  bool is_read_only = 5;
+}
+
+// response for get test merchant
+message GetTestMerchantResponse {
+  // merchant
+  Merchant merchant = 1;
+}
+
+// ids of test data that is used to release test actor back to the test data pool
+message TestDataIds {
+  // test data pool id
+  string test_data_pool_id = 1;
+
+  // market id
+  int32 market_id = 2;
+}
+
+// request to release test consumer back to the test data pool
+message ReleaseTestConsumerRequest {
+  // workflow execution id
+  string workflow_execution_id = 1;
+
+  // test data ids
+  TestDataIds test_data_ids = 2;
+}
+
+// response for release test consumer
+message ReleaseTestConsumerResponse {}
+
+// request to release test dasher back to the test data pool
+message ReleaseTestDasherRequest {
+  // workflow execution id
+  string workflow_execution_id = 1;
+
+  // test data ids
+  TestDataIds test_data_ids = 2;
+}
+
+// response for release test dasher
+message ReleaseTestDasherResponse {}
+
+// request to release test merchant back to the test data pool
+message ReleaseTestMerchantRequest {
+  // workflow execution id
+  string workflow_execution_id = 1;
+
+  // test data ids
+  TestDataIds test_data_ids = 2;
+}
+
+// response for release test merchant
+message ReleaseTestMerchantResponse {}
+
+// get test data pool information
+message GetTestDataInfoRequest {
+  // test data ids
+  TestDataIds test_data_ids = 1;
+}
+
+// stage of a data pool's lifecycle
+enum TestDataInfoStatus {
+  // we were unable to figure out pool status for whatever reason
+  TEST_DATA_INFO_STATUS_UNSPECIFIED = 0;
+
+  // the pool is currently still provisioning
+  TEST_DATA_INFO_STATUS_PROVISIONING = 1;
+
+  // the pool is ready for use
+  TEST_DATA_INFO_STATUS_READY = 2;
+}
+
+// response for get test data pool information
+message GetTestDataInfoResponse {
+  // test data market distribution ratio if the test data pool is test actor pool
+  map<int32, int32> market_distribution = 1;
+
+  // return test actor (consumer, dasher, merchant) count for the specified market if market_id is specified
+  // return total test actor count for each type (consumer, dasher, merchant) if market_id is not specified
+  // we return granular current test actor counts so we can (together w/ test_actor_target) render a rich progress bar.
+  map<string, int32> test_actor_count = 2;
+
+  // timestamp in UTC when the test data pool expires
+  google.protobuf.Timestamp pool_expire_timestamp = 3;
+
+  // return test actor (consumer, dasher, merchant) target for the specified market if market_id is specified
+  // return total test actor target for each type (consumer, dasher, merchant) if market_id is not specified
+  // we return granular target counts so we can (together w/ test_actor_count) render a rich progress bar.
+  // Note: it's possible to have a test_actor_count entry but not a test_actor_target
+  // entry for a given test actor type. It's an edge case and should be rare, but needs to be
+  // handled by clients.
+  map<string, int32> test_actor_target = 4;
+
+  // the stage of the pool's lifecycle that it's currently in.
+  // note that this is derivable from test_actor_count + test_actor_target + pool_expire_timestamp
+  // and is here for convenience.
+  TestDataInfoStatus status = 5;
+
+  // denote if the test actor pool is a non-reusable pool(aka. buffer) or not (default to false)
+  bool is_non_reusable = 6;
+}
+
+// source type of test resource \
+enum SourceType {
+  // unspecified source type
+  SOURCE_TYPE_UNSPECIFIED = 0;
+
+  // pool
+  SOURCE_TYPE_POOL = 1;
+
+  // workflow run
+  SOURCE_TYPE_WORKFLOW_RUN = 2;
+}
+
+// request to get test resource either from a pool or from a workflow run
+message GetTestResourceRequest {
+  // deprecated requester field, use user_identity instead
+  reserved 3;
+  reserved "requester";
+
+  // the source of the test resource, either from a pool or from a direct workflow run
+  SourceType source_type = 1;
+
+  // request uuid
+  string request_uuid = 2;
+
+  // test data pool ids, use when source type is pool
+  TestDataIds test_data_ids = 4;
+
+  // workflow parameters, use when source type is workflow run
+  WorkflowParameters workflow_parameters = 5;
+
+  // ttl for the resource generated through workflow run, default to 3 days if not specified, minimum value is 30 minutes
+  int64 ttl_minute = 6;
+
+  // user identity
+  UserIdentity user_identity = 7;
+}
+
+// resource information
+message ResourceInformation {
+  // context in json string
+  // context will be deprecated in the future, please use context_value instead
+  string context = 1;
+
+  // resource expire timestamp in UTC
+  google.protobuf.Timestamp resource_expire_timestamp = 3;
+
+  // the timestamp of when the attribute of the resource is valid until in UTC
+  google.protobuf.Timestamp attribute_invalid_timestamp = 4;
+
+  // the timestamp of when the resource is updated in UTC
+  google.protobuf.Timestamp last_update_timestamp = 5;
+
+  // the id of the workflow that generates the resource
+  string workflow_id = 6;
+
+  // context field in struct
+  google.protobuf.Struct context_field = 7;
+
+  // context value in kaizen_modules
+  // context will be deprecated in the future, please use context_value instead
+  kaizen_modules.v1.ContextValue context_value = 8;
+}
+
+// response for get test resource
+message GetTestResourceResponse {
+  // resource information
+  ResourceInformation resource_information = 1;
+}
+
+// request to release test resource back to the pool or run cleanup workflow to release the resource
+message ReleaseTestResourceRequest {
+  // request uuid
+  string request_uuid = 1;
+
+  // test data ids
+  TestDataIds test_data_ids = 2;
+}
+
+// response for release test resource
+message ReleaseTestResourceResponse {}
+
+// data fetch strategy
+enum DataFetchStrategy {
+  // unspecified data fetch strategy
+  DATA_FETCH_STRATEGY_UNSPECIFIED = 0;
+
+  // data will be fetched in a circular way
+  DATA_FETCH_STRATEGY_CIRCULAR = 1;
+}
+
+// request to get raw test data
+message GetRawTestDataRequest {
+  // test data pool id
+  string test_data_pool_id = 1;
+
+  // exclusive or not, if true, the test data will be marked as exclusive and will not be used by other test simultaneously
+  bool is_exclusive = 2;
+
+  // request uuid that is uniquely identify the request, and will be used to release the raw test data as well
+  string request_uuid = 3;
+
+  // data fetch strategy
+  DataFetchStrategy data_fetch_strategy = 4;
+}
+
+// response for get raw test data
+message GetRawTestDataResponse {
+  // raw test data in string format
+  string raw_test_data = 1;
+}
+
+// request to release raw test data to a pool
+message ReleaseRawTestDataRequest {
+  // request uuid, use the same request uuid that is used to get the raw test data
+  string request_uuid = 1;
+
+  // test data pool id
+  string test_data_pool_id = 2;
+}
+
+// response to release raw test data back to the pool
+message ReleaseRawTestDataResponse {}
+
+// request to list active test resources either per request_uuid or per user identity
+message ListActiveTestResourceRequest {
+  // identifier of the test resource
+  oneof request_identifier {
+    // request uuid
+    string request_uuid = 1;
+
+    // user identity
+    UserIdentity user_identity = 2;
+  }
+}
+
+// response for list active test resources
+message ListActiveTestResourceResponse {
+  // list of resource information
+  repeated ResourceInformation resource_information_list = 1;
+}
+
+// request to renew active test resource attribute either per request_uuid or per user identity, mainly for access token of test actor
+message RenewActiveTestResourceAttributeRequest {
+  // identifier of the test resource
+  oneof request_identifier {
+    // request uuid
+    string request_uuid = 1;
+
+    // user identity
+    UserIdentity user_identity = 2;
+  }
+}
+
+// response for renew active test resource attribute
+message RenewActiveTestResourceAttributeResponse {
+  // list of resource information
+  repeated ResourceInformation resource_information_list = 1;
+}

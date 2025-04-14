@@ -1,0 +1,276 @@
+syntax = "proto3";
+
+package risk_core.v1;
+
+import "common/dayparts.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "risk-core/common.proto";
+import "risk-core/configuration.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "RiskBacktestProtos";
+option java_package = "com.doordash.rpc.risk_core";
+
+// Status of a backtest.
+enum BacktestStatus {
+  // No status specified. Status unknown.
+  BACKTEST_STATUS_EVALUATION_UNSPECIFIED = 0;
+  // The backtest has been created but the evaluation job has not started.
+  BACKTEST_STATUS_EVALUATION_PENDING = 1;
+  // The evaluation job is running.
+  BACKTEST_STATUS_EVALUATION_IN_PROGRESS = 2;
+  // The evaluation job has finished but the metrics job has not yet started.
+  BACKTEST_STATUS_EVALUATION_COMPLETE = 3;
+  // The metrics job is running.
+  BACKTEST_STATUS_METRICS_IN_PROGRESS = 4;
+  // The metrics job has finished but final housekeeping has not finished.
+  BACKTEST_STATUS_METRICS_COMPLETE = 5;
+  // The backtest is finished. Neither evaluation results nor metrics will change. This is a terminal state.
+  BACKTEST_STATUS_COMPLETE = 6;
+  // The backtest is canceled.
+  BACKTEST_STATUS_CANCELED = 7;
+  // The backtest is failed.
+  BACKTEST_STATUS_FAILED = 8;
+}
+
+// A complete configuration of a checkpoint used in a backtest.
+message BacktestConfiguration {
+  // Identifies this specific configuration within the backtest.
+  string backtest_configuration_id = 1;
+  // Complete configuration of a checkpoint.
+  Configuration configuration = 4;
+}
+
+// A backtest.
+message Backtest {
+  // UUID identifying the backtest.
+  string id = 1;
+  // Status of the backtest.
+  BacktestStatus status = 2;
+  // Fraction (from 0 to 1) of the selected historical data that has been evaluated. If evaluation has not yet started,
+  // this will be zero.
+  float evaluation_fraction = 3;
+  // One or more configurations. All must be for the same checkpoint. Each configuration will be evaluated
+  // separately against the selected historical data.
+  repeated BacktestConfiguration configurations = 4;
+  // Criteria for selecting historical data.
+  HistoricalDataCriteria historical_data_criteria = 5;
+  // Identifier of the evaluation job, if one has started.
+  google.protobuf.StringValue evaluation_job_id = 6;
+  // Metrics that summarize the evaluations in the backtest.
+  BacktestMetrics metrics = 7;
+  // Entities that were treated differently by the configuration(s) being tested. These can be used for spot checks.
+  AffectedEntities affected_entities = 8;
+  // Errors encountered by the backtest.
+  repeated BacktestError errors = 9;
+}
+
+// Backtest error severity.
+enum BacktestErrorSeverity {
+  // Unspecified backtest error severity.
+  BACKTEST_ERROR_SEVERITY_UNSPECIFIED = 0;
+  // Warning-level backtest error. Raised when a problem is encountered that doesn't prevent the test from running.
+  BACKTEST_ERROR_SEVERITY_WARNING = 1;
+  // Fatal backtest error. Raised when the backtest fails unrecoverably.
+  BACKTEST_ERROR_SEVERITY_FATAL = 2;
+}
+
+// Type of backtest error.
+enum BacktestErrorType {
+  // Unspecified backtest error.
+  BACKTEST_ERROR_TYPE_UNSPECIFIED = 0;
+  // Raised when a requested filter is not implemented.
+  BACKTEST_ERROR_TYPE_FILTER_UNIMPLEMENTED = 1;
+  // Raised when Spark job fails.
+  BACKTEST_ERROR_TYPE_SPARK_PROCESSING = 2;
+  // Raised when retrieval from S3 fails.
+  BACKTEST_ERROR_TYPE_S3_RETRIEVAL = 3;
+}
+
+// A non-blocking error encountered by the backtest.
+message BacktestError {
+  // Error severity
+  BacktestErrorSeverity severity = 1;
+  // Error type
+  BacktestErrorType type = 2;
+  // Error message
+  string message = 3;
+}
+
+// A time period within a day.
+message DayTimePeriod {
+  // Time of day that the period starts.
+  dayparts.TimeOfDay start = 1;
+  // Time of the same day that the period ends.
+  dayparts.TimeOfDay end = 2;
+}
+
+// days within a week
+message DayOfWeekCriteria {
+  // IANA code for time zone that determines time of day. For example, "America/New_York". Optional. Defaults to UTC.
+  string time_zone = 1;
+  // Days of the week whose data should be considered. Optional. Defaults to all days.
+  repeated dayparts.DayOfWeek days_of_week = 3;
+  // For days specified above, time periods on those days during which data should be evaluated. Optional. Defaults to
+  // the entire day.
+  repeated DayTimePeriod day_time_periods = 4;
+}
+
+// A set of actions
+message ActionSet {
+  // Names of actions in the set
+  repeated string names = 1;
+}
+
+// A filter that includes or excludes historical evaluations from the backtest based on their final action.
+message FinalActionFilter {
+  // Filter definition
+  oneof definition {
+    // Include historical evaluations whose final action is contained within this set.
+    ActionSet include = 1;
+    // Exclude historical evaluations whose final action is contained within this set.
+    ActionSet exclude = 2;
+  }
+}
+
+// Criteria for selecting historical evaluations.
+message HistoricalDataCriteria {
+  // Start time, inclusive.
+  google.protobuf.Timestamp start_time = 4;
+  // End time, exclusive.
+  google.protobuf.Timestamp end_time = 5;
+  // Fraction between 0 and 1 representing the rate at which historical records should be evaluated. Optional.
+  // Defaults to 1 if omitted.
+  google.protobuf.FloatValue sample_rate = 1;
+  // Within the selected time range, specific days of the week and/or per-day time periods whose data should be
+  // evaluated. If omitted, all data will be selected.
+  repeated DayOfWeekCriteria day_criteria = 2;
+  // An evaluation will be selected if this is empty or if it is matched by any of the filter groups (logical OR).
+  repeated FilterGroup filter_groups = 6;
+}
+
+// An evaluation will be selected if it is matched by all of the contained filters (logical AND).
+message FilterGroup {
+  // An evaluation will be selected if it is matched by all of the contained filters (logical AND).
+  repeated Filter filters = 1;
+}
+
+// A filter that selects specific historical evaluations.
+message Filter {
+  // Choice of filter.
+  oneof value {
+    // Filter based on final action of the historical evaluation.
+    FinalActionFilter final_action_filter = 1;
+    // Filter historical evaluations by business.
+    BusinessFilter business = 2;
+    // Filter historical evaluations by business vertical.
+    BusinessVerticalFilter business_vertical = 3;
+    // Filter historical evaluations by location.
+    LocationFilter location = 4;
+    // Filter historical evaluations by gross order value.
+    GrossOrderValueFilter order_value = 5;
+  }
+}
+
+// Filter historical evaluations by gross order value.
+message GrossOrderValueFilter {
+  // Gross order value.
+  money.MonetaryFields gross_order_value = 1;
+}
+
+// Filter historical evaluations by business.
+message BusinessFilter {
+  // Business identifier.
+  string business_id = 1;
+}
+
+// Filter historical evaluations by business vertical.
+message BusinessVerticalFilter {
+  // Business vertical identifier.
+  string business_vertical_id = 1;
+}
+
+// Filter historical evaluations by location.
+message LocationFilter {
+  // ISO 3166 alpha-2 country code.
+  string country_code = 1;
+  // Level 1 (top level) administrative division within a country.
+  string administrative_division_1 = 2;
+}
+
+// A single metric value.
+message MetricValue {
+  // Time of the metric. If absent, the metric applies to the entire backtest.
+  google.protobuf.Timestamp time = 1;
+  // Value of the metric.
+  oneof value {
+    // Double metric value.
+    google.protobuf.DoubleValue double_value = 2;
+    // String metric value.
+    google.protobuf.StringValue string_value = 3;
+    // Boolean metric value.
+    google.protobuf.BoolValue bool_value = 4;
+  }
+}
+
+// One or more values of a single metric.
+message MetricValues {
+  // Name of the metric.
+  string name = 1;
+  // Values of the metric.
+  repeated MetricValue values = 2;
+}
+
+// Metrics for one configuration in the backtest.
+message BacktestConfigurationMetrics {
+  // Identifier of the configuration within the backtest whose results were used to compute this metric value.
+  string backtest_configuration_id = 1;
+  // One ore more metrics computed for this configuration.
+  repeated MetricValues metrics = 2;
+}
+
+// Metrics that describe the results of the backtest. These are useful to get an overall understanding of how
+// the backtest went.
+message BacktestMetrics {
+  // Metrics for each configuration in the backtest.
+  repeated BacktestConfigurationMetrics configuration = 1;
+}
+
+// An entity for whom evaluations differed between the historical record and the backtest.
+message AffectedEntity {
+  // Entity identifier
+  string id = 1;
+  // Entity type
+  risk_core.v1.EvaluationEntityType type = 2;
+  // One or more evaluations of this entity that differed between the historical record and the backtest.
+  repeated EvaluationDifference evaluation_differences = 3;
+}
+
+// An evaluation that differed between the historical record and the backtest.
+message EvaluationDifference {
+  // Identifier of the canonical evaluation of the entity in question.
+  string canonical_evaluation_id = 1;
+  // Identifier of the equivalent evaluation of the same entity in the backtest.
+  string backtest_evaluation_id = 2;
+}
+
+// Entities affected by the configuration being tested. These can be used for spot checks.
+message AffectedEntities {
+  // One or more entities affected by the configuration being tested.
+  repeated AffectedEntities affected_entities = 1;
+}
+
+// Filter for listing backtests.
+message ListBacktestFilter {
+  // String identifying the backtest author
+  string created_by = 1;
+  // Start time, inclusive.
+  google.protobuf.Timestamp start_time = 2;
+  // End time, exclusive.
+  google.protobuf.Timestamp end_time = 3;
+  // Status of the backtest.
+  BacktestStatus status = 4;
+}

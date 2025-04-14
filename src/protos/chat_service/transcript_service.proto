@@ -1,0 +1,233 @@
+syntax = "proto3";
+
+package delivery.experience.chat.transcript;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "transcript_service";
+option java_package = "com.doordash.rpc.chat.transcript";
+
+// Service for Chat Transcripts
+service TranscriptService {
+  // Set up this service to be exposed via Unified Gateway
+  option (doordash.api.service) = {
+    name: "chat-platform-chat-service"
+    port: 50051
+    name_spaces: ["chat"]
+    api_key_name: "CHAT_SERVICE_API_KEY"
+    owner: {
+      name: "chat-platform"
+      id: "chat-platform"
+      slack_channel: "#ask-conversation-platform"
+      email_alias: "team-conversation-platform@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX,
+      MX
+    ]
+  };
+
+  // Loads a single transcript
+  rpc GetTranscript(GetTranscriptRequest) returns (GetTranscriptResponse) {
+    option (google.api.http) = {get: "/chat/v1/get-transcript"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER,
+        MX_USER
+      ]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+
+  // Loads metadata of multiple transcripts
+  rpc BulkGetTranscriptMetadata(BulkGetTranscriptMetadataRequest) returns (BulkGetTranscriptMetadataResponse) {
+    option (google.api.http) = {get: "/chat/v1/bulk-get-transcript-metadata"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER,
+        MX_USER
+      ]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+
+  // Delets transcripts
+  rpc DeleteTranscripts(DeleteTranscriptsRequest) returns (DeleteTranscriptsResponse);
+  // Loads channels
+  rpc GetChatChannels(GetChatChannelsRequest) returns (GetChatChannelsResponse);
+}
+
+// Information about the user making the request.
+message TranscriptRequestUserInfo {
+  // Unique ID for the user making the request.
+  oneof id {
+    // DD user id of the support agent.
+    string agent_id = 1;
+  }
+}
+
+// Loads the chat transcript for a single channel
+message GetTranscriptRequest {
+  // The Channel ID to load the transcript for
+  string channel_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Indicates if nickname should attempted to be loaded
+  google.protobuf.BoolValue include_nickname = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Indicates if file links should attempt to be signed
+  google.protobuf.BoolValue sign_file_links = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Information about the user requesting transcripts
+  TranscriptRequestUserInfo user_info = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Filter for created_at, if set it will only return messages created after this time.
+  google.protobuf.Timestamp created_after = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Response for loading chat transcript for a single channel
+message GetTranscriptResponse {
+  // Channel ID
+  string channel_id = 1;
+  // Repeated list of messages in the channel
+  repeated ChatMessage chat_messages = 2;
+}
+
+// Loads the chat transcript metadata for a delivery_uuid, loads nicknames and signs file links
+message BulkGetTranscriptMetadataRequest {
+  // The delivery_uuid to load the transcript metadata for.
+  string delivery_uuid = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Information about the user requesting transcripts
+  TranscriptRequestUserInfo user_info = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Response for loading chat transcript metadata for a delivery_uuid
+message BulkGetTranscriptMetadataResponse {
+  // Repeated list of chat transcripts
+  repeated ChatTranscriptMetadata chat_transcript_metadata = 1;
+}
+
+// Metadata for a chat transcript, useful for a summary view
+message ChatTranscriptMetadata {
+  // Channel ID
+  string channel_id = 1;
+  // The last sent message in the channel
+  ChatMessage latest_chat_message = 2;
+  // if true, the channel is frozen, keep in mind frozen channels can be revived by the cx
+  google.protobuf.BoolValue is_frozen = 3;
+  // if true, the channel is not accessible anymore
+  google.protobuf.BoolValue is_hidden = 4;
+  // The number of messages in the channel
+  int32 message_count = 5;
+  // this field is only populated/applicable if the channel_id prefix is "sh-mobile"
+  string sh_mobile_channel_type = 6;
+}
+
+// The Message Type
+enum MessageType {
+  // unspecified value
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  // Text Message
+  MESSAGE_TYPE_TEXT = 1;
+  // Admin Message
+  MESSAGE_TYPE_ADMIN = 2;
+  // File Message
+  MESSAGE_TYPE_FILE = 3;
+}
+
+// Single message associated with a transcript
+message ChatMessage {
+  // Timestamp message was sent at
+  google.protobuf.Timestamp timestamp = 1;
+  // Text (optional) in the message
+  string text = 2;
+  // Plain text sender name (optional).
+  // This may be an internal representation of  the name.
+  string sender_name = 3;
+  // The type of message.
+  MessageType message_type = 4;
+  // Nickname of the sender. Attempted to be set based on request flag.
+  // May not be able to be determined, such as for the bot.
+  google.protobuf.StringValue sender_nickname = 5;
+  // In case this is a file message type, and signed urls were requested, this will contain appropriate signature to
+  // render the message. Note there are expiration to the signature (403), and the underlying files
+  // are cleared to save on space (404) which will not be clear until it is loaded.
+  google.protobuf.StringValue signed_file_url = 6;
+
+  // The role of a sender (ex. AX, DX, CX, MX). In case of a bot, this will be null.
+  google.protobuf.StringValue sender_role = 7;
+
+  // JSON message key values, encoded into a string.
+  // Specifically, "tag" is used as a key on some admin messages, which has an array containing details
+  // about the source of the message, such as "is_escalation", "is_agent_join", etc.
+  google.protobuf.StringValue message_key_values = 8;
+}
+
+// Message to delete the chat transcripts for a given set of channels or a consumer id.
+message DeleteTranscriptsRequest {
+  // Repeated List of Channel IDs to delete the transcripts for
+  repeated string channel_ids = 1;
+  // Consumer ID that we should delete everything for.
+  string consumer_id = 2;
+}
+
+// Response for chat transcript deletion request
+message DeleteTranscriptsResponse {
+  // The count of channels that were deleted
+  int32 deleted_channel_count = 1;
+  // The count of messages that were deleted
+  int32 deleted_message_count = 2;
+}
+
+// Request to load chat channel(s), optionally filtering by some subset of parameters.
+// Note there is some validation on filters, ensuring we receive a valid set.
+message GetChatChannelsRequest {
+  // Optional filter for channel id itself
+  string channel_id = 1;
+  // Optional filter for channel type
+  string channel_type = 2;
+  // Optional filter for consumer id
+  string consumer_id = 3;
+  // Optional filter for delivery uuid
+  string delivery_uuid = 4;
+  // Optional limit for number of channels to return.
+  int32 limit = 5;
+}
+
+// Response for loading chat channels
+message GetChatChannelsResponse {
+  // Chat Channels that were requested
+  repeated ChatChannel channels = 1;
+}
+
+// Contains details about a chat channel
+message ChatChannel {
+  // Channel ID
+  string channel_id = 1;
+  // Channel Type
+  string channel_type = 2;
+  // Delivery UUID
+  string delivery_uuid = 3;
+}

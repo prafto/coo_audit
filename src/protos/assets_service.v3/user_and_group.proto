@@ -1,0 +1,421 @@
+syntax = "proto3";
+
+package assets_service.v3;
+
+import "assets_service.v3/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/assets_service.v3";
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.assetsservice.v3";
+
+/*
+   Enum for the possible statuses of a group.
+*/
+enum GroupStatus {
+  // Required default unspecified state for an enum.
+  GROUP_STATUS_UNSPECIFIED = 0;
+  // The group is active and is in use.
+  GROUP_STATUS_ACTIVE = 10;
+  // The group is archived and is not in use.
+  GROUP_STATUS_ARCHIVED = 20;
+}
+
+/*
+ * V3 Model of a User. i.e. A Doordash Employee.
+ */
+message User {
+  // The DoorDash Resource Name. 'ddrn::user::<employee_id>'
+  string ddrn = 1;
+  // For users, their alias will always be their okta_username.
+  string alias = 2;
+  // E.g. Their Okta username: e.g. 'david.han'
+  string okta_username = 3;
+  // E.g. 'david.han'
+  string employee_id = 4;
+  // Human friendly full name of the user.
+  string preferred_full_name = 10;
+  // Email of user.
+  string email = 15;
+  // First name
+  string first_name = 20;
+  // Last name
+  string last_name = 25;
+  // Slack Username.
+  string slack_name = 30;
+  // Slack id
+  string slack_id = 35;
+  // Github Username (in lower case).
+  string github_name = 40;
+  // Jira Username (If it exists).
+  string jira_name = 45;
+  // Pagerduty ID.
+  string pagerduty_id = 50;
+  // Title
+  string title = 55;
+  // The city that they work from.
+  string city = 60;
+  // All groups that the user belongs to. This include indirect groups (i.e. a user in 'dev-console' implicitly is in 'engineering')
+  repeated DdrnRef groups = 65;
+  // The direct groups that the user belongs to.
+  repeated DdrnRef direct_groups = 66;
+  // Profile picture of the user.
+  // DEPRECATED. This field is going away in v4. Use profile_pic_48_url or profile_pic_512_url instead.
+  string display_pic_url = 70;
+  // The CDN url to the 48x48px Slack profile picture of the user. (Only returned for v4 users.)
+  string profile_pic_48_url = 71;
+  // The CDN url to the 512x512px Slack profile picture of the user. (Only returned for v4 users.)
+  string profile_pic_512_url = 72;
+  // The manager that the user reports under.
+  DdrnRef reports_parent = 75;
+  // The entire manager chain above this user, in the order of [parent, grandparent, ...]
+  repeated DdrnRef reports_ancestors = 80;
+  // The users who directly report under them, if any.
+  repeated DdrnRef direct_reports_children = 85;
+  // The number of reports under this user.
+  int32 num_reports = 90;
+  // The type of worker. e.g. 'Employee' or 'Contingent Worker'
+  string worker_type = 95;
+  // Their preferred pronouns
+  string pronouns = 100;
+  // Timezone of the user e.g. 'America/New_York'
+  string current_timezone = 110;
+  // The start date of the employee.
+  google.protobuf.Timestamp start_date = 115;
+  // When this last updated with the source of truth
+  google.protobuf.Timestamp updated_at = 120;
+  // GoCleary ID e.g. 13255
+  // DEPRECATED. This field is going away. This will not be returned for v4 users.
+  string gocleary_id = 125 [deprecated = true];
+  // The company that the user belongs to. e.g. 'doordash', or 'wolt'
+  string company = 130;
+
+  // Assets-Service is migrating its source of truth for user data from GoCleary.
+  // This is a temporary flag denoting whether this user is the post-migrated user (v4) or not (v3).
+  // This field will go away post migration, hence the large field number.
+  bool is_v4 = 1000;
+}
+
+/*
+   The membership roles from the associated Google Group and the DdrnRefs of users with those roles.
+   An owner can perform actions such as updating other member's roles or modify group settings. They can also modify the permissions of a group.
+   A manager can perform all the actions of an owner except deleting a group or making another member an owner.
+   More information about Google Group roles can be found here: https://support.google.com/a/answer/167094?sjid=939672777425051903-NC
+*/
+message GoogleGroupMembershipRoles {
+  // (For V4 Groups only) Members with OWNER roles.
+  repeated DdrnRef owners = 10;
+  // (For V4 Groups only) Members with MANAGER roles.
+  repeated DdrnRef managers = 20;
+}
+
+/*
+ * V3 Model of a group in Doordash.
+ */
+message Group {
+  /*
+     "owners" and "managers" are now under GoogleGroupMembershipRoles. Reserved for backwards compatibility.
+     They were not used by any client and are safe for re-use in the future.
+  */
+  reserved 51, 52;
+  reserved "owners", "managers";
+  // The DoorDash Resource Name. 'ddrn::group::<doordash_group_id>'
+  string ddrn = 1;
+  // The group slug. e.g. 'dev-console'
+  string alias = 2;
+  // (Optional) Human friendly name of the group.
+  string display_name = 5;
+  // (Optional) Human friendly description of the group.
+  string description = 10;
+  // Contact email fo the group. (If it exists)
+  string email = 15;
+  // Contact slack channel of the group.  (If it exists)
+  string slack_channel = 20;
+  // Previously known as the 'GoCleary ID' of the group.
+  // This is the unique part of the Group DDRN. Assets-Service will take over generating these IDs.
+  // All GoCleary IDs will be accepted as valid doordash_group_ids.
+  string doordash_group_id = 25;
+  // Profile picture of the group.
+  // DEPRECATED. This field is going away.
+  string display_pic_url = 30 [deprecated = true];
+  // The parent group name.
+  DdrnRef parent = 35;
+  // The child groups.
+  repeated DdrnRef children = 40;
+  // Wiki URL (The URL to their wiki, if it exists)
+  string wiki_url = 45;
+  // The leads (users) of this group. They should be a subset of 'members'.
+  // This field will be deprecated soon. For V4 Groups, this returns OWNERS + MANAGERS.
+  repeated DdrnRef leads = 50;
+  // All members (users) of the group across all roles.
+  // NOTE: This field will soon be renamed "all_members" in the next breaking version.
+  repeated DdrnRef members = 55;
+  // (For V4 Groups only)
+  // The members of this group with specified roles (e.g. owners, managers)
+  GoogleGroupMembershipRoles google_membership_roles = 56;
+  // (For V4 Groups only)
+  // The direct members of the group. (e.g users that are assigned to the group and not just implicitly through being in a child group of the group)
+  repeated DdrnRef direct_members = 57;
+  // (For V4 Groups only)
+  // The engineering manager for this group. May not be set yet for some groups. e.g.
+  DdrnRef manager = 60;
+  // (For V4 Groups only)
+  // The status of the group. e.g. 'ACTIVE' or 'ARCHIVED'
+  GroupStatus status = 70;
+  // When this group was first created.
+  google.protobuf.Timestamp created_at = 100;
+  // When this data was last updated with the source of truth
+  google.protobuf.Timestamp updated_at = 110;
+  // The email of the user that last updated Assets-Service controlled metadata.
+  string updated_by_user_email = 115;
+  // (For V3 groups ONLY. This will be deprecated in favor of GroupStatus once we migrate to V4.)
+  // Indicates whether the group is currently marked as 'active' in GoCleary.
+  bool is_active = 120;
+  // Assets-Service is migrating its source of truth for group data from GoCleary.
+  // This is a temporary flag denoting whether this group is the post-migrated group (v4) or not (v3).
+  // This field will go away post migration, hence the large field number.
+  bool is_v4 = 1000;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 ListUsers
+ */
+message ListUsersRequest {
+  // reserve the first slot for a filter object.
+  reserved 1;
+  // The number of items to return. Default: 100. Max: 500
+  int32 page_size = 2;
+  // The optional pagination Token.
+  string page_token = 3;
+  // Optional list of managers (users). This will return a union of all
+  // users who report under the manager(s) reporting chain.
+  // It will also include the users in the list as well. (if they exist)
+  repeated DdrnRef reporting_chain_of = 10;
+
+  // Assets-Service is migrating its source of truth for user data away from GoCleary.
+  // This is a temporary flag to ONLY return users in the V4 table.
+  // Most customers won't need this flag unless they want to integrate early.
+  // This flag will go away post migration, hence the large field number.
+  // The field is misnamed as 'include_v4'. It should instead be treated the same as the 'v4' in GetUser.
+  bool include_v4 = 1000;
+}
+
+/*
+ * Response for V3 ListUsers
+ */
+message ListUsersResponse {
+  // Users
+  repeated User users = 1;
+  // The next pagination Token. If this is given, it means that there are more pages.
+  string next_page_token = 2;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 GetUser
+ */
+message GetUserRequest {
+  // The identifier of the User.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+    // Email
+    string email = 3;
+    // Github user name
+    string github_name = 4;
+    // Slack user ID
+    string slack_user_id = 5;
+  }
+
+  // Assets-Service is migrating its source of truth for user data away from GoCleary.
+  // This is a temporary flag to opt-in to querying for the post-migrated users.
+  // Most customers won't need this flag unless they want to integrate early.
+  // This flag will go away post migration, hence the large field number.
+  bool v4 = 1000;
+}
+
+/*
+ * Response for V3 GetUser
+ */
+message GetUserResponse {
+  // User
+  User user = 1;
+}
+
+// ------------------------------------------------
+
+/*
+ * Request for V3 ListGroups
+ */
+message ListGroupsRequest {
+  // reserve the first slot for a filter object.
+  reserved 1;
+  // The number of items to return. Default: 100. Max: 500
+  int32 page_size = 2;
+  // The optional pagination Token.
+  string page_token = 3;
+  // Include V3 groups that have been marked as 'inactive' in GoCleary.
+  bool include_inactive = 50;
+
+  // Assets-Service is migrating its source of truth for Group data away from GoCleary.
+  // This is a temporary flag to only list the new Google-backed v4 Groups.
+  // Most downstreams won't need this flag unless they want to integrate early.
+  // This flag will go away post migration, hence the large field number.
+  bool v4 = 1000;
+}
+
+/*
+ * Response for V3 ListGroups
+ */
+message ListGroupsResponse {
+  // Groups
+  repeated Group groups = 1;
+  // The next pagination Token. If this is given, it means that there are more pages.
+  string next_page_token = 2;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 GetGroup
+ */
+message GetGroupRequest {
+  // The identifier of the Group.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+  }
+
+  // Assets-Service is migrating its source of truth for Group data from GoCleary.
+  // This is a temporary flag to query only for migrated Google-backed groups.
+  // Most downstreams won't need this flag unless they want to integrate early.
+  // This flag will go away post migration, hence the large field number.
+  bool v4 = 1000;
+}
+
+/*
+ * Response for V3 GetGroup
+ */
+message GetGroupResponse {
+  // Group
+  Group group = 1;
+}
+
+/*
+   Request to update the metadata for a group
+*/
+message UpdateGroupMetadataRequest {
+  // The DoorDash Resource Name of the group's metadata to update. e.g. 'ddrn::group::<doordash_group_id>'
+  string group_ddrn = 1;
+  // The human friendly name of the group.
+  string alias = 5;
+  // (Optional) The DoorDash Resouce Name for the engineering manager of the group.
+  string manager_ddrn = 10;
+  // (Optional) Contact slack channel of the group. e.g. 'ask-dev-console'
+  string slack_channel_name = 20;
+  // (Optional) Wiki URL e.g. 'https://doordash.atlassian.net/wiki/spaces/Eng/pages/2898756893/Dev+Console+Team'
+  string wiki_url = 30;
+  // (Optional) The status of the group. e.g. 'ACTIVE' or 'ARCHIVED'
+  GroupStatus status = 35;
+  // The email of the user that last updated the metadata for this group.
+  string updated_by_user_email = 40;
+  // The minimum severity to validate against. Default = POLICY_VIOLATION
+  ErrorSeverity min_severity = 100;
+}
+
+/*
+   Response from updating the metadata for a group
+*/
+message UpdateGroupMetadataResponse {
+  // Validation errors on the update group metadata request (if any).
+  repeated ValidationError validation_errors = 2;
+}
+
+/*
+   Request to register an existing Google Group with Assets Service.
+*/
+message RegisterGroupRequest {
+  // The alias of the Google Group to register.
+  string alias = 1;
+  // The Google Group ID of the group to register. e.g. '02grqrue0r3w4ox'
+  string google_group_id = 2;
+  // (optional) Contact slack channel of the group. e.g. 'ask-dev-console'
+  string slack_channel_name = 10;
+  // (Optional) (Optional) Wiki URL e.g. 'https://doordash.atlassian.net/wiki/spaces/Eng/pages/2898756893/Dev+Console+Team'
+  string wiki_url = 20;
+  // (Optional) The DoorDash Resource Name of the engineering manager of the group. e.g. 'ddrn::user::<workday_employee_id>'
+  string manager_ddrn = 30;
+  // The email of the user registering the group.
+  string created_by_user_email = 100;
+  // The minimum severity to validate against. Default = POLICY_VIOLATION
+  ErrorSeverity min_severity = 200;
+}
+
+/*
+   Response from registering a group
+*/
+message RegisterGroupResponse {
+  // Validation errors on the register group request (if any).
+  repeated ValidationError validation_errors = 2;
+}
+
+/*
+   Request to unregister an existing group
+*/
+message UnregisterGroupRequest {
+  // The DoorDash Resource Name of the group to unregister. e.g. 'ddrn::group::<doordash_group_id>'
+  string ddrn = 1;
+}
+
+/*
+   Response for unregistering a group
+*/
+message UnregisterGroupResponse {}
+
+/*
+   Request to unregister a test group
+   API is only meant to clean up orphaned *test* data such as from E2E tests.
+*/
+message UnregisterTestGroupsOnlyRequest {
+  // The DoorDash Resource Name of the test group to unregister. e.g. 'ddrn::group::<doordash_group_id>'
+  string ddrn = 1;
+}
+
+/*
+   Response for unregistering a test group
+   API is only meant to clean up orphaned *test* data such as from E2E tests.
+*/
+message UnregisterTestGroupsOnlyResponse {}
+
+/*
+   Request for Google Group
+*/
+message GetGoogleGroupRequest {
+  // The email of the requested Google Group.
+  string email = 1;
+}
+
+/*
+   Response for GetGoogleGroup
+*/
+message GetGoogleGroupResponse {
+  // The Google Group ID of the group. e.g. '02grqrue0r3w4ox'
+  string google_group_id = 1;
+  // Email of the group.
+  string email = 10;
+  // The human friendly name of the group.
+  string display_name = 20;
+  // Human friendly display name of the group.
+  string description = 30;
+  // Members with the OWNER role.
+  repeated DdrnRef owners = 40;
+  // Members with the MANAGER role.
+  repeated DdrnRef managers = 50;
+  // Members with the MEMBER role.
+  repeated DdrnRef members = 60;
+}

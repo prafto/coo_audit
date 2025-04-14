@@ -1,0 +1,78 @@
+syntax = "proto3";
+package risk_core.v1.checkpoints.v1;
+
+import "common/service_client_config.proto";
+import "risk-core/account.proto";
+import "risk-core/checkpoint_response.proto";
+import "risk-core/context.proto";
+import "risk-core/fulfillment.proto";
+import "risk-core/services_common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "ConsumerCancellationProtos";
+option java_package = "com.doordash.rpc.risk_core.checkpoints";
+
+/**
+ * Checkpoint that is called on both self-help and agent order cancellation workflows and decides whether the
+ * cancellation can proceed. This checkpoint and the consumer_cancellation checkpoint are called by the same upstream service,
+ * except the consumer_cancellation_payout_options checkpoint is triggered when the cancellation request purpose is PAYOUT_OPTIONS,
+ * and consumer_cancellation checkpoint is triggered for the rest of the requests.
+ */
+service ConsumerCancellationService {
+  // Timeout applied per attempt
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  // The maximum number of attempts. 1 means no retries.
+  option (service_client.client_config).retry_config.max_attempts = 1;
+  // The set of status codes on which to retry.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // The failure rate threshold for the circuit breaker.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Status codes to ignore from the circuit breaker
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Evaluate the checkpoint.
+  rpc Evaluate(ConsumerCancellationServiceEvaluateRequest) returns (ConsumerCancellationServiceEvaluateResponse);
+}
+
+// Evaluate response
+message ConsumerCancellationServiceEvaluateResponse {
+  // The checkpoint response
+  CheckpointResponse checkpoint_response = 1;
+}
+
+// Evaluate request
+message ConsumerCancellationServiceEvaluateRequest {
+  // The risk context
+  RiskContext risk_context = 1;
+
+  // The purpose of the request
+  Purpose purpose = 2;
+
+  // The delivery id
+  DeliveryId delivery_id = 3;
+
+  // The cx user id
+  UserId cx_user_id = 4;
+
+  // The agent user id
+  UserId agent_user_id = 5;
+
+  // The consumer id
+  ConsumerId consumer_id = 6;
+
+  // The workflow id
+  string workflow_id = 7;
+
+  // The purpose of the request
+  enum Purpose {
+    // Unspecified purpose
+    PURPOSE_UNSPECIFIED = 0;
+    // Self help
+    PURPOSE_FRAUD_STATUS_SELF_HELP = 1;
+    // Agent
+    PURPOSE_FRAUD_STATUS_AGENT = 2;
+    // Payout options
+    PURPOSE_PAYOUT_OPTIONS = 3;
+  }
+}

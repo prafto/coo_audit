@@ -1,0 +1,510 @@
+syntax = "proto3";
+
+package insight_reporting_service.v1;
+
+import "common/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "insight_reporting_service/common.proto";
+import "insight_reporting_service/product_keys.proto";
+import "insight_reporting_service/reporting.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/insight_reporting_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.insight_reporting_service.rpc.api";
+
+/**
+ * Insight Reporting Service
+ */
+service InsightReportingService {
+  /**
+   * Gets a list of filters that can be used to filter data.
+   */
+  rpc GetFiltersV1(GetFiltersV1Request) returns (GetFiltersV1Response);
+
+  /**
+   * Gets one or more data sets based on the requested configurations.
+   */
+  rpc GetDataSetsV1(GetDataSetsV1Request) returns (GetDataSetsV1Response);
+
+  /**
+   * Gets one or more key performance indicators. Also gets their change compared to previous data points and line item breakdowns if applicable
+   */
+  rpc GetKeyPerformanceIndicatorsV1(GetKeyPerformanceIndicatorsV1Request) returns (GetKeyPerformanceIndicatorsV1Response);
+
+  /**
+   * Next generation API that creates a report through MIS (merchant-insight-service) Reporting APIs.
+   */
+  rpc CreateReportsV1(CreateReportsV1Request) returns (CreateReportsV1Response);
+
+  /**
+   * Backend-only (no BFF) API exposed to eng only allowing the insertion of report config records into CRDB.
+   */
+  rpc CreateReportConfigRecord(CreateReportConfigRecordRequest) returns (CreateReportConfigRecordResponse);
+
+  /**
+   * Backend-only (no BFF) API exposed to eng only allowing the insertion of report column metadata records into CRDB.
+   */
+  rpc CreateReportColumnMetadata(CreateReportColumnMetadataRequest) returns (CreateReportColumnMetadataResponse);
+}
+
+// Represents the value of a data point. We are using oneof so that we can scale to other data types in the future.
+// Currently we will support getting numerical or monetary data.
+message DataValue {
+  // Oneof for different types of data we support
+  oneof data_value {
+    // for integer values
+    google.protobuf.Int64Value int_value = 1;
+    // for decimal values
+    google.protobuf.DoubleValue double_value = 2;
+    // for monetary values
+    MonetaryFields64 monetary_value = 3;
+  }
+}
+
+// Status of a data point
+enum DataPointStatus {
+  // Unspecified status
+  DATA_POINT_STATUS_UNSPECIFIED = 0;
+  // Data point is in the past
+  DATA_POINT_STATUS_PAST = 1;
+  // Data point is in progress
+  DATA_POINT_STATUS_IN_PROGRESS = 2;
+  // Data point is in the future
+  DATA_POINT_STATUS_FUTURE = 3;
+}
+
+// Represents a data point with a label and value. (e.g. monetary value of 1199 with $11.99 as the label)
+// Also labeling each data point with its corresponding date
+message DataPoint {
+  // Label/description
+  Descriptors descriptors = 1;
+  // Date (if applicable)
+  google.protobuf.Timestamp date = 2;
+  // Value of the data point
+  DataValue value = 3;
+  // Status of the data point (past, in progress, future)
+  DataPointStatus status = 4;
+}
+
+// Represents a set of the same type of data in some sort of continuum (for example, one line in a line chart)
+message DataSet {
+  // Label that applies to current data set (for example, if we requested a breakdown by channel, this could say the channel name)
+  Descriptors descriptors = 1;
+  // data points in data set
+  repeated DataPoint data_points = 2;
+}
+
+// Represents values to filter data on
+message DataFilterValue {
+  // Oneof for different types of values we can filter on
+  oneof data_filter_value {
+    // Filter by strings
+    google.protobuf.StringValue data_filter_string_value = 1;
+    // Filter by integers
+    google.protobuf.Int64Value data_filter_int_value = 2;
+    // Filter by decimal values
+    google.protobuf.DoubleValue data_filter_double_value = 3;
+    // Filter by monetary values
+    MonetaryFields64 data_filter_monetary_value = 4;
+  }
+}
+
+// Supporting filtering over a range of integer data, such as 10 < x < 11
+message DataFilterIntRange {
+  // Minimum of range
+  google.protobuf.Int64Value min = 1;
+  // Maximum of range
+  google.protobuf.Int64Value max = 2;
+  // is min inclusive?
+  bool is_min_inclusive = 3;
+  // is max inclusive?
+  bool is_max_inclusive = 4;
+}
+
+// Supporting filtering over a range of decimal data, such as 10.5 < x < 11.5
+message DataFilterDoubleRange {
+  // Minimum of range
+  google.protobuf.DoubleValue min = 1;
+  // Maximum of range
+  google.protobuf.DoubleValue max = 2;
+  // is min inclusive?
+  bool is_min_inclusive = 3;
+  // is max inclusive?
+  bool is_max_inclusive = 4;
+}
+
+// Data filter range for either int or double
+message DataFilterRange {
+  // Oneof for different types of ranges
+  oneof data_filter_range {
+    // int range
+    DataFilterIntRange data_filter_int_range = 1;
+    // double range
+    DataFilterDoubleRange data_filter_double_range = 2;
+  }
+}
+
+// This is to filter data based on certain allowed values of the data_filter_target, or by a range.
+// For example, we can filter by data_filter_target = CHANNEL is equal to MARKETPLACE (which would be put in allowed values)
+// The range is set if we want to filter by a range of numerical values.
+message DataFilters {
+  // Item we want to filter on
+  google.protobuf.StringValue data_filter_target = 1;
+  // Range of values to filter by
+  DataFilterRange data_filter_range = 2;
+  // Exact values we want to filter by (equals)
+  repeated DataFilterValue data_filter_allowed_values = 3;
+  // If we ever need disallowed values, we can extend this in the future
+}
+
+// Type for percent change with labels (ex. if current value is 70% of previous value, then we will show 30 for the value with sign = false to represent a 30% drop)
+// Use descriptors for pretty formatting, like 30%
+message PercentChange {
+  // For any labels needed
+  Descriptors descriptors = 1;
+  // Absolute value of the percent (30 for 30%, not 0.3). Should never be negative since we have a boolean sign field.
+  google.protobuf.DoubleValue value = 2;
+  // Sign of change (positive = true, negative = false)
+  bool sign = 3;
+  // Comparison display string (e.g. "vs. last payout" or "vs. last year")
+  google.protobuf.StringValue comparison_display_string = 4;
+}
+
+// Type for percent change with labels (ex. if current value is 100 and previous value was 99, we will show 1 for the value with sign = true)
+// Use descriptors for pretty formatting as needed
+message AbsoluteChange {
+  // For any labels needed
+  Descriptors descriptors = 1;
+  // Absolute value of the change. Should never be negative; this info is in boolean sign field.
+  google.protobuf.DoubleValue value = 2;
+  // Sign of change (positive = true, negative = false)
+  bool sign = 3;
+  // Comparison display string (e.g. "vs. last payout" or "vs. last year")
+  google.protobuf.StringValue comparison_display_string = 4;
+}
+
+// General type for data trends
+message DataTrend {
+  // Percent change
+  PercentChange percent_change = 1;
+  // Absolute change
+  AbsoluteChange absolute_change = 2;
+}
+
+// Represents a line item breakdown entry for a key performance indicator (KPI)
+message KPILineItem {
+  // Descriptor for line item
+  Descriptors descriptors = 1;
+  // Current value of the KPI
+  DataPoint current_value = 2;
+  // We can extend this in the future if needed
+}
+
+// Represents a key performance indicator with a value and possibly line items (a breakdown).
+message KeyPerformanceIndicator {
+  // Top level descriptor
+  Descriptors descriptors = 1;
+  // Current KPI value
+  DataPoint current_value = 2;
+  // Previous KPI value (for % comparison)
+  DataPoint previous_value = 3;
+  // Percent or absolute change from previous to current values
+  DataTrend data_trend = 4;
+  // Breakdown of the KPI value if applicable
+  repeated KPILineItem line_items = 5;
+}
+
+/**
+ * Note on FilterItem objects:
+ * Typically should be used such that only `value` is set if the filter item is for a dropdown in which a selection
+ * corresponds to a single value. If the filter item is for a range, then `min` and `max` should be set, along with the
+ * flags `is_min_inclusive` and `is_max_inclusive` to indicate if the range is inclusive or exclusive of
+ * the min/max values.
+ * `is_min_inclusive` and `is_max_inclusive` default to true.
+ */
+
+/**
+ * A filter item for filtering by Int64Value value.
+ * This can be used to filter by a specific Int64Value value, or by a range of Int64Value values.
+ */
+message IntValueFilterItem {
+  // Whether the min value is inclusive or exclusive
+  bool is_min_inclusive = 1;
+  // Whether the max value is inclusive or exclusive
+  bool is_max_inclusive = 2;
+  // The min value of the range
+  google.protobuf.Int64Value min = 3;
+  // The max value of the range
+  google.protobuf.Int64Value max = 4;
+  // The value of the filter item
+  google.protobuf.Int64Value value = 5;
+}
+
+/**
+ * A filter item for filtering by DoubleValue value.
+ * This can be used to filter by a specific DoubleValue value, or by a range of DoubleValue values.
+ */
+message DoubleValueFilterItem {
+  // Whether the min value is inclusive or exclusive
+  bool is_min_inclusive = 1;
+  // Whether the max value is inclusive or exclusive
+  bool is_max_inclusive = 2;
+  // The min value of the range
+  google.protobuf.DoubleValue min = 3;
+  // The max value of the range
+  google.protobuf.DoubleValue max = 4;
+  // The value of the filter item
+  google.protobuf.DoubleValue value = 5;
+}
+
+/**
+ * A filter item for filtering by MonetaryFields value.
+ * This can be used to filter by a specific MonetaryFields value, or by a range of MonetaryFields values.
+ */
+message MonetaryFilterItem {
+  // Whether the min value is inclusive or exclusive
+  bool is_min_inclusive = 1;
+  // Whether the max value is inclusive or exclusive
+  bool is_max_inclusive = 2;
+  // The min value of the range
+  MonetaryFields64 min = 3;
+  // The max value of the range
+  MonetaryFields64 max = 4;
+  // The value of the filter item
+  MonetaryFields64 value = 5;
+}
+
+/**
+ * A filter item for filtering by StringValue value.
+ * This can be used to filter by a specific StringValue value, or by a range of StringValue values.
+ */
+message StringValueFilterItem {
+  // The value of the filter item
+  google.protobuf.StringValue value = 1;
+}
+
+/**
+ * A filter item for filtering by Timestamp value.
+ * This can be used to filter by a specific Timestamp value, or by a range of Timestamp values.
+ */
+message TimestampFilterItem {
+  // Whether the min value is inclusive or exclusive
+  bool is_min_inclusive = 1;
+  // Whether the max value is inclusive or exclusive
+  bool is_max_inclusive = 2;
+  // The min value of the range
+  google.protobuf.Timestamp min = 3;
+  // The max value of the range
+  google.protobuf.Timestamp max = 4;
+  // The value of the filter item
+  google.protobuf.Timestamp value = 5;
+}
+
+/**
+ *  A single value for a filter item. This is the value that is set for the filter item.
+ * This is useful in cases when a user selects one of these values, which can then be used to filter the data.
+ */
+message FilterItemValue {
+  // The value of the filter item.
+  oneof filter_item_value {
+    // IntValueFilterItem
+    IntValueFilterItem int_value_filter_item = 2;
+    // DoubleValueFilterItem
+    DoubleValueFilterItem double_value_filter_item = 3;
+    // MonetaryFilterItem
+    MonetaryFilterItem monetary_filter_item = 4;
+    // StringValueFilterItem
+    StringValueFilterItem string_value_filter_item = 5;
+    // TimestampFilterItem
+    TimestampFilterItem timestamp_filter_item = 6;
+  }
+}
+
+// A single filter item. This is a single item in a dropdown or a single toggle in a multi-select toggle.
+message FilterItem {
+  // Details about this filter item i.e. label, description, etc.
+  Descriptors descriptors = 1;
+  // Value of the filter item itself e.g. if a user selects this in a dropdown, what values does it correspond to
+  FilterItemValue value = 2;
+  // Default value for this filter item. This is used to determine if this filter item is the default selection.
+  bool is_default = 3;
+}
+
+// Top-level filter object that encapsulates one kind of filter i.e. a Channel filter dropdown
+message Filter {
+  // Additional options on how a filter may behave.
+  message Options {
+    // Defaults to single select toggles; set to false otherwise
+    bool is_multi_select = 1;
+  }
+
+  // Descriptive details about this filter itself i.e. label, description, etc.
+  Descriptors descriptors = 1;
+  // Additional options to describe this filter e.g. is multi-select or not
+  Options options = 2;
+  // The list of filter items for this filter
+  repeated FilterItem filter_items = 3;
+}
+
+/**
+ * Request containing the payload in order to target and fetch a set of filters.
+ * `Identifier identifier` is used to identify the set of filters to retrieve.
+ */
+message GetFiltersV1Request {
+  // Identifier for a targeting a set of filters to retrieve
+  message Identifier {
+    // Oneof the ways to identify a set of filters to retrieve
+    oneof identifier {
+      // The target product for which to get the filters for
+      ProductKey product_key = 1;
+      // Note: If we need to support a different way of looking up a config to grab a different set of filters, we can add
+      // another identifier here e.g. lookup by string template uuid
+    }
+  }
+
+  // Identifies the which set of filters to retrieve
+  Identifier identifier = 1;
+  // The entities that this filter applies to. If not specified, then the filter applies to all entities.
+  // e.g. We may return a filer for channels containing only a list of channels that belong to 1 store.
+  TargetEntities target_entities = 2;
+}
+
+/**
+ * Returns a list of filters that can be used to filter data. See examples in the examples folder.
+ */
+message GetFiltersV1Response {
+  // The list of top-level filters that can be used to filter data.
+  repeated Filter filters = 1;
+}
+
+// Request for the GetDataSetsV1 RPC
+message GetDataSetsV1Request {
+  // Identifier for a targeting datasets to retrieve
+  message Identifier {
+    // One of for type of identifier
+    oneof identifier {
+      // The target product for which to obtain datasets from
+      ProductKey product_key = 1;
+    }
+  }
+
+  // What type of data we are targeting (e.g. sales insights)
+  Identifier identifier = 1;
+  // Stores, businesses etc that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Previous date range to return data for comparison (if any)
+  PreviousDateRange previous_date_range = 4;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 5;
+}
+
+// Response for the GetDataSetsV1 RPC
+message GetDataSetsV1Response {
+  // Title/description describing what the data is that we got
+  Descriptors title = 1;
+  // array of datasets
+  repeated DataSet data_sets = 2;
+  // array of labels describing the data sets, used for group bys
+  repeated Descriptors data_sets_labels = 3;
+}
+
+// Request for the GetKeyPerformanceIndicatorsV1 RPC
+message GetKeyPerformanceIndicatorsV1Request {
+  // Identifier for a targeting datasets to retrieve
+  message Identifier {
+    // One of for type of identifier
+    oneof identifier {
+      // The target product for which to obtain datasets from
+      ProductKey product_key = 1;
+    }
+  }
+
+  // What type of data we are targeting (e.g. sales insights)
+  Identifier identifier = 1;
+  // Stores, businesses etc that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Previous date range for comparison (if any)
+  PreviousDateRange previous_date_range = 4;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 5;
+}
+
+// Response for the GetKeyPerformanceIndicatorsV1 RPC
+message GetKeyPerformanceIndicatorsV1Response {
+  // Array of KPIs
+  repeated KeyPerformanceIndicator kpis = 1;
+  // Last time the data was updated
+  google.protobuf.Timestamp last_updated = 2;
+}
+
+// Request for the CreateReportV1 RPC
+message CreateReportsV1Request {
+  // requestor info
+  UserInfo user = 1;
+  // stores or businesses etc to generate report for
+  TargetEntities target_entities = 2;
+  // date range of data in the report
+  DateRange date_range = 3;
+  // Report type(s) requested
+  repeated ReportType report_types = 4;
+  // rows returned in the csv should be related to the channels below
+  repeated common.Channel channels = 5;
+}
+
+// Response for the CreateReportV1 RPC
+message CreateReportsV1Response {
+  // ID of the report being returned
+  google.protobuf.StringValue report_id = 1;
+  // Status message (either success or failure)
+  google.protobuf.StringValue status_message = 2;
+}
+
+/**
+ * Request to insert a report config record into CRDB.
+ * This is a backend-only (no BFF) API exposed to eng only that directly modifies the table.
+ */
+message CreateReportConfigRecordRequest {
+  // Report type to insert
+  ReportType report_type = 1;
+  // Report column metadata version to insert
+  google.protobuf.Int32Value report_column_metadata_version = 2;
+  // Report query config version to insert
+  google.protobuf.Int32Value report_query_config_version = 3;
+  // User who created the report config record
+  google.protobuf.StringValue created_by = 4;
+}
+
+/**
+ * Response for CreateReportConfigRecord RPC call.
+ * Will return a status message indicating success or failure.
+ */
+message CreateReportConfigRecordResponse {
+  // Status message indicating success or failure
+  google.protobuf.StringValue status = 1;
+}
+
+/**
+ * Request to insert report column metadata record into CRDB.
+ * This is a backend-only (no BFF) API exposed to eng only that directly modifies the table.
+ */
+message CreateReportColumnMetadataRequest {
+  // The report columns to insert
+  repeated ReportColumnMetadata report_columns = 1;
+  // The user who created the report column metadata
+  google.protobuf.StringValue created_by = 2;
+}
+
+/**
+ * Response for CreateReportColumnMetadata RPC call.
+ * Will return a status message indicating success or failure.
+ */
+message CreateReportColumnMetadataResponse {
+  // Status message indicating success or failure
+  google.protobuf.StringValue status = 1;
+}

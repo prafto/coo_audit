@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package system_of_records_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "system_of_records_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.system_of_records_service";
+
+// Service to handle client requests
+service ApiGatewayService {
+  option (doordash.api.service) = {
+    name: "system-of-records-service-api"
+    url: "system-of-records-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["system-of-records"]
+    api_key_name: "UG_SOR_SERVICE_KEY"
+    owner: {
+      name: "trust-eng"
+      id: "trust-team"
+      slack_channel: "#team-trust"
+      email_alias: "trust-eng@doordash.com"
+    }
+    target_products: [DX]
+  };
+  // Get user account
+  rpc GetUserAccount(GetUserAccountRequest) returns (GetUserAccountResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (google.api.http) = {get: "/system-of-records/v1/account"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+  // Update tax id
+  rpc UpdateTaxId(UpdateTaxIdRequest) returns (UpdateTaxIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (google.api.http) = {
+      post: "/system-of-records/v1/tax",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+  // Get user accounts for a given entityIdType
+  rpc GetUserAccounts(GetUserAccountsRequest) returns (GetUserAccountsResponse);
+  // Upsert address
+  rpc UpsertAddress(UpsertAddressRequest) returns (UpsertAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (google.api.http) = {
+      post: "/system-of-records/v1/address",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+
+  // Delete address
+  rpc DeleteAddress(DeleteAddressRequest) returns (DeleteAddressResponse);
+}
+
+// Request to upsert address
+message UpsertAddressRequest {
+  // entity
+  Entity entity = 1;
+  // address
+  Address address = 2;
+}
+
+// Response to upsert address
+message UpsertAddressResponse {
+  // entity
+  Entity entity = 1;
+  // address
+  Address address = 2;
+}
+
+// Request to delete address
+message DeleteAddressRequest {
+  // entity
+  Entity entity = 1;
+  // address indicator
+  oneof address_indicator {
+    // address id
+    google.protobuf.StringValue address_id = 2;
+    // address type
+    AddressType address_type = 3;
+  }
+}
+
+// Response to delete address
+message DeleteAddressResponse {
+  // is success
+  google.protobuf.BoolValue is_success = 1;
+}
+
+// Request to get user account
+message GetUserAccountRequest {
+  // entity
+  Entity entity = 1;
+}
+
+// Response to get user account
+message GetUserAccountResponse {
+  // entity
+  Entity entity = 1;
+  // entity data
+  oneof info {
+    // dasher source of truth
+    DasherSot dasher_sot = 2;
+  }
+}
+
+// Request to get a list of user accounts for a given entityIdType
+message GetUserAccountsRequest {
+  // Required: entity id type
+  EntityIdType entity_id_type = 1;
+  // tax id in tokenized format
+  google.protobuf.StringValue tax_id_token = 2;
+  // tax id type, e.g., ssn, sin
+  TaxIdType tax_id_type = 3;
+  // limit size
+  int64 limit_size = 5;
+}
+
+// Response to get user account
+message GetUserAccountsResponse {
+  // list of entity
+  repeated Entity entities = 1;
+}
+
+// Request to update tax id
+message UpdateTaxIdRequest {
+  // tax id in the tokenization format
+  string tax_id_token = 1;
+  // tax id type
+  TaxIdType tax_id_type = 2;
+  // entity
+  Entity entity = 3;
+  // idempotency
+  google.protobuf.StringValue idempotency_key = 4;
+  // Business tax info (optional)
+  BusinessTaxInfo business_tax_info = 5;
+}
+
+// Response to update tax id
+message UpdateTaxIdResponse {
+  // Update status
+  UpdateUserAccountStatus status = 1;
+  // Update error if any
+  UpdateUserAccountErrorType error_type = 2;
+  // error message if any
+  google.protobuf.StringValue error_message = 3;
+  // linked entity by tax id
+  // when error_type is UPDATE_USER_ACCOUNT_ERROR_TYPE_DUPLICATED
+  repeated Entity linked_entities = 4;
+}

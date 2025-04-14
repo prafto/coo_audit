@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+import "promotion/placement.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+// service to fetch "nudges" for different screens to promote different promotions
+service StickyFooterService {
+  option (service_client.client_config).retry_config.max_attempts = 2; // default 3
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 100; // default 10
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000; // default 20000
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 10000; // default 10000
+
+  // service to fetch mainly FMU/FDF/cx growth benefits specific promos for homepage
+  rpc GetStickyFooter(GetStickyFooterRequest) returns (GetStickyFooterResponse) {
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+  }
+}
+
+// request for GetStickyFooter
+message GetStickyFooterRequest {
+  // cx id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // cx submarket id
+  google.protobuf.Int32Value submarket_id = 3;
+  // boolean value for nudgeable campaign, v2 is true, v1 is false
+  google.protobuf.BoolValue is_nudging = 4;
+  // add currency for benefit reminder campaign, (https://en.wikipedia.org/wiki/ISO_4217)
+  google.protobuf.StringValue currency = 5;
+  // landing page
+  Placement.LandingPageType landing_page_type = 6;
+  // cx district id
+  google.protobuf.StringValue district_id = 7;
+}
+
+// response for GetStickyFooter
+message GetStickyFooterResponse {
+  // copy to show on client side
+  google.protobuf.StringValue copy = 1;
+  // campaign id
+  google.protobuf.StringValue campaign_id = 2;
+  // metadata map
+  google.protobuf.Struct metadata = 3;
+  // Background color of sticky footer banner. This will override the background color set in cxmbff by placement_assets.json
+  google.protobuf.StringValue sticky_footer_background_color = 4;
+  // Text color of sticky footer banner. This will override the text color set in cxmbff by placement_assets.json
+  google.protobuf.StringValue sticky_footer_text_color = 5;
+  // progress on loyalty rewards progress, on the scale of 1 - like 0.75
+  // it will only be set if the current message is from loyalty rewards
+  google.protobuf.FloatValue loyalty_progress_on_scale_1 = 6;
+  // Sub message rendered beneath the main message
+  google.protobuf.StringValue sub_message = 7;
+  // reward type for loyalty program
+  RewardType reward_type = 8;
+  // is promo for DP subscribers
+  google.protobuf.BoolValue is_dashpass_subscriber_promo = 9;
+  // campaign tags that describe the campaign's category ex. BOGO
+  repeated google.protobuf.StringValue campaign_tags = 10;
+  // id from membership if promotion id is empty
+  google.protobuf.StringValue ad_id = 11;
+  // membership id
+  google.protobuf.StringValue ad_group_id = 12;
+  // additional content ex. action_url
+  AdditionalContent additional_content = 13;
+
+  // the type of reward configured for loyalty program
+  enum RewardType {
+    // unspecified
+    REWARD_TYPE_UNSPECIFIED = 0;
+    // flat dollars off subtotal
+    REWARD_TYPE_DOLLARS_OFF = 1;
+    // discount on item
+    REWARD_TYPE_ITEM = 2;
+  }
+
+  // Additional fields for enriching content ex. images
+  message AdditionalContent {
+    // action deeplink url
+    google.protobuf.StringValue action_url = 1;
+  }
+}

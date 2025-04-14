@@ -1,0 +1,4064 @@
+syntax = "proto3";
+
+package feed_service;
+
+import "action-catalog/cx/nv/server_driven_actions/server_defined_action_entity.proto";
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/ratings.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/prism/components/text.proto";
+import "component-catalog.common/prism/shared/icon.proto";
+import "component-catalog.cx/search/filter.proto";
+import "component-catalog.cx/search/filter_sheet.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_injection.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/common.proto";
+import "feed_service/facet.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/item_page.proto";
+import "feed_service/menu.proto";
+import "feed_service/retail_common.proto";
+import "feed_service/retail_ground_truth.proto";
+import "feed_service/superstore.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+import "retail-item-attributes/retail_item_attributes.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.feed_service.retail_feed";
+
+service RetailFeedService {
+  option (doordash.api.service) = {
+    name: "feed-service-web-retail"
+    url: "feed-service-web-retail.service.prod.ddsd"
+    name_spaces: ["retail"]
+    port: 50051
+    owner: {
+      name: "new-vertical-retail-cx"
+      id: "new-vertical-retail-cx"
+      slack_channel: "#eng-grocery-alert"
+      email_alias: "eng-new-verticals-consumer@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.wait_multiplier = 2;
+
+  // get Store page feed that includes list of all L1 categories and Collections with products
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetRetailStorePageFeed(GetRetailStorePageFeedRequest) returns (GetRetailStorePageFeedResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 7000;
+  }
+  // get Products list given L1 and L2 Categories for retail stores
+  rpc GetRetailCategoryFeed(GetRetailCategoryFeedRequest) returns (GetRetailCategoryFeedResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "feed-service";
+  }
+  // Get products list grouped under collection for retail stores
+  rpc GetRetailCollectionFeed(GetRetailCollectionFeedRequest) returns (GetRetailCollectionFeedResponse);
+  // Get a list of all L1 categories for retail stores
+  rpc GetRetailL1Categories(GetRetailL1CategoriesRequest) returns (GetRetailL1CategoriesResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "feed-service";
+  }
+  // Get product item level details
+  rpc GetRetailItem(GetRetailItemRequest) returns (GetRetailItemResponse);
+  // Search term autocomplete / type-ahead
+  rpc GetRetailAutocompleteResults(GetRetailAutocompleteResultsRequest) returns (GetRetailAutocompleteResultsResponse);
+  // Retail autocomplete / type-ahead V2
+  rpc GetRetailAutocompleteV2Results(GetRetailAutocompleteV2ResultsRequest) returns (GetRetailAutocompleteV2ResultsResponse);
+  // Search in-store menu items
+  rpc GetRetailSearchResults(GetRetailSearchResultsRequest) returns (GetRetailSearchResultsResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "feed-service";
+  }
+  // Get reorder items item with product level details
+  rpc GetRetailReorderItems(GetRetailReorderItemsRequest) returns (GetRetailReorderItemsResponse);
+  // Get item recommendations for cart preview page (aka people also ordered)
+  rpc GetRetailItemRecommendations(GetRetailItemRecommendationsRequest) returns (GetRetailItemRecommendationsResponse);
+  // Get product item level details for a batch of item ids
+  rpc BatchGetRetailItem(BatchGetRetailItemRequest) returns (BatchGetRetailItemResponse);
+  // Get item merchandising items for a store
+  rpc GetRetailItemCarouselPageFeed(GetRetailItemCarouselPageFeedRequest) returns (GetRetailItemCarouselPageFeedResponse);
+  // Get retail store items belonging to same SKU id
+  rpc GetSkuRetailItem(GetSkuRetailItemRequest) returns (GetSkuRetailItemResponse);
+  // Get retail generalized collection
+  rpc GetRetailCollectionFeedV2(GetRetailCollectionFeedV2Request) returns (GetRetailCollectionFeedV2Response);
+  // Get retail collections to be displayed on any surface
+  rpc GetRetailCollections(GetRetailCollectionsRequest) returns (GetRetailCollectionsResponse);
+  // Get global retail item feed based on category id
+  rpc GetGlobalProductCategoryFeed(GetGlobalProductCategoryFeedRequest) returns (GetGlobalProductCategoryFeedResponse);
+  // Get DbD retail store page
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  rpc GetDbDRetailStorePageFeed(GetRetailStorePageFeedRequest) returns (GetRetailStorePageFeedResponse);
+  // Get catalog data details
+  rpc GetCatalogProductItemByMsId(GetCatalogProductItemByMsIdRequest) returns (GetCatalogProductItemByMsIdResponse);
+  // Get Vertical Landing Page
+  rpc GetVerticalPageFeed(GetVerticalPageFeedRequest) returns (GetVerticalPageFeedResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  // Get retail tabs to be displayed on the bottom of store page
+  rpc GetRetailTabs(GetRetailTabsRequest) returns (GetRetailTabsResponse);
+  // Get catalog/menu product data based on mx and ms id
+  rpc GetProductByMsId(GetProductByMsIdRequest) returns (GetProductByMsIdResponse);
+  // Get a preloaded cart
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetPreloadedCartForConsumer(GetPreloadedCartForConsumerRequest) returns (lego.response.v1.LegoPageResponse);
+  // Get catalog/menu product data based a product dd_sic
+  rpc GetProductByDdSic(GetProductByDdSicRequest) returns (GetProductByDdSicResponse);
+  // Get list of deliverable store options
+  rpc GetStoreSelectorList(GetStoreSelectorListRequest) returns (GetStoreSelectorListResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/retail/v1/nv_growth/shopping_list"};
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"},
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+  // Get gift card vertical landing page
+  rpc GetGiftCardMarketplacePageFeed(GetVerticalPageFeedRequest) returns (GetGiftCardMarketplacePageFeedResponse) {
+    option (google.api.http) = {get: "/retail/v1/gift_card"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd_device_id"},
+        {field: "DD-GEO-INFO"},
+        {field: "X-FACETS-VERSION"},
+        {field: "dd-test-traffic-routing"}]
+    };
+  }
+
+  // Get retail store header
+  rpc GetRetailStoreHeader(GetRetailStoreHeaderRequest) returns (GetRetailStoreHeaderResponse) {
+    option (google.api.http) = {get: "/retail/v1/stores/{store_id}/header"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 7000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+
+  // Get recommended search queries
+  rpc GetRetailRecommendedSearchQueries(GetRetailRecommendedSearchQueriesRequest) returns (GetRetailRecommendedSearchQueriesResponse) {
+    option (google.api.http) = {get: "/retail/v1/recommended_queries/stores/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Get a visual indicator for building awareness of some surface (E.g. grocery tab)
+  rpc GetAwarenessIndicator(GetAwarenessIndicatorRequest) returns (GetAwarenessIndicatorResponse) {
+    option (google.api.http) = {get: "/retail/v1/awareness_indicator"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "is_guest"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "cx_geo_district_id"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+  // Gets the reviews for a retail item
+  rpc GetRetailItemReviews(GetRetailItemReviewsRequest) returns (GetRetailItemReviewsResponse) {
+    // Circuit Breaker Configuration
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3; // INVALID_ARGUMENT
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5; // NOT_FOUND
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6; // ALREADY_EXISTS
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 7; // PERMISSION_DENIED
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 8; // RESOURCE_EXHAUSTED
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 9; // FAILED_PRECONDITION
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 16; // UNAUTHENTICATED
+    // TODO: - Alex/Kris/Jonathan/Roger  slo_config: {}
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (google.api.http) = {
+      post: "/retail/v1/product/reviews"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  rpc ItemFilters(ItemFiltersRequest) returns (ItemFiltersResponse) {
+    option (google.api.http) = {
+      post: "/retail/v1/item_filters"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "cx_id"},
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"},
+        {field: "cx_geo_timezone"}]
+    };
+  }
+
+  rpc UpsertFilterConfigurations(UpsertFilterConfigurationsRequest) returns (UpsertFilterConfigurationsResponse) {
+    option (google.api.http) = {
+      post: "/retail/v1/filters_configuration"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Gets data for in store deals page, including all in store deals in the cx' area
+  rpc GetInStoreDealsByLocation(GetInStoreDealsByLocationRequest) returns (GetInStoreDealsByLocationResponse) {
+    option (google.api.http) = {get: "/retail/v1/instore/deals"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Gets all in store deals for a specific store
+  rpc GetInStoreDealsByStoreId(GetInStoreDealsByStoreIdRequest) returns (GetInStoreDealsByStoreIdResponse) {
+    option (google.api.http) = {get: "/retail/v1/instore/deals/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Gets data to navigate to stores
+  rpc GetNavigationToStoreByStoreIds(GetNavigationToStoreByStoreIdsRequest) returns (GetNavigationToStoreByStoreIdsResponse) {
+    option (google.api.http) = {get: "/retail/v1/instore/navigation_to_stores"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Gets Visual Aisle data
+  rpc GetVisualAisles(GetVisualAislesRequest) returns (GetVisualAislesResponse) {
+    option (google.api.http) = {get: "/retail/v1/visual_aisles/details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Gets Visual Aisle item data
+  rpc GetVisualAislesItemDetails(GetVisualAislesItemDetailsRequest) returns (GetVisualAislesItemDetailsResponse) {
+    option (google.api.http) = {get: "/retail/v1/visual_aisles/item_details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Upload files for Visual Aisles
+  rpc UploadVisualAislesFiles(UploadVisualAislesFilesRequest) returns (UploadVisualAislesFilesResponse) {
+    option (google.api.http) = {
+      post: "/retail/v1/visual_aisles_internal/upload",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Fetch Visual aisles files for internal use
+  rpc GetVisualAislesMetadata(GetVisualAislesMetadataRequest) returns (GetVisualAislesMetadataResponse) {
+    option (google.api.http) = {get: "/retail/v1/visual_aisles_internal/metadata"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+
+  // Fetch Visual aisles carousel files for internal use
+  rpc GetVisualAislesCarousels(GetVisualAislesCarouselsRequest) returns (GetVisualAislesCarouselsResponse) {
+    option (google.api.http) = {get: "/retail/v1/visual_aisles_internal/carousels"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Retrieve a list of store IDs within a business inside a Cx's delivery address radius
+  rpc GetStoreListByBusiness(GetStoreListByBusinessRequest) returns (GetStoreListByBusinessResponse) {
+    option (google.api.http) = {get: "/retail/v1/business_stores"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 10000
+        critical_5m_burn_sustain_seconds: 1000
+        p99_latency: 5
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+
+  // Fetch Gift Card Item
+  rpc GetFeedGiftCardItem(GetFeedGiftCardItemRequest) returns (GetFeedGiftCardItemResponse);
+
+  rpc GetPrescriptionDeliveryLandingPage(GetPrescriptionDeliveryLandingPageRequest) returns (GetPrescriptionDeliveryLandingPageResponse) {
+    option (google.api.http) = {get: "/retail/v1/prescription_delivery/landing_page"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+      owner: {
+        // do not update "name" as it will change the client artifacts generation
+        id: "swat-team"
+        name: "prescription-delivery"
+        slack_channel: "#ask-swat-eng"
+        email_alias: "swat-eng-team@doordash.com"
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  rpc GetNearbyPharmacyStores(GetNearbyPharmacyStoresRequest) returns (GetNearbyPharmacyStoresResponse) {
+    option (google.api.http) = {get: "/retail/v1/prescription_delivery/{business_id}/nearby_stores"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      owner: {
+        // do not update "name" as it will change the client artifacts generation
+        id: "swat-team"
+        name: "prescription-delivery"
+        slack_channel: "#ask-swat-eng"
+        email_alias: "swat-eng-team@doordash.com"
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+
+  // Powers the SDA Action Responses
+  // Clients are expected to pass a base64 encoded DD-RETAIL-SDA-CONTEXT header
+  rpc GetRetailComponentAction(GetRetailComponentActionRequest) returns (GetRetailComponentActionResponse) {
+    option (google.api.http) = {get: "/retail/v2/components/{component_type}/{component_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 7000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+
+  // Gets aggregate store IDs for a given retail store ID
+  rpc GetAggregateStores(GetAggregateStoresRequest) returns (GetAggregateStoresResponse) {
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3; // INVALID_ARGUMENT
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5; // NOT_FOUND
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 7; // PERMISSION_DENIED
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 16; // UNAUTHENTICATED
+    option (google.api.http) = {get: "/retail/v1/aggregate_stores"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "cx_id"},
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "is_employee"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+
+  // Get Selection Discovery Landing Page data
+  rpc GetSelectionDiscoveryLandingCollection(GetSelectionDiscoveryLandingCollectionRequest) returns (GetSelectionDiscoveryLandingCollectionResponse) {
+    option (google.api.http) = {get: "/retail/v1/selection_discovery/landing_collection"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"},
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+
+  // Depreacted in favor of GetRetailComponentAction
+  // DONOT USE
+  // This RPC is deprecated and should not be used in new code.
+  rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse) {
+    option deprecated = true;
+    option (google.api.http) = {get: "/retail/v2/collections/{collection_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 7000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "is_guest"}]
+    };
+  }
+}
+
+/* Home page feed */
+message GetRetailStorePageFeedRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  google.protobuf.StringValue business_id = 3;
+  google.protobuf.StringValue cursor = 4;
+
+  google.protobuf.DoubleValue lat = 5;
+  google.protobuf.DoubleValue lng = 6;
+  google.protobuf.Int64Value submarket_id = 7;
+  google.protobuf.Int64Value district_id = 8;
+  google.protobuf.StringValue attr_src = 9;
+  // country code
+  google.protobuf.StringValue country_shortname = 10;
+  common.FulfillmentType fulfillment_type = 11;
+  // this is an option field for doubledash use case
+  RetailMenuResolutionContext menu_resolution_context = 12;
+  // Cx address-- state information, consistent with DB col name (administrativeAreaLevel1)
+  google.protobuf.StringValue administrative_area_level1 = 13;
+  // debug toggle boolean for fetching debug information
+  google.protobuf.BoolValue enable_debug = 14;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 15;
+}
+
+message RetailMenuResolutionContext {
+  SurfaceArea menu_surface_area = 1;
+}
+
+message GetRetailStorePageFeedResponse {
+  google.protobuf.StringValue store_id = 1;
+  repeated RetailStoreCategoryInfo l1_categories = 2;
+  // deprecated
+  repeated RetailStoreCollection collections = 3;
+  LoyaltyDetails loyalty_details = 4;
+  // deprecated
+  ReorderCarouselDM reorder_carousel = 5;
+  repeated Savelist savelists = 6;
+  // deprecated
+  repeated RetailCollectionDM retail_collection_dms = 7;
+  repeated RetailStoreDisclaimerDM retail_store_disclaimer_dms = 8;
+  RetailStoreHeaderDM store_header_dm = 9;
+  // Badges to surface on the store page
+  repeated Badge badges = 10;
+  PharmaEntryPointDM pharma_entry_point_dm = 11;
+  // For the new deals categories
+  repeated RetailL1Navigation l1_navigations = 12;
+  bool is_eligible_for_always_open = 13;
+  repeated InterstitialDM interstitial_dms = 14;
+  repeated FacetV2 lego_section_body = 15;
+  google.protobuf.BoolValue enable_free_same_day_delivery = 16;
+  Page page = 17;
+  google.protobuf.BoolValue enable_retail_pickup_toggle = 18;
+  NavigationL1Metadata navigation_l1_metadata = 19;
+  google.protobuf.StringValue business_vertical_id = 20;
+  RetailBannerDM retail_banner_dm = 21;
+}
+
+message NavigationL1Metadata {
+  AisleExperienceType aisle_experience_type = 1;
+  google.protobuf.StringValue title = 2;
+}
+
+enum AisleExperienceType {
+  AISLE_EXPERIENCE_TYPE_UNSPECIFIED = 0;
+  AISLE_EXPERIENCE_TYPE_V1 = 1;
+}
+
+message ReorderCarouselDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    RetailStoreCollection collection_data = 1;
+  }
+}
+
+message RetailCollectionDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+  message Data {
+    RetailStoreCollection collection_data = 1;
+  }
+}
+
+message RetailStoreDisclaimerDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+  message Data {
+    RetailStoreDisclaimer disclaimer_data = 1;
+  }
+}
+
+message InterstitialDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    RetailInterstitial interstitial_data = 1;
+  }
+}
+
+message RetailBannerDM {
+  google.protobuf.StringValue type = 1;
+  // The color of the background (e.g USAGE_COLOR_BACKGROUND_SUBDUED_HOVERED)
+  google.protobuf.StringValue background_color = 2;
+  // Deprecated - use leading_icon instead
+  Icon start_icon = 3;
+  // Deprecated - use trailing_icon instead
+  Icon end_icon = 4;
+  // Deprecated - use title instead
+  StyledText text = 5;
+  OnClickAction on_click_action = 6;
+  InteractiveComponent interactive_component = 7;
+  BannerLayout layout = 8;
+  component_catalog.common.prism.components.v1.Text title = 9;
+  component_catalog.common.prism.shared.v1.Icon leading_icon = 10;
+  component_catalog.common.prism.shared.v1.Icon trailing_icon = 11;
+
+  // Deprecated
+  message Icon {
+    google.protobuf.StringValue name = 1;
+    // The color of the icon (e.g USAGE_COLOR_BACKGROUND_SUBDUED_HOVERED)
+    google.protobuf.StringValue color = 2;
+    google.protobuf.Int32Value size = 3;
+  }
+
+  // Deprecated
+  message StyledText {
+    google.protobuf.StringValue display_string = 1;
+    google.protobuf.StringValue style = 2;
+    // The color of the text (e.g USAGE_COLOR_BACKGROUND_SUBDUED_HOVERED)
+    google.protobuf.StringValue color = 3;
+    repeated Range bold_range = 4;
+
+    message Range {
+      google.protobuf.Int32Value start = 1;
+      google.protobuf.Int32Value end = 2;
+    }
+  }
+
+  message OnClickAction {
+    google.protobuf.StringValue action_type = 1;
+    Content contents = 2;
+
+    message Content {
+      google.protobuf.StringValue redirect_url = 1;
+      google.protobuf.StringValue screen_type = 2;
+    }
+  }
+
+  // Used to decide the padding/spacing of the components.
+  enum BannerLayout {
+    // Text is centered with icons pushed to the start and end, banner stretched to fit width of view with padding.
+    BANNER_LAYOUT_FULL_UNSPECIFIED = 0;
+    // Text is centered and surrounded by padded icons, banner positioned based on alignment.
+    BANNER_LAYOUT_COMPACT = 1;
+  }
+
+  // Defines which component is interactive
+  enum InteractiveComponent {
+    // Entire banner acts as a button
+    INTERACTIVE_COMPONENT_FULL_UNSPECIFIED = 0;
+    // Trailing icon acts as a button
+    INTERACTIVE_COMPONENT_TRAILING_ICON = 1;
+    // Subtitle acts as a button (currently only used by Lego)
+    INTERACTIVE_COMPONENT_SUBTITLE = 2;
+  }
+}
+
+/* Category page feed */
+message GetRetailCategoryFeedRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue category_id = 2;
+  google.protobuf.StringValue sub_category_id = 3;
+  // pagination parameters
+  google.protobuf.StringValue cursor = 4;
+  google.protobuf.Int32Value limit = 5;
+  google.protobuf.StringValue consumer_id = 6;
+  repeated google.protobuf.StringValue filter_keys = 7;
+  repeated google.protobuf.StringValue sort_bys = 8;
+  //Cx country code and state name
+  google.protobuf.StringValue country_shortname = 9;
+  google.protobuf.StringValue administrative_area_level1 = 10;
+  google.protobuf.DoubleValue lat = 11;
+  google.protobuf.DoubleValue lng = 12;
+  google.protobuf.Int64Value menu_id = 13;
+  google.protobuf.Int64Value submarket_id = 14;
+  google.protobuf.Int64Value district_id = 15;
+  common.FulfillmentType fulfillment_type = 16;
+  google.protobuf.StringValue category2_id = 17;
+  google.protobuf.StringValue category3_id = 18;
+  // EFS filters applied to this call
+  repeated EFSFilter efs_filters = 19;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 20;
+  repeated google.protobuf.StringValue aggregate_store_ids = 21;
+}
+
+message GetRetailCategoryFeedResponse {
+  RetailStoreL1Category category_data = 1;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 2;
+  repeated FacetV2 lego_section_body = 3;
+  RetailStoreHeaderDM store_header_dm = 4;
+  repeated FacetV2 lego_category_results_body = 5;
+  // lego body for retail item cells
+  repeated FacetV2 lego_retail_items = 6;
+  // Callout banner on the category page
+  RetailBannerDM retail_banner_dm = 7;
+  // lego body for insertions [TO BE DEPRECATED]
+  repeated OrderedO2LegoContent lego_insertion_map = 8;
+  // lego body for insertions
+  repeated LegoInsertionContent lego_insertion_map_v2 = 9;
+}
+
+message GetRetailL1CategoriesRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  google.protobuf.StringValue surface = 3;
+
+  // if any categories are from bundle store
+  // lat & lng are needed for search
+  google.protobuf.DoubleValue lat = 4;
+  google.protobuf.DoubleValue lng = 5;
+}
+
+message GetRetailL1CategoriesResponse {
+  repeated RetailStoreCategoryInfo l1_categories = 1;
+  repeated RetailL1Navigation l1_navigations = 2;
+}
+
+/* Collections page feed */
+message GetRetailCollectionFeedRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue collection_id = 2;
+  // pagination parameters
+  google.protobuf.StringValue cursor = 3;
+  google.protobuf.Int32Value limit = 4;
+  google.protobuf.StringValue consumer_id = 5;
+  //Cx country code and state name
+  google.protobuf.StringValue country_shortname = 6;
+  google.protobuf.StringValue administrative_area_level1 = 7;
+  google.protobuf.DoubleValue lat = 8;
+  google.protobuf.DoubleValue lng = 9;
+  google.protobuf.Int64Value menu_id = 10;
+  google.protobuf.Int64Value submarket_id = 11;
+  google.protobuf.Int64Value district_id = 12;
+  common.FulfillmentType fulfillment_type = 13;
+  repeated google.protobuf.StringValue aggregate_store_ids = 14;
+}
+
+message GetRetailCollectionFeedResponse {
+  RetailStoreCollection collection_data = 1;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 2;
+  RetailStoreHeaderDM store_header_dm = 3;
+}
+
+message GetCatalogProductItemByMsIdRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue ms_id = 2;
+}
+
+message GetCatalogProductItemByMsIdResponse {
+  CatalogProductItem catalog_product_item = 1;
+}
+
+message CatalogProductItem {
+  // business id is required (references a Doordash business)
+  string business_id = 1;
+  // merchant supplied id is required (set by external partners)
+  string item_merchant_supplied_id = 2;
+  // primary image url of the product
+  google.protobuf.StringValue primary_image_url = 3;
+  // auxiliary image urls
+  repeated google.protobuf.StringValue auxiliary_image_urls = 4;
+  // product item name
+  google.protobuf.StringValue item_name = 5;
+  // string describing additional item details
+  google.protobuf.StringValue item_details = 6;
+}
+
+message GetProductByMsIdRequest {
+  // Required - needed to fetch product info
+  google.protobuf.StringValue ms_id = 1;
+  // Required - needed to fetch product info
+  google.protobuf.Int64Value business_id = 2;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.DoubleValue lat = 3;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.DoubleValue lng = 4;
+  // Optional - with preferred store set we will fetch menu item info
+  google.protobuf.Int64Value preferred_store_id = 5;
+  // Optional - since some requests may be from guests
+  google.protobuf.Int64Value consumer_id = 6;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.Int64Value submarket_id = 7;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.Int64Value district_id = 8;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 9;
+}
+
+message GetProductByMsIdResponse {
+  ProductStatus status = 1;
+  RetailProductItem product = 2;
+  repeated FacetV2 lego_section_body = 3;
+  RetailStore selected_store = 4;
+  RetailStoreStatus store_status = 5;
+}
+
+message GetProductByDdSicRequest {
+  // Required - needed to fetch product info
+  google.protobuf.StringValue dd_sic = 1;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.DoubleValue lat = 2;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.DoubleValue lng = 3;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.Int64Value submarket_id = 4;
+  // Optional - without location info generic catalog product info will be sent
+  google.protobuf.Int64Value district_id = 5;
+  // Optional - used to specify preference for a business
+  google.protobuf.Int64Value preferred_business_id = 6;
+  // Optional - used to specify preference for a specific store
+  google.protobuf.Int64Value preferred_store_id = 7;
+  // Optional - used to specify preference for a ms_id from a specific business
+  google.protobuf.StringValue preferred_ms_id = 8;
+  // Optional - since some requests may be from guests
+  google.protobuf.Int64Value consumer_id = 9;
+  // Optional - page_type for Universal vs Browse Product
+  ProductPageType page_type = 10;
+  // Optional - web client will specify if bot is detected
+  google.protobuf.BoolValue is_bot = 11;
+  // Optional - client will specify if any utm parameters are present
+  google.protobuf.BoolValue is_ad = 12;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 13;
+}
+
+message GetProductByDdSicResponse {
+  // Status - product status enum
+  ProductStatus status = 1;
+  // Product - generic product info
+  CatalogProduct product = 2;
+  // Items - list of items from different stores
+  repeated StoreItem items = 3;
+  // Category Information - category information based on NVG's taxonomy for SEO category pages
+  // See: https://docs.google.com/document/d/16L1IqNl_ItVAmwq79_h-aGTiIU19Ve2h6u_BvStM1mI
+  GlobalProductCategoryData category_info = 4;
+}
+
+message StoreItem {
+  RetailStore store = 1;
+  RetailStoreStatus store_status = 2;
+  RetailProductItem item = 3;
+  ItemStatus item_status = 4;
+  google.protobuf.BoolValue show_price = 5;
+}
+
+message CatalogProduct {
+  google.protobuf.StringValue dd_sic = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue details = 4;
+  google.protobuf.StringValue primary_image_url = 5;
+  repeated google.protobuf.StringValue image_urls = 6;
+  common.ratings.v1.Ratings ratings = 7;
+  google.protobuf.Int64Value price_low = 8;
+  google.protobuf.Int64Value price_high = 9;
+}
+
+enum ProductStatus {
+  PRODUCT_STATUS_UNSPECIFIED = 0;
+  PRODUCT_STATUS_AVAILABLE = 1;
+  PRODUCT_STATUS_OUT_OF_STOCK = 2;
+  PRODUCT_STATUS_OUT_OF_RANGE = 3;
+  PRODUCT_STATUS_DEACTIVATED = 4;
+  PRODUCT_STATUS_LOCATION_NOT_PROVIDED = 5;
+}
+
+enum ItemStatus {
+  ITEM_STATUS_UNSPECIFIED = 0;
+  ITEM_STATUS_AVAILABLE = 1;
+  ITEM_STATUS_SCHEDULED_AVAILABLE = 2;
+  ITEM_STATUS_OUT_OF_STOCK = 3;
+  ITEM_STATUS_OUT_OF_RANGE = 4;
+}
+
+enum ProductPageType {
+  PRODUCT_PAGE_TYPE_UNSPECIFIED = 0;
+  PRODUCT_PAGE_TYPE_UNIVERSAL = 1;
+  PRODUCT_PAGE_TYPE_BROWSE = 2;
+}
+
+message GetStoreSelectorListRequest {
+  // Required - location data is required
+  google.protobuf.DoubleValue lat = 1;
+  // Required - location data is required
+  google.protobuf.DoubleValue lng = 2;
+  // Required - location data is required
+  google.protobuf.Int64Value submarket_id = 3;
+  // Required - location data is required
+  google.protobuf.Int64Value district_id = 4;
+  // Optional - Vertical IDs to filter store options (defaults to Grocery stores)
+  repeated google.protobuf.Int64Value vertical_ids = 5 [(doordash.api.client.optional) = true];
+  // Optional - since some requests may be from guests
+  google.protobuf.Int64Value consumer_id = 6 [(doordash.api.inject_id) = CX_ID];
+  // Optional - used to specify preference for a business
+  google.protobuf.Int64Value preferred_business_id = 7 [(doordash.api.client.optional) = true];
+  // Optional - used to specify custom config through encoded query param
+  google.protobuf.StringValue cursor = 8 [(doordash.api.client.optional) = true];
+  // Optional - used to specify config_id that will be fetched from configuration service
+  google.protobuf.StringValue config_id = 9 [(doordash.api.client.optional) = true];
+  // Required - location data is required
+  double lat_from_header = 10 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // Required - location data is required
+  double lng_from_header = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // Required - location data is required
+  int64 submarket_id_from_header = 12 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // Required - location data is required
+  int64 district_id_from_header = 13 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+}
+
+message GetStoreSelectorListResponse {
+  repeated RetailStoreOption store_list = 1;
+  StoreSelectorConfigData metadata = 2;
+}
+
+message StoreSelectorConfigData {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue subtitle = 2;
+  repeated google.protobuf.StringValue search_terms = 3;
+  google.protobuf.StringValue campaign_id = 4;
+  google.protobuf.StringValue experience_type = 5;
+  repeated google.protobuf.StringValue business_ids = 6;
+  repeated google.protobuf.StringValue vertical_ids = 7;
+  repeated google.protobuf.StringValue image_urls = 8;
+  google.protobuf.StringValue servings = 9;
+  repeated google.protobuf.StringValue steps = 10;
+  StoreSelectorPageType page_type = 11;
+  repeated google.protobuf.StringValue brand_ids = 12;
+}
+
+enum StoreSelectorPageType {
+  STORE_SELECTOR_PAGE_TYPE_UNSPECIFIED = 0;
+  STORE_SELECTOR_PAGE_TYPE_GENERIC = 1;
+  STORE_SELECTOR_PAGE_TYPE_RECIPE = 2;
+  STORE_SELECTOR_PAGE_TYPE_BRAND = 3;
+}
+
+message GetRetailStoreHeaderRequest {
+  reserved 3, 4, 5, 6;
+  // used for deprecated field names
+  reserved "lat", "lng", "submarket_id", "district_id";
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  double cx_lat = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  double cx_lng = 9 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  int64 cx_submarket_id = 10 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {cast_type: "int64"}
+    }
+  ];
+  int64 cx_district_id = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {cast_type: "int64"}
+    }
+  ];
+  common.FulfillmentType fulfillment_type = 7 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+  google.protobuf.StringValue country_shortname = 12 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue time_zone = 13 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.timezone",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {field: "cx_geo_time_zone"}
+  ];
+}
+
+message GetRetailStoreHeaderResponse {
+  // used for deprecated field numbers
+  reserved 1, 3, 5;
+  // used for deprecated field names
+  reserved "store_id", "retail_store_disclaimer_dms", "store_header_dm";
+  LoyaltyDetails loyalty_details = 2 [(doordash.api.client.optional) = true];
+  repeated RetailL1Navigation l1_navigations = 4;
+  repeated Savelist savelists = 6;
+  RetailStoreV2 store = 7;
+  RetailBannerDM callout_banner = 8 [(doordash.api.client.optional) = true];
+  RetailStoreStatusV2 store_status = 9;
+  NavigationL1Metadata navigation_l1_metadata = 10 [(doordash.api.client.optional) = true];
+  RetailStoreDisclaimerDM store_disclaimer_dm = 11;
+}
+
+message GetGlobalProductCategoryFeedRequest {
+  google.protobuf.StringValue category_path_id = 1;
+  google.protobuf.Int32Value page_size = 2;
+  google.protobuf.Int32Value page_number = 3;
+}
+
+message GetGlobalProductCategoryFeedResponse {
+  repeated CategoryEntity top_level_categories = 1;
+  repeated CategoryEntity breadcrumb_categories = 2;
+  repeated CategoryEntity sibling_categories = 3;
+  repeated CategoryEntity children_categories = 4;
+  FacetV2 lego_section_body = 5;
+  CategoryFeedPagination pagination = 6;
+  repeated FacetV2 lego_retail_products = 7;
+  google.protobuf.BoolValue is_active = 8;
+}
+
+message CategoryEntity {
+  google.protobuf.StringValue category_path_id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue url_name = 3;
+}
+
+message CategoryFeedPagination {
+  google.protobuf.Int32Value page_size = 1;
+  google.protobuf.Int32Value page_number = 2;
+  google.protobuf.Int32Value total_pages = 3;
+  google.protobuf.Int32Value total_items = 4;
+}
+
+message GlobalProductCategoryData {
+  google.protobuf.StringValue category_path_id = 1;
+  repeated CategoryEntity top_level_categories = 2;
+  repeated CategoryEntity breadcrumb_categories = 3;
+  repeated CategoryEntity sibling_categories = 4;
+  repeated CategoryEntity children_categories = 5;
+  google.protobuf.BoolValue is_active = 6;
+}
+
+message RetailStoreOptionV2 {
+  RetailStoreV2 store = 1;
+  RetailStoreStatusV2 store_status = 2;
+  google.protobuf.BoolValue is_selected_store = 3;
+  RetailMessageLayout operating_status = 4;
+}
+
+message RetailStoreOption {
+  RetailStore store = 1;
+  RetailStoreStatus store_status = 2;
+}
+
+/* Get product item details */
+message GetRetailItemRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue item_id = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  LegoConfig lego_config = 4;
+  google.protobuf.DoubleValue lat = 5;
+  google.protobuf.DoubleValue lng = 6;
+  google.protobuf.Int64Value menu_id = 7;
+  google.protobuf.Int64Value submarket_id = 8;
+  google.protobuf.Int64Value district_id = 9;
+  common.FulfillmentType fulfillment_type = 10;
+  google.protobuf.StringValue cursor = 11;
+  google.protobuf.StringValue cx_geo_address_id = 12;
+  google.protobuf.StringValue ms_id = 13;
+  repeated google.protobuf.StringValue aggregate_store_ids = 14;
+}
+
+message LegoConfig {
+  google.protobuf.BoolValue is_google_ads_exp = 1;
+}
+
+message GetRetailItemResponse {
+  RetailProductItem item_details = 1;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 2;
+  // Lego Body for partial lego response.
+  repeated FacetV2 lego_section_body = 3;
+  repeated order.BadgeDetails badge_sections = 4;
+  RetailStoreHeaderDM store_header_dm = 5;
+  RetailItemAndVariantOptions item_and_variant_options = 6;
+  RetailProductFulfillmentMetadata fulfillment_metadata = 7;
+  // Callout banner on the category page
+  //   this will be moved to `callout_banners` and deprecated afterwards
+  RetailBannerDM retail_banner_dm = 8;
+  // Prioritized Lego Body for partial lego response.
+  repeated FacetV2 lego_section_prioritized = 9;
+  // list of call out banner display modules
+  repeated RetailBannerDM callout_banners = 10;
+}
+
+message RetailItemAndVariantOptions {
+  message RepeatedOptionLists {
+    repeated OptionListDM option_lists = 1;
+  }
+
+  map<string, RepeatedOptionLists> item_and_variant_option_lists = 1;
+}
+
+/* Search term autocomplete / type-ahead */
+message GetRetailAutocompleteResultsRequest {
+  // this is the raw store slug (including the seo-friendly prefix);
+  // this is an opaque value, clients should not need to parse this value
+  // ie. vons-chicken-sunnyvale-93232
+  string store_slug = 1;
+  // text as typed by the user, prior to any parsing / spell-correction / etc
+  string query_text = 2;
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+message GetRetailAutocompleteV2ResultsRequest {
+  // this is the raw store slug (including the seo-friendly prefix);
+  // this is an opaque value, clients should not need to parse this value
+  // ie. vons-chicken-sunnyvale-93232
+  string store_slug = 1;
+  // text as typed by the user, prior to any parsing / spell-correction / etc
+  string query_text = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  // list of item ids that are currently in the cart
+  repeated google.protobuf.StringValue item_ids = 4;
+  // past user query provided by clients
+  google.protobuf.StringValue previous_query_text = 5;
+  // origin to identify the source of traffic
+  google.protobuf.StringValue origin = 6;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 7;
+  // Boolean Flag to determine whether or not to fetch only query suggestions
+  // or query suggestions and items. false/unset should maintain standard behavior (fetch both)
+  google.protobuf.BoolValue fetch_only_term_suggestions = 8;
+}
+
+message GetRetailAutocompleteResultsResponse {
+  // list of sections/query suggestions for the user
+  repeated RetailAutocompleteLineItem line_items = 1;
+}
+
+message GetRetailAutocompleteV2ResultsResponse {
+  // list of sections/query suggestions for the user
+  repeated RetailAutocompleteV2LineItem line_items = 1;
+  // deeplink to reorder see all page
+  google.protobuf.StringValue reorder_see_all_url = 2;
+  // list of recommended search queries
+  repeated RetailRecommendedSearchQuery search_queries = 3;
+  // Lego Body for partial response. Use cases: top searches + suggested searches
+  repeated FacetV2 lego_section_body = 4;
+}
+
+/* Search in-store menu items */
+message GetRetailSearchResultsRequest {
+  // this is the raw store slug (including the seo-friendly prefix);
+  // this is an opaque value, clients should not need to parse this value
+  // ie. vons-chicken-sunnyvale-93232
+  string store_slug = 1;
+  // params used to filter/match the search results
+  RetailSearchParams search_params = 2;
+  // Boolean to indicate whether to execute spell check
+  google.protobuf.BoolValue perform_spell_check = 3;
+  // pagination parameters
+  google.protobuf.StringValue cursor = 4;
+  google.protobuf.Int32Value limit = 5;
+  google.protobuf.StringValue consumer_id = 6;
+  google.protobuf.StringValue prior_search_term = 7;
+  // Boolean to indicate whether to show store header on the search page
+  google.protobuf.BoolValue show_store_header = 8;
+  //params used for search evaluation pipeline
+  RetailSearchEvaluationParams retail_search_evaluation_params = 9;
+  //Cx country code and state name
+  google.protobuf.StringValue country_shortname = 10;
+  google.protobuf.StringValue administrative_area_level1 = 11;
+  google.protobuf.StringValue origin = 12;
+  // consumer location
+  Coordinate cx_location = 13;
+  // submarket id
+  google.protobuf.Int64Value submarket_id = 14;
+  // district id
+  google.protobuf.Int64Value district_id = 15;
+  // attr src for use case surface such as post checkout dbd etc
+  google.protobuf.StringValue attr_src = 16;
+  // original item id will be filtered for substitution recommendation search
+  google.protobuf.StringValue original_item_msid = 17;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 18;
+  repeated google.protobuf.StringValue aggregate_store_ids = 19;
+}
+
+/* Get recommended search queries */
+message GetRetailRecommendedSearchQueriesRequest {
+  // this is the store_id for the store consumer is visiting
+  google.protobuf.StringValue store_id = 1;
+  // this is the consumer_id of the consumer
+  google.protobuf.StringValue consumer_id = 2 [
+    (doordash.api.inject_id) = CX_ID,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  // this is the cart id of current cart of consumer
+  google.protobuf.StringValue cart_id = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // origin to identify the source of traffic, store_page or autocomplete_page
+  google.protobuf.StringValue origin = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // search text as typed by the user
+  string query_text = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // recent search data passed from the frontend
+  google.protobuf.StringValue recent_searches_data = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-RECENT-SEARCHES-DATA",
+      injection_rule: {cast_type: "nullable_string"}
+    },
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+}
+
+message GetRetailRecommendedSearchQueriesResponse {
+  // this is the recommended search queries
+  repeated RecommendedSearchQuery search_queries = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // title to be used for recommended search terms
+  google.protobuf.StringValue title = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // a list of recommended search query sections with titles
+  repeated RetailRecommendedSearchQueries recommended_search_queries = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+message RetailRecommendedSearchQueries {
+  // this is the recommended search queries
+  repeated RecommendedSearchQuery search_queries = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // title to be used for recommended search terms
+  google.protobuf.StringValue title = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // type of recommended search queries
+  RecommendedQueryType query_type = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// an enum class representing the type of recommended search queries
+enum RecommendedQueryType {
+  RECOMMENDED_QUERY_TYPE_UNSPECIFIED = 0;
+  RECOMMENDED_QUERY_TYPE_COMPLEMENTARY = 1;
+  RECOMMENDED_QUERY_TYPE_POPULAR = 2;
+  RECOMMENDED_QUERY_TYPE_RECENT = 3;
+}
+
+message RecommendedSearchQuery {
+  // the query text
+  google.protobuf.StringValue query_text = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // the image url
+  google.protobuf.StringValue image_url = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Coordinate message to give lat and lng together
+message Coordinate {
+  // lat
+  double lat = 1;
+  // lng
+  double lng = 2;
+}
+
+message GetRetailSearchResultsResponse {
+  // return the canonical url for these search results (used for sharing / address bar rewrite)
+  string url = 1;
+  // summary of the search results (total_count, facets, etc)
+  RetailSearchResultsSummary search_summary = 4;
+  // items that match the search request
+  RetailProductItemList items_list = 5;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 6;
+  // Lego Body for partial response.
+  repeated FacetV2 lego_section_body = 7;
+  // a list of search query suggestions
+  repeated RetailFilter query_suggestions = 8;
+  // Lego Body for Horizontal Grid Collections
+  repeated FacetV2 lego_search_results_body = 9;
+  // lego body for retail item cells
+  repeated FacetV2 lego_retail_items = 10;
+  // Callout banner on the category page
+  RetailBannerDM retail_banner_dm = 11;
+  // [TO BE DEPRECATED] Use lego_insertion_map instead
+  repeated OrderedO2LegoContent o2_lego_contents = 12;
+  // new (Q2 2024) unified BE filters. RetailSearchResultsSummary.filters will be deprecated soon
+  repeated component_catalog.cx.search.v1.Filter pill_filters = 13;
+  // lego body for insertions
+  repeated LegoInsertionContent lego_insertion_map = 14;
+}
+
+message OrderedO2LegoContent {
+  int32 index = 1;
+  repeated FacetV2 lego_content = 2;
+}
+
+message GetRetailReorderItemsRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  google.protobuf.DoubleValue lat = 3;
+  google.protobuf.DoubleValue lng = 4;
+  google.protobuf.Int64Value menu_id = 5;
+  google.protobuf.Int64Value submarket_id = 6;
+  google.protobuf.Int64Value district_id = 7;
+  common.FulfillmentType fulfillment_type = 8;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 9;
+}
+
+message GetRetailReorderItemsResponse {
+  RetailStoreCollection collection_data = 1;
+  repeated RetailStoreCategoryInfo l1_categories = 2;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 3;
+  repeated RetailL1Navigation l1_navigations = 4;
+  RetailStoreHeaderDM store_header_dm = 5;
+}
+
+message GetRetailItemRecommendationsRequest {
+  google.protobuf.StringValue store_id = 1;
+  repeated google.protobuf.StringValue item_ids = 2;
+
+  google.protobuf.StringValue business_id = 3;
+  google.protobuf.StringValue business_vertical_id = 4;
+  google.protobuf.StringValue consumer_id = 5;
+  google.protobuf.StringValue order_cart_id = 6;
+  repeated google.protobuf.StringValue diff_item_ids = 7;
+  repeated google.protobuf.StringValue recommendation_item_ids = 8;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 9;
+}
+
+message GetRetailItemRecommendationsResponse {
+  RetailProductItemList items_list = 1;
+  repeated google.protobuf.StringValue initial_item_ids = 2;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 3;
+}
+
+message BatchGetRetailItemRequest {
+  google.protobuf.StringValue store_id = 1;
+  repeated google.protobuf.StringValue item_ids = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 4;
+}
+
+message BatchGetRetailItemResponse {
+  RetailProductItemList items_list = 1;
+}
+
+message GetRetailItemCarouselPageFeedRequest {
+  double lat = 1;
+  double lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  int64 submarket_id = 4;
+  int64 district_id = 5;
+  google.protobuf.StringValue time_zone = 6;
+  google.protobuf.StringValue cursor = 7;
+  repeated EFSFilter filters = 8;
+  /* Carousel id for which we want to see carousel for.
+   * This will be passed in if passed via deeplink. */
+  google.protobuf.StringValue carousel_id = 9;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 10;
+}
+
+message GetRetailItemCarouselPageFeedResponse {
+  RetailStoreCollection collection_data = 1;
+  repeated RetailStoreCategoryInfo l1_categories = 2;
+  RetailStore store = 3;
+  RetailStoreStatus store_status = 4;
+  /* hybrid lego compliant result which will
+   * contain a list of products in lego format
+   */
+  repeated FacetV2 lego_section_body = 5 [deprecated = true];
+}
+
+message GetSkuRetailItemRequest {
+  string sku_id = 1;
+
+  // cursor is mainly used to store the mapping
+  // between sku id and actual store items
+  google.protobuf.StringValue cursor = 2;
+
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.DoubleValue lat = 4;
+  google.protobuf.DoubleValue lng = 5;
+  google.protobuf.Int64Value submarket_id = 6;
+  google.protobuf.Int64Value district_id = 7;
+  // tz
+  google.protobuf.StringValue time_zone = 8;
+  google.protobuf.BoolValue send_debug_info = 9;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 10;
+}
+
+message GetSkuRetailItemResponse {
+  SkuRetailProductItem sku_item_details = 1;
+  map<string, string> debug_info = 2;
+}
+
+message RetailStoreHeaderDM {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.Int64Value menu_id = 3;
+  google.protobuf.Int32Value item_limit = 4;
+  google.protobuf.Int64Value business_id = 5;
+  google.protobuf.BoolValue is_available = 6;
+
+  Image cover_image_url = 7;
+  Image cover_square_image_url = 8;
+  Image header_image_url = 9;
+
+  google.protobuf.BoolValue is_newly_added = 10;
+  google.protobuf.Int64Value num_ratings = 11;
+  google.protobuf.StringValue number_of_ratings_display_string = 12;
+  google.protobuf.DoubleValue average_rating = 13;
+  google.protobuf.DoubleValue average_merchant_rating = 14;
+
+  google.protobuf.DoubleValue distance_from_consumer = 15;
+  google.protobuf.StringValue distance_from_consumer_display_string = 16;
+
+  google.protobuf.BoolValue is_dashpass_partner = 17;
+  // retail common
+  DeliveryFeeLayout delivery_fee_layout = 18;
+  DeliveryToolTip delivery_fee_tooltip = 19;
+  RetailPopupContent popup_content_dm = 20;
+  // common
+  StoreAddress address = 21;
+  google.protobuf.BoolValue offers_pickup = 22;
+  RetailStoreStatus status = 23;
+  // store subtitle
+  google.protobuf.StringValue sub_title = 24;
+  google.protobuf.BoolValue is_consumer_subscription_eligible = 25;
+  // retail common
+  PromotionMessageLayout promotion_message_layout = 26;
+
+  // Add additional fields
+  google.protobuf.StringValue business_name = 27;
+  google.protobuf.BoolValue is_consumer_subscription_active = 28;
+  MessageLayout liquor_license_layout = 29;
+  MessageLayout service_fee_layout = 30;
+  DeliveryTimeLayout delivery_time_layout = 31;
+  OperatingStatus asap_status = 32;
+  OperatingStatus asap_pickup_status = 33;
+  google.protobuf.UInt32Value asap_minutes = 34;
+  google.protobuf.UInt32Value asap_pickup_minutes = 35;
+
+  // legal pop ups
+  repeated RetailPopupContent legally_required_popups = 36;
+
+  HeaderExperienceType header_experience_type = 37;
+
+  // delivery_schedule_callout
+  MessageLayout delivery_schedule_callout = 38;
+
+  // delivery time layout for testing
+  DeliveryTimeLayout delivery_time_layout_auditing = 39;
+
+  google.protobuf.StringValue price_range_display_string = 40;
+
+  // shopping list aka project sonic
+  ShoppingList shopping_list = 41;
+
+  // Show expanded range fee information. The proto is consistent with the Rx use case
+  MessageLayout distance_based_pricing_layout = 42;
+
+  // change deep link for Store Selector 2024
+  StoreSelectorContext store_selector_context = 43;
+
+  message OperatingStatus {
+    google.protobuf.BoolValue is_available = 1;
+    UnavailableStatus unavailable_status = 2;
+    google.protobuf.StringValue unavailable_reason = 3;
+    google.protobuf.StringValue display_unavailable_status = 4;
+    repeated google.protobuf.StringValue unavailable_reason_keys = 5;
+    DisplayUnavailableReason display_unavailable_reason = 6;
+    UnavailableReasonStyling unavailable_reason_styling = 7;
+    // number of minutes until store closes;
+    // only set if store is closing soon and we want to display countdown banner for specified fulfillment type
+    google.protobuf.UInt32Value num_minutes_until_close = 8;
+    // will be displayed underneath store's rating, and conveys details regarding store status;
+    // "[store state] • [optional temporal display string]" e.g. "Opens Soon • in 15 minutes"
+    MessageLayout operating_summary_layout = 9;
+    Modal scheduled_order_availability = 10; // optional
+    // Will be displayed under the store name when a store is closed or unavailable
+    // "[store state] | [Explanation]" e.g. "Store Unavailable | Too far away"
+    MessageLayout unavailable_summary = 11;
+
+    enum UnavailableStatus {
+      UNAVAILABLE_STATUS_NULL_UNSPECIFIED = 0;
+      UNAVAILABLE_STATUS_CLOSED = 1;
+      UNAVAILABLE_STATUS_UNAVAILABLE = 2;
+    }
+  }
+
+  message UnavailableReasonStyling {
+    google.protobuf.StringValue foreground_color = 1;
+    google.protobuf.StringValue background_color = 2;
+  }
+
+  message DisplayUnavailableReason {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+  }
+
+  message DeliveryTimeLayout {
+    google.protobuf.StringValue title = 1; // "35 min", "3-5 business days"
+    google.protobuf.StringValue subtitle = 2; // "delivery time", "arrives in"
+    Modal tooltip = 3;
+  }
+
+  // common definition for callouts, messages, info
+  message MessageLayout {
+    google.protobuf.StringValue title = 1;
+    // DLS value for title's text color
+    google.protobuf.StringValue title_color = 6;
+    google.protobuf.StringValue subtitle = 2;
+    // DLS value for subtitle's text color
+    google.protobuf.StringValue subtitle_color = 7;
+    Modal tooltip = 3;
+    google.protobuf.StringValue icon_url = 4;
+    google.protobuf.StringValue action_url = 5;
+    Logo logo = 8;
+    repeated ConfigurableButton buttons = 9;
+
+    google.protobuf.StringValue strikethrough_text = 10;
+    google.protobuf.StringValue strikethrough_text_color = 11;
+
+    enum Logo {
+      LOGO_UNKNOWN_UNSPECIFIED = 0;
+      LOGO_DASHPASS = 1;
+    }
+  }
+
+  message Modal {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+    repeated Button buttons = 3;
+    TimePicker available_time_windows = 4; // optional
+    repeated google.protobuf.StringValue bullet_descriptions = 5;
+    // Banner within the modal, currently right above buttons
+    // This should only be used for dynamic banners that have variable messaging based on cx
+    // For other banners that are static, use CMS
+    repeated Banner banners = 6;
+
+    message Button {
+      google.protobuf.StringValue text = 1;
+      google.protobuf.StringValue action = 2;
+    }
+
+    // Banner, currently above the buttons
+    message Banner {
+      // Banner title
+      google.protobuf.StringValue title = 1;
+      // Leading logo of the title
+      Logo title_logo = 2;
+      // Text content inside the banner
+      google.protobuf.StringValue description = 3;
+      // A list of buttons at the bottom of the banner
+      repeated Button buttons = 4;
+    }
+  }
+
+  // Logo, only two right now
+  enum Logo {
+    // required by linter, won't use in backend, treat as no icon
+    LOGO_UNSPECIFIED = 0;
+    // no icon
+    LOGO_NONE = 1;
+    // dashpass icon
+    LOGO_DASHPASS = 2;
+  }
+
+  enum HeaderExperienceType {
+    HEADER_EXPERIENCE_TYPE_UNSPECIFIED = 0;
+    HEADER_EXPERIENCE_TYPE_EXPANDED = 1;
+    HEADER_EXPERIENCE_TYPE_REDESIGN = 2;
+  }
+
+  message ShoppingList {
+    repeated ShoppingListExperience shopping_list_experience = 1;
+    repeated FacetV2 shopping_list_suggestions = 2;
+  }
+
+  enum ShoppingListExperience {
+    SHOPPING_LIST_EXPERIENCE_LARGE_UNSPECIFIED = 0;
+    SHOPPING_LIST_EXPERIENCE_LARGE = 1;
+    SHOPPING_LIST_EXPERIENCE_STICKY = 2;
+  }
+}
+
+message PageMetadata {
+  google.protobuf.StringValue page_title = 1;
+  google.protobuf.StringValue sub_title = 2;
+}
+
+message RetailStoreV2 {
+  // used for deprecated field numbers
+  reserved 22, 23, 36;
+  // used for deprecated field numbers
+  reserved "popup_content", "legally_required_popups", "legally_required_popups_v2";
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue menu_id = 3;
+  google.protobuf.StringValue business_id = 4;
+  google.protobuf.StringValue business_vertical_id = 5;
+  google.protobuf.StringValue item_limit = 6;
+  google.protobuf.StringValue cover_img_url = 7;
+  google.protobuf.StringValue cover_square_img_url = 8;
+  google.protobuf.StringValue header_img_url = 9;
+  google.protobuf.StringValue business_header_img_url = 10;
+  google.protobuf.Int64Value num_ratings = 11;
+  google.protobuf.StringValue num_ratings_display_string = 12;
+  google.protobuf.DoubleValue average_rating = 13;
+  money.MonetaryFields delivery_fee_monetary_fields = 14;
+  money.MonetaryFields sos_delivery_fee_monetary_fields = 15 [(doordash.api.client.optional) = true];
+  google.protobuf.DoubleValue distance_from_consumer = 16;
+  google.protobuf.BoolValue consumer_subscription_eligible = 17;
+  google.protobuf.StringValue distance_from_consumer_display_string = 18;
+  google.protobuf.BoolValue is_dashpass_partner = 19;
+  DeliveryFeeLayoutV2 delivery_fee_layout = 20 [(doordash.api.client.optional) = true];
+  DeliveryToolTip delivery_fee_tooltip = 21 [(doordash.api.client.optional) = true];
+  StoreAddress address = 24;
+  google.protobuf.BoolValue offers_pickup = 25;
+  RetailMessageLayout liquor_license_layout = 26 [(doordash.api.client.optional) = true];
+  RetailMessageLayout service_fee_layout = 27 [(doordash.api.client.optional) = true];
+  google.protobuf.BoolValue enable_free_same_day_delivery = 28;
+  google.protobuf.BoolValue enable_retail_pickup_toggle = 29;
+  RetailMessageLayout delivery_schedule_callout = 30 [(doordash.api.client.optional) = true];
+  HeaderExperienceType header_experience_type = 31;
+  google.protobuf.BoolValue is_newly_added = 32;
+  google.protobuf.StringValue price_range_display_string = 33;
+  google.protobuf.StringValue business_name = 34;
+  RetailPopupContentV2 popup_content_v2 = 35 [(doordash.api.client.optional) = true];
+  // Show expanded range fee information. The proto is consistent with the Rx use case
+  RetailMessageLayout distance_based_pricing_layout = 37 [(doordash.api.client.optional) = true];
+  repeated RetailPopupContentV2 legal_required_popups_v2 = 38 [(doordash.api.client.optional) = true];
+  StoreSelectorContext store_selector_context = 39 [(doordash.api.client.optional) = true];
+
+  enum HeaderExperienceType {
+    HEADER_EXPERIENCE_TYPE_UNSPECIFIED = 0;
+    HEADER_EXPERIENCE_TYPE_EXPANDED = 1;
+    HEADER_EXPERIENCE_TYPE_REDESIGN = 2;
+  }
+}
+
+message RetailStoreStatusV2 {
+  repeated google.protobuf.Int32Value asap_pickup_minutes_range = 1;
+  repeated google.protobuf.Int32Value asap_minutes_range = 2;
+  google.protobuf.StringValue unavailable_reason = 3;
+  repeated google.protobuf.StringValue unavailable_reason_keys = 4;
+  google.protobuf.BoolValue asap_available = 5;
+  google.protobuf.BoolValue scheduled_available = 6;
+  google.protobuf.BoolValue asap_pickup_available = 7;
+  HeaderDisplayInfo header_display_info = 8;
+  google.protobuf.Int32Value asap_minutes = 9;
+  google.protobuf.Int32Value asap_pickup_minutes = 10;
+  RetailMessageLayout operating_summary = 11;
+  RetailMessageLayout delivery_time_summary = 12 [(doordash.api.client.optional) = true];
+  RetailMessageLayout unavailable_summary = 13 [(doordash.api.client.optional) = true];
+  google.protobuf.Int32Value num_minutes_until_close = 14;
+  google.protobuf.BoolValue is_available = 15;
+  google.protobuf.BoolValue is_eligible_for_always_open = 16;
+  google.protobuf.StringValue display_unavailable_status = 17;
+  google.protobuf.BoolValue is_too_far_from_consumer = 18;
+  google.protobuf.BoolValue is_inactive = 19;
+}
+
+message DeliveryFeeLayoutV2 {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue subtitle = 2;
+  google.protobuf.BoolValue is_surging = 3;
+  google.protobuf.StringValue display_delivery_fee = 4;
+  google.protobuf.StringValue discount_min_subtotal = 5;
+  google.protobuf.StringValue pricing_disclosure_info = 6;
+  // this field is adding by bff today and is always true for mbff
+  google.protobuf.BoolValue title_only_highlight = 7;
+  DeliveryFeeLayoutStyling styling = 8 [(doordash.api.client.optional) = true];
+}
+
+// common definition for callouts, messages, info
+// pulling this out to make it reusable
+// not touching the one inside RetailStoreHeaderDM to avoid bugs
+message RetailMessageLayout {
+  google.protobuf.StringValue title = 1;
+  // DLS value for title's text color
+  google.protobuf.StringValue title_color = 6;
+  google.protobuf.StringValue subtitle = 2;
+  // DLS value for subtitle's text color
+  google.protobuf.StringValue subtitle_color = 7;
+  RetailModal tooltip = 3 [(doordash.api.client.optional) = true];
+  google.protobuf.StringValue icon_url = 4;
+  google.protobuf.StringValue action_url = 5;
+  Logo logo = 8;
+  repeated ConfigurableButton buttons = 9;
+
+  google.protobuf.StringValue strikethrough_text = 10;
+  google.protobuf.StringValue strikethrough_text_color = 11;
+
+  enum Logo {
+    LOGO_UNKNOWN_UNSPECIFIED = 0;
+    LOGO_DASHPASS = 1;
+  }
+}
+
+message RetailModal {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue description = 2;
+  repeated RetailButton buttons = 3;
+  TimePicker available_time_windows = 4; // optional
+  repeated google.protobuf.StringValue bullet_descriptions = 5;
+  // Banner within the modal, currently right above buttons
+  // This should only be used for dynamic banners that have variable messaging based on cx
+  // For other banners that are static, use CMS
+  repeated RetailBanner banners = 6;
+
+  message RetailButton {
+    google.protobuf.StringValue text = 1;
+    google.protobuf.StringValue action = 2;
+  }
+
+  // Banner, currently above the buttons
+  message RetailBanner {
+    // Banner title
+    google.protobuf.StringValue title = 1;
+    // Leading logo of the title
+    Logo title_logo = 2;
+    // Text content inside the banner
+    google.protobuf.StringValue description = 3;
+    // A list of buttons at the bottom of the banner
+    repeated RetailButton buttons = 4;
+  }
+
+  // Logo, only two right now
+  enum Logo {
+    // required by linter, won't use in backend, treat as no icon
+    LOGO_UNSPECIFIED = 0;
+    // no icon
+    LOGO_NONE = 1;
+    // dashpass icon
+    LOGO_DASHPASS = 2;
+  }
+}
+
+message RetailPopupContent {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue message = 2;
+    google.protobuf.StringValue dismiss_button_text = 3;
+    google.protobuf.Struct metadata = 4;
+    repeated google.protobuf.StringValue bullet_copy = 5;
+    google.protobuf.BoolValue show_once = 6;
+    google.protobuf.StringValue accept_button_text = 7;
+    RetailPopupContent dismiss_button_popup = 8;
+  }
+}
+
+message RetailPopupContentV2 {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue message = 2;
+    google.protobuf.StringValue dismiss_button_text = 3;
+    google.protobuf.Struct metadata = 4;
+    repeated google.protobuf.StringValue bullet_copy = 5;
+    google.protobuf.BoolValue show_once = 6;
+    google.protobuf.StringValue accept_button_text = 7;
+    DismissButtonPopup dismiss_button_popup = 8;
+  }
+}
+
+message DismissButtonPopup {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue message = 2;
+  google.protobuf.StringValue dismiss_button_text = 3;
+}
+
+message GetRetailCollectionFeedV2Request {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue store_id = 2;
+  google.protobuf.StringValue collection_id = 3;
+  google.protobuf.StringValue collection_type = 4;
+  google.protobuf.StringValue cursor = 5;
+  google.protobuf.BoolValue show_explore_items = 6;
+  google.protobuf.BoolValue show_categories = 7;
+  google.protobuf.StringValue attr_src = 8;
+  google.protobuf.StringValue page = 9;
+  google.protobuf.BoolValue supports_pagination = 10;
+  google.protobuf.DoubleValue lat = 11;
+  google.protobuf.DoubleValue lng = 12;
+  google.protobuf.Int64Value submarket_id = 13;
+  google.protobuf.Int64Value district_id = 14;
+  google.protobuf.StringValue search_query = 15;
+  //Cx country code and state name
+  google.protobuf.StringValue country_shortname = 16;
+  google.protobuf.StringValue administrative_area_level1 = 17;
+  CollectionPageView collection_page_view = 18;
+  repeated google.protobuf.StringValue filter_keys = 19;
+  repeated EFSFilter filters = 20;
+  google.protobuf.StringValue collection_description_override = 21;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 22;
+  repeated google.protobuf.StringValue aggregate_store_ids = 23;
+}
+
+enum CollectionPageView {
+  COLLECTION_PAGE_VIEW_UNSPECIFIED = 0;
+  COLLECTION_PAGE_VIEW_GRID_VIEW = 1;
+  COLLECTION_PAGE_VIEW_LIST_VIEW = 2;
+}
+
+message GetRetailCollectionFeedV2Response {
+  RetailGeneralizedCollection collection_data = 1;
+  repeated RetailStoreCategoryInfo l1_categories = 2;
+  LoyaltyDetails loyalty_details = 3;
+  repeated RetailL1Navigation l1_navigations = 4;
+  RetailStoreHeaderDM store_header_dm = 5;
+  repeated RetailFilter filters = 6;
+  repeated component_catalog.cx.search.v1.Filter pill_filters = 7;
+}
+
+// SDA Messages for Retail Collection
+// SOT : https://docs.google.com/document/d/1DzhTyiPHX7n2kvSw9IVhclVQZcW-qBRdMbondY52ySk/edit?tab=t.0
+// DEPRECATED - moved to action_catalog.cx.nv.server_driven_actions
+message UrlDescription {
+  option deprecated = true;
+
+  google.protobuf.StringValue ug_method = 1;
+  HttpMethod http_method = 2;
+  google.protobuf.StringValue path = 3;
+  google.protobuf.StringValue request_body = 4;
+}
+
+// DEPRECATED - moved to action_catalog.cx.nv.server_driven_actions
+message FrequencyDescription {
+  option deprecated = true;
+
+  // Actions which have outlived their expiration field will not be fired.
+  google.protobuf.StringValue expiration = 1;
+  // Specifies the maximum number of times an action can be executed
+  google.protobuf.Int64Value execution_limit = 2;
+}
+
+// DEPRECATED - moved to action_catalog.cx.nv.server_driven_actions
+message ServerDefinedActionEntity {
+  option deprecated = true;
+
+  // Uniquely identify the action
+  google.protobuf.StringValue id = 1;
+  // Specifies the required client-side event to trigger the associated action.
+  // Possible values:
+  // MIC Refresh USe Case: modifyCart
+  // Horizontal PAgination use case: endOfContent,
+  // Potential future use case for PDP: viewedDetail
+  google.protobuf.StringValue trigger = 2;
+  // The effect of the action
+  ServerDefinedActionEffect effect = 3;
+  // Optional : Decides whether the action can be triggerred repeatedly
+  FrequencyDescription frequency = 4;
+}
+
+// DEPRECATED - moved to action_catalog.cx.nv.server_driven_actions
+message ServerDefinedActionEffect {
+  option deprecated = true;
+
+  google.protobuf.StringValue type = 1;
+  UrlDescription url = 2;
+  google.protobuf.StringValue response_entity = 3;
+  google.protobuf.StringValue logging = 4;
+}
+
+// DEPRECATED - moved to action_catalog.cx.nv.server_driven_actions
+enum HttpMethod {
+  option deprecated = true;
+
+  HTTP_METHOD_UNSPECIFIED = 0;
+  HTTP_METHOD_GET = 1;
+  HTTP_METHOD_POST = 2;
+  HTTP_METHOD_PUT = 3;
+  HTTP_METHOD_DELETE = 4;
+  HTTP_METHOD_PATCH = 5;
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  ACTION_TYPE_FETCH_NEXT_PAGE = 1;
+  ACTION_TYPE_CAROUSEL_TITLE_REFRESH = 2;
+  ACTION_TYPE_CAROUSEL_REFRESH = 3;
+}
+
+message GetRetailCollectionExtraAttributes {
+  // MIC Title Refresh Section
+  // These attributes are used for building MIC Title
+  // These are built as part of SDA Ation Object Build and then passed to the client
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue menu_id = 2;
+  google.protobuf.StringValue business_id = 3;
+  google.protobuf.StringValue business_vertical_id = 4;
+  google.protobuf.DoubleValue store_lat = 5;
+  google.protobuf.DoubleValue store_lng = 6;
+  google.protobuf.Int64Value store_submarket_id = 7;
+  google.protobuf.BoolValue is_consumer_employee = 8;
+  google.protobuf.StringValue country_code = 9;
+  // End MIC Title Refresh Section
+}
+
+message GetRetailComponentActionRequest {
+  // used for deprecated field names
+  reserved 16, 17;
+  reserved "is_guest", "is_employee";
+  // All parameters are injected from headers and url params
+  // and query params are completely ignored.
+  google.protobuf.StringValue namespace = 1 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.namespace",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue component_id = 2 [
+    (doordash.api.inject) = {
+      field: "component_id",
+      injection_rule: {cast_type: "nullable_string"}
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.component_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  google.protobuf.StringValue component_type = 3 [
+    (doordash.api.inject) = {
+      field: "component_id",
+      injection_rule: {cast_type: "nullable_string"}
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.component_type",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  google.protobuf.StringValue cursor = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.cursor",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cursor",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Enum injection cannot be done through headers.
+  // using a string here and then will convert this to enum in BE
+  google.protobuf.StringValue action_type = 5 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.action_type",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  // adding cx context fields here since UG can inject them
+  google.protobuf.StringValue surface = 6 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.surface",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // Injected from base64 encoded JSON object in DD-RETAIL-SDA-CONTEXT header
+  google.protobuf.StringValue store_id = 7 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.store_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  google.protobuf.StringValue collection_type = 8 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.collection_type",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  // Cx Attributes Section.
+  // Injected using DD-LOCATION-CONTEXT header or through Geo service call
+  google.protobuf.StringValue consumer_id = 9 [(doordash.api.inject_id) = CX_ID];
+  // Cx submarket id
+  int64 submarket_id = 10 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // Cx district id
+  int64 district_id = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {cast_type: "int64"}
+    }
+  ];
+  google.protobuf.StringValue country_code = 12 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      },
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Cx Geo's address_id
+  google.protobuf.StringValue cx_geo_address_id = 13 [(doordash.api.inject_from_headers) = {
+    field: "DD-LOCATION-CONTEXT.address_id",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // Cx Lat
+  double cx_lat = 14 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // Cx Long
+  double cx_lng = 15 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // Ens Section.
+  // Store Attributed Cx Attribute Section
+  // Store Attributesd are injected by DD-RETAIL-SDA-CONTEXT header
+  double store_lat = 18 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.store_lat",
+    injection_rule: {
+      cast_type: "double",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  double store_lng = 19 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.store_lng",
+    injection_rule: {
+      cast_type: "double",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue menu_id = 20 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.menu_id",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue business_id = 21 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.business_id",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue business_vertical_id = 22 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.business_vertical_id",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  int64 store_submarket_id = 23 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.store_submarket_id",
+    injection_rule: {
+      cast_type: "int64",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue store_district_id = 24 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.store_district_id",
+    injection_rule: {
+      cast_type: "int64",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  google.protobuf.StringValue attr_src = 25 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.attr_src",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // Injected by user header automatically
+  google.protobuf.StringValue platform = 26 [(doordash.api.inject_from_headers) = {
+    field: "platform",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // Base64 encoded JSON object in DD-RETAIL-SDA-CONTEXT header
+  // This carries any extension properties that might be needed for custom use cases.
+  // This is a generic field and can be used for any custom use case.
+  google.protobuf.StringValue extension_data = 27 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CONTEXT.extension_data",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // debug toggle boolean for fetching debug information
+  google.protobuf.BoolValue enable_debug = 28;
+  // Base64-encoded JSON string injected by the client.
+  // This field is intended for passing custom attributes that are not part of the standard request schema.
+  // It supports extensibility for client-specific use cases and is not populated or modified by the server.
+  // Example usage: For the MIC carousel, the client may pass fields like cart ID and cart subtotal.
+  // Encoded value:
+  //   eyJvcmRlcl9jYXJ0X2lkIjoiZGMyYWJlZWMtMTZiZS00MzU1LTgxMzYtZDg1MTNmYTQ3YmE0IiwiY2FydF9zdWJ0b3RhbCI6MzI5N30=
+
+  // Decoded JSON object:
+  //   {
+  //     "order_cart_id": "dc2abeec-16be-4355-8136-d8513fa47ba4", // UUID representing the cart
+  //     "cart_subtotal": 329 // Integer representing subtotal amount
+  //   }
+  // Expected fields for Mic Refresh:
+  // order_cart_id: mandatory
+  // subtotal: mandatory
+  // promotion_min_subtotal: if available
+  // badge_type: if available
+  // discount_details_message_title: if available
+  // discount_details_message_description: if available
+  // discount_details_message: if available
+
+  // Note: Unlike `extension_data`, this field is exclusively populated by the client.
+  google.protobuf.StringValue client_injected_extension_data = 29 [(doordash.api.inject_from_headers) = {
+    field: "DD-RETAIL-SDA-CLIENT-CONTEXT",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+message GetCollectionRequest {
+  // Depreacted in favor of GetRetailComponentAction
+  option deprecated = true;
+  // All parameters are injected from headers and url params
+  // and query params are completely ignored.
+  reserved 5, 6, 7;
+  // used for deprecated field names
+  reserved "collection_request", "extra_attributes", "common_facet_request_fields";
+  google.protobuf.StringValue namespace = 1 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.namespace",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "namespace",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue collection_id = 2 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.collection_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "collection_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue cursor = 3 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.cursor",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cursor",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  ActionType action_type = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.action_type",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "action_type",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // deprecated
+  // GetRetailCollectionsRequest collection_request = 5;
+  // GetRetailCollectionExtraAttributes extra_attributes = 6;
+  // // adding cx context fields here since UG can inject them
+  // CommonFacetRequestFields common_facet_request_fields = 7;
+  google.protobuf.StringValue surface = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.surface",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "surface",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Injected from base64 encoded JSON object in DD-RETAIL-SDA-CONTEXT header
+  google.protobuf.StringValue store_id = 9 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.store_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "store_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue collection_type = 10 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.collection_type",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "collection_type",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Cx Attributes Section.
+  // Injected using DD-LOCATION-CONTEXT header
+  google.protobuf.StringValue consumer_id = 11 [(doordash.api.inject_id) = CX_ID];
+  // Cx Lat
+  google.protobuf.DoubleValue lat = 12 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // Cx Long
+  google.protobuf.DoubleValue lng = 13 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // Cx submarket id
+  google.protobuf.Int64Value submarket_id = 14 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // Cx district id
+  google.protobuf.Int64Value district_id = 15 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  google.protobuf.StringValue country_code = 16 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Cx Geo's address_id
+  google.protobuf.StringValue cx_geo_address_id = 17 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.address_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_address_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Injected by DD-RETAIL-SDA-CONTEXT header automatically
+  // DD-RETAIL-SDA-CONTEXT is a base64 encoded JSON object
+  google.protobuf.StringValue menu_id = 18 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.menu_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "menu_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue business_id = 19 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.business_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "business_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue business_vertical_id = 20 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.business_vertical_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "business_vertical_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  google.protobuf.StringValue store_submarket_id = 21 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.store_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "store_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  google.protobuf.DoubleValue store_lat = 22 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.store_lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "store_lat",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  google.protobuf.DoubleValue store_lng = 23 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.store_lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "store_lng",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  google.protobuf.StringValue attr_src = 24 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-RETAIL-SDA-CONTEXT.attr_src",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "attr_src",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // Injected by user header automatically
+  google.protobuf.BoolValue is_employee = 25;
+  google.protobuf.StringValue platform = 26 [(doordash.api.inject_from_headers) = {
+    field: "platform",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+  // debug toggle boolean for fetching debug information
+  google.protobuf.BoolValue enable_debug = 27;
+}
+
+// Depreacted in favor of GetRetailComponentAction
+message GetCollectionResponse {
+  option deprecated = true;
+  ServerDefinedActionResponseData data = 1;
+}
+
+message CollectionTitle {
+  reserved 1, 2;
+  reserved "title", "sub_title";
+  // deprecated to avoid nested structure of the default
+  // google proto types. Cx app did not want nested structure like:
+  // "title": { "value": "You've unlocked $0 fees" }
+  // new properties would be {"collection_title": "You've unlocked $0 fees" }
+  // google.protobuf.StringValue title = 1;
+  // google.protobuf.StringValue sub_title = 2;
+  string collection_title = 3;
+  string collection_sub_title = 4;
+}
+
+message CollectionPaginatedResponse {
+  ServerDefinedActionEffect effect = 1 [deprecated = true];
+  // using facetv2 for now, this will change
+  // to whatever CC will use in future
+  repeated FacetV2 lego_section_body = 2;
+  action_catalog.cx.nv.server_driven_actions.v1.ServerDefinedActionEffect next_effect = 3;
+}
+
+message ServerDefinedActionResponseData {
+  // This should be non-empty
+  // paginated_response used by Horizontal Pagination
+  // collection_data used by any collection related fetch
+  oneof value {
+    CollectionPaginatedResponse paginated_response = 1;
+    RetailGeneralizedCollection collection_data = 2;
+    CollectionTitle collection_title = 3;
+  }
+}
+
+message GetRetailComponentActionResponse {
+  ServerDefinedActionResponseData data = 1;
+  // temporary fix for horizontal pagination
+  repeated FacetV2 lego_section_body = 2;
+  action_catalog.cx.nv.server_driven_actions.v1.ServerDefinedActionEffect next_effect = 3;
+}
+
+message GetRetailCollectionsRequest {
+  google.protobuf.StringValue surface = 1;
+  google.protobuf.StringValue store_id = 2;
+  // order cart id. Needs to be present for MIC Carousel
+  google.protobuf.StringValue order_cart_id = 3;
+  repeated google.protobuf.StringValue item_id = 4;
+  google.protobuf.StringValue consumer_id = 5;
+  google.protobuf.StringValue attr_src = 6;
+  google.protobuf.StringValue page = 7;
+  google.protobuf.StringValue cursor = 8;
+  google.protobuf.DoubleValue lat = 9;
+  google.protobuf.DoubleValue lng = 10;
+  google.protobuf.Int64Value submarket_id = 11;
+  google.protobuf.Int64Value district_id = 12;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 13;
+  // debug toggle boolean for fetching debug information
+  google.protobuf.BoolValue enable_debug = 14;
+  // cart subtotal for the order cart
+  // this is used to calculate MIC carousels thresholds
+  // If this is not available,
+  // the backend will use the estimated subtotal from the order service's list cart API.
+  google.protobuf.Int64Value cart_subtotal = 15;
+}
+
+message LegoInsertionContent {
+  int32 index = 1;
+  repeated FacetV2 lego_content = 2;
+  google.protobuf.StringValue lego_type = 3;
+}
+
+message GetRetailCollectionsResponse {
+  Header header = 1;
+  repeated FacetV2 lego_section_body = 2;
+  // lego body for insertions
+  repeated LegoInsertionContent lego_insertion_map = 3;
+  message Header {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+    Store store = 3;
+    google.protobuf.Struct page_load_logging = 4;
+    Banner banner = 5;
+  }
+  message Store {
+    google.protobuf.StringValue id = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.StringValue menu_id = 3;
+    google.protobuf.StringValue business_id = 4;
+  }
+  message Banner {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+  }
+}
+
+message PharmaEntryPointDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    repeated google.protobuf.StringValue line_items = 2;
+    google.protobuf.StringValue enter_button_url = 3;
+    google.protobuf.StringValue enter_button_text = 4;
+  }
+}
+
+enum RetailL1NavigationType {
+  RETAIL_L1_NAVIGATION_TYPE_UNSPECIFIED = 0;
+  RETAIL_L1_NAVIGATION_TYPE_CATEGORY = 1;
+  RETAIL_L1_NAVIGATION_TYPE_COLLECTIONS_REQUEST = 2;
+  RETAIL_L1_NAVIGATION_TYPE_COLLECTION_PAGE_REQUEST = 3;
+  RETAIL_L1_NAVIGATION_TYPE_IN_STORE = 4;
+  RETAIL_L1_NAVIGATION_TYPE_VISUAL_AISLES_PAGE_REQUEST = 5;
+  RETAIL_L1_NAVIGATION_TYPE_SELECTION_DISCOVERY_PAGE_REQUEST = 6;
+}
+
+message RetailL1Navigation {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue url_slug = 2;
+  google.protobuf.StringValue name = 3;
+  google.protobuf.StringValue image_url = 4;
+  google.protobuf.BoolValue is_active = 5;
+  RetailL1NavigationType type = 6;
+  Data data = 7;
+  google.protobuf.StringValue description = 8;
+  message Data {
+    GetRetailCollectionFeedV2Request collection_page_request = 1 [(doordash.api.client.optional) = true];
+    GetRetailCollectionsRequest collections_request = 2 [(doordash.api.client.optional) = true];
+  }
+
+  // additional information for analytics tracking, e.g. "view" event
+  // https://docs.google.com/document/d/1qcL-QRPg7b4j5-nd8FGF8ObqnhIFNaG9v4EddHB0KYg/edit#
+  RetailBundleMetadata bundle_metadata = 9 [(doordash.api.client.optional) = true];
+}
+
+enum VerticalPageType {
+  VERTICAL_PAGE_TYPE_UNSPECIFIED = 0;
+  VERTICAL_PAGE_TYPE_GROCERY_TAB = 1;
+  VERTICAL_PAGE_TYPE_RETAIL_TAB = 2;
+  VERTICAL_PAGE_TYPE_VLP = 3;
+}
+
+// Request for Vertical Landing Page
+message GetVerticalPageFeedRequest {
+  // lat
+  double lat = 1;
+  // lng
+  double lng = 2;
+  // Optional, since some requests may be from guests
+  google.protobuf.Int64Value consumer_id = 3;
+  // Provided at the BFF layer
+  int64 submarket_id = 4;
+  // Provided at the BFF layer
+  int64 district_id = 5;
+  // tz
+  google.protobuf.StringValue time_zone = 6;
+  // scheduled order time
+  google.protobuf.StringValue scheduled_time = 7;
+  // Opaque to clients, and represented as a string
+  google.protobuf.StringValue cursor = 8;
+  // Params for how stores should be deduplicated across carousels (Platform-dependent)
+  google.protobuf.Int64Value dedupe_config_id = 9;
+  // Filters (if any)
+  repeated EFSFilter filters = 10;
+  // country code
+  google.protobuf.StringValue country_shortname = 11;
+  // utm metadata for ads
+  map<string, string> utm_metadata = 12;
+  // page type
+  VerticalPageType page_type = 13;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 14;
+}
+
+// Response for Vertical Landing Page
+message GetVerticalPageFeedResponse {
+  GetFacetFeedResponseV2 response = 1;
+}
+
+// Response for gift card marketplace vertical landing page
+message GetGiftCardMarketplacePageFeedResponse {
+  GetFacetFeedResponseV2 response = 1;
+}
+
+message GetRetailTabsRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message GetRetailTabsResponse {
+  repeated RetailTabResponse retail_tab_responses = 1;
+  message RetailTabResponse {
+    RetailTabType retail_tab_type = 1;
+    enum RetailTabType {
+      RETAIL_TAB_TYPE_UNSPECIFIED = 0;
+      RETAIL_TAB_TYPE_STORE = 1;
+      RETAIL_TAB_TYPE_AISLES = 2;
+      RETAIL_TAB_TYPE_REORDER = 3;
+      RETAIL_TAB_TYPE_DEALS = 4;
+    }
+  }
+}
+
+message GetPreloadedCartForConsumerRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.StringValue store_id = 4;
+  google.protobuf.Int64Value submarket_id = 5;
+  // used for cx pricing sensitivity experiments
+  google.protobuf.StringValue cx_geo_address_id = 6;
+}
+
+// Retail product item fulfillment metadata
+message RetailProductFulfillmentMetadata {
+  // is substitution enabled for the product item
+  google.protobuf.BoolValue is_substitution_enabled = 1;
+  // retail item substitution items
+  repeated FulfillmentItemMetadata substitution_items = 2;
+  // if Cx has already reviewed this subs.
+  google.protobuf.BoolValue cx_reviewed = 3;
+  // out of stock preference
+  google.protobuf.StringValue oos_preference = 4;
+  // is item_instructions enabled for the product item
+  google.protobuf.BoolValue is_item_instructions_enabled = 5;
+  // item instructions
+  google.protobuf.StringValue item_instructions = 6;
+  // Generic category OOS preference metadata for displaying to Cx flows
+  GenericCategoryOosPreferenceDisplayData generic_category_oos_preference_display_data = 7;
+  // Generic category OOS preference metadata for displaying to Cx flows
+  message GenericCategoryOosPreferenceDisplayData {
+    // display title for generic OOS preference. Eg: "Any similar whole milk" or "Any similar eggs"
+    google.protobuf.StringValue display_title = 1;
+  }
+}
+
+message FulfillmentItemMetadata {
+  // item name
+  google.protobuf.StringValue name = 1;
+  // business merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 2;
+}
+
+// Retail product item reviews request
+message GetRetailItemReviewsRequest {
+  // Business ID for the store
+  google.protobuf.StringValue business_id = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // DD SIC for the product
+  google.protobuf.StringValue dd_sic = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // MSID for the product
+  google.protobuf.StringValue item_msid = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Consumer ID - REQUIRED on Mobile, OPTIONAL on Web
+  google.protobuf.StringValue consumer_id = 4 [
+    (doordash.api.inject_id) = CX_ID,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  // Pagination Information
+  common.ratings.v1.ReviewPaginationInfo pagination = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // [DEPRECATED] Use EFS filters instead
+  repeated google.protobuf.StringValue filter_bys = 6 [deprecated = true];
+  // sort by order, e.g. newest, oldest
+  google.protobuf.StringValue sort_by = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Store ID of the product
+  google.protobuf.StringValue store_id = 8 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Item ID of the product
+  google.protobuf.StringValue item_id = 9 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // EFS filters applied to this call
+  repeated EFSFilter efs_filters = 10 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx_geo__address_id as consumer geo_address_id for inflation A/B experiment
+  google.protobuf.StringValue cx_geo_address_id = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.address_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_address_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+}
+
+message GetRetailItemReviewsResponse {
+  common.ratings.v1.RatingsDistribution ratings_breakdown = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Retail product item reviews
+  repeated common.ratings.v1.RetailProductItemReview reviews = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Ratings information on this item
+  common.ratings.v1.Ratings ratings = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Pagination Information
+  common.ratings.v1.ReviewPaginationInfo pagination = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // [Deprecated] Use BE unification filter instead
+  repeated common.ratings.v1.ReviewFilter review_filters = 5 [
+    deprecated = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  // sort by options
+  repeated common.ratings.v1.ReviewSortOption sort_by_options = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Review filters, using BE unification filter
+  repeated component_catalog.cx.search.v1.Filter filters = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+message GetAwarenessIndicatorRequest {
+  // Contains common fields like consumer id, submarket id, district id, lat, lng, timezone
+  CommonFacetRequestFields common_fields = 1;
+  // Page type to display awareness indicator for
+  google.protobuf.StringValue page_type = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message GetAwarenessIndicatorResponse {
+  // Key-value map of data needed for tracking
+  google.protobuf.Struct logging = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Contains fields needed to display the landing page after the Cx clicks on the awareness indicator
+  LandingPage landing_page = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // True if Cx meets targeting requirements. False otherwise.
+  google.protobuf.BoolValue is_eligible_for_awareness_indicator = 4 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+
+  message LandingPage {
+    google.protobuf.StringValue campaign_id = 1 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+  }
+
+  reserved 1;
+  reserved "is_eligible_for_red_dot";
+}
+
+message CategoryItemQuery {
+  // root category id
+  google.protobuf.StringValue category1_id = 1;
+  // subcategory id (if any)
+  google.protobuf.StringValue category2_id = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+message ItemFiltersRequest {
+  // cx id
+  google.protobuf.Int64Value consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // platform
+  google.protobuf.StringValue platform = 2 [(doordash.api.inject_from_headers) = {
+    field: "platform",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // lat
+  double lat = 3 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // lng
+  double lng = 4 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"}
+    }
+  ];
+  // submarket id
+  int64 submarket_id = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // district id
+  int64 district_id = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // timezone
+  google.protobuf.StringValue time_zone = 7 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.timezone",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {field: "cx_geo_time_zone"}
+  ];
+  // the search term to use
+  oneof item_filter_search_param {
+    google.protobuf.StringValue in_store_search_query = 8;
+    google.protobuf.StringValue global_search_query = 9;
+    CategoryItemQuery category_query = 10;
+  }
+  // optional store id (not used for global search)
+  google.protobuf.StringValue store_id = 11;
+  // previously applied filters
+  repeated EFSFilter efs_filters = 12;
+}
+
+message UpsertFilterConfigurationsRequest {
+  // filter configurations to upsert
+  repeated retail_item_attributes.v1.FilterConfiguration filter_configurations = 1;
+}
+
+message UpsertFilterConfigurationsResponse {
+  // successfully upserted filter configurations
+  repeated retail_item_attributes.v1.FilterConfiguration upserted_filter_configurations = 1;
+  // list of errors if any, keyed by pk
+  map<string, string> errors = 2;
+}
+
+message ItemFiltersResponse {
+  component_catalog.cx.search.v1.FilterSheet filter_sheet = 1;
+}
+
+// Request for GetInStoreDealsByLocation
+message GetInStoreDealsByLocationRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // cx latitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue lat = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx longitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue long = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx submarket, based on selected address. Provided by client
+  google.protobuf.StringValue submarket_id = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Response for GetInStoreDealsByLocation
+message GetInStoreDealsByLocationResponse {
+  // page title
+  google.protobuf.StringValue title = 1;
+  // page subtitle
+  google.protobuf.StringValue subtitle = 2;
+  // information shown on a deal card
+  repeated InStoreDeal deals = 3;
+}
+
+// Request for GetInStoreDealsByStoreId
+message GetInStoreDealsByStoreIdRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // cx latitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue lat = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx longitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue long = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx submarket, based on selected address. Provided by client
+  google.protobuf.StringValue submarket_id = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // store id. For checking if store is participating in any store level deals
+  google.protobuf.StringValue store_id = 5;
+  // business id. For checking if store is participating in business level deals
+  google.protobuf.StringValue business_id = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Response for GetInStoreDealsByStoreId
+message GetInStoreDealsByStoreIdResponse {
+  // List of deals available at the store
+  repeated InStoreDeal deals = 1;
+}
+
+// Request for GetNavigationToStoreByStoreIds
+message GetNavigationToStoreByStoreIdsRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // cx latitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue lat = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // cx longitude, based on selected address. Provided by client
+  google.protobuf.DoubleValue long = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // store ids
+  repeated string store_ids = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for GetNavigationToStoreByStoreIds
+message GetNavigationToStoreByStoreIdsResponse {
+  Business business = 1;
+  // details to help the cx navigate to the store
+  repeated Store stores = 2;
+}
+
+message GetVisualAislesRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // business id
+  google.protobuf.StringValue business_id = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+message GetVisualAislesResponse {
+  google.protobuf.StringValue business_name = 1;
+  google.protobuf.StringValue business_id = 2;
+  google.protobuf.StringValue store_id = 3;
+  repeated VisualAisle aisles = 4;
+}
+
+message VisualAisle {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue cover_image_url = 2;
+  google.protobuf.StringValue aisle_uuid = 3;
+  repeated google.protobuf.StringValue aisle_l1_category_ids = 4;
+  repeated ImageData image_metadata = 5;
+  google.protobuf.StringValue cover_image_uuid = 6;
+}
+
+message ImageData {
+  google.protobuf.StringValue image_uuid = 1;
+  google.protobuf.StringValue image_url = 2;
+  google.protobuf.DoubleValue image_width = 3;
+  google.protobuf.DoubleValue image_height = 4;
+  repeated ItemAnnotation item_annotations = 5;
+  repeated Badge badges = 6;
+}
+
+message ItemAnnotation {
+  google.protobuf.DoubleValue annotation_x = 1;
+  google.protobuf.DoubleValue annotation_y = 2;
+  google.protobuf.StringValue item_name = 3;
+  repeated google.protobuf.StringValue l1_category_ids = 4;
+  repeated google.protobuf.StringValue l2_category_ids = 5;
+  repeated google.protobuf.StringValue item_msids = 6;
+}
+
+message GetVisualAislesItemDetailsRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // [TO BE DEPRECATED] use item msids instead
+  google.protobuf.StringValue item_msid = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // item msids
+  repeated google.protobuf.StringValue item_msids = 4;
+  // cx address id for as consumer geo_address_id for inflation A/B experiment
+  google.protobuf.StringValue cx_geo_address_id = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.address_id",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_address_id",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+}
+
+message GetVisualAislesItemDetailsResponse {
+  repeated FacetV2 lego_section_body = 1;
+}
+
+message File {
+  bytes content = 1;
+  string filename = 2;
+}
+
+enum VisualAislesInternalFileType {
+  VISUAL_AISLES_INTERNAL_FILE_TYPE_UNSPECIFIED = 0;
+  VISUAL_AISLES_INTERNAL_FILE_TYPE_IMAGE = 1;
+  VISUAL_AISLES_INTERNAL_FILE_TYPE_JSON = 2;
+}
+
+enum VisualAislesFolderType {
+  VISUAL_AISLES_FOLDER_TYPE_UNSPECIFIED = 0;
+  VISUAL_AISLES_FOLDER_TYPE_RAW = 1;
+  VISUAL_AISLES_FOLDER_TYPE_ANNOTATED = 2;
+  VISUAL_AISLES_FOLDER_TYPE_IMAGE_METADATA = 3;
+  VISUAL_AISLES_FOLDER_TYPE_CAROUSEL = 4;
+}
+
+message UploadVisualAislesFilesRequest {
+  int64 business_id = 1;
+  google.protobuf.Int64Value store_id = 2;
+  repeated File files = 3;
+  VisualAislesInternalFileType file_type = 4;
+  VisualAislesFolderType folder_type = 5;
+}
+
+message UploadVisualAislesFilesResponse {}
+
+enum VisualAislesImageMetadataType {
+  VISUAL_AISLES_IMAGE_METADATA_TYPE_UNSPECIFIED = 0;
+  VISUAL_AISLES_IMAGE_METADATA_TYPE_RAW = 1;
+  VISUAL_AISLES_IMAGE_METADATA_TYPE_ANNOTATED = 2;
+}
+
+message VisualAislesItemAnnotation {
+  double annotation_x = 1;
+  double annotation_y = 2;
+  string item_name = 3;
+  repeated string l1_category_ids = 4;
+  repeated string l2_category_ids = 5;
+  repeated string item_msids = 6;
+}
+
+message VisualAislesImageMetadataInternal {
+  // used for deprecated field numbers
+  reserved 9, 11, 12;
+  // used for deprecated field names
+  reserved "timestamp_string_override", "image_content_type", "jets_image_data";
+  string image_uuid = 1;
+  string image_url = 2;
+  double image_width = 3;
+  double image_height = 4;
+  VisualAislesImageMetadataType metadata_type = 5;
+  repeated VisualAislesItemAnnotation item_annotations = 6;
+  int64 timestamp = 7;
+  repeated Badge badges = 8;
+  google.protobuf.Int64Value timestamp_override = 10;
+  VisualAislesContentType visual_aisles_content_type = 13;
+  LightweightJetsImageData lightweight_jets_image_data = 14;
+}
+
+message TimeInterval {
+  // start time
+  google.protobuf.Int64Value start = 1;
+  // end time
+  google.protobuf.Int64Value end = 2;
+}
+
+message GetVisualAislesMetadataRequest {
+  int64 business_id = 1;
+  google.protobuf.Int64Value store_id = 2;
+  // folder filter
+  repeated VisualAislesImageMetadataType metadata_types = 3 [(doordash.api.client.optional) = true];
+  // image uuids
+  repeated google.protobuf.StringValue image_uuids = 4 [(doordash.api.client.optional) = true];
+  // Time Interval given in ms since January 1, 1970, 00:00:00 GMT
+  TimeInterval time_interval = 5 [(doordash.api.client.optional) = true];
+}
+
+message GetVisualAislesMetadataResponse {
+  repeated VisualAislesImageMetadataInternal image_metadata = 1;
+}
+
+message GetVisualAislesCarouselsRequest {
+  int64 business_id = 1;
+  google.protobuf.Int64Value store_id = 2;
+}
+
+message GetVisualAislesCarouselsResponse {
+  google.protobuf.StringValue business_name = 1;
+  google.protobuf.StringValue business_id = 2;
+  google.protobuf.StringValue store_id = 3;
+  repeated VisualAisle aisles = 4;
+}
+
+// Request for GetStoreListByBusiness
+message GetStoreListByBusinessRequest {
+  reserved 1;
+  reserved "business_id";
+  // cx latitude, based on selected address. Provided by UG injection
+  double lat = 2 [(doordash.api.inject) = {
+    field: "cx_geo_lat",
+    injection_rule: {cast_type: "double"}
+  }];
+  // cx longitude, based on selected address. Provided by UG field injection
+  double lng = 3 [(doordash.api.inject) = {
+    field: "cx_geo_lng",
+    injection_rule: {cast_type: "double"}
+  }];
+  // cx longitude, based on selected address. Provided by UG field injection
+  int64 district_id = 4 [(doordash.api.inject) = {
+    field: "cx_geo_district_id",
+    injection_rule: {cast_type: "int64"}
+  }];
+  // optional param in case of a user-customizable pickup radius
+  google.protobuf.Int32Value search_radius = 5 [(doordash.api.client.optional) = true];
+  // cx submarket id, based on selected address. Provided by UG field injection
+  int64 submarket_id = 6 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "int64"}
+  }];
+  // consumer id, provided by UG field injection.
+  google.protobuf.StringValue consumer_id = 7 [(doordash.api.inject_id) = CX_ID];
+  // time zone, based on selected address. Provided by UG field injection
+  google.protobuf.StringValue time_zone = 8 [(doordash.api.inject) = {field: "cx_geo_time_zone"}];
+  // store id of currently selected store
+  google.protobuf.StringValue store_id = 9 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for GetStoreListByBusiness
+message GetStoreListByBusinessResponse {
+  repeated RetailStoreOptionV2 store_list = 2;
+  reserved 1;
+  reserved "stores";
+}
+
+message GetFeedGiftCardItemRequest {
+  // item id of the item
+  google.protobuf.StringValue item_id = 1;
+  // Store id of the item in the request
+  google.protobuf.StringValue store_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+message GetFeedGiftCardItemResponse {
+  // GiftCardItem
+  GiftCardItem gift_card_item = 1;
+}
+
+message GetPrescriptionDeliveryLandingPageRequest {
+  // consumer id
+  string consumer_id = 1 [
+    (doordash.api.inject_id) = CX_ID,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+
+  double consumer_lat = 3 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "91" // let BE handle the default value
+      },
+    }
+  ];
+  double consumer_lng = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "181" // let BE handle the default value
+      },
+    }
+  ];
+  string business_name = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  reserved 2;
+  reserved "business_id";
+}
+
+message GetPrescriptionDeliveryLandingPageResponse {
+  message SubSection {
+    // title of the subsection
+    string title = 1;
+    // list of bullets for the subsection
+    repeated string bullets = 2;
+  }
+
+  message FeesSection {
+    // title of the fees section
+    string title = 1;
+    // list of subsections for the fees section
+    repeated SubSection sub_sections = 2;
+  }
+
+  message PrivacySection {
+    // title of the privacy section
+    string title = 1;
+    // body of the privacy section
+    string body = 2;
+  }
+
+  message FeesAndPrivacyModal {
+    // title of the modal
+    string title = 1;
+    // fees section
+    FeesSection fees_section = 2;
+    // privacy section
+    PrivacySection privacy_section = 3;
+  }
+
+  message InstructionsBullet {
+    // leading icon for the bullet
+    string leading_icon = 1;
+    // first line of the bullet
+    string line_1 = 2;
+    // second line of the bullet
+    string line_2 = 3;
+  }
+
+  string header_image_url = 1;
+  string title = 2;
+  string subtitle = 3;
+  money.MonetaryFields delivery_fee = 5;
+  money.MonetaryFields discounted_delivery_fee = 6;
+  bool has_dashpass = 7;
+  // terms and conditions text is not needed by iOS client
+  google.protobuf.StringValue terms_and_conditions_text = 9;
+  string terms_and_conditions_url = 10;
+  string cta_button_text = 11;
+  repeated InstructionsBullet instructions_bullet_list = 12;
+  FeesAndPrivacyModal fees_and_privacy_disclosure_modal = 13;
+  string business_id = 14;
+  google.protobuf.StringValue reduced_fees_caption_for_guest = 15;
+
+  reserved 4, 8;
+  reserved "reduced_fees_caption", "fees_and_privacy_modal";
+}
+
+message GetNearbyPharmacyStoresRequest {
+  // consumer id
+  string consumer_id = 1 [
+    (doordash.api.inject_id) = CX_ID,
+    (doordash.api.validate.rules).missing_value = {action: FAIL}
+  ];
+  // business id
+  string business_id = 2; // no validation rule needed since it's a path param
+  double consumer_lat = 3 [
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"},
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ],
+        default_value: "91" // let BE handle the default value
+      }
+    }
+  ];
+  double consumer_lng = 4 [
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"},
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ],
+        default_value: "181" // let BE handle the default value
+      }
+    }
+  ];
+}
+
+message GetNearbyPharmacyStoresResponse {
+  message PharmacyStoreAddress {
+    google.protobuf.StringValue address_line_1 = 1;
+    google.protobuf.StringValue address_line_2 = 2;
+  }
+  message PharmacyStore {
+    string id = 1;
+    PharmacyStoreAddress address = 2;
+    string distance = 3;
+    string cover_square_img_url = 4;
+    string retail_store_id = 5;
+    google.protobuf.StringValue retail_store_redirect_url = 6;
+    google.protobuf.StringValue retail_store_name = 7;
+    // the maximum copay the pharmacy store can accept
+    money.MonetaryFields max_copay = 8;
+  }
+  message Currency {
+    string symbol_icon = 1;
+    string code = 2;
+    string symbol = 3;
+  }
+  repeated PharmacyStore stores = 1;
+  Currency currency = 2;
+}
+
+message GetAggregateStoresRequest {
+  reserved 4, 5, 6, 7;
+  reserved "lat", "lng", "submarket_id", "district_id";
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.StringValue platform = 3 [(doordash.api.inject_from_headers) = {
+    field: "platform",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  google.protobuf.StringValue time_zone = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.timezone",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {field: "cx_geo_time_zone"}
+  ];
+  double cx_lat = 9 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {cast_type: "double"},
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  double cx_lng = 10 [
+    (doordash.api.validate.rules).missing_value = {action: FAIL},
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {cast_type: "double"},
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+  int64 cx_submarket_id = 11 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  int64 cx_district_id = 12 [
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {cast_type: "int64"},
+    },
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    }
+  ];
+}
+
+message GetAggregateStoresResponse {
+  repeated google.protobuf.StringValue aggregate_store_ids = 1;
+}
+
+message GetSelectionDiscoveryLandingCollectionRequest {
+  reserved 18;
+  // consumer id
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // store id
+  string store_id = 2;
+  // collection id
+  string collection_id = 3;
+  // collection type
+  string collection_type = 4;
+  // Pagination
+  google.protobuf.Int32Value limit = 5;
+  // cursor
+  string cursor = 6;
+  // Location fields
+  int64 submarket_id = 7;
+  // district id
+  int64 district_id = 8;
+  // latitude
+  double lat = 9;
+  // longitude
+  double lng = 10;
+  // country shortname
+  string country_shortname = 11;
+  // administrative area level 1
+  string administrative_area_level1 = 12;
+  // cx geo address id
+  string cx_geo_address_id = 13;
+  // Collection Specific
+  CollectionPageView collection_page_view = 17;
+  // aggregate store ids
+  repeated string aggregate_store_ids = 19;
+  // Filtering keys
+  repeated string filter_keys = 20;
+  // filters
+  repeated Filter filters = 21;
+  // sort bys
+  repeated string sort_bys = 22;
+  // show explore items
+  google.protobuf.BoolValue show_explore_items = 23;
+  // show categories
+  google.protobuf.BoolValue show_categories = 24;
+  // attr src
+  google.protobuf.StringValue attr_src = 25;
+  // search query
+  google.protobuf.StringValue search_query = 26;
+}
+
+message GetSelectionDiscoveryLandingCollectionResponse {
+  // collection data
+  RetailGeneralizedCollection collection_data = 1;
+  // Loyalty info for ATC bottom sheet.
+  LoyaltyDetails loyalty_details = 2;
+  // lego section body
+  repeated FacetV2 lego_section_body = 3;
+  // l1 navigations
+  repeated RetailL1Navigation l1_navigations = 4;
+  // store header dm
+  RetailStoreHeaderDM store_header_dm = 5;
+  // lego category results body
+  repeated FacetV2 lego_category_results_body = 6;
+  // lego body for insertions
+  repeated LegoInsertionContent lego_insertion_map = 7;
+}

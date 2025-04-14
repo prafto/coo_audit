@@ -1,0 +1,230 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+message VerifyDeveloperTokenRequest {
+  string content = 1;
+}
+
+message VerifyDeveloperTokenResponse {
+  reserved 2;
+  reserved "business_uuid";
+  string developer_uuid = 1;
+  string scope_role = 3;
+  bool is_test = 4;
+  repeated string scope_rules = 5;
+}
+
+// Block for handling errors
+enum VerifyDeveloperTokenErrorCode {
+  // Any unhandled errors
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_UNKNOWN_ERROR_UNSPECIFIED = 0;
+  // if the specified JWT was incorrectly constructed (and therefore invalid).
+  //JWT should not be trusted and should be discarded.
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_MALFORMED_TOKEN = 1;
+  // if the specified JWT is a Claims JWT and the Claims has an
+  // expiration time before the time this method is invoked.
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_EXPIRED_TOKEN = 2;
+  // if a JWS signature was discovered, but could not be verified.
+  //JWTs that fail signature validation should not be trusted and should be discarded.
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_SIGNATURE_ERROR = 3;
+  // jwt is null, empty or whitespaces
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_ILLEGAL_ARGUMENT = 4;
+  // jwt missing iss
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_MISSING_ISS = 5;
+  // jwt missing kid
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_MISSING_KID = 6;
+  // jwt missing iat
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_MISSING_IAT = 7;
+  // jwt missing exp
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_MISSING_EXP = 8;
+  // invalid dd-ver for header
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_INVALID_HEADER_DD_VER = 9;
+  // invalid header typ
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_INVALID_HEADER_TYP = 10;
+  // invalid header alg
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_INVALID_HEADER_ALG = 11;
+  // invalid header aud
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_INVALID_HEADER_AUD = 12;
+  // ttl too large
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_TTL_TOO_LARGE = 13;
+  // given developerId doesn't match developerId associated with key
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_KEY_ID_DEVELOPER_ID_MISMATCH = 14;
+  // key disabled
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_KEY_DISABLED = 15;
+  // iat is in the future
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_IAT_IN_FUTURE = 16;
+  // key with kid not found
+  VERIFY_DEVELOPER_TOKEN_ERROR_CODE_KEY_NOT_FOUND = 17;
+}
+
+message GenerateDeveloperKeyRequest {
+  string developer_uuid = 1;
+  string key_name = 2;
+  bool is_test = 3;
+  string scope_rule = 4 [deprecated = true];
+  int64 user_id = 5;
+  repeated string scope_rules = 6;
+}
+
+message GenerateDeveloperKeyResponse {
+  reserved 1, 2, 3;
+  reserved "developer_uuid", "key_uuid", "base64_url_encoded_secret";
+  DeveloperApiKey developer_api_key = 4;
+}
+
+message ExpireDeveloperKeyRequest {
+  string developer_uuid = 1;
+  string key_uuid = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  int64 user_id = 4;
+}
+
+message ExpireDeveloperKeyResponse {}
+
+message EnableDeveloperKeyRequest {
+  string developer_uuid = 1;
+  string key_uuid = 2;
+  int64 user_id = 3;
+}
+
+message EnableDeveloperKeyResponse {}
+
+message DisableDeveloperKeyRequest {
+  string developer_uuid = 1;
+  string key_uuid = 2;
+  int64 user_id = 3;
+}
+
+message DisableDeveloperKeyResponse {}
+
+message GetKeysByDeveloperUuidRequest {
+  reserved 2;
+  reserved "max_row_count";
+  string developer_uuid = 1;
+  int64 user_id = 3;
+}
+
+message GetKeysByDeveloperUuidResponse {
+  repeated DeveloperApiKey developer_api_key = 1;
+}
+
+message DeveloperApiKey {
+  string key_uuid = 1;
+  string developer_uuid = 2;
+  bool enabled = 3;
+  google.protobuf.Timestamp valid_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool is_test = 6;
+  string key_name = 7;
+  string base64_url_encoded_secret = 8;
+  string scope_rule = 9 [deprecated = true];
+  repeated string scope_rules = 10;
+}
+
+/*
+ * Authentication service for external developer API requests
+ */
+service DeveloperApiAuthenticationService {
+  /*
+   * Validates external developer (JWT) token.
+   *
+   *
+   * In case of errors it can returns:
+   *
+   * * 401 for invalid token
+   * * 500 for any internal server errors
+   */
+  rpc VerifyDeveloperToken(VerifyDeveloperTokenRequest) returns (VerifyDeveloperTokenResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /*
+   * Generates a fresh developer key with no expiration.
+   */
+  rpc GenerateDeveloperKey(GenerateDeveloperKeyRequest) returns (GenerateDeveloperKeyResponse);
+
+  /*
+   * Expires existing developer key.
+   */
+  rpc ExpireDeveloperKey(ExpireDeveloperKeyRequest) returns (ExpireDeveloperKeyResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Enables existing developer key.
+   */
+  rpc EnableDeveloperKey(EnableDeveloperKeyRequest) returns (EnableDeveloperKeyResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Disables existing developer key.
+   */
+  rpc DisableDeveloperKey(DisableDeveloperKeyRequest) returns (DisableDeveloperKeyResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Gets existing DeveloperApiKeys by DeveloperUuid.
+   */
+  rpc GetKeysByDeveloperUuid(GetKeysByDeveloperUuidRequest) returns (GetKeysByDeveloperUuidResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+}

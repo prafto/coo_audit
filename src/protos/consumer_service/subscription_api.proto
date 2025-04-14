@@ -1,0 +1,3077 @@
+syntax = "proto3";
+
+package doordash_consumer_service.subscription;
+
+import "common/bundle_order_info.proto";
+import "common/common.proto";
+import "common/date.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "common/subscription.proto";
+import "common/time.proto";
+import "consumer_service/common.proto";
+import "consumer_service/consumer_plan.proto";
+import "consumer_service/gift_api.proto";
+import "consumer_service/subscription.proto";
+import "consumer_service/subscription_common.proto";
+import "consumer_service/subscription_plan.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+import "payment/common.proto";
+import "promotion/campaign.proto";
+import "promotion/common.proto";
+import "promotion/placement.proto";
+import "promotion/service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_service.subscription";
+
+service SubscriptionService {
+  option (doordash.api.service) = {
+    name: "consumer-service-subscription-grpc"
+    url: "consumer-service-subscription-grpc.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["subscriptions"] /* an area of the project, will be a part of URL */
+    api_key_name: "UG_SUBSCRIPTIONS_SERVICE_API_KEY"
+    owner: {
+      name: "subscription-service"
+      id: "subscription-service"
+      slack_channel: "#eng-dashpass"
+      email_alias: "eng-dashpass@doordash.com"
+    }
+    target_products: [CX]
+    vertical_domains: [CX]
+  };
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/ */
+  rpc GetEligiblePlans(GetEligiblePlansRequest) returns (GetEligiblePlansResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 800;
+  }
+
+  /* This endpoint is a version of GetEligiblePlans that returns only one eligible plan */
+  rpc GetBestEligiblePlan(GetBestEligiblePlanRequest) returns (GetBestEligiblePlanResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/partner_card_infos/ */
+  rpc GetPartnerCardInfoByPlan(GetPartnerCardInfoByPlanRequest) returns (GetPartnerCardInfoByPlanResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+
+  /* This  API is used for order workflow. The API is intentionally lightweight */
+  rpc GetConsumerSubscriptionStatus(GetConsumerSubscriptionStatusRequest) returns (GetConsumerSubscriptionStatusResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/subscriptions/active/ */
+  rpc GetActiveSubscription(GetActiveSubscriptionRequest) returns (GetActiveSubscriptionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_active_subscription"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DD_USER
+      ]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* A mirror API for GetActiveSubscription, should be only used by THQ*/
+  rpc GetActiveSubscriptionAdmin(GetActiveSubscriptionAdminRequest) returns (GetActiveSubscriptionAdminResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (google.api.http) = {get: "/subscriptions/v1/{consumer_id}/get_active_subscription_admin"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* This endpoint is a simplified version of GetActiveSubscription */
+  rpc GetActiveSubscriptionStatus(GetActiveSubscriptionStatusRequest) returns (GetActiveSubscriptionStatusResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_active_subscription_status"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+  }
+
+  /* This endpoint is a simplified version of GetActiveSubscription that returns all active subscriptions */
+  rpc GetAllActiveSubscriptionStatuses(GetAllActiveSubscriptionStatusesRequest) returns (GetAllActiveSubscriptionStatusesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+  }
+
+  /* This endpoint provides more details specific to a dashpass plan - minimumSubtotal, deliveryFee, serviceRate */
+  rpc GetActiveSubscriptionDetails(GetActiveSubscriptionDetailsRequest) returns (GetActiveSubscriptionDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  /* This endpoint returns the cancellation survey UI flow for a user who wants to cancel */
+  rpc GetCancellationSurveyFlow(GetCancellationSurveyFlowRequest) returns (GetCancellationSurveyFlowResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 900;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_cancellation_survey_flow"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+
+  /* This endpoint returns the cancellation flow Mosaic page for a user who wants to cancel */
+  rpc GetCancellationFlowV2(GetCancellationFlowV2Request) returns (GetCancellationFlowV2Response) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 900;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_cancellation_flow_v2"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/<plan_id>/subscribe/ */
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 8500;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/subscriptions/<subscription_id>/unsubscribe/ but only for Cx's active subscription */
+  rpc UnsubscribeActiveSubscription(UnsubscribeActiveSubscriptionRequest) returns (UnsubscribeActiveSubscriptionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/unsubscribe"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 6
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* A mirror API for UnsubscribeActiveSubscription, should be only used by THQ*/
+  rpc UnsubscribeActiveSubscriptionAdmin(UnsubscribeActiveSubscriptionAdminRequest) returns (UnsubscribeActiveSubscriptionAdminResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/subscriptions/v1/{consumer_id}/unsubscribe_admin"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* Transition consumer's subscription from one plan to another */
+  rpc TransitionSubscription(TransitionSubscriptionRequest) returns (TransitionSubscriptionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  rpc GenerateRefundForSubscriptionInvoice(GenerateRefundForSubscriptionInvoiceRequest) returns (GenerateRefundForSubscriptionInvoiceResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/generate_refund_for_subscription_invoice"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DD_USER
+      ]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  rpc CancelSubscriptionUpgrade(CancelSubscriptionUpgradeRequest) returns (CancelSubscriptionUpgradeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/subscriptions/v1/{consumer_id}/cancel_subscription_upgrade"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DD_USER
+      ]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* This endpoint is called when Cx's wants to pause their subscription */
+  rpc PauseSubscription(PauseSubscriptionRequest) returns (PauseSubscriptionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/pause",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is called when Cx with paused subscription status wants to re-activate their subscription plan */
+  rpc UnpauseSubscription(UnpauseSubscriptionRequest) returns (UnpauseSubscriptionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/resume",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 6
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is DSJ equivalent of v1/subscriptions/<subscription_id>/update_payment_method/ but only for Cx's active subscription */
+  rpc UpdateActiveSubscriptionPaymentMethod(UpdateActiveSubscriptionPaymentMethodRequest) returns (UpdateActiveSubscriptionPaymentMethodResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+  }
+
+  /* This endpoint is DSJ equivalent of v1/subscriptions/<subscription_id>/resubscribe/ */
+  rpc Resubscribe(ResubscribeRequest) returns (ResubscribeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/resubscribe",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 6
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/subscriptions/<subscription_id>/unsubscribe_preview/  but only for Cx's active subscription*/
+  rpc UnsubscribeActiveSubscriptionPreview(UnsubscribeActiveSubscriptionPreviewRequest) returns (UnsubscribeActiveSubscriptionPreviewResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/subscriptions/<subscription_id>/history/ */
+  rpc GetSubscriptionHistory(GetSubscriptionHistoryRequest) returns (GetSubscriptionHistoryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/subscriptions/sync_payment_card/ */
+  rpc SyncPaymentCard(SyncPaymentCardRequest) returns (SyncPaymentCardResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 8000;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/<plan_id>/ */
+  rpc GetPlanDetails(GetPlanDetailsRequest) returns (GetPlanDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 800;
+  }
+
+  /* This endpoint is used by DashPass admin tool to get details of one particular plan */
+  rpc GetSubscriptionPlan(GetSubscriptionPlanRequest) returns (GetSubscriptionPlanResponse);
+
+  /* This endpoint is used by DashPass admin tool to get details of all the plans */
+  rpc GetAllSubscriptionPlans(GetAllSubscriptionPlansRequest) returns (GetAllSubscriptionPlansResponse);
+
+  /* This endpoint is used by DashPass admin tool to get details of one particular trial plan */
+  rpc GetSubscriptionTrialPlan(GetSubscriptionTrialPlanRequest) returns (GetSubscriptionTrialPlanResponse);
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/in_app_marketing_infos/ */
+  rpc GetMonthlyPotentialSavings(GetMonthlyPotentialSavingsRequest) returns (GetMonthlyPotentialSavingsResponse);
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/corporate/company/ */
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to add a new corporate company in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc AddCorporateCompany(AddCorporateCompanyRequest) returns (AddCorporateCompanyResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to update corporate company in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc UpdateCorporateCompany(UpdateCorporateCompanyRequest) returns (UpdateCorporateCompanyResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to delete corporate company in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc DeleteCorporateCompany(DeleteCorporateCompanyRequest) returns (DeleteCorporateCompanyResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/corporate/email_domain/ */
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to add corporate Email domain in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc AddCorporateEmailDomain(AddCorporateEmailDomainRequest) returns (AddCorporateEmailDomainResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/corporate/email_address/ */
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to add corporate Email address in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc AddCorporateEmailAddress(AddCorporateEmailAddressRequest) returns (AddCorporateEmailAddressResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 500;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/ */
+  /* Called by bulk service only for business ops purposes. */
+  /*
+     DEPRECATED: this endpoint is used to update corporate Email address in DDB table
+     but DDFB team has built a new flow to add corporate company. Underlying DDB table
+     is going to be deprecated soon and subscription team is no longer supporting this endpoint
+  */
+  rpc UpdateCorporateEmailAddress(UpdateCorporateEmailAddressRequest) returns (UpdateCorporateEmailAddressResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 500;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 6;
+  }
+
+  /* This endpoint is called from DSJ to trigger the subscription events to send to revenue subledger */
+  rpc HandleSubscriptionEvent(HandleSubscriptionEventRequest) returns (HandleSubscriptionEventResponse);
+
+  /* This endpoint is DSJ equivalent of /v1/promotion_service/dashpass_banner/ */
+  rpc GetDashpassBannerData(GetDashpassBannerDataRequest) returns (GetDashpassBannerDataResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  /* This endpoint is DSJ equivalent of /v1/consumer_subscription_plans/partner_plan_benefit_validation/  */
+  rpc GetPartnerPlanBenefitValidation(GetPartnerPlanBenefitValidationRequest) returns (GetPartnerPlanBenefitValidationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/partner_plan_benefit_validation"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+      owner: {
+        name: "subscription-partnerships-service"
+        id: "dashpass-partnerships-alerts"
+        slack_channel: "#ask-dashpass-partnership"
+        email_alias: "dashpass-partnership-eng@doordash.com"
+      }
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is used to retrieve DashPass ineligbility error messages for an order */
+  rpc GetDashpassSupportData(GetDashpassSupportDataRequest) returns (GetDashpassSupportDataResponse);
+
+  /* This endpoint is DSJ equivalent of subscriptions/partner_card_benefit_links/ */
+  rpc LinkPartnerCard(LinkPartnerCardRequest) returns (LinkPartnerCardResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 7000;
+  }
+
+  /* This endpoint is DSJ equivalent of subscriptions/partner_card_benefit_links/<card_id> */
+  rpc UnlinkPartnerCard(UnlinkPartnerCardRequest) returns (UnlinkPartnerCardResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  /* Equivalent to ConsumerSubscriptionProductChangeEventView in DSJ */
+  rpc HandleProductTrade(HandleProductTradeRequest) returns (HandleProductTradeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  /* This endpoint is called by RBC partner when multimatch is resolved */
+  rpc HandleReconciliation(HandleReconciliationRequest) returns (HandleReconciliationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  /* This endpoint is called for mosaic landing page */
+  rpc MosaicGetLandingPage(MosaicGetLandingPageRequest) returns (MosaicGetLandingPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_landing_page"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  /* This endpoint is called for the revamped landing page */
+  rpc GetLandingPage(GetLandingPageRequest) returns (GetLandingPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  /* This endpoint is called to grant the user a period of free dashpass */
+  rpc GrantFreeDashpass(GrantFreeDashpassRequest) returns (GrantFreeDashpassResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/grant_free_dashpass"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        DD_USER,
+        CX_USER
+      ]
+      target_products: [
+        INTERNAL,
+        CX
+      ]
+    };
+  }
+
+  /* A mirror API for GrantFreeDashpass, should only be used by THQ*/
+  rpc GrantFreeDashpassAdmin(GrantFreeDashpassAdminRequest) returns (GrantFreeDashpassAdminResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (google.api.http) = {
+      post: "/subscriptions/v1/{consumer_id}/grant_free_dashpass_admin"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* This endpoint is called to check if the user is eligible to be granted a period of free dashpass */
+  rpc CheckFreeDashpassEligibility(CheckFreeDashpassEligibilityRequest) returns (CheckFreeDashpassEligibilityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+    option (google.api.http) = {get: "/subscriptions/v1/{consumer_id}/check_free_dashpass_eligibility"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* This endpoint is called for DashPass placements */
+  rpc GetDashPassPlacements(GetDashPassPlacementsRequest) returns (GetDashPassPlacementsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/placements"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_geo_submarket_id"},
+        {field: "platform"}]
+    };
+  }
+
+  /* A mirrior API for CheckFreeDashpassEligibility, should only be used by THQ*/
+  rpc CheckFreeDashpassEligibilityAdmin(CheckFreeDashpassEligibilityAdminRequest) returns (CheckFreeDashpassEligibilityAdminResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+    option (google.api.http) = {get: "/subscriptions/v1/{consumer_id}/check_free_dashpass_eligibility_admin"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* This endpoint is called for DashPass Mosaic Dsl Testing Page */
+  rpc GetMosaicDslTestingPage(GetMosaicDslTestingPageRequest) returns (GetMosaicDslTestingPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/mosaic_dsl_testing_page"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  rpc GetPostOrderRefundUpsell(GetPostOrderRefundUpsellRequest) returns (GetPostOrderRefundUpsellResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  rpc GetUpsellDetails(GetUpsellDetailsRequest) returns (GetUpsellDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_upsell_details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+
+  rpc MosaicGetUpsellDetails(MosaicGetUpsellDetailsRequest) returns (MosaicGetUpsellDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  rpc GetDashPassSavings(GetDashPassSavingsRequest) returns (GetDashPassSavingsResponse);
+
+  rpc RecordPreviewOrderForACart(RecordPreviewOrderForACartRequest) returns (RecordPreviewOrderForACartResponse);
+
+  rpc GetSubscriptionPlanSubmarketIds(GetSubscriptionPlanSubmarketIdsRequest) returns (GetSubscriptionPlanSubmarketIdsResponse);
+
+  rpc GetSubscriptionPlanTrialSubmarketIds(GetSubscriptionPlanTrialSubmarketIdsRequest) returns (GetSubscriptionPlanTrialSubmarketIdsResponse);
+
+  rpc CreateSubscriptionPlanSubmarketLink(CreateSubscriptionPlanSubmarketLinkRequest) returns (CreateSubscriptionPlanSubmarketLinkResponse);
+
+  rpc CreateSubscriptionPlanTrialSubmarketLink(CreateSubscriptionPlanTrialSubmarketLinkRequest) returns (CreateSubscriptionPlanTrialSubmarketLinkResponse);
+
+  rpc CreateSubscriptionPlanCarouselLink(CreateSubscriptionPlanCarouselLinkRequest) returns (CreateSubscriptionPlanCarouselLinkResponse);
+
+  rpc DeleteSubscriptionPlanSubmarketLink(DeleteSubscriptionPlanSubmarketLinkRequest) returns (DeleteSubscriptionPlanSubmarketLinkResponse);
+
+  rpc DeleteSubscriptionPlanTrialSubmarketLink(DeleteSubscriptionPlanTrialSubmarketLinkRequest) returns (DeleteSubscriptionPlanTrialSubmarketLinkResponse);
+
+  rpc DeleteSubscriptionPlanCarouselLink(DeleteSubscriptionPlanCarouselLinkRequest) returns (DeleteSubscriptionPlanCarouselLinkResponse);
+
+  rpc CreateSubscriptionPlan(CreateSubscriptionPlanRequest) returns (CreateSubscriptionPlanResponse);
+
+  rpc CreateSubscriptionPlanTrial(CreateSubscriptionPlanTrialRequest) returns (CreateSubscriptionPlanTrialResponse);
+
+  rpc ActivateSubscriptionPlan(ActivateSubscriptionPlanRequest) returns (ActivateSubscriptionPlanResponse);
+
+  rpc DeactivateSubscriptionPlan(DeactivateSubscriptionPlanRequest) returns (DeactivateSubscriptionPlanResponse);
+
+  rpc ActivateSubscriptionTrialPlan(ActivateSubscriptionTrialPlanRequest) returns (ActivateSubscriptionTrialPlanResponse);
+
+  rpc DeactivateSubscriptionTrialPlan(DeactivateSubscriptionTrialPlanRequest) returns (DeactivateSubscriptionTrialPlanResponse);
+
+  rpc CreateSubscriptionPlanPromotionInfo(CreateSubscriptionPlanPromotionInfoRequest) returns (CreateSubscriptionPlanPromotionInfoResponse);
+
+  rpc UpdateConsumerVerification(UpdateConsumerVerificationRequest) returns (UpdateConsumerVerificationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3500;
+  }
+
+  rpc GetOrCreateConsumerVerification(GetOrCreateConsumerVerificationRequest) returns (GetOrCreateConsumerVerificationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3500;
+  }
+
+  rpc AddSubscriptionPlanPromotionInfoToPlan(AddSubscriptionPlanPromotionInfoToPlanRequest) returns (AddSubscriptionPlanPromotionInfoToPlanResponse);
+
+  rpc AddSubscriptionPlanPromotionInfoToPlanTrial(AddSubscriptionPlanPromotionInfoToPlanTrialRequest) returns (AddSubscriptionPlanPromotionInfoToPlanTrialResponse);
+
+  rpc CreatePromotionsFeaturedLocation(CreatePromotionsFeaturedLocationRequest) returns (CreatePromotionsFeaturedLocationResponse);
+
+  rpc AddPromotionsFeaturedLocationToPlan(AddPromotionsFeaturedLocationToPlanRequest) returns (AddPromotionsFeaturedLocationToPlanResponse);
+
+  rpc AddPromotionsFeaturedLocationToPlanTrial(AddPromotionsFeaturedLocationToPlanTrialRequest) returns (AddPromotionsFeaturedLocationToPlanTrialResponse);
+
+  rpc GetSubscriptionPlanPromotionInfosOfPlan(GetSubscriptionPlanPromotionInfosOfPlanRequest) returns (GetSubscriptionPlanPromotionInfosOfPlanResponse);
+
+  rpc GetSubscriptionPlanPromotionInfosOfPlanTrial(GetSubscriptionPlanPromotionInfosOfPlanTrialRequest) returns (GetSubscriptionPlanPromotionInfosOfPlanTrialResponse);
+
+  rpc GetPromotionsFeaturedLocationsOfPlan(GetPromotionsFeaturedLocationsOfPlanRequest) returns (GetPromotionsFeaturedLocationsOfPlanResponse);
+
+  rpc GetPromotionsFeaturedLocationsOfPlanTrial(GetPromotionsFeaturedLocationsOfPlanTrialRequest) returns (GetPromotionsFeaturedLocationsOfPlanTrialResponse);
+
+  rpc UpdateSubscriptionPlanPromotionInfo(UpdateSubscriptionPlanPromotionInfoRequest) returns (UpdateSubscriptionPlanPromotionInfoResponse);
+
+  rpc UpdatePromotionsFeaturedLocation(UpdatePromotionsFeaturedLocationRequest) returns (UpdatePromotionsFeaturedLocationResponse);
+
+  rpc UpdateSubscriptionTrialPromotionInfo(UpdateSubscriptionTrialPromotionInfoRequest) returns (UpdateSubscriptionTrialPromotionInfoResponse);
+
+  rpc UpdateSubscriptionPlan(UpdateSubscriptionPlanRequest) returns (UpdateSubscriptionPlanResponse);
+
+  rpc UpdateSubscriptionTrialPlan(UpdateSubscriptionTrialPlanRequest) returns (UpdateSubscriptionTrialPlanResponse);
+
+  rpc GetMealPlanSelectionForConsumer(GetMealPlanSelectionForConsumerRequest) returns (GetMealPlanSelectionForConsumerResponse);
+
+  rpc AddMealForConsumer(AddMealForConsumerRequest) returns (AddMealForConsumerResponse);
+
+  rpc RemoveMealForConsumer(RemoveMealForConsumerRequest) returns (RemoveMealForConsumerResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+  }
+
+  rpc GetMealPlanLandingPage(GetMealPlanLandingPageRequest) returns (GetMealPlanLandingPageResponse);
+
+  rpc GetLifetimeDiscountStats(GetLifetimeDiscountStatsRequest) returns (GetLifetimeDiscountStatsResponse);
+
+  rpc GetDiscountStatsSinceStart(GetDiscountStatsSinceStartRequest) returns (GetDiscountStatsSinceStartResponse);
+
+  rpc DeleteSubscriptionPlanPromotionInfo(DeleteSubscriptionPlanPromotionInfoRequest) returns (DeleteSubscriptionPlanPromotionInfoResponse);
+
+  rpc RunScript(RunScriptRequest) returns (RunScriptResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 86400000; // 1 day in milliseconds.
+  }
+
+  /* This endpoint is called by the Pricing service to determine if a consumer is eligible for partner plan benefits */
+  rpc IsCardEligibleForPartnerPlanBasedOnPriorities(IsCardEligibleForPartnerPlanBasedOnPrioritiesRequest) returns (IsCardEligibleForPartnerPlanBasedOnPrioritiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 800; //
+  }
+
+  rpc GetAllPreviousSubscriptionsOfConsumer(GetAllPreviousSubscriptionsOfConsumerRequest) returns (GetAllPreviousSubscriptionsOfConsumerResponse) {
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_all_previous_subscriptions_of_consumer"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DD_USER
+      ]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* A mirror API for GetAllPreviousSubscriptionsOfConsumer, should be only used by THQ*/
+  rpc GetAllPreviousSubscriptionsOfConsumerAdmin(GetAllPreviousSubscriptionsOfConsumerAdminRequest) returns (GetAllPreviousSubscriptionsOfConsumerAdminResponse) {
+    option (google.api.http) = {get: "/subscriptions/v1/{consumer_id}/get_all_previous_subscriptions_of_consumer_admin"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  rpc GetPlanBenefitsOverride(GetPlanBenefitsOverrideRequest) returns (GetPlanBenefitsOverrideResponse);
+
+  rpc UpdatePlanBenefitOverride(UpdatePlanBenefitOverrideRequest) returns (UpdatePlanBenefitOverrideResponse);
+
+  rpc GetDefaultPlanBenefits(GetDefaultPlanBenefitsRequest) returns (GetDefaultPlanBenefitsResponse);
+
+  rpc SendGift(SendGiftRequest) returns (SendGiftResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 20000;
+  }
+
+  rpc RedeemCode(RedeemCodeRequest) returns (RedeemCodeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  rpc GetDashPassCampaigns(GetDashPassCampaignsRequest) returns (GetDashPassCampaignsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+  }
+
+  /* This endpoint returns all gifts created by a consumer */
+  rpc GetGiftsForConsumer(GetGiftsForConsumerRequest) returns (GetGiftsForConsumerResponse);
+  /* This endpoint refunds a gifted delivery by id */
+  rpc RefundGift(RefundGiftRequest) returns (RefundGiftResponse);
+  /* This endpoint resends a gifted delivery by id */
+  rpc ResendGiftEmail(ResendGiftEmailRequest) returns (ResendGiftEmailResponse);
+
+  rpc GetManageSharedDashpassMembershipPage(GetManageSharedDashpassMembershipPageRequest) returns (GetManageSharedDashpassMembershipPageResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc AcceptSharedDashpassMembership(AcceptSharedDashpassMembershipRequest) returns (AcceptSharedDashpassMembershipResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 4500;
+  }
+
+  rpc InvalidateSharedDashpassMembership(InvalidateSharedDashpassMembershipRequest) returns (InvalidateSharedDashpassMembershipResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 4500;
+  }
+
+  /* For internal use only -- not for use by frontend clients! Used by DDFW when converting from personal dashpass. */
+  /* This API will destroy ALL membership sharing links for a given consumer id, whether sender or receiver. */
+  rpc InvalidateAllSharedDashpassMemberships(InvalidateAllSharedDashpassMembershipsRequest) returns (InvalidateAllSharedDashpassMembershipsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 4500;
+  }
+
+  rpc ProcessRedeemCodeAction(ProcessRedeemCodeActionRequest) returns (ProcessRedeemCodeActionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  /* This endpoint is called by Iterable Webhook to determine whether a user is eligible for free trial of given plans*/
+  rpc IsUserEligibleForTrial(IsUserEligibleForTrialRequest) returns (IsUserEligibleForTrialResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  /* This endpoint is called by Iterable Webhook to determine whether a user is eligible for a given plan*/
+  rpc IsUserEligibleForPlan(IsUserEligibleForPlanRequest) returns (IsUserEligibleForPlanResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  /* This endpoint will set a custom action during the dashpass cancellation flow (e.g. send reminder email) */
+  rpc SetActionDuringCancellationFlow(SetActionDuringCancellationFlowRequest) returns (SetActionDuringCancellationFlowResponse) {
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/set_action_during_cancellation_flow"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  rpc GetBenefitsSummary(GetBenefitsSummaryRequest) returns (GetBenefitsSummaryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  /*this endpoint should be only used by THQ*/
+  rpc SubscribeWithFreeDays(SubscribeWithFreeDaysRequest) returns (SubscribeWithFreeDaysResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5500;
+    option (google.api.http) = {
+      post: "/subscriptions/v1/{consumer_id}/subscribe_with_free_days"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+    };
+  }
+
+  /* this endpoint is called for the mosaic benefit info page */
+  rpc GetBenefitInfo(GetBenefitInfoRequest) returns (GetBenefitInfoResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/cx/subscriptions/v1/get_benefit_info"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+  }
+
+  rpc GetBenefitsEligibility(GetBenefitsEligibilityRequest) returns (GetBenefitsEligibilityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  /*
+     this endpoint is used by App to upgrade DashPass to an different plan
+     common use case is upgrading from monthly DashPass to the annual DashPass
+  */
+  rpc Upgrade(UpgradeRequest) returns (UpgradeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 15000;
+    option (google.api.http) = {
+      post: "/cx/subscriptions/v1/upgrade"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 12000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 10
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+}
+
+message GetEligiblePlansRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue submarket_id = 2;
+  PlanFilterOption plan_filter_option = 3;
+  MarketingContext marketing_context = 4;
+  SubscriptionPlanType subscription_type = 5;
+}
+
+message GetEligiblePlansResponse {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue submarket_id = 2;
+  repeated SubscriptionPlan subscription_plans = 3;
+  MarketingInfo marketing_info = 4;
+  common.UIFlowScreen marketing_preview = 5;
+}
+
+message SubscriptionPlanUpsellOptions {
+  common.FulfillmentType fulfillment_type = 1;
+}
+
+message GetBestEligiblePlanRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+  common.StoreLocation store_location = 3;
+  google.protobuf.Int32Value business_vertical_id = 4;
+  StoreInfo store_info = 5;
+  money.UpsellOptions upsell_options = 6;
+  SubscriptionPlanUpsellOptions subscription_plan_upsell_options = 7;
+}
+
+message GetBestEligiblePlanResponse {
+  SubscriptionPlan subscription_plan = 1;
+}
+
+message MarketingContext {
+  // screen from which Cx opens DashPass landing page
+  google.protobuf.StringValue entrypoint = 1;
+  google.protobuf.StringValue redeem_code = 2;
+}
+
+message PlanFilterOption {
+  google.protobuf.BoolValue should_allow_multiple_plans = 1;
+  google.protobuf.BoolValue should_allow_annual_plans = 2;
+  google.protobuf.BoolValue should_allow_partner_plans = 3; // To confirm with client if this can be deprecated
+}
+
+message GetPartnerCardInfoByPlanRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+}
+
+message GetPartnerCardInfoByPlanResponse {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+  google.protobuf.StringValue legacy_stripe_id = 3;
+  google.protobuf.StringValue payment_method_id = 4;
+  google.protobuf.StringValue fingerprint = 5;
+  google.protobuf.StringValue last4 = 6;
+  google.protobuf.StringValue dynamic_last4 = 7;
+  google.protobuf.StringValue exp_year = 8;
+  google.protobuf.StringValue exp_month = 9;
+  google.protobuf.StringValue card_type = 10; // i.e., Visa, Mastercard, Amex, etc.
+  MembershipLinkStatus membership_link_status = 11;
+  CardMembershipInfo membership_info = 12;
+}
+
+message CardMembershipInfo {
+  google.protobuf.StringValue display_code = 1;
+  google.protobuf.StringValue display_last4 = 2;
+  PartnerName partner_name = 3;
+}
+
+message GetConsumerSubscriptionStatusRequest {
+  SubscriberIdentifier identifier = 1; // The status is considered across all experiences
+  common.ConsumerLocation consumer_location = 2;
+  common.StoreLocation store_location = 3;
+  google.protobuf.Int32Value business_vertical_id = 4;
+  repeated StoreInfo store_info = 5;
+  repeated google.protobuf.StringValue menu_item_ids = 6;
+  google.protobuf.Timestamp scheduled_delivery_time = 7;
+  SubscriptionPlanType subscription_type = 8;
+}
+
+message GetConsumerSubscriptionStatusResponse {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.BoolValue is_eligible_for_benefits = 2;
+  google.protobuf.StringValue subscription_id = 3; //used for order_cart backward compatibility
+  google.protobuf.StringValue internal_subscription_status = 4; //used for order_cart backward compatibility
+  ProfileSubscriptionPlan profile_subscription_plan = 5;
+}
+
+message GetActiveSubscriptionRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+  StoreInfo store_info = 3;
+  google.protobuf.BoolValue is_dispatcher = 4;
+  SubscriptionPlanType subscription_type = 5;
+}
+
+message GetActiveSubscriptionResponse {
+  ConsumerSubscription consumer_subscription = 1;
+}
+
+message GetActiveSubscriptionAdminRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+  StoreInfo store_info = 3;
+  google.protobuf.BoolValue is_dispatcher = 4;
+  SubscriptionPlanType subscription_type = 5;
+  AdminMeta admin_meta = 6;
+}
+
+message GetActiveSubscriptionAdminResponse {
+  ConsumerSubscription consumer_subscription = 1;
+}
+
+message GetActiveSubscriptionStatusRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  SubscriptionPlanType subscription_type = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // The subscription Id to be used if there's no active subscription associated with the given customer id.
+  // For secondary owner of the house hold sharing, there's no active subscription information.
+  // If there's no active subscription associated with the given customer id, we will use this subscription id
+  // to get the subscription status as optional.
+  google.protobuf.StringValue associated_subscription_id = 3;
+}
+
+message GetActiveSubscriptionStatusResponse {
+  google.protobuf.BoolValue is_eligible_for_benefits = 1;
+  SubscriptionStatus subscription_status = 2;
+  google.protobuf.StringValue plan_id = 3;
+  google.protobuf.StringValue consumer_subscription_id = 4;
+  // Metadata related to the subscription that isn't shared between plans
+  oneof metadata {
+    // Additional information about the subscription for meal plans
+    MealPlanStatusMetadata meal_plan_metadata = 5;
+  }
+
+  // the start time of this subscription
+  google.protobuf.Timestamp start_time = 6;
+
+  // if subscription is trial-on-hold, subscription has elected_time but start_time would be NULL
+  google.protobuf.Timestamp elected_time = 7;
+
+  google.protobuf.StringValue currency = 8;
+
+  // True if requested account is a secondary of shared membership.
+  google.protobuf.BoolValue is_secondary_account = 9;
+
+  // The customer id of the primary owner.
+  google.protobuf.StringValue primary_owner_customer_id = 10;
+
+  // The subscription end time.
+  google.protobuf.Timestamp end_time = 11;
+
+  // deprecated is_pauseable, this check is heavy, ~200ms
+  reserved 12;
+  reserved "is_pauseable";
+
+  /**
+   * Indicates when the current subscription plan started.
+   * - If subscription was upgraded from a monthly plan to an annual plan, `current_plan_start_time`
+   *   refers to the start of the annual billing cycle.
+   * - If no upgrade occurred, `current_plan_start_time` is equal to `start_time`.
+   * - In the future, a subscription can experience multiple plan periods, `current_plan_start_time` will
+   *   always refers to the start time of the current plan period
+   */
+  google.protobuf.Timestamp current_plan_start_time = 13;
+}
+
+message GetAllActiveSubscriptionStatusesRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetAllActiveSubscriptionStatusesResponse {
+  repeated ActiveSubscriptionStatus subscription_status = 1;
+}
+
+message ActiveSubscriptionStatus {
+  SubscriptionPlanType subscription_type = 1;
+  google.protobuf.BoolValue is_eligible_for_benefits = 2;
+  SubscriptionStatus subscription_status = 3;
+  google.protobuf.StringValue plan_id = 4;
+  google.protobuf.StringValue consumer_subscription_id = 5;
+  // Metadata related to the subscription that isn't shared between plans
+  oneof metadata {
+    // Additional information about the subscription for meal plans
+    MealPlanStatusMetadata meal_plan_metadata = 6;
+  }
+}
+
+message MealPlanStatusMetadata {
+  google.protobuf.Int32Value meals_remaining = 1;
+  google.protobuf.Timestamp expiration_time = 2;
+}
+
+message GetActiveSubscriptionDetailsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+  StoreInfo store_info = 3;
+}
+
+message GetActiveSubscriptionDetailsResponse {
+  google.protobuf.BoolValue is_eligible_for_benefits = 1;
+  SubscriptionStatus subscription_status = 2;
+  google.protobuf.StringValue plan_id = 3;
+  money.MonetaryFields minimum_subtotal = 4;
+  money.MonetaryFields delivery_fee = 5;
+  google.protobuf.FloatValue service_rate = 6;
+  repeated MinimumSubtotalTierInfo minimum_subtotal_tiers = 7;
+  google.protobuf.BoolValue is_new_subscriber = 8;
+  google.protobuf.Int32Value eligible_stores = 9;
+
+  // if this active subscription is upselled an upgrade plan, whehter eligilbe to use new upgrade flow
+  google.protobuf.BoolValue eligible_for_new_upgrade = 10;
+}
+
+message GetCancellationSurveyFlowRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetCancellationSurveyFlowResponse {
+  common.UIFlowScreen cancellation_survey_flow = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message GetCancellationFlowV2Request {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetCancellationFlowV2Response {
+  map<string, lego.response.v1.LegoPageResponse> pages = 1;
+}
+
+message SubscribeRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue consumer_subscription_plan_id = 2;
+  google.protobuf.StringValue consumer_subscription_plan_trial_id = 3;
+  google.protobuf.StringValue payment_method_type = 4;
+  google.protobuf.StringValue payment_method_id = 5;
+  google.protobuf.StringValue legacy_stripe_token = 6;
+  google.protobuf.StringValue legacy_stripe_id = 7;
+  google.protobuf.BoolValue consent_obtained = 8;
+  PlatformType platform_type = 9;
+  SubscribeContext subscribe_context = 10;
+  doordash.payment.common.CardData card_data = 11;
+  google.protobuf.StringValue redeem_code = 12;
+  google.protobuf.BoolValue from_transition = 13;
+}
+
+message SubscribeResponse {
+  ConsumerSubscription consumer_subscription = 1;
+  GenericCalloutInfo callout_info = 2;
+}
+
+message SubscribeContext {
+  RefundType refund_type = 1;
+  google.protobuf.StringValue order_cart_id = 2;
+  google.protobuf.StringValue order_uuid = 3;
+  google.protobuf.StringValue agent_id = 4; // confirm Andrew if this will be needed and for which feature, we use this agent_id
+  google.protobuf.BoolValue annual_upsell = 5; // confirm with Andrew if this is needed, can we use plan.is_annual_plan
+}
+
+message UnsubscribeActiveSubscriptionRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.BoolValue cancel_immediately = 2;
+  SubscriptionPlanType subscription_type = 3;
+  google.protobuf.BoolValue use_partial_refund = 4;
+  google.protobuf.BoolValue is_thq = 5;
+  google.protobuf.BoolValue suppress_cancellation_email = 6;
+}
+
+message UnsubscribeActiveSubscriptionResponse {
+  google.protobuf.StringValue consumer_subscription_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  GenericCalloutInfo callout_info = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.Int32Value days_remaining = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message AdminMeta {
+  google.protobuf.StringValue agent_user_id = 1;
+  google.protobuf.StringValue support_case_number = 2;
+}
+
+message UnsubscribeActiveSubscriptionAdminRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.BoolValue cancel_immediately = 2;
+  SubscriptionPlanType subscription_type = 3;
+  google.protobuf.BoolValue use_partial_refund = 4;
+  google.protobuf.BoolValue is_thq = 5;
+  AdminMeta admin_meta = 6;
+}
+
+message UnsubscribeActiveSubscriptionAdminResponse {
+  google.protobuf.StringValue consumer_subscription_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  GenericCalloutInfo callout_info = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.Int32Value days_remaining = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message TransitionSubscriptionRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue plan_id = 2;
+  TransitionType transition_type = 3;
+}
+
+message TransitionSubscriptionResponse {}
+
+message GenerateRefundForSubscriptionInvoiceRequest {
+  google.protobuf.StringValue subscription_id = 1;
+  google.protobuf.StringValue subscription_invoice_id = 2;
+  google.protobuf.StringValue cart_payment_id = 3;
+  google.protobuf.Timestamp invoice_start_time = 4;
+  google.protobuf.Timestamp invoice_end_time = 5;
+  google.protobuf.Int64Value amount_refunded = 6;
+}
+
+message GenerateRefundForSubscriptionInvoiceResponse {
+  google.protobuf.StringValue consumer_subscription_id = 1;
+  google.protobuf.StringValue subscription_invoice_id = 2;
+  google.protobuf.BoolValue refund_successful = 3;
+}
+
+message CancelSubscriptionUpgradeRequest {
+  // id of the Cx
+  string consumer_id = 1;
+  // is request coming from THQ
+  google.protobuf.BoolValue is_thq = 2;
+}
+
+message CancelSubscriptionUpgradeResponse {
+  // id of the subscription being cancelled
+  google.protobuf.StringValue consumer_subscription_id = 1;
+  // upgrade invoice being cancelled
+  google.protobuf.StringValue subscription_invoice_id = 2;
+  // if the cancellation was successful
+  google.protobuf.BoolValue cancel_successful = 3;
+  // if the cancellation failed, the reason
+  google.protobuf.StringValue cancel_failed_reason = 4;
+}
+
+message PauseSubscriptionRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+}
+
+message PauseSubscriptionResponse {}
+
+message UnpauseSubscriptionRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.StringValue stripe_token = 2;
+  google.protobuf.StringValue stripe_id = 3;
+}
+
+message UnpauseSubscriptionResponse {
+  google.protobuf.StringValue id = 1;
+  GenericCalloutInfo generic_callout_info = 2;
+}
+
+message UpdateActiveSubscriptionPaymentMethodRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue payment_method_type = 2;
+  google.protobuf.StringValue payment_method_id = 3;
+  google.protobuf.StringValue legacy_stripe_token = 4;
+  google.protobuf.StringValue legacy_stripe_id = 5;
+  google.protobuf.BoolValue should_capture_invoice = 6;
+  doordash.payment.common.CardData card_data = 7;
+}
+
+message UpdateActiveSubscriptionPaymentMethodResponse {
+  GenericCalloutInfo generic_callout_info = 1;
+}
+
+message ResubscribeRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+}
+
+message ResubscribeResponse {
+  google.protobuf.StringValue id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  GenericCalloutInfo generic_callout_info = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message GetPlanDetailsRequest {
+  google.protobuf.StringValue consumer_subscription_plan_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message GetPlanDetailsResponse {
+  google.protobuf.StringValue consumer_id = 1; // assuming that adding consumer context to serializer means we should add this in response
+  SubscriptionPlan plan = 2;
+}
+
+message GetSubscriptionPlanRequest {
+  google.protobuf.StringValue plan_id = 1;
+}
+
+message GetSubscriptionPlanResponse {
+  SubscriptionPlan subscription_plan = 1;
+}
+
+message GetAllSubscriptionPlansRequest {}
+
+message GetAllSubscriptionPlansResponse {
+  repeated SubscriptionPlan subscription_plans = 1;
+}
+
+message GetSubscriptionTrialPlanRequest {
+  google.protobuf.StringValue trial_plan_id = 1;
+}
+
+message GetSubscriptionTrialPlanResponse {
+  SubscriptionTrialPlan subscription_trial_plan = 1;
+}
+
+message GetMonthlyPotentialSavingsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetMonthlyPotentialSavingsResponse {
+  money.MonetaryFields refund_amount_monetary_fields = 1;
+  google.protobuf.StringValue dashpass_landing_title = 2;
+  google.protobuf.StringValue dashpass_landing_subtitle = 3;
+}
+
+message UpdateSubscriptionPaymentMethodOptions {
+  google.protobuf.StringValue stripe_token = 1;
+  google.protobuf.StringValue stripe_id = 2;
+  google.protobuf.StringValue payment_method = 3;
+  google.protobuf.BoolValue capture_invoice = 4;
+}
+
+message SyncPaymentCardRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue card_stripe_id = 2;
+  google.protobuf.StringValue entry_point = 3;
+}
+
+message SyncPaymentCardResponse {}
+
+message UnsubscribeActiveSubscriptionPreviewRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message UnsubscribeActiveSubscriptionPreviewResponse {
+  google.protobuf.StringValue consumer_id = 1; // serializer extra context
+  UnsubscribePreviewCalloutInfo unsubscribe_preview_callout_info = 2;
+}
+
+message UnsubscribePreviewCalloutInfo {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.StringValue image_url = 3;
+  google.protobuf.StringValue footer_text = 4;
+  repeated PromotionInfo reasons_to_continue = 5;
+}
+
+message GetSubscriptionHistoryRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue consumer_subscription_id = 2;
+  google.protobuf.Int32Value limit = 3;
+  google.protobuf.Int32Value offset = 4;
+}
+
+message GetSubscriptionHistoryResponse {
+  google.protobuf.StringValue description = 1;
+  repeated BillingHistoryUnit units = 2;
+}
+
+message BillingHistoryUnit {
+  google.protobuf.StringValue title = 1;
+  repeated google.protobuf.StringValue multi_line_description = 2;
+  money.MonetaryFields amount = 3;
+}
+
+message AddCorporateCompanyRequest {
+  google.protobuf.StringValue company_name = 1;
+  google.protobuf.StringValue consumer_subscription_plan_id = 2;
+}
+
+message AddCorporateCompanyResponse {}
+
+message UpdateCorporateCompanyRequest {
+  google.protobuf.StringValue company_name = 1;
+  google.protobuf.BoolValue is_active = 2;
+  google.protobuf.BoolValue cancel_immediately = 3;
+}
+
+message UpdateCorporateCompanyResponse {}
+
+message DeleteCorporateCompanyRequest {
+  google.protobuf.StringValue company_name = 1;
+}
+
+message DeleteCorporateCompanyResponse {}
+
+message AddCorporateEmailDomainRequest {
+  google.protobuf.StringValue email_domain = 1;
+  google.protobuf.StringValue company_name = 2;
+}
+
+message AddCorporateEmailDomainResponse {}
+
+message AddCorporateEmailAddressRequest {
+  repeated google.protobuf.StringValue emails = 1;
+  google.protobuf.StringValue company_name = 2;
+  google.protobuf.BoolValue auto_subscribe = 3;
+  // enforce to cancel non-corporate subscription if it exists
+  google.protobuf.BoolValue unsubscribe_active_subscription = 4;
+}
+
+message AddCorporateEmailAddressResponse {}
+
+message UpdateCorporateEmailAddressRequest {
+  repeated google.protobuf.StringValue emails = 1;
+  google.protobuf.BoolValue is_active = 2;
+  google.protobuf.BoolValue cancel_immediately = 3;
+}
+
+message UpdateCorporateEmailAddressResponse {}
+
+message HandleSubscriptionEventRequest {
+  google.protobuf.StringValue subscription_unit_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  google.protobuf.Timestamp cancellation_requested_at = 4;
+  google.protobuf.Timestamp cancelled_at = 5;
+  google.protobuf.StringValue currency = 6;
+  google.protobuf.StringValue experience = 7;
+  google.protobuf.StringValue consumer_id = 8;
+  google.protobuf.StringValue consumer_subscription_id = 9;
+  google.protobuf.StringValue subscription_status = 10;
+  google.protobuf.StringValue consumer_subscription_plan_id = 11;
+  google.protobuf.BoolValue is_active = 12;
+  google.protobuf.BoolValue renew = 13;
+  google.protobuf.StringValue payment_card_id = 14;
+  google.protobuf.StringValue payment_method_id = 15;
+  google.protobuf.Int64Value fee = 16;
+  google.protobuf.BoolValue is_partner_plan = 17;
+  google.protobuf.BoolValue is_corporate_plan = 18;
+  SubscriptionEventType subscription_event = 19;
+  google.protobuf.Timestamp updated_at = 21;
+  google.protobuf.Timestamp elected_time = 22;
+}
+
+message HandleSubscriptionEventResponse {}
+
+enum SubscriptionEventType {
+  UNKNOWN_SUBSCRIPTION_EVENT_TYPE = 0;
+  SUBSCRIPTION_EVENT_TYPE_SUBSCRIBE = 1;
+  SUBSCRIPTION_EVENT_TYPE_UNSUBSCRIBE = 2;
+  SUBSCRIPTION_EVENT_TYPE_REFUND = 3;
+  SUBSCRIPTION_EVENT_TYPE_FREE_PERIOD_CREATED = 4;
+}
+
+message GetDashpassBannerDataRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  promotion_service.Placement.PlacementType placement = 2;
+  google.protobuf.StringValue district_id = 3;
+  google.protobuf.StringValue submarket_id = 4;
+}
+
+message GetDashpassBannerDataResponse {
+  DashPassBannerData item = 1;
+}
+
+message DashPassBannerData {
+  string content_id = 1;
+  google.protobuf.Struct metadata = 2;
+  google.protobuf.StringValue campaign_id = 3;
+}
+
+message GetPartnerPlanBenefitValidationRequest {
+  google.protobuf.BoolValue is_card_payment = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.StringValue order_cart_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.StringValue order_uuid = 3 [deprecated = true];
+  google.protobuf.StringValue consumer_id = 4 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.StringValue store_id = 5;
+}
+
+message GetPartnerPlanBenefitValidationResponse {
+  google.protobuf.StringValue message = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.StringValue checkout_page_error_message = 2;
+  google.protobuf.StringValue place_order_page_error_message = 3;
+  google.protobuf.StringValue consumer_subscription_plan_benefit_membership_type = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  BenefitBannerDetails benefit_banner = 5;
+  PromoCampaignDetails promo_campaign = 6;
+}
+
+message BenefitBannerDetails {
+  google.protobuf.StringValue title = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  google.protobuf.StringValue action_label = 2;
+  ActionType action_type = 3;
+  google.protobuf.StringValue background = 4;
+  BadgeType badge_type = 5;
+  google.protobuf.StringValue payment_card_id = 6;
+  money.MonetaryFields savings_amount = 7;
+}
+
+message PromoCampaignDetails {
+  google.protobuf.StringValue campaign_id = 1;
+  google.protobuf.StringValue ad_id = 2;
+  google.protobuf.StringValue ad_group_id = 3;
+}
+
+message GetDashpassSupportDataRequest {
+  google.protobuf.StringValue cart_uuid = 1;
+}
+
+message GetDashpassSupportDataResponse {
+  google.protobuf.StringValue partner_dashpass_ineligibility_checkout_error_message = 1;
+}
+
+enum ActionType {
+  BENEFIT_BANNER_ACTION_TYPE_UNSPECIFIED = 0;
+  BENEFIT_BANNER_ACTION_TYPE_SWITCH = 1;
+  BENEFIT_BANNER_ACTION_TYPE_ADD = 2;
+}
+
+enum SetActionDuringCancellationFlowActionType {
+  SEND_REMINDER_EMAIL = 0;
+  GRANT_PROMO_WHEN_RENEWAL = 1;
+}
+
+message SetActionDuringCancellationFlowRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  SetActionDuringCancellationFlowActionType action_type = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message SetActionDuringCancellationFlowResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message LinkPartnerCardRequest {
+  google.protobuf.StringValue legacy_stripe_card_id = 1;
+  google.protobuf.StringValue payment_method_id = 2;
+  google.protobuf.StringValue bank_identification_number = 3;
+  google.protobuf.StringValue last4 = 4;
+  google.protobuf.StringValue address_zip = 5;
+  google.protobuf.StringValue exp_month = 6;
+  google.protobuf.StringValue exp_year = 7;
+  google.protobuf.StringValue entry_point = 8;
+  google.protobuf.StringValue consumer_id = 9;
+  google.protobuf.StringValue brand_product = 10;
+  google.protobuf.StringValue country = 11;
+  google.protobuf.StringValue payment_method_uuid = 12;
+}
+
+message LinkPartnerCardResponse {
+  MembershipLinkStatus card_benefit_membership_link_status = 1;
+  LinkPartnerCardMembershipType membership_type = 2;
+  google.protobuf.BoolValue is_primary_card_holder = 3;
+}
+
+message LinkPartnerCardMembershipType {
+  google.protobuf.StringValue partner_card_display_name = 1;
+  google.protobuf.StringValue partner_card_last4 = 2;
+  PartnerName partner_name = 3;
+}
+
+message UnlinkPartnerCardRequest {
+  google.protobuf.StringValue legacy_stripe_card_id = 1;
+  google.protobuf.StringValue payment_method_id = 2;
+}
+
+message UnlinkPartnerCardResponse {}
+
+message HandleProductTradeRequest {
+  google.protobuf.StringValue provider_type = 1;
+  google.protobuf.StringValue ref_id = 2;
+  google.protobuf.StringValue product_trade_type = 3;
+  google.protobuf.BoolValue product_unenrolled = 4;
+  google.protobuf.StringValue new_product_code = 5;
+  google.protobuf.StringValue previous_product_code = 6;
+}
+
+message HandleReconciliationRequest {
+  google.protobuf.StringValue provider_type = 1;
+  google.protobuf.StringValue multimatch_id = 2;
+  google.protobuf.StringValue new_handshake_id = 3;
+  google.protobuf.StringValue card_tier = 4;
+}
+
+message HandleProductTradeResponse {}
+
+message HandleReconciliationResponseStatus {
+  google.protobuf.BoolValue success = 1;
+  google.protobuf.StringValue errorCode = 2;
+  google.protobuf.StringValue errorMessage = 3;
+}
+
+message HandleReconciliationResponse {
+  HandleReconciliationResponseStatus status = 1;
+  google.protobuf.BoolValue data = 2;
+}
+
+message MosaicGetLandingPageRequest {
+  // Common Components for all mosaic page types
+  // 1. Landing page type
+  MosaicLandingPageType page_type = 1;
+  // 2. Consumer Id
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // 3. Source
+  google.protobuf.StringValue source = 3;
+
+  // The parameters in this block are for page type GATING only
+  // Start a new block if the parameters are for a different page type
+  // 1. store_id -- for the gated store
+  google.protobuf.StringValue store_id = 6 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  // The parameters in this block are for page types PERCENTAGE_OFF_ITEM_TEMPLATE and
+  // OFF_CART_TEMPLATE
+  // 1. template_content -- enum to determine what static content to fill the template
+  // 2. percentage_off -- percentage off to display (used for both
+  //    PERCENTAGE_OFF_ITEM_TEMPLATE and OFF_CART_TEMPLATE)
+  // 3. max_discount -- dollar amount of the max discount to display (used for both
+  //    PERCENTAGE_OFF_ITEM_TEMPLATE and OFF_CART_TEMPLATE)
+  // 4. dollar_off -- dollar amount off to display (used for OFF_CART_TEMPLATE)
+  // 5. min_subtotal -- minimum subtotal required to get the discount (used for OFF_CART_TEMPLATE)
+  MosaicLandingPageTemplateContent template_content = 8 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  google.protobuf.StringValue percentage_off = 9 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  google.protobuf.StringValue max_discount = 10 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+
+  // The parameters in this block are for page type OFF_CART_TEMPLATE
+  google.protobuf.StringValue dollar_off = 11 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+  google.protobuf.StringValue min_subtotal = 12 [
+    (doordash.api.client.optional) = true,
+    (doordash.api.validate.rules).missing_value = {action: IGNORE}
+  ];
+
+  // Deprecated values
+  reserved "extra_parameters";
+  reserved 5;
+  reserved "gated_store_options";
+  reserved 4;
+}
+
+message MosaicGetLandingPageResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> landing_pages = 1;
+}
+
+message GetDashPassPlacementsRequest {
+  // Consumer Id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Source of the request: e.g. "me_tab", "post_checkout"
+  google.protobuf.StringValue source = 2;
+}
+
+message GetDashPassPlacementsResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> placement_pages = 1;
+}
+
+message GetLandingPageRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue submarket_id = 2;
+  MarketingContext marketing_context = 3;
+  google.protobuf.StringValue redeem_code = 4 [deprecated = true];
+  LandingPageType landing_page_type = 5;
+  google.protobuf.StringValue order_uuid = 6;
+}
+
+message GetLandingPageResponse {
+  LandingPageHeaderDM landing_page_header = 1;
+  LandingPageBenefitsDM landing_page_benefits = 2;
+  LandingPagePlansDM landing_page_plans = 3;
+  LandingPagePaymentDM landing_page_payment = 4;
+  LandingPageCtaDM landing_page_cta = 5;
+  LandingPageScrollCtaDM landing_page_scroll_cta = 6;
+  GiftingPage gifting_page = 7;
+  LandingPageModalDM landing_page_modal = 8;
+}
+
+message LandingPageHeaderDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+    google.protobuf.StringValue logo_url = 3;
+    google.protobuf.StringValue background_color = 4;
+    money.MonetaryFields savings_value = 5;
+    google.protobuf.BoolValue is_visible = 6;
+    google.protobuf.StringValue portrait_image_url = 7;
+    BackgroundImage background_image = 8;
+    google.protobuf.StringValue hero_image_url = 9;
+  }
+}
+
+message LandingPageBenefitsDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue link_text = 1;
+    google.protobuf.StringValue portrait_image_url = 2;
+    google.protobuf.StringValue landscape_image_url = 3;
+    google.protobuf.StringValue background_color = 4;
+    repeated BenefitItem content = 5;
+    google.protobuf.StringValue benefit_details_header_text = 6;
+    BackgroundImage background_image = 7;
+    google.protobuf.StringValue title = 8;
+    google.protobuf.BoolValue is_visible = 9;
+  }
+}
+
+message BackgroundImage {
+  google.protobuf.StringValue landscape_url = 1;
+  google.protobuf.StringValue portrait_url = 2;
+}
+
+message LandingPagePlansDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    reserved 9;
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+    google.protobuf.StringValue image_url = 3;
+    google.protobuf.StringValue background_color = 4;
+    repeated PlanItem plans = 5;
+    google.protobuf.StringValue link_text = 6;
+    BackgroundImage background_image = 7;
+    google.protobuf.BoolValue is_visible = 8;
+  }
+}
+
+message LandingPagePaymentDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue card_name_text = 1;
+    google.protobuf.StringValue card_logo_url = 2;
+    google.protobuf.StringValue background_color = 3;
+    google.protobuf.BoolValue is_visible = 4;
+  }
+}
+
+message LandingPageCtaDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    repeated CtaItem ctas = 1;
+    google.protobuf.BoolValue is_visible = 2;
+    google.protobuf.BoolValue is_autoscrollable = 3;
+  }
+}
+
+message LandingPageScrollCtaDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue button_text = 1;
+    google.protobuf.StringValue button_color = 2;
+    google.protobuf.BoolValue is_visible = 3;
+  }
+}
+
+message LandingPageModalDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    common.UIFlowScreen upsell_flow = 1;
+    ModalType modal_type = 2;
+
+    enum ModalType {
+      UNKNOWN_MODAL_TYPE = 0;
+      SUBSCRIBE_CONFIRMATION = 1;
+    }
+  }
+}
+
+message GiftingPage {
+  LandingPageHeaderDM landing_page_header = 1;
+  LandingPagePlansDM landing_page_plans = 2;
+  LandingPageGiftRecipientDM landing_page_gift_recipient = 3;
+  LandingPagePaymentDM landing_page_payment = 4;
+  LandingPageCtaDM landing_page_cta = 5;
+}
+
+message LandingPageGiftRecipientDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    repeated Option options = 2;
+    google.protobuf.BoolValue is_visible = 3;
+
+    message Option {
+      google.protobuf.StringValue label = 1;
+      GiftingDeliveryOption type = 2;
+      google.protobuf.StringValue title = 3;
+      repeated Field field = 4;
+
+      message Field {
+        google.protobuf.StringValue label = 1;
+        google.protobuf.StringValue placeholder = 2;
+        Key key = 3;
+        google.protobuf.StringValue max_length = 4;
+        MaxLengthType max_length_type = 5;
+        google.protobuf.StringValue type = 6;
+        google.protobuf.StringValue subtitle = 7;
+
+        enum MaxLengthType {
+          UNKNOWN_LENGTH_TYPE = 0;
+          MONTHS = 1;
+          CHARS = 2;
+        }
+
+        enum Key {
+          UNKNOWN_KEY = 0;
+          RECIPIENT_NAME = 1;
+          RECIPIENT_EMAIL = 2;
+          RECIPIENT_DATE = 3;
+          RECIPIENT_MESSAGE = 4;
+        }
+      }
+    }
+  }
+}
+
+message PlanItem {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue subtitle = 2;
+  google.protobuf.BoolValue is_default = 3;
+  google.protobuf.BoolValue has_tag = 4;
+  google.protobuf.StringValue tag_text = 5;
+  google.protobuf.StringValue background_color = 6;
+  SubscriptionPlan subscription_plan = 7;
+  google.protobuf.StringValue link_text = 8;
+  google.protobuf.StringValue base_link_url = 9;
+  google.protobuf.StringValue redirect_link_url = 10;
+  PlanItemType type = 11;
+  TagStyle tag_style = 12;
+  MarketingType marketing_type = 13;
+  google.protobuf.StringValue pre_subtitle = 14;
+  // Optional
+  google.protobuf.StringValue carousel_id = 15;
+
+  LineItems line_items = 16;
+  google.protobuf.StringValue image_url = 17;
+
+  // Optional
+  BadgeInfo badge_info = 18;
+  repeated google.protobuf.StringValue benefit_infos = 19;
+
+  google.protobuf.StringValue description = 20; // deprecated
+  google.protobuf.StringValue leading_image_url = 21; // deprecated
+
+  google.protobuf.StringValue description_2 = 22; // deprecated
+  google.protobuf.StringValue leading_image_url_2 = 23; // deprecated
+
+  repeated SubscriptionPlanBenefitItem subscription_plan_benefit_items = 24;
+
+  message SubscriptionPlanBenefitItem {
+    google.protobuf.StringValue description = 1;
+    google.protobuf.StringValue leading_image_url = 2;
+  }
+
+  message LineItems {
+    repeated PlanItemMoneyAmount line_item = 1;
+  }
+
+  message PlanItemMoneyAmount {
+    money.MonetaryFields fee = 1;
+    google.protobuf.StringValue label = 2;
+  }
+
+  message BadgeInfo {
+    reserved 2;
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue type = 3;
+  }
+}
+
+message CtaItem {
+  google.protobuf.StringValue billing_info_text = 1;
+  google.protobuf.StringValue button_text = 2;
+  google.protobuf.StringValue button_color = 3;
+  google.protobuf.StringValue background_color = 4;
+  TermsAndConditions terms_and_conditions = 5;
+  google.protobuf.StringValue plan_id = 6;
+  google.protobuf.StringValue trial_consent_text = 7;
+  google.protobuf.StringValue gpay_button_text = 8;
+  google.protobuf.StringValue link_url = 9;
+  CtaItemType type = 10;
+  google.protobuf.StringValue redirect_link_url = 11;
+  MarketingType marketing_type = 12;
+  money.MonetaryFields fee = 13;
+}
+
+enum MosaicLandingPageType {
+  // Unspecified page type
+  UNSPECIFIED = 0;
+  // Annual plan landing page
+  ANNUAL_PLAN = 1;
+  // Resurrection landing page
+  RESURRECTION = 2;
+  // Store gating landing page
+  GATING = 4;
+  // Percentage off item landing page
+  PERCENTAGE_OFF_ITEM_TEMPLATE = 5;
+  // Priority delivery option landing page
+  PRIORITY_DELIVERY = 6;
+  // Off cart template landing page
+  OFF_CART_TEMPLATE = 7;
+
+  reserved 3;
+  reserved "GATED_STORES";
+}
+
+enum MosaicLandingPageTemplateContent {
+  // Unspecified content
+  UNSPECIFIED_TEMPLATE_CONTENT = 0;
+  // Any Item token content
+  ANY_ITEM = 1;
+  // Percentage off cart exclusive deal
+  PERCENTAGE_OFF_CART_EXCLUSIVE_DEAL = 2;
+  // Dollar off cart exclusive deal
+  DOLLAR_OFF_CART_EXCLUSIVE_DEAL = 3;
+}
+
+enum LandingPageType {
+  UNKNOWN_LANDING_PAGE_TYPE = 0;
+  STANDARD = 1;
+  GIFTING = 2;
+  MEMBERSHIP_SHARING = 3;
+  AMAZON_PRIME = 4;
+  AMAZON_AUS_PRIME = 5;
+}
+
+enum LandingPageDMType {
+  LANDING_PAGE_UNKNOWN_DM_TYPE = 0;
+  LANDING_PAGE_HEADER = 1;
+  LANDING_PAGE_BENEFITS = 2;
+  LANDING_PAGE_PLANS = 3;
+  LANDING_PAGE_PAYMENT = 4;
+  LANDING_PAGE_CTA = 5;
+  LANDING_PAGE_MEAL_PLAN_ITEMS = 6;
+  LANDING_PAGE_MEAL_PLAN_STORES = 7;
+  LANDING_PAGE_MEAL_PLAN_DELIVERY_DETAILS = 8;
+  LANDING_PAGE_SCROLL_CTA = 9;
+  LANDING_PAGE_MEAL_PLAN_SAVINGS = 10;
+  LANDING_PAGE_GIFTER_RECIPIENT_INFO = 11;
+}
+
+enum PlanItemType {
+  UNKNOWN_PLAN_ITEM_TYPE = 0;
+  SUBSCRIBABLE_PLAN_ITEM = 1;
+  MARKETING_PLAN_ITEM = 2;
+}
+
+enum CtaItemType {
+  UNKNOWN_CTA_ITEM_TYPE = 0;
+  SUBSCRIBABLE_CTA_ITEM = 1;
+  MARKETING_CTA_ITEM = 2;
+}
+
+enum MarketingType {
+  UNKNOWN_MARKETING_TYPE = 0;
+  STUDENT_MARKETING_TYPE = 1;
+}
+
+enum TagStyle {
+  UNKNOWN_TAG_TEXT_STYLE = 0;
+  HIGHLIGHT_EMPHASIS = 1;
+  HIGHLIGHT_SUBDUED = 2;
+  POSITIVE_EMPHASIS_MEDIUM = 3;
+  HIGHLIGHT_DASHPASS = 4;
+}
+
+enum UpsellEntryPoint {
+  ORDER_CART = 0;
+  POST_CHECKOUT = 1;
+  POST_CHECKOUT_TODP = 2;
+  CHECKOUT = 3;
+}
+
+enum BenefitInfoPageType {
+  BENEFIT_INFO_PAGE_TYPE_UNSPECIFIED = 0;
+  CREDIT_BACK_CELEBRATION = 1;
+}
+
+message GetBenefitInfoRequest {
+  BenefitInfoPageType page_type = 1;
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetBenefitInfoResponse {
+  map<string, lego.response.v1.LegoPageResponse> benefit_pages = 1;
+}
+
+message GetMealPlanLandingPageRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue submarket_id = 2;
+  MarketingContext marketing_context = 3;
+  MealPlanLandingPageContext landing_page_context = 4;
+}
+
+enum MealPlanLandingPageContext {
+  CONTEXT_LUNCHPASS = 0;
+  CONTEXT_LUNCHPASS_UPSELL = 1;
+  CONTEXT_LUNCHPASS_MULTI_PLAN = 2;
+  CONTEXT_LUNCHPASS_MULTI_PLAN_UPSELL = 3;
+}
+
+message GetMealPlanLandingPageResponse {
+  LandingPageHeaderDM landing_page_header = 1;
+  LandingPageBenefitsDM landing_page_benefits = 2;
+  LandingPagePlansDM landing_page_plans = 3;
+  LandingPagePaymentDM landing_page_payment = 4;
+  LandingPageCtaDM landing_page_cta = 5;
+  LandingPageItemsDM landing_page_items = 6;
+  LandingPageDeliveryDetailsDM landing_page_delivery_details = 7;
+  LandingPageSavingsDM landing_page_savings = 8;
+}
+
+message LandingPageItemsDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+    google.protobuf.StringValue background_color = 3;
+    repeated MealPlanItem available_meals = 4;
+    google.protobuf.StringValue landing_page_carousel_id = 5;
+  }
+}
+
+message LandingPageSavingsDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+  }
+}
+
+message MealPlanItem {
+  google.protobuf.StringValue item_id = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.StringValue store_name = 3;
+  google.protobuf.DoubleValue avg_rating = 4;
+  // Deprecated, use num_ratings_v2 instead
+  google.protobuf.Int32Value num_ratings = 5;
+  google.protobuf.StringValue image_url = 6;
+  google.protobuf.StringValue store_id = 7;
+  google.protobuf.StringValue num_ratings_v2 = 8;
+}
+
+message LandingPageDeliveryDetailsDM {
+  google.protobuf.StringValue id = 1;
+  LandingPageDMType type = 2;
+  google.protobuf.StringValue version = 3;
+  google.protobuf.UInt32Value sort_order = 4;
+  Data data = 5;
+
+  message Data {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue subtitle = 2;
+    google.protobuf.StringValue background_color = 3;
+    repeated DeliveryDetailsItem delivery_details = 4;
+  }
+}
+
+message DeliveryDetailsItem {
+  google.protobuf.StringValue description = 1;
+  google.protobuf.StringValue image_url = 2;
+}
+
+message GetPostOrderRefundUpsellRequest {
+  google.protobuf.StringValue order_cart_id = 1;
+  google.protobuf.StringValue order_uuid = 2;
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+message GetUpsellDetailsRequest {
+  google.protobuf.StringValue order_cart_id = 1;
+  google.protobuf.StringValue order_uuid = 2;
+  google.protobuf.StringValue consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+  UpsellEntryPoint entry_point = 4;
+}
+
+message GetUpsellDetailsResponse {
+  common.UIFlowScreen upsell_confirmation_flow = 1;
+  common.UIFlowScreen upsell_flow = 2;
+}
+
+// A wrapper message for GetUpsellDetailsRequest since Protobuf by default disallow same message
+// used in multiple RPCs. This request will be used in the future Mosaic upsell pages.
+message MosaicGetUpsellDetailsRequest {
+  google.protobuf.StringValue order_cart_id = 1;
+  google.protobuf.StringValue order_uuid = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  UpsellEntryPoint entry_point = 4;
+}
+
+// The response is only used for the post checkout upsell screen as the first
+// page migrated to Mosaic.
+message MosaicGetUpsellDetailsResponse {
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse lego_page_response = 1;
+}
+
+message GetPostOrderRefundUpsellResponse {
+  money.MonetaryFields refund_amount_monetary_fields = 1;
+  google.protobuf.StringValue dashpass_landing_title = 2;
+  google.protobuf.StringValue dashpass_landing_subtitle = 3;
+  google.protobuf.StringValue dashpass_order_cart_page_title = 4;
+  google.protobuf.StringValue dashpass_order_cart_context = 5;
+  google.protobuf.StringValue dashpass_order_cart_billing = 6;
+}
+
+message GetDashPassSavingsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  DashPassSavingsPeriod savings_period = 2;
+  DashPassSavingsEntryPoint entry_point = 3;
+  google.protobuf.StringValue order_cart_id = 4;
+}
+
+message GetDashPassSavingsResponse {
+  repeated DashPassSavings dashpass_savings = 1;
+}
+
+message RecordPreviewOrderForACartRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue cart_uuid = 2;
+  money.OrderQuoteV2 order_quote = 3;
+  google.protobuf.Timestamp time_stamp = 4;
+}
+
+message RecordPreviewOrderForACartResponse {
+  google.protobuf.StringValue ack = 1;
+}
+
+message GetSubscriptionPlanSubmarketIdsRequest {
+  google.protobuf.StringValue plan_id = 1;
+}
+
+message GetSubscriptionPlanSubmarketIdsResponse {
+  repeated google.protobuf.StringValue submarket_ids = 1;
+}
+
+message GetSubscriptionPlanTrialSubmarketIdsRequest {
+  google.protobuf.StringValue trial_id = 1;
+}
+
+message GetSubscriptionPlanTrialSubmarketIdsResponse {
+  repeated google.protobuf.StringValue submarket_ids = 1;
+}
+
+message CreateSubscriptionPlanSubmarketLinkRequest {
+  google.protobuf.StringValue plan_id = 1;
+  repeated google.protobuf.StringValue submarket_ids = 2;
+  google.protobuf.StringValue popular_stores = 3;
+  google.protobuf.StringValue consent_details = 4;
+  google.protobuf.FloatValue service_rate = 5;
+}
+
+message CreateSubscriptionPlanSubmarketLinkResponse {}
+
+message CreateSubscriptionPlanTrialSubmarketLinkRequest {
+  google.protobuf.StringValue trial_id = 1;
+  repeated google.protobuf.StringValue submarket_ids = 2;
+  google.protobuf.StringValue trial_consent_details = 3;
+}
+
+message CreateSubscriptionPlanTrialSubmarketLinkResponse {}
+
+message CreateSubscriptionPlanCarouselLinkRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+  google.protobuf.StringValue carousel_id = 2;
+  google.protobuf.StringValue landing_page_carousel_id = 3;
+}
+
+message CreateSubscriptionPlanCarouselLinkResponse {}
+
+message DeleteSubscriptionPlanSubmarketLinkRequest {
+  google.protobuf.StringValue plan_id = 1;
+  repeated google.protobuf.StringValue submarket_ids = 2;
+}
+
+message DeleteSubscriptionPlanSubmarketLinkResponse {}
+
+message DeleteSubscriptionPlanTrialSubmarketLinkRequest {
+  google.protobuf.StringValue trial_id = 1;
+  repeated google.protobuf.StringValue submarket_ids = 2;
+}
+
+message DeleteSubscriptionPlanTrialSubmarketLinkResponse {}
+
+message DeleteSubscriptionPlanCarouselLinkRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+}
+
+message DeleteSubscriptionPlanCarouselLinkResponse {}
+
+message CreateSubscriptionPlanRequest {
+  google.protobuf.Int32Value fee = 1;
+  money.CurrencySymbol currency = 2;
+  date.Date end_date = 3;
+  google.protobuf.StringValue callout_text = 4;
+  google.protobuf.StringValue policy_text = 5;
+  RecurrenceInterval recurrence_interval = 6;
+  google.protobuf.BoolValue allow_all_stores = 7;
+  google.protobuf.BoolValue is_partner_plan = 8;
+  google.protobuf.BoolValue employees_only = 9;
+  google.protobuf.StringValue signup_email_campaign_id = 10;
+  google.protobuf.StringValue plan_benefit_long = 11;
+  google.protobuf.StringValue plan_benefit_short = 12;
+  google.protobuf.StringValue plan_benefit_delivery_fee = 13;
+  google.protobuf.BoolValue is_accepting_new_subscribers = 14;
+  TermsAndConditionsV2 terms_and_conditions_v2 = 15;
+  PlanDiscount plan_discount = 16;
+  repeated PromotionInfo plan_promotion_infos = 17;
+  repeated PromotionsFeaturedLocation plan_promotions_featured_locations = 18;
+  repeated google.protobuf.StringValue plan_submarket_ids = 19;
+  repeated SubscriptionTrialPlanDetailsForTrialPlanCreation trial_plans = 20;
+  SubscriptionPlanType subscription_type = 21;
+  google.protobuf.BoolValue is_corporate_plan = 22;
+  google.protobuf.StringValue carousel_id = 23;
+  google.protobuf.Int32Value priority = 24;
+  PlanIntegrationName plan_integration_name = 25;
+}
+
+message CreateSubscriptionPlanResponse {
+  google.protobuf.StringValue plan_id = 1;
+}
+
+message CreateSubscriptionPlanTrialRequest {
+  google.protobuf.StringValue plan_id = 1;
+  RecurrenceInterval recurrence_interval = 2;
+  repeated PromotionInfo promotion_infos = 3;
+  repeated google.protobuf.StringValue submarket_ids = 4;
+  repeated PromotionsFeaturedLocation promotions_featured_locations = 5;
+}
+
+message CreateSubscriptionPlanTrialResponse {
+  google.protobuf.StringValue trial_plan_id = 1;
+}
+
+message ActivateSubscriptionPlanRequest {
+  google.protobuf.StringValue plan_id = 1;
+}
+
+message ActivateSubscriptionPlanResponse {}
+
+message DeactivateSubscriptionPlanRequest {
+  google.protobuf.StringValue plan_id = 1;
+}
+
+message DeactivateSubscriptionPlanResponse {}
+
+message ActivateSubscriptionTrialPlanRequest {
+  google.protobuf.StringValue trial_plan_id = 1;
+}
+
+message ActivateSubscriptionTrialPlanResponse {}
+
+message DeactivateSubscriptionTrialPlanRequest {
+  google.protobuf.StringValue trial_plan_id = 1;
+}
+
+message DeactivateSubscriptionTrialPlanResponse {}
+
+message CreateSubscriptionPlanPromotionInfoRequest {
+  PromotionInfo promotion_info = 1;
+}
+
+message CreateSubscriptionPlanPromotionInfoResponse {
+  google.protobuf.StringValue promotion_info_id = 1;
+}
+
+enum ConsumerVerificationType {
+  UNKNOWN_CONSUMER_VERIFICATION_TYPE = 0;
+  CONSUMER_VERIFICATION_TYPE_SHEERID_STUDENT = 1;
+  CONSUMER_VERIFICATION_TYPE_AMAZON_PRIME_START_LINK = 2;
+  CONSUMER_VERIFICATION_TYPE_AMAZON_PRIME_FINISH_LINK = 3;
+  CONSUMER_VERIFICATION_TYPE_LYFT_UNLINK = 4;
+}
+
+enum ConsumerVerificationStatus {
+  UNKNOWN_CONSUMER_VERIFICATION_STATUS = 0;
+  CONSUMER_NOT_VERIFIED = 1;
+  CONSUMER_PENDING = 2;
+  CONSUMER_VERIFIED = 3;
+}
+
+enum VerificationEntry {
+  UNKNOWN = 0;
+  DEFAULT = 1;
+  POLLING = 2;
+}
+
+message UpdateConsumerVerificationRequest {
+  google.protobuf.StringValue verification_id = 1;
+  ConsumerVerificationType verification_type = 2;
+  ConsumerVerificationStatus verification_status = 3;
+  google.protobuf.StringValue user_id = 4;
+}
+
+message UpdateConsumerVerificationResponse {}
+
+message GetOrCreateConsumerVerificationRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  ConsumerVerificationType verification_type = 2;
+  VerificationEntry verification_entry = 3;
+  google.protobuf.StringValue verification_id = 4;
+  google.protobuf.StringValue auth_code = 5;
+}
+
+message GetOrCreateConsumerVerificationResponse {
+  google.protobuf.StringValue verification_id = 1;
+  ConsumerVerificationType verification_type = 2;
+  ConsumerVerificationStatus verification_status = 3;
+}
+
+message AddSubscriptionPlanPromotionInfoToPlanRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+  google.protobuf.StringValue promotion_info_id = 2;
+}
+
+message AddSubscriptionPlanPromotionInfoToPlanResponse {}
+
+message AddSubscriptionPlanPromotionInfoToPlanTrialRequest {
+  google.protobuf.StringValue subscription_plan_trial_id = 1;
+  google.protobuf.StringValue promotion_info_id = 2;
+}
+
+message AddSubscriptionPlanPromotionInfoToPlanTrialResponse {}
+
+message CreatePromotionsFeaturedLocationRequest {
+  PromotionsFeaturedLocation promotions_featured_location = 1;
+}
+
+message CreatePromotionsFeaturedLocationResponse {
+  google.protobuf.StringValue promotions_featured_location_id = 1;
+}
+
+message AddPromotionsFeaturedLocationToPlanRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+  google.protobuf.StringValue promotions_featured_location_id = 2;
+}
+
+message AddPromotionsFeaturedLocationToPlanResponse {}
+
+message AddPromotionsFeaturedLocationToPlanTrialRequest {
+  google.protobuf.StringValue subscription_plan_trial_id = 1;
+  google.protobuf.StringValue promotions_featured_location_id = 2;
+}
+
+message AddPromotionsFeaturedLocationToPlanTrialResponse {}
+
+message GetSubscriptionPlanPromotionInfosOfPlanRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+}
+
+message GetSubscriptionPlanPromotionInfosOfPlanResponse {
+  repeated PromotionInfo promotion_infos = 1;
+}
+
+message GetSubscriptionPlanPromotionInfosOfPlanTrialRequest {
+  google.protobuf.StringValue subscription_plan_trial_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+}
+
+message GetSubscriptionPlanPromotionInfosOfPlanTrialResponse {
+  repeated PromotionInfo promotion_infos = 1;
+}
+
+message GetPromotionsFeaturedLocationsOfPlanRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+}
+
+message GetPromotionsFeaturedLocationsOfPlanResponse {
+  repeated PromotionsFeaturedLocation plan_promotions_featured_locations = 1;
+}
+
+message GetPromotionsFeaturedLocationsOfPlanTrialRequest {
+  google.protobuf.StringValue subscription_plan_trial_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+}
+
+message GetPromotionsFeaturedLocationsOfPlanTrialResponse {
+  repeated PromotionsFeaturedLocation plan_promotions_featured_locations = 1;
+}
+
+message UpdateSubscriptionPlanPromotionInfoRequest {
+  PromotionInfo promotion_info = 1;
+}
+
+message UpdateSubscriptionPlanPromotionInfoResponse {
+  google.protobuf.StringValue promotion_info_id = 1;
+}
+
+message UpdateSubscriptionTrialPromotionInfoRequest {
+  PromotionInfo promotion_info = 1;
+}
+
+message UpdateSubscriptionTrialPromotionInfoResponse {
+  google.protobuf.StringValue promotion_info_id = 1;
+}
+
+message UpdatePromotionsFeaturedLocationRequest {
+  PromotionsFeaturedLocation plan_promotions_featured_location = 1;
+}
+
+message UpdatePromotionsFeaturedLocationResponse {
+  google.protobuf.StringValue promotions_featured_location_id = 1;
+}
+
+message UpdateSubscriptionPlanRequest {
+  google.protobuf.StringValue subscription_plan_id = 1;
+  // no longer used for fee
+  google.protobuf.Int64Value fee = 2;
+  google.protobuf.BoolValue allow_all_stores = 3;
+  google.protobuf.BoolValue is_partner_plan = 4;
+  google.protobuf.BoolValue is_corporate_plan = 5;
+  TermsAndConditionsV2 terms_and_conditions_v2 = 6;
+  google.protobuf.BoolValue employees_only = 7;
+  google.protobuf.Int32Value priority = 8;
+  PlanIntegrationName plan_integration_name = 9;
+  date.Date end_date = 10;
+  money.CurrencySymbol currency = 11;
+  RecurrenceInterval recurrence_interval = 12;
+  PlanDiscount plan_discount = 13;
+  google.protobuf.StringValue signup_email_campaign_id = 14;
+  google.protobuf.StringValue plan_benefit_long = 15;
+  google.protobuf.StringValue plan_benefit_short = 16;
+  google.protobuf.StringValue plan_benefit_delivery_fee = 17;
+  SubscriptionPlanType subscription_type = 18;
+  google.protobuf.StringValue callout_text = 19;
+  google.protobuf.StringValue policy_text = 20;
+  google.protobuf.BoolValue can_be_paused = 21;
+}
+
+message UpdateSubscriptionPlanResponse {
+  google.protobuf.StringValue subscription_plan_id = 1;
+}
+
+message UpdateSubscriptionTrialPlanRequest {
+  SubscriptionTrialPlan subscription_trial_plan = 1;
+}
+
+message UpdateSubscriptionTrialPlanResponse {
+  SubscriptionTrialPlan subscription_trial_plan = 1;
+}
+
+message GetMealPlanSelectionForConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+}
+
+message GetMealPlanSelectionForConsumerResponse {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue subscription_plan_id = 2;
+  google.protobuf.Timestamp expiration_time = 3;
+  repeated google.protobuf.Timestamp allowed_delivery_dates = 4;
+  repeated DeliveryWindow delivery_windows = 6;
+  repeated MealPlanItem items = 7;
+}
+
+message DeliveryWindow {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  repeated google.protobuf.StringValue allowed_item_ids = 3;
+}
+
+message AddMealForConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue order_id = 2;
+}
+
+message AddMealForConsumerResponse {
+  google.protobuf.Int32Value meals_remaining = 1;
+}
+
+message RemoveMealForConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue order_id = 2;
+}
+
+message RemoveMealForConsumerResponse {
+  google.protobuf.Int32Value meals_remaining = 1;
+}
+
+message GetLifetimeDiscountStatsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetLifetimeDiscountStatsResponse {
+  google.protobuf.Int32Value total_savings = 1;
+  google.protobuf.Int32Value discounted_delivery_count = 2;
+  google.protobuf.StringValue currency = 3;
+}
+
+message GetDiscountStatsSinceStartRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+}
+
+message GetDiscountStatsSinceStartResponse {
+  google.protobuf.Int32Value total_savings = 1;
+  google.protobuf.Int32Value discounted_delivery_count = 2;
+  google.protobuf.StringValue currency = 3;
+}
+
+message GrantFreeDashpassRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  google.protobuf.Int32Value num_free_days = 2;
+  money.GrantFreeDashpassReason reason = 3;
+  google.protobuf.BoolValue should_refund_last_invoice = 4;
+}
+
+message GrantFreeDashpassResponse {
+  google.protobuf.BoolValue success = 1;
+  google.protobuf.Int32Value grant_duration_days = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+}
+
+message GrantFreeDashpassAdminRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Int32Value num_free_days = 2;
+  money.GrantFreeDashpassReason reason = 3;
+  google.protobuf.BoolValue should_refund_last_invoice = 4;
+  AdminMeta admin_meta = 5;
+}
+
+message GrantFreeDashpassAdminResponse {
+  google.protobuf.BoolValue success = 1;
+  google.protobuf.Int32Value grant_duration_days = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+}
+
+message CheckFreeDashpassEligibilityRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Int32Value num_free_days = 2;
+  money.GrantFreeDashpassReason reason = 3;
+}
+
+enum FreeDashPassNotEligibleReason {
+  NOT_ELIGIBLE_MARKET = 0;
+  NOT_ELIGIBLE_PLAN = 1;
+  DP_STATUS_NOT_ELIGIBLE = 2;
+  DP_ON_FREE_TRIAL = 3;
+  ALREADY_GRANTED_FREE_DASHPASS_RECENTLY = 4;
+  NOT_REFUNDABLE_BENEFIT_APPLIED_MULTIPLE_ORDERS = 5;
+  NOT_REFUNDABLE_PROMO_USED = 6;
+  NOT_REFUNDABLE_CREDIT_BACK_STATUS_NOT_ALLOWED = 7;
+  NO_PRE_CANCEL_ORDER_FRQ_TAG = 8;
+  DP_UPGRADE_IN_PROGRESS = 9;
+  NOT_REFUNDABLE_MAX_BENEFITS_USED = 10;
+  NOT_REFUNDABLE_HISTORICAL_ANNUAL_INVOICE = 11;
+  NOT_REFUNDABLE_SECONDARY_SUBSCRIBER = 12;
+  NOT_REFUNDABLE_HISTORICAL_MONTHLY_INVOICE = 13;
+}
+
+message CheckFreeDashpassEligibilityResponse {
+  google.protobuf.BoolValue is_eligible = 1;
+  FreeDashPassNotEligibleReason not_eligible_reason = 2;
+  google.protobuf.StringValue not_eligible_msg = 3;
+}
+
+message CheckFreeDashpassEligibilityAdminRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Int32Value num_free_days = 2;
+  money.GrantFreeDashpassReason reason = 3;
+  AdminMeta admin_meta = 4;
+}
+
+message CheckFreeDashpassEligibilityAdminResponse {
+  google.protobuf.BoolValue is_eligible = 1;
+  FreeDashPassNotEligibleReason not_eligible_reason = 2;
+  google.protobuf.StringValue not_eligible_msg = 3;
+}
+
+message DeleteSubscriptionPlanPromotionInfoRequest {
+  google.protobuf.StringValue id = 1;
+}
+
+message DeleteSubscriptionPlanPromotionInfoResponse {}
+
+message RunScriptRequest {
+  google.protobuf.StringValue script_name = 1;
+  google.protobuf.StringValue json_args = 2;
+}
+
+message RunScriptResponse {
+  google.protobuf.StringValue data = 1;
+}
+
+message IsCardEligibleForPartnerPlanBasedOnPrioritiesRequest {
+  google.protobuf.StringValue plan_id = 1;
+  google.protobuf.StringValue stripe_card_id = 2;
+}
+
+message IsCardEligibleForPartnerPlanBasedOnPrioritiesResponse {
+  google.protobuf.BoolValue is_eligible = 1;
+}
+
+message GetAllPreviousSubscriptionsOfConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.BoolValue is_dispatcher = 2;
+  SubscriptionPlanType subscription_type = 3;
+}
+
+message GetAllPreviousSubscriptionsOfConsumerResponse {
+  repeated ConsumerSubscription consumer_subscriptions = 1;
+}
+
+message GetAllPreviousSubscriptionsOfConsumerAdminRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.BoolValue is_dispatcher = 2;
+  SubscriptionPlanType subscription_type = 3;
+  AdminMeta admin_meta = 4;
+}
+
+message GetAllPreviousSubscriptionsOfConsumerAdminResponse {
+  repeated ConsumerSubscription consumer_subscriptions = 1;
+}
+
+message PlanBenefitOverride {
+  google.protobuf.Int64Value plan_id = 1;
+  google.protobuf.Int32Value default_sort_order = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue logo_url = 4;
+  google.protobuf.StringValue title = 5;
+  google.protobuf.StringValue subtitle = 6;
+  google.protobuf.BoolValue is_hidden = 7;
+}
+
+message GetPlanBenefitsOverrideRequest {
+  google.protobuf.Int64Value plan_id = 1;
+}
+
+message GetPlanBenefitsOverrideResponse {
+  repeated PlanBenefitOverride benefits = 1;
+}
+
+message UpdatePlanBenefitOverrideRequest {
+  PlanBenefitOverride plan_details = 1;
+}
+
+message UpdatePlanBenefitOverrideResponse {
+  google.protobuf.Int64Value plan_id = 1;
+  google.protobuf.Int32Value default_sort_order = 2;
+}
+
+message DefaultPlanBenefit {
+  google.protobuf.StringValue description = 1;
+  google.protobuf.StringValue logo_url = 2;
+  google.protobuf.StringValue title = 3;
+  google.protobuf.StringValue subtitle = 4;
+}
+message GetDefaultPlanBenefitsRequest {}
+
+message GetDefaultPlanBenefitsResponse {
+  repeated DefaultPlanBenefit benefits = 1;
+}
+
+message GetManageSharedDashpassMembershipPageRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetManageSharedDashpassMembershipPageResponse {
+  common.UIFlowScreen screen = 1; // Manage and invite page for membership sharing
+}
+
+message AcceptSharedDashpassMembershipRequest {
+  google.protobuf.StringValue membership_sharing_code = 1;
+  google.protobuf.StringValue recipient_consumer_id = 2;
+}
+
+message AcceptSharedDashpassMembershipResponse {
+  common.UIFlowScreen screen = 1; // Could be error or success screen
+}
+
+message InvalidateSharedDashpassMembershipRequest {
+  google.protobuf.StringValue membership_sharing_code = 1;
+  google.protobuf.StringValue invalidator_consumer_id = 2;
+}
+
+message InvalidateSharedDashpassMembershipResponse {
+  common.UIFlowScreen screen = 1; // Could be error or success screen
+}
+
+message InvalidateAllSharedDashpassMembershipsRequest {
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message InvalidateAllSharedDashpassMembershipsResponse {}
+
+message SendGiftRequest {
+  google.protobuf.StringValue plan_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  PaymentMethod payment_method = 3;
+  RecipientInfo recipient_info = 4;
+
+  message PaymentMethod {
+    google.protobuf.StringValue payment_method_type = 1;
+    google.protobuf.StringValue payment_method_id = 2;
+  }
+
+  message RecipientInfo {
+    GiftingDeliveryOption delivery_option = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.StringValue contact = 3;
+    google.protobuf.StringValue message = 4;
+    google.protobuf.StringValue epoch_milliseconds = 5;
+  }
+}
+
+message SendGiftResponse {
+  common.UIFlowScreen success_screen = 1;
+}
+
+message RedeemCodeRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue redeem_code = 2;
+}
+
+message RedeemCodeResponse {
+  common.UIFlowScreen success_screen = 1;
+}
+
+message GetDashPassCampaignsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+  repeated StoreInfo store_info = 3;
+  SubscriptionPlanType subscriptionType = 4; // default to DashPass
+  google.protobuf.StringValue payment_method_id = 5;
+
+  money.BasisPoint initial_service_fee_rate = 6 [deprecated = true]; // Use service rate on StoreInfo object instead
+
+  common.FulfillmentType fulfillment_type = 7; // eg. pickup, delivery, etc
+  google.protobuf.BoolValue is_card_payment = 8;
+  google.protobuf.BoolValue should_treat_paused_subscriber_as_active = 9;
+  common.ClientDeviceCtx client_device_ctx = 10;
+  google.protobuf.BoolValue include_order_cart_upsell = 11;
+  common.bundle_order_info.v1.BundleType bundle_type = 12;
+  repeated promotion_service.FeeDetails original_fee_details = 13; // info about the original service and delivery fees
+}
+
+message GetDashPassCampaignsResponse {
+  // If Cx is dashpass subscriber, list of their discount(s) as campaigns
+  repeated promotion_service.Campaign campaigns = 1;
+
+  // If Cx is not a dashpass subscriber, list of their potential benefits
+  // as campaigns. This is used to display potential discounts for upsell
+  repeated NudegableCampaign nudegable_campaigns = 2;
+}
+
+message NudegableCampaign {
+  promotion_service.Campaign campaign = 1;
+  promotion_service.NudgeableReason reason = 2;
+}
+
+/* Request to get gifts for consumer */
+message GetGiftsForConsumerRequest {
+  /* gifter consumer id */
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+/* Response of gifts from consumer */
+message GetGiftsForConsumerResponse {
+  /* list of gifted deliveries */
+  repeated GiftingDelivery deliveries = 1;
+}
+
+/* Gifted delivery object */
+message GiftingDelivery {
+  /* numerical primary key of delivery table */
+  google.protobuf.StringValue id = 1;
+  /* gifter consumer id */
+  google.protobuf.StringValue gifter_consumer_id = 2;
+  /* display string describing gift (e.g.) duration */
+  google.protobuf.StringValue purpose = 3;
+  /* gift card amount */
+  money.MonetaryFields fee = 4;
+  /* enum for delivery method */
+  GiftingDeliveryOption delivery_option = 5;
+  /* time gift is delivered */
+  google.protobuf.Timestamp delivered_at = 6;
+  /* status of the delivery from database */
+  google.protobuf.StringValue delivery_status = 7;
+  /* status of the gift code for display in dispatch */
+  google.protobuf.StringValue code_status = 8;
+  /* has gift been redeemed */
+  google.protobuf.BoolValue is_redeemed = 9;
+  /* email of the gift redeemer */
+  google.protobuf.StringValue redeemer_email = 10;
+  /* recipient name */
+  google.protobuf.StringValue recipient_name = 11;
+  /* recipient email */
+  google.protobuf.StringValue recipient_email = 12;
+  /* message sent as part of gift to recipient */
+  google.protobuf.StringValue gift_message = 13;
+}
+
+/* Request to refund a specific gift */
+message RefundGiftRequest {
+  /* primary key in gift delivery table to refund */
+  google.protobuf.StringValue id = 1;
+}
+
+/* Response from refund a gift */
+message RefundGiftResponse {
+  /* Updated gifted delivery object */
+  GiftingDelivery delivery = 1;
+  /* response from the server on success */
+  google.protobuf.StringValue response_message = 2;
+}
+
+/* Request to refund a specific gift */
+message ResendGiftEmailRequest {
+  /* primary key in gift delivery table to refund */
+  google.protobuf.StringValue id = 1;
+}
+
+/* Response from refund a gift */
+message ResendGiftEmailResponse {
+  /* resent gifted delivery object */
+  GiftingDelivery delivery = 1;
+  /* response from the server on success */
+  google.protobuf.StringValue response_message = 2;
+}
+
+enum RedeemCodeActionType {
+  UNKNOWN_REDEEM_CODE_ACTION_TYPE = 0;
+  REDEEM_CODE_ACTION_TYPE_CANCELLED = 1;
+}
+
+message ProcessRedeemCodeActionRequest {
+  google.protobuf.StringValue redeem_code = 1;
+  google.protobuf.StringValue partner_name = 2;
+  RedeemCodeActionType action_type = 3;
+}
+
+message IsUserEligibleForTrialRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  repeated google.protobuf.StringValue included_plans = 2;
+  repeated google.protobuf.StringValue excluded_plans = 3;
+}
+
+message IsUserEligibleForTrialResponse {
+  google.protobuf.BoolValue is_eligible_for_trial = 1;
+}
+
+message IsUserEligibleForPlanRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue plan_id = 2;
+}
+
+message IsUserEligibleForPlanResponse {
+  google.protobuf.BoolValue is_eligible_for_plan = 1;
+}
+
+message ProcessRedeemCodeActionResponse {}
+
+message GetBenefitsSummaryRequest {
+  google.protobuf.StringValue consumer_id = 1;
+
+  // Caller should provide a time interval over which to display benefits summary.
+  // If none is provided, service default (last 30 days) will be used
+  oneof interval {
+    time.v1.TimeRange time_range = 3;
+  }
+
+  // Caller can provide a list of filters to filter the order list for which the benefits are calculated
+  // for example, the orders can be filtered over store id
+  // the default is no filters
+  repeated Filter filters = 4;
+
+  // Caller should provide a list of requested sections to displayed by the feed
+  // Me Tab: [SECTION_ID_DASHPASS_STATUS, SECTION_ID_BENEFITS_SUMMARY]
+  // Welcome Back Message: [SECTION_ID_BENEFITS_SUMMARY]
+  repeated SectionIdentifier requested_sections = 5;
+
+  reserved 2; // date_range field was removed in favor of time zone aware TimeRange field
+  reserved "date_range";
+}
+
+message Filter {
+  FilterType type = 1;
+  google.protobuf.StringValue value = 2;
+
+  enum FilterType {
+    STORE_ID = 0;
+    //more filters can be added in the future
+  }
+}
+
+message GetBenefitsSummaryResponse {
+  repeated SubscriptionDescriptionSection description = 1;
+}
+
+message SubscribeWithFreeDaysRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue consumer_subscription_plan_id = 2;
+  google.protobuf.StringValue legacy_stripe_id = 3;
+  google.protobuf.Int32Value num_free_days = 4;
+  money.GrantFreeDashpassReason free_dashpass_reason = 5;
+  AdminMeta admin_meta = 6;
+}
+
+message SubscribeWithFreeDaysResponse {
+  ConsumerSubscription consumer_subscription = 1;
+  GenericCalloutInfo callout_info = 2;
+}
+
+message GetBenefitsEligibilityRequest {
+  // Required for all benefits
+  google.protobuf.StringValue consumer_id = 1;
+  common.ConsumerLocation consumer_location = 2;
+
+  // Batch request eligibility for multiple benefits
+  repeated common.subscription.v1.SubscriptionBenefitInfo requested_benefit_info = 3;
+}
+
+message GetBenefitsEligibilityResponse {
+  repeated common.subscription.v1.SubscriptionBenefitEligibility benefit_eligibility = 1;
+
+  // IMPORTANT: Do not use metadata to vend benefits. This is only upsell and benefit
+  // messaging
+  GetBenefitsEligibilityMetadata metadata = 2;
+}
+
+message GetBenefitsEligibilityMetadata {
+  SubscriptionStatus subscription_status = 1;
+}
+
+message GetMosaicDslTestingPageRequest {
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // template_name to fetch specific template
+  google.protobuf.StringValue template_name = 2;
+  // source is an additional context for the template
+  google.protobuf.StringValue source = 3;
+}
+
+message GetMosaicDslTestingPageResponse {
+  // Map of page keys to page responses
+  // The map must have a 'root' key with the main page to load
+  // other pages are bottom sheets that can be shown on certain actions and are optional in response
+  map<string, lego.response.v1.LegoPageResponse> pages = 1;
+}
+
+message UpgradeRequest {
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  string plan_id = 2;
+  // used when payment method is not Apple/Google Pay
+  google.protobuf.StringValue payment_method_uuid = 3;
+  google.protobuf.StringValue source = 4;
+  // used for Apple/Google Pay
+  google.protobuf.StringValue stripe_token = 5;
+}
+
+enum UpgradeState {
+  UPGRADE_STATE_UNKNOWN = 0;
+  UPGRADE_STATE_SUCCESS = 1; // Upgrade completed successfully
+  UPGRADE_STATE_IN_PROGRESS = 2; // Upgrade is still processing
+}
+
+message UpgradeResponse {
+  UpgradeState upgrade_state = 1;
+  google.protobuf.StringValue upgrade_message = 2;
+}

@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package user_management_service.v1;
+
+import "common/organization_service.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "user_management_service/common/entity.proto";
+
+option go_package = "user_management_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.user_management_service";
+
+// Entity APIs
+service EntityService {
+  option (doordash.api.service) = {
+    name: "user-management-service"
+    url: "user-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["entities"]
+    owner: {
+      id: "user-management-service"
+      name: "user-management-service"
+      slack_channel: "#eng-user-management"
+      email_alias: "mx-bmx-eng@doordash.com"
+    }
+    target_products: [
+      MX,
+      MX_PORTAL,
+      AX_PORTAL
+    ]
+  };
+  // Syncs an entity from the sources of truth into Elasticsearch.
+  rpc SyncEntity(SyncEntityRequest) returns (SyncEntityResponse);
+
+  rpc ListAssociatedEntities(ListAssociatedEntitiesRequest) returns (ListAssociatedEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 8000; // TODO lower if possible
+    option (google.api.http) = {
+      post: "/mx/entities/v1/list_associated"
+      body: '*'
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        DD_EMPLOYEE,
+        MX_USER
+      ]
+      inject_user_roles: true
+    };
+  }
+}
+
+message ListAssociatedEntitiesRequest {
+  // user profile id of the requester user; this will be used for authorization
+  google.protobuf.StringValue user_profile_id = 1;
+  // the store, business, or organization for which to get connected entities
+  organization_service.v1.Model model = 2;
+  // the types of entities (i.e. franchises, franchise groups, etc) to get, connected to the specified model
+  repeated organization_service.v1.EntityType entity_filter = 3;
+}
+
+message ListAssociatedEntitiesResponse {
+  repeated common.Entity entities = 1;
+}
+
+message SyncEntityRequest {
+  organization_service.v1.Model model = 1;
+}
+
+message SyncEntityResponse {}

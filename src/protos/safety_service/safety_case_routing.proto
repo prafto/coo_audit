@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package safety_service.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/safety_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.safety_service.rpc.api";
+
+// A service that handles case routing for different possible safety incidents
+service SafetyCaseRoutingService {
+  option (doordash.api.service) = {
+    name: "safety-service"
+    url: "safety-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["safety-service"]
+    owner: {
+      id: "trust-and-safety-observability"
+      name: "safety"
+      slack_channel: "#ask-safety-eng"
+      email_alias: "tns-eng@doordash.com"
+    }
+    target_products: [DX]
+  };
+  // Route safety case to AWS Connect Queue based on voice transcription
+  rpc GetVoiceRoutingAiQueue(GetVoiceRoutingAiQueueRequest) returns (GetVoiceRoutingAiQueueResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/safety-service/v1/safety-case-routing/get_voice_routing_ai_queue"
+      // Needed for post, patch, put methods. Omit for others.
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [DX]
+    };
+  }
+  // Route safety report to correct Queue based on report details
+  rpc GetRoutingAiQueue(GetRoutingAiQueueRequest) returns (GetRoutingAiQueueResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/safety-service/v1/safety-case-routing/get_routing_ai_queue"
+      // Needed for post, patch, put methods. Omit for others.
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [DX]
+    };
+  }
+}
+
+// Request for voice ai routing based on transcription of Dx call
+message GetVoiceRoutingAiQueueRequest {
+  // Voice transcript of Dx reporting safety incident
+  string voice_transcript = 1;
+  // Delivery uuid of the order
+  string delivery_uuid = 2;
+  // Dasher id for the call
+  string dasher_id = 3;
+  // Consumer id for the call
+  string consumer_id = 4;
+  // Role of the caller - deprecated
+  string caller_role = 5 [deprecated = true]; // Moved to caller_role_v2
+  // Role of the caller
+  CallerRole caller_role_v2 = 6;
+  // Phone number of the caller
+  string caller_phone_number = 7;
+}
+
+// Response for voice ai routing
+message GetVoiceRoutingAiQueueResponse {
+  // Which connect queue to route this case to
+  Queue connect_queue = 1;
+  // Whether the incident described represents a safety issue
+  bool is_safety_issue = 2;
+}
+
+// Request for generic ai routing based on report details and origin channel
+message GetRoutingAiQueueRequest {
+  // Origin channel of the routing request
+  OriginChannel origin_channel = 1;
+  // One of the report details should be set depending on the OriginChannel
+  oneof report_details {
+    // Report details associated with phone report
+    PhoneReportDetails phone_report_details = 2 [(doordash.api.client.optional) = true];
+    // Report details associated with in-app report from case-management service
+    InAppReportDetails in_app_report_details = 3 [(doordash.api.client.optional) = true];
+    // Report details associated with chatbot report
+    ChatbotReportDetails chatbot_report_details = 4 [(doordash.api.client.optional) = true];
+  }
+  // Delivery uuid of the order
+  string delivery_uuid = 10 [(doordash.api.client.optional) = true];
+  // Dasher id for the call
+  string dasher_id = 11 [(doordash.api.client.optional) = true];
+  // Consumer id for the call
+  string consumer_id = 12 [(doordash.api.client.optional) = true];
+  // Role of the reporter
+  ReporterRole reporter_role = 13;
+}
+
+// Report details for voice ai routing based on the phone transcript
+message PhoneReportDetails {
+  // Voice transcript of Dx reporting safety incident
+  string voice_transcript = 1;
+  // Phone number of the caller
+  string caller_phone_number = 2;
+}
+
+// Report details for in-app ai routing based on the incident description
+message InAppReportDetails {
+  // Incident description
+  string incident_description = 1;
+  // Report category selected from cmp report flow
+  string report_category = 2;
+}
+
+// Report details for chatbot ai routing based on the chat transcript
+message ChatbotReportDetails {
+  // Incident description
+  string chat_transcript = 1;
+}
+
+// Response for generic ai routing
+message GetRoutingAiQueueResponse {
+  // Which queue to route this case to
+  Queue queue = 1 [(doordash.api.client.optional) = true];
+  // Whether the incident described represents a safety issue
+  bool is_safety_issue = 2;
+}
+
+// Response object representing AWS Connect queue
+message Queue {
+  // The name of the connect queue
+  string name = 1;
+  // The id of the connect queue
+  string id = 2;
+  // The queue type
+  QueueType queue_type = 3;
+}
+
+// Role of the caller
+enum CallerRole {
+  // if caller is the unknown
+  CALLER_ROLE_UNSPECIFIED = 0;
+  // if caller is the Dasher
+  CALLER_ROLE_DASHER = 1;
+  // if caller is the Consumer
+  CALLER_ROLE_CONSUMER = 2;
+}
+
+// Role of the reporter
+enum ReporterRole {
+  // if reporter is the unknown
+  REPORTER_ROLE_UNSPECIFIED = 0;
+  // if reporter is the Dasher
+  REPORTER_ROLE_DASHER = 1;
+  // if reporter is the Consumer
+  REPORTER_ROLE_CONSUMER = 2;
+}
+
+// Origin channel of the routing request
+enum OriginChannel {
+  // if caller is the unknown
+  ORIGIN_CHANNEL_UNSPECIFIED = 0;
+  // if origin channel is in-app
+  ORIGIN_CHANNEL_IN_APP = 1;
+  // if origin channel is phone
+  ORIGIN_CHANNEL_PHONE = 2;
+  // if origin channel is chatbot
+  ORIGIN_CHANNEL_CHATBOT = 3;
+}
+
+// Type of the queue
+enum QueueType {
+  // if queue type is the unknown
+  QUEUE_TYPE_UNSPECIFIED = 0;
+  // if queue type is amazon connect
+  QUEUE_TYPE_AMAZON_CONNECT = 1;
+  // if queue type is salesforce
+  QUEUE_TYPE_SALESFORCE = 2;
+  // if queue type is case-management-platform
+  QUEUE_TYPE_CASE_MANAGEMENT_PLATFORM = 3;
+  // if queue type is sendbird live chat
+  QUEUE_TYPE_SENDBIRD_LIVE_CHAT = 4;
+}

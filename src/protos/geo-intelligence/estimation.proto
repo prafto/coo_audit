@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+import "eta_service/eta_update.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "Estimation";
+option java_package = "geo.intelligence.estimation.proto";
+
+service DynamicETAService {
+  rpc PredictById(ByDeliveryIdRequest) returns (DynamicETAResponse);
+  rpc PredictPickupTime(ByDeliveryIdRequest) returns (google.protobuf.Timestamp);
+  rpc PredictDeliveryTargetTime(DeliveryTargetETARequest) returns (DeliveryTargetETAResponse);
+}
+
+message DeliveryTargetETARequest {
+  enum Target {
+    MX_ARRIVAL = 0;
+  }
+  oneof id {
+    google.protobuf.Int64Value delivery_id = 1;
+  }
+  Target target = 2;
+}
+
+message ByDeliveryIdRequest {
+  google.protobuf.Int64Value delivery_id = 1;
+}
+
+enum State {
+  ON_TIME = 0;
+  LATE = 1;
+}
+
+enum LatenessReason {
+  NOT_LATE = 0;
+  DASHER_CONFLAT = 1;
+  MERCHANT_PREP_TIME = 2;
+}
+
+message DynamicETAResponse {
+  message ETA {
+    google.protobuf.Timestamp estimate = 1;
+    google.protobuf.Timestamp range_min = 2;
+    google.protobuf.Timestamp range_max = 3;
+  }
+  message ExpectedLateness {
+    State state = 1;
+    LatenessReason reason = 2;
+    int64 lateness_seconds = 3;
+  }
+  message Factors {
+    message Route {
+      message RoutePoint {
+        google.protobuf.DoubleValue lat = 1;
+        google.protobuf.DoubleValue lng = 2;
+        google.protobuf.StringValue type = 3; // e.g. 'pick_up', 'deliver', from Assignment-Service
+        google.protobuf.Int64Value delivery_id = 4; // legacy delivery id from Assignment-Service
+      }
+      message RouteLeg {
+        RoutePoint start = 1;
+        RoutePoint end = 2;
+      }
+      // Route Legs are in order of assignment
+      repeated RouteLeg route_leg = 1;
+    }
+    Route route = 1;
+  }
+
+  ETA eta = 1;
+  reserved 2;
+  reserved 3;
+  ExpectedLateness max_expected_lateness = 4;
+  Factors factors = 5;
+  google.protobuf.Timestamp server_timestamp = 6;
+  eta_service.Eta quoted_delivery_time = 7;
+  eta_service.DeliveryTimelinessDetails delivery_timeliness_details = 8;
+}
+
+message DeliveryTargetETAResponse {
+  google.protobuf.Timestamp estimate = 1;
+  float dasher_lat = 2;
+  float dasher_lng = 3;
+}

@@ -1,0 +1,760 @@
+syntax = "proto3";
+
+package custom_integrations_service.v1;
+
+import "common/common.proto";
+import "common/loyalty.proto";
+import "common/money.proto";
+import "custom_integrations_service/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_integrations/loyalty.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.customintegrations";
+
+// Order service for Custom Integration Service's loyalty
+service CustomIntegrationsLoyaltyService {
+  // Authenticate user on external loyalty.
+  rpc AuthenticateUserLoyaltyAccount(AuthenticateUserLoyaltyAccountRequest) returns (AuthenticateUserLoyaltyAccountResponse);
+  // Create a user's external loyalty account.
+  rpc CreateUserLoyaltyAccount(CreateUserLoyaltyAccountRequest) returns (CreateUserLoyaltyAccountResponse);
+  // Retrieve's loyalty account information
+  rpc GetLoyaltyAccount(GetLoyaltyAccountRequest) returns (GetLoyaltyAccountResponse);
+  // Delete user's loyalty account.
+  rpc DeleteUserLoyaltyAccount(DeleteUserLoyaltyAccountRequest) returns (DeleteUserLoyaltyAccountResponse);
+  // Retrieve's user's account information
+  rpc GetUserInformation(GetUserInformationRequest) returns (GetUserInformationResponse);
+  // Accumulates points/rewards to user's loyalty account
+  rpc AccrueRewards(AccrueRewardsRequest) returns (AccrueRewardsResponse);
+  // Redeems rewards from user's loyalty account
+  rpc RedeemRewards(RedeemRewardsRequest) returns (RedeemRewardsResponse);
+  // Retrieve's available rewards from user's loyalty account
+  rpc RetrieveRewards(RetrieveRewardsRequest) returns (RetrieveRewardsResponse);
+  // Reverses reward transaction made with merchant
+  rpc ReverseTransaction(ReverseTransactionRequest) returns (ReverseTransactionResponse);
+  // Retrieve's user's rewards to display on menu carousel page
+  rpc RetrieveAllExternalLoyaltyRewards(RetrieveAllExternalLoyaltyRewardsRequest) returns (RetrieveAllExternalLoyaltyRewardsResponse);
+  // Send one time password to user's email for loyalty linking validation
+  rpc SendOneTimePassword(SendOneTimePasswordRequest) returns (SendOneTimePasswordResponse);
+  // Verify one time password entered by user for loyalty linking validation
+  rpc VerifyOneTimePassword(VerifyOneTimePasswordRequest) returns (VerifyOneTimePasswordResponse);
+  // Unlink user's loyalty account
+  rpc UnlinkLoyaltyAccount(UnlinkLoyaltyAccountRequest) returns (UnlinkLoyaltyAccountResponse);
+  // update sf loyalty user session entry for mobile apps
+  rpc UpdateLoyaltyUserSession(UpdateLoyaltyUserSessionRequest) returns (UpdateLoyaltyUserSessionResponse);
+  // to check if user session is still active
+  rpc IsLoyaltyUserSessionActive(IsLoyaltyUserSessionActiveRequest) returns (IsLoyaltyUserSessionActiveResponse);
+  // revoke external loyalty session token to sign out user
+  rpc RevokeLoyaltyUserSession(RevokeLoyaltyUserSessionRequest) returns (RevokeLoyaltyUserSessionResponse);
+  // to check if loyalty code is valid
+  rpc ValidateLoyaltyCode(ValidateLoyaltyCodeRequest) returns (ValidateLoyaltyCodeResponse);
+  // used for olopunchh. applies reward to the basket and fetches discount amount
+  rpc ApplyLoyaltyReward(ApplyLoyaltyRewardRequest) returns (ApplyLoyaltyRewardResponse);
+  // to get loyalty points
+  rpc GetLoyaltyPoints(GetLoyaltyPointsRequest) returns (GetLoyaltyPointsResponse);
+  // to apply loyalty points
+  rpc ApplyLoyaltyPoints(ApplyLoyaltyPointsRequest) returns (ApplyLoyaltyPointsResponse);
+}
+
+// Request to create a user's external loyalty account
+message AuthenticateUserLoyaltyAccountRequest {
+  // provider type used for registration
+  CISProviderType provider_type = 1;
+  // Params necessary to complete user loyalty account auth
+  repeated common.loyalty.v1.LoyaltyAuthParams auth_params = 2;
+  // Merchant id/external reference id for the external loyalty provider
+  google.protobuf.StringValue merchant_id = 3;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 4;
+  // This is necessary when CIS calls 3rd party apis to ensure the redirect_uri matches
+  google.protobuf.StringValue redirect_uri = 5;
+  // Used for mobile APIs; if true, create a session id -> user access token mapping entry
+  google.protobuf.BoolValue create_session = 6;
+  // Used optionally for olo punchh integration to persist auth tokens under one session id
+  google.protobuf.StringValue session_id = 7;
+  // Used for olo punchh integration
+  google.protobuf.StringValue external_cart_id = 8;
+}
+
+// Response on authentication user's external loyalty account
+message AuthenticateUserLoyaltyAccountResponse {
+  // Success
+  message Success {
+    // User info obtained on successfully authenticating a user
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+    // Token obtained to make calls on behalf of a user
+    repeated common.loyalty.v1.LoyaltyAuthParams token = 2;
+    // Used for mobile APIs; Session id created that will map to corresponding access token to fetch PII
+    google.protobuf.StringValue session_id = 3;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Request to create a user's external loyalty account
+message CreateUserLoyaltyAccountRequest {
+  // provider type used for registration
+  CISProviderType provider_type = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue merchant_id = 2;
+  // consumer's registration data
+  common.loyalty.v1.LoyaltyConsumerData consumer_data = 3;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 4;
+  // This is necessary for sign up API calls for some providers
+  google.protobuf.StringValue card_template_code = 5;
+}
+
+// Response on creating/attempt to create a user's external loyalty account
+message CreateUserLoyaltyAccountResponse {
+  // Success
+  message Success {
+    // User info obtained on account creation attempt
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+    // Flag for whether or not user's account already exists
+    bool account_exists = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Request to validate a user's loyalty code
+message ValidateLoyaltyCodeRequest {
+  // provider type used for validation
+  CISProviderType provider_type = 1;
+  // Consumer id of the consumer being validated
+  google.protobuf.StringValue consumer_id = 2;
+  // Loyalty code being validated
+  google.protobuf.StringValue loyalty_code = 3;
+  // Business id for the provider
+  google.protobuf.StringValue reference_id = 4;
+  // Business type for the provider
+  google.protobuf.StringValue reference_type = 5;
+  // map of custom inputs to values to be passed into mx request
+  map<string, google.protobuf.Value> custom_input_values = 6;
+}
+
+// Response on loyalty validation
+message ValidateLoyaltyCodeResponse {
+  // Success
+  message Success {
+    // loyalty code/card number returned by merchant
+    google.protobuf.StringValue external_loyalty_code = 1;
+    // loyalty membership number returned by merchant
+    google.protobuf.StringValue external_loyalty_consumer_id = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// GetLoyaltyAccount Request
+message GetLoyaltyAccountRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue merchant_id = 2;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 3;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 4;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 5;
+  // external store id, added as part of spoton integration
+  google.protobuf.StringValue external_store_id = 6;
+}
+
+// GetLoyaltyAccount Response
+message GetLoyaltyAccountResponse {
+  // Success
+  message Success {
+    // Account info containing tier level and point balance for a user
+    common.loyalty.v1.LoyaltyAccountInfo account_info = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// GetUserInformation Request
+message GetUserInformationRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue merchant_id = 2;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 3;
+  // Authorization code needed for some providers to obtain the authorization token
+  google.protobuf.StringValue auth_code = 4;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 5;
+  // session id - used for mobile APIs to map to the related access token
+  google.protobuf.StringValue session_id = 6;
+  // phone number, added as part of spoton integration
+  google.protobuf.StringValue phone_number = 7;
+  // email, added as part of spoton integration
+  google.protobuf.StringValue email = 8;
+  // external store id, added as part of spoton integration
+  google.protobuf.StringValue external_store_id = 9;
+}
+
+// GetUserInformation Response
+message GetUserInformationResponse {
+  // Success
+  message Success {
+    // User info obtained from loyalty provider
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// AccrueRewards Request
+message AccrueRewardsRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Data model that houses loyalty information
+  LoyaltyRewardsData loyalty_rewards_data = 2;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 3;
+}
+
+// AccrueRewards Response
+message AccrueRewardsResponse {
+  // Success
+  message Success {
+    // Transaction identifier
+    google.protobuf.StringValue transaction_id = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// RedeemRewardsRequest
+message RedeemRewardsRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Data model that houses loyalty information
+  LoyaltyRewardsData loyalty_rewards_data = 2;
+  // State code to know whether to preview reward redemption or fulfill reward redemption
+  RedemptionState redemption_state = 3;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 4;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 5;
+}
+
+// RedeemRewards Response
+message RedeemRewardsResponse {
+  // Success
+  message Success {
+    // User reward redemption obtained on redeeming loyalty rewards attempt
+    money.LoyaltyRewardDetails redeemed_rewards = 1;
+    // Transaction identifier
+    google.protobuf.StringValue transaction_id = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return list of redeemed rewards
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// state code to know whether to preview reward redemption or fulfill reward redemption
+enum RedemptionState {
+  // unspecified status code
+  REDEMPTION_STATE_UNSPECIFIED = 0;
+  // preview status code
+  REDEMPTION_STATE_PREVIEW = 1;
+  // redeem status code
+  REDEMPTION_STATE_REDEEM = 2;
+}
+
+// RetrieveRewards Request
+message RetrieveRewardsRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Data model that houses loyalty information
+  LoyaltyRewardsData loyalty_rewards_data = 2;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 3;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 4;
+  // optional external cart id - stores external POS cart id
+  google.protobuf.StringValue external_cart_id = 5;
+}
+
+// RetrieveRewards Response
+message RetrieveRewardsResponse {
+  // Success
+  message Success {
+    // This field is misnamed and should reflect retrieved rewards
+    money.LoyaltyRewardDetails redeemed_rewards = 1;
+    // Transaction identifier
+    google.protobuf.StringValue transaction_id = 2;
+    // optional external cart id - stores external POS cart id
+    google.protobuf.StringValue external_cart_id = 3;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return list of redeemed rewards
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// RetrieveAllExternalLoyaltyRewards Request
+message RetrieveAllExternalLoyaltyRewardsRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Data model that houses loyalty information
+  LoyaltyRewardsData loyalty_rewards_data = 2;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 3;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 4;
+}
+
+// RetrieveAllExternalLoyaltyRewards Response
+message RetrieveAllExternalLoyaltyRewardsResponse {
+  // Success
+  message Success {
+    // User reward redemption obtained on redeeming loyalty rewards attempt
+    repeated money.LoyaltyReward rewards = 1;
+    // For Olo Punchh integration, this endpoint returns membership id
+    google.protobuf.StringValue membership_id = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return list of redeemed rewards
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// ReverseTransaction Request
+message ReverseTransactionRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue external_merchant_id = 2;
+  // Store id in the external loyalty provider
+  google.protobuf.StringValue external_store_id = 3;
+  // Transaction id in the external loyalty provider
+  google.protobuf.StringValue external_transaction_id = 4;
+  // Additional transaction details needed for some providers
+  TransactionDetails transaction_details = 5;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 6;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 7;
+  // external order id, added as part of spoton integration
+  google.protobuf.StringValue external_order_id = 8;
+}
+
+// ReverseTransaction Response
+message ReverseTransactionResponse {
+  // Success
+  message Success {
+    // Transaction identifier
+    google.protobuf.StringValue transaction_id = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return the id of the reversed order transaction
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// SendOneTimePassword Request
+message SendOneTimePasswordRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 2;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 3;
+}
+
+// SendOneTimePassword Response
+message SendOneTimePasswordResponse {
+  // Success
+  message Success {
+    // User info obtained on account creation attempt
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// VerifyOneTimePassword Request
+message VerifyOneTimePasswordRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 2;
+  // One time password user entered
+  google.protobuf.StringValue one_time_password = 3;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 4;
+}
+
+// VerifyOneTimePassword Response
+message VerifyOneTimePasswordResponse {
+  // Success
+  message Success {
+    // User info obtained on account creation attempt
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// UnlinkLoyaltyAccount Request
+message UnlinkLoyaltyAccountRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 2;
+  // access token - Only required for certain providers
+  google.protobuf.StringValue access_token = 3;
+  // dd consumer id, will mainly be used for logging purposes
+  google.protobuf.StringValue consumer_id = 4;
+}
+
+// UnlinkLoyaltyAccount Response
+message UnlinkLoyaltyAccountResponse {
+  // Success
+  message Success {
+    // User info obtained on account creation attempt
+    common.loyalty.v1.LoyaltyUserInfo user_info = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// UpdateExternalLoyaltySession Request
+message UpdateLoyaltyUserSessionRequest {
+  // session id - used for mobile APIs to map to the related access token
+  google.protobuf.StringValue session_id = 1;
+  // User's unique identifier.
+  google.protobuf.StringValue external_identifier = 2;
+  // Internal DD/SF consumer id
+  google.protobuf.StringValue internal_consumer_id = 3;
+  // provider type used for registration
+  CISProviderType provider_type = 4;
+}
+
+// UpdateLoyaltyUserSession Response
+message UpdateLoyaltyUserSessionResponse {
+  // Success
+  message Success {
+    // session id - used for mobile APIs to map to the related access token
+    google.protobuf.StringValue session_id = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// IsLoyaltyUserSessionActive Request
+message IsLoyaltyUserSessionActiveRequest {
+  // session id - used for mobile APIs to map to the related access token
+  google.protobuf.StringValue session_id = 1;
+  // provider type used for registration
+  CISProviderType provider_type = 2;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue external_merchant_id = 3;
+}
+
+// IsLoyaltyUserSessionActive Response
+message IsLoyaltyUserSessionActiveResponse {
+  // Success
+  message Success {
+    // is session active
+    google.protobuf.BoolValue is_active = 7;
+    // User's unique identifier.
+    google.protobuf.StringValue external_identifier = 2;
+    // Internal DD/SF consumer id
+    google.protobuf.StringValue internal_consumer_id = 3;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// RevokeLoyaltyUserSession Request
+message RevokeLoyaltyUserSessionRequest {
+  // session id - used for mobile APIs to map to the related access token
+  google.protobuf.StringValue session_id = 1;
+  // provider type used for registration
+  CISProviderType provider_type = 2;
+}
+
+// RevokeLoyaltyUserSession Response
+message RevokeLoyaltyUserSessionResponse {
+  // Success
+  message Success {}
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Additional transaction details needed for some providers
+message TransactionDetails {
+  // Identifier UUID associated with delivery
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Timestamp for when the order was created
+  google.protobuf.Timestamp order_created_at = 2;
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 3;
+}
+
+// Shared data model that houses loyalty data
+message LoyaltyRewardsData {
+  // Identifier for the user's external loyalty membership account.
+  // This could point towards a membership_id, user_id or some unique identifier in the external system
+  google.protobuf.StringValue external_user_identifier = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue external_merchant_id = 2;
+  // Store id in the external loyalty provider
+  google.protobuf.StringValue external_store_id = 3;
+  // Identifier UUID associated with delivery
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Identifier for associated cart
+  google.protobuf.StringValue cart_uuid = 5;
+  // Timestamp for when the order was created
+  google.protobuf.Timestamp order_created_at = 6;
+  // Order's subtotal
+  google.protobuf.Int32Value subtotal = 7;
+  // Order's tax amount
+  google.protobuf.Int32Value tax = 8;
+  // Order's discount amount
+  google.protobuf.Int32Value subtotal_discount = 9;
+  // Order's total cost excluding tip
+  google.protobuf.Int32Value order_total_without_tips = 10;
+  // Grand total of order
+  google.protobuf.Int32Value actual_order_total = 11;
+  // Tip amount
+  google.protobuf.Int32Value merchant_tip = 12;
+  // Fufillment type of order
+  common.FulfillmentType fulfillment_type = 13;
+  //Import from loyalty.proto or move to common.proto
+  merchant_integrations.ChosenLoyaltyRewards chosen_rewards = 14;
+  // Details of the cart items which may be needed by the external provider to return item-based rewards.
+  repeated common.loyalty.v1.ExternalLoyaltyCartItem items = 15;
+  // This is the loyalty code in external system
+  google.protobuf.StringValue external_loyalty_code = 16;
+  // external order id, added as part of spoton integration
+  google.protobuf.StringValue external_order_id = 17;
+  // Final delivery fee
+  google.protobuf.Int32Value final_delivery_fee = 18;
+}
+
+// DeleteLoyaltyUserSession Request.
+// NOTE: this is a rough sketch, we don't have the specification of external endpoints to call.
+message DeleteUserLoyaltyAccountRequest {
+  // provider type used for deletion
+  CISProviderType provider_type = 1;
+  // Merchant id in the external loyalty provider
+  google.protobuf.StringValue merchant_id = 2;
+  // Way to identify the consumer with the external provider information.
+  oneof consumer_info {
+    // User session id.
+    google.protobuf.StringValue session_id = 3;
+    // User's unique identifier.
+    google.protobuf.StringValue external_identifier = 4;
+  }
+}
+
+// DeleteLoyaltyUserSession Response
+message DeleteUserLoyaltyAccountResponse {
+  // Success
+  message Success {}
+  // result is either success or error
+  oneof result {
+    // on success
+    Success success = 1;
+    // on failure
+    Error error = 2;
+  }
+}
+
+// ApplyRewardRequest
+message ApplyLoyaltyRewardRequest {
+  // Specifies which integrated provider to call APIs from
+  CISProviderType provider_type = 1;
+  // optional session id - used for punchh and olo integration to fetch API token
+  google.protobuf.StringValue session_id = 2;
+  // external cart id - stores external POS cart id
+  google.protobuf.StringValue external_cart_id = 3;
+  // stores cart info
+  LoyaltyRewardsData loyalty_cart_info = 4;
+  // reward id to apply
+  google.protobuf.StringValue reward_id = 5;
+}
+
+// Apply Reward to basket and fetch discount amount. Used in OloPunchh integration
+message ApplyLoyaltyRewardResponse {
+  // on success, return rewards info
+  message Success {
+    // loyalty rewards
+    money.LoyaltyRewardDetails loyalty_rewards = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return loyalty account info
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Request to get loyalty points
+message GetLoyaltyPointsRequest {
+  // provider type (deprecated, use the CIS provider type)
+  google.protobuf.StringValue provider_type = 1 [deprecated = true];
+  // loyalty membership identifier
+  google.protobuf.StringValue loyalty_membership_identifier = 2;
+  // provider store id
+  google.protobuf.StringValue provider_store_id = 3;
+  // provider store parent id
+  google.protobuf.StringValue provider_store_parent_id = 4;
+  // transaction timestamp
+  google.protobuf.Timestamp transaction_timestamp = 5;
+  // eligible subtotal
+  money.MonetaryFields subtotal = 6;
+  // CIS provider type
+  CISProviderType cis_provider_type = 7;
+  // additional points offers
+  repeated google.protobuf.StringValue additional_points_offers = 8;
+}
+
+// Response to get loyalty points
+message GetLoyaltyPointsResponse {
+  // on success, return estimated loyalty points offers
+  message Success {
+    // loyalty points
+    google.protobuf.Int32Value loyalty_points = 1;
+    // eligible points offer ids
+    repeated google.protobuf.StringValue eligible_points_offer_ids = 2;
+    // cart analysis reference id
+    google.protobuf.StringValue cart_analysis_reference_id = 3;
+    // cart analysis result in json string format
+    google.protobuf.StringValue cart_analysis_result_json_string = 4;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return estimated loyalty points offers
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Request to apply loyalty points
+message ApplyLoyaltyPointsRequest {
+  // provider type (deprecated, use the CIS provider type)
+  google.protobuf.StringValue provider_type = 1 [deprecated = true];
+  // loyalty membership identifier
+  google.protobuf.StringValue loyalty_membership_identifier = 2;
+  // provider store id
+  google.protobuf.StringValue provider_store_id = 3;
+  // provider store parent id
+  google.protobuf.StringValue provider_store_parent_id = 4;
+  // transaction timestamp
+  google.protobuf.Timestamp transaction_timestamp = 5;
+  // cart analysis reference id
+  google.protobuf.StringValue cart_analysis_reference_id = 6;
+  // cart analysis result in json string format
+  google.protobuf.StringValue cart_analysis_result_json_string = 7;
+  // provider type
+  CISProviderType cis_provider_type = 8;
+}
+
+// Response to apply loyalty points
+message ApplyLoyaltyPointsResponse {
+  // on success, return applied points offers
+  message Success {
+    // loyalty points
+    google.protobuf.Int32Value loyalty_points = 1;
+    // eligible points offer ids
+    repeated google.protobuf.StringValue eligible_points_offer_ids = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return loyalty points offers
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}

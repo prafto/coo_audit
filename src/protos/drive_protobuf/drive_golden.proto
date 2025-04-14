@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+// To prevent name collision "inside" of protobuf project
+// The package of the generated code will be overwritten by java_package
+package drive_golden_service;
+
+// It is suggested to start package name with com.doordash.drive.grpc
+// The reason is that, a message name might be conflict with a class name defined in application code,
+// without the name "rpc", it would be hard to pick the correct one from the hints provided by your IDE.
+option java_package = "com.doordash.drive.grpc.golden";
+
+// This defines the name of the "wrapper class", whch is usually not used at all when java_multiple_files=true.
+// If not defined, it will be generated based on your .proto filename, which might not be good due to conflict names.
+// So, for drive_golden.proto file, we call it DriveGoldenProtos
+option java_outer_classname = "DriveGoldenProtos";
+
+// With is set to true, each "service" definition will be in its own class, instead of being nested into "wrapper class"
+// This is suggested to be set to true
+option java_multiple_files = true;
+
+// Please set to true when service definition exists in this proto
+option java_generic_services = true;
+
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+service DriveGoldenGrpcAPI {
+
+    // Example of using GRPC to transfer HTTP request from API gateway to backend service
+    rpc SampleHttpBackendRpc (SampleHttpBackendRpcRequest) returns (SampleHttpBackendRpcResponse);
+
+    // Example of using GRPC to do something between internal services
+    rpc SampleInternalRpc (SampleInternalRpcRequest) returns (SampleInternalRpcResponse);
+
+    /* Pay attention to Request/Response Naming Pattern */
+}
+
+// Example of various data types, depreate fields, etc.
+message SampleMessage {
+
+    /**
+     * ----- Scalar type vs Google type -----
+     * Scalar types: https://developers.google.com/protocol-buffers/docs/proto3#scalar
+     * Google types: https://developers.google.com/protocol-buffers/docs/reference/google.protobuf
+
+     * Scalar type is non-nullable, so they always have a default value.
+     * A scalar typed field ALWAYS exists, the server side always treat is as being set.
+
+     * Google type is nullable, use function has<field Name>() to check if it exists.
+
+     * The benefit of Google type is flexibility: you don't need to modify the proto file again to disable a field.
+     * On the other hand, if any field is used as the ID of the message, a scalar type is more reasonable. */
+
+
+    // Example: when a bool field is false, we don't know if the app set it to false, or if the app didn't set it at all.
+    int32 field_int = 1;
+    int64 field_long = 2;
+    float field_float = 3;
+    double field_double = 4;
+    bool field_bool = 5;
+    string field_string = 6;
+
+    // Google protobuf types are nullable (because they are essentially a wrapper of the raw type).
+    // Note that empty strings are not considered null
+    google.protobuf.Int32Value field_google_int = 7;
+    google.protobuf.Int64Value field_google_long = 8;
+    google.protobuf.FloatValue field_google_float = 9;
+    google.protobuf.DoubleValue field_google_double = 10;
+    google.protobuf.BoolValue field_google_bool = 11;
+    google.protobuf.StringValue field_google_string = 12;
+    google.protobuf.Timestamp field_google_timestamp = 13;
+    google.protobuf.Duration field_google_duration = 14;
+
+    // Arrays
+    repeated int32 field_int_array = 15;
+
+    // ----- Field Deprecation -----
+    // A soft deprecation. Use [deprecated = true] flag. The field are still usable but with warning
+    int32 deprecated_field = 16 [deprecated = true];
+    // A hard deprecation. Use reserved keyword, so the same number would not be reused for backward compatibility
+    reserved 17;
+}
+
+message SampleHttpBackendRpcRequest {
+    // It is recommended to do transformation in API gateway, however, serializing on serverside has its benefits also.
+
+    // Serialized message (recommended)
+    SampleMessage http_request_data = 1;
+
+    // Unserialized message
+    google.protobuf.StringValue http_request_body = 2;
+}
+
+message SampleHttpBackendRpcResponse {
+    
+    // Serialized message (recommended)
+    // API gateway needs to do transformation afterwards
+    SampleMessage http_response_data = 1;
+
+    // Unserialized message
+    // Server side takes control directly
+    int32 http_response_code = 2;
+    google.protobuf.StringValue http_response_body = 3;
+}
+
+message SampleInternalRpcRequest {
+    SampleMessage data = 1;
+}
+
+message SampleInternalRpcResponse {
+    message Error {
+        /**
+        * Why not just use grpc-status-code:
+        * - Grpc code and http code is not 1:1 mapping.
+        * - Extra message is hard to be transfered with grpc error, in a well controlled manner.
+        * - A grpc error sometiems means the client side needs to retry, it cannot handle the case that
+        *   server side really wants to return a 500 error.
+        * - Grpc-status-code is less explicit
+        */
+        enum ErrorCode {
+            INTERNAL_ERROR = 0;
+            NOT_FOUND = 1;
+            INVALID_REQUEST = 2;
+            UNAUTHORIZED = 3;
+        }
+
+        /**
+         * This is just an example, use the model that fits your need.
+         */
+        ErrorCode error_code = 1;
+        google.protobuf.StringValue error_details = 2;
+    }
+
+    oneof result {
+        Error error = 1;
+        SampleMessage data = 2;
+    }
+}

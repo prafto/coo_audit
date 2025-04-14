@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package pco;
+
+import "delivery_experience/order_tracker_service.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.postcheckout.proto";
+option objc_class_prefix = "MarketplaceOrderTracking";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Order tracking APIs for marketplace orders
+service MarketplaceOrderTracking {
+  option (doordash.api.service) = {
+    name_spaces: ["marketplace-order-tracking"]
+    owner: {
+      name: "post-checkout"
+      id: "post-checkout-delivery-experience-de"
+      slack_channel: "#post-checkout-oncall"
+      email_alias: "team-post-checkout@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Main order tracking API polled by the frontend
+  rpc GetOrderStatus(GetOrderStatusRequest) returns (GetOrderStatusResponse) {
+    option (google.api.http) = {get: "/marketplace-order-tracking/v1/get-order-status"};
+    option (doordash.api.endpoint) = {
+      hostname: "pco-marketplace-order-tracking-get-order-status.service.prod.ddsd"
+      tier: T0
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1000
+        availability_objective: 99.9
+      }
+      presentation_gateway_endpoint: true
+    };
+  }
+}
+
+// Request for Marketplace Get Order Status
+message GetOrderStatusRequest {
+  // Id to lookup the order by
+  oneof order_identifier {
+    // UUID of any merchant order within the consumer order
+    google.protobuf.StringValue merchant_order_uuid = 2;
+    // Cart ID for any merchant order within the consumer order
+    google.protobuf.StringValue merchant_cart_id = 3;
+  }
+
+  // Id of the signed in consumer, injected by UG
+  google.protobuf.StringValue consumer_id = 4 [(doordash.api.inject_id) = CX_ID];
+  // Id of the signed in user, injected by UG
+  string user_id = 5 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response for Marketplace GetOrderStatus
+message GetOrderStatusResponse {
+  // Raw order tracking data from the unified order tracking backend
+  delivery_experience.v1.GetOrderStatusV2Response data = 1;
+}

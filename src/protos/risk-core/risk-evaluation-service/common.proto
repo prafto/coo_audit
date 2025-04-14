@@ -1,0 +1,294 @@
+syntax = "proto3";
+
+package risk_core.v1.risk_evaluation_service.v1;
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "risk-core/action.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option java_package = "com.doordash.rpc.risk_core.riskevaluation";
+
+// EntityType defines the set of entities which are involved in the checkpoint execution.
+enum EntityType {
+  // Unspecified entity type
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // Fact entity type.
+  ENTITY_TYPE_FACT = 1;
+  // Dimension entity type
+  ENTITY_TYPE_DIMENSION = 2;
+  // Dimension profile entity type
+  ENTITY_TYPE_DIMENSION_PROFILE = 3;
+  // Label entity type
+  ENTITY_TYPE_LABEL = 4;
+  // Action entity type
+  ENTITY_TYPE_ACTION = 5;
+  // Experiment entity type
+  ENTITY_TYPE_EXPERIMENT = 6;
+}
+
+// OutputType defines the genenral output of rules being evaluted.
+enum OutputType {
+  // unknown type
+  OUTPUT_TYPE_UNSPECIFIED = 0;
+  // rule output exemption
+  OUTPUT_TYPE_EXEMPTION = 1;
+  // rule output lable
+  OUTPUT_TYPE_LABEL = 2;
+  // rule output action
+  OUTPUT_TYPE_ACTION = 3;
+}
+
+// RuleResult defines the output value of each rule evaluation, either a valid result
+// or an error
+message RuleResult {
+  // return value either a valid result or an error
+  oneof kind {
+    // valid result of rule evaluation
+    Result result = 1;
+    // error as rule evaluation result
+    Error error = 2;
+  }
+}
+
+// Result is the valid output for a rule evalution
+message Result {
+  // name of the rule
+  string name = 1;
+
+  // description of the rule
+  // in the new service the value is configuration based
+  string details = 2;
+
+  // source of rule
+  string source = 3;
+
+  // each rule reulst source properties
+  map<string, string> properties = 4;
+}
+
+// Error is error happened during the rule evaluation
+message Error {
+  // list of errors that could happen in the new risk evaluation
+  // service. Add enum type here as we also define new errors output
+  // during the evaluation process (dependency, schema definition, load, etc)
+  enum ErrorCode {
+    // none defined error
+    ERROR_CODE_UNSPECIFIED = 0;
+    // error code when loading from Cassandra have issues and if the
+    // fact is critical to the entire evaluation
+    ERROR_CODE_INVALID_DATA_FROM_DB = 1;
+  }
+
+  // error message string
+  string message = 1;
+
+  // list of error causes
+  repeated string causes = 2;
+}
+
+// RuleConfigProperty record partial rule config
+// property values that need to be passed back
+// from risk-evaluation-service to risk-core
+// after the evaluation cycle
+message RuleConfigProperty {
+  // name -> rule name
+  string name = 1;
+  // facts -> rule dependent facts
+  repeated string facts = 2;
+}
+
+// The type of decision made by a set of rules.
+enum DecisionType {
+  // Unspecified decision type
+  DECISION_TYPE_UNSPECIFIED = 0;
+  // Action instance decision
+  DECISION_TYPE_ACTION = 1;
+  // Label decision
+  DECISION_TYPE_LABEL = 2;
+}
+
+/*
+ * Labels are named decisions within a checkpoint.
+ */
+message Label {
+  // The name of the label. Must be unique, all lowercase.
+  string name = 1;
+}
+
+/**
+ * A decision is an output of a set of rules.
+ */
+message Decision {
+  /**
+   * Action decisions are the final set of outputs for a checkpoint. Checkpoints produce a set of action decisions.
+   * Action decisions signal an intent to take an action within the system, but the action itself is not executed by
+   * the checkpoint. Additionally, not every action returned from a checkpoint will necessarily be executed by the
+   * system; this depends on checkpoint-level configuration.
+   */
+  message ActionDecision {
+    // The configured action instance for this decision.
+    Action action_instance = 1;
+  }
+
+  /**
+   * Label decisions are the intermediate outputs within a checkpoint. They are used to signal a yes/no decision by a
+   * set of rules. The set of label decisions are expected to change over time and callers of the checkpoint should
+   * not rely on specific labels to take actions within the system.
+   */
+  message LabelDecision {
+    // The label for this decision
+    Label label = 1;
+  }
+
+  // Name of the decision. Must be unique, all lowercase.
+  string name = 1;
+
+  // The type of decision.
+  DecisionType type = 2;
+
+  // The description of the decision.
+  string description = 3;
+
+  // The dimension profiles attached to this decision.
+  repeated string dimension_profile_uuids = 4;
+
+  // The type of decision
+  oneof decision {
+    // The action decision details.
+    ActionDecision action = 100;
+
+    // The label decision details.
+    LabelDecision label = 101;
+  }
+}
+
+// Experiment to be used in rule expression in for a checkpoint
+message Experiment {
+  // Experiment name setup in the Experimentation Platform
+  string experiment_name = 1;
+
+  // bucket_key is part of context map internally
+  // since bucket_key is required, we are explicitly defining here i.e. bucket_key, consumer_id ...
+  string bucket_key = 2;
+
+  // fact name used for bucket key
+  // i.e. defining bucket key fact name = 'user_id' would add {'bucket_key', 'user_id'} to the context map
+  string bucket_key_fact_name = 3;
+
+  // default bucket i.e. 'reserve'
+  string default_bucket = 4;
+
+  /**
+   * Context map defines the additional experiment context (other than bucket_key)
+   * the map format is key = context name, value = fact name for the value
+   * i.e. 'client_version' and fact_name = 'clientVersion'
+   * context_map {'client_version', 'clientVersion'}
+   */
+  map<string, string> context_map = 5;
+}
+
+// A list of string values. Useful wrapper object to differentiate between the absense of the list and an empty list.
+message StringListValue {
+  // The values
+  repeated string values = 1;
+}
+
+// ConfigState
+enum ConfigState {
+  // unspecified
+  CONFIG_STATE_UNSPECIFIED = 0;
+  // inactive
+  CONFIG_STATE_INACTIVE = 1;
+  // active
+  CONFIG_STATE_ACTIVE = 2;
+  // pending
+  CONFIG_STATE_PENDING = 3;
+  // rejected
+  CONFIG_STATE_REJECTED = 4;
+  // staged
+  CONFIG_STATE_STAGED = 5;
+}
+
+// ConfigChangeCategory
+enum ConfigChangeCategory {
+  // unspecified
+  CONFIG_CHANGE_CATEGORY_UNSPECIFIED = 0;
+  // checkpoint config
+  CONFIG_CHANGE_CATEGORY_CHECKPOINT_CONFIG = 1;
+  // rule config
+  CONFIG_CHANGE_CATEGORY_RULE_CONFIG = 2;
+  // fact spec
+  CONFIG_CHANGE_CATEGORY_FACT_SPEC = 3;
+  // experiment config
+  CONFIG_CHANGE_CATEGORY_EXPERIMENT_CONFIG = 4;
+}
+
+// Information about the user who made a change.
+message UserChange {
+  // user id
+  string user_id = 1;
+  // user email
+  string user_email = 2;
+  // user message
+  string user_message = 3;
+}
+
+// ChangeState
+enum ChangeState {
+  // unspecified
+  CHANGE_STATE_UNSPECIFIED = 0;
+  // pending
+  CHANGE_STATE_PENDING = 1;
+  // approved
+  CHANGE_STATE_APPROVED = 2;
+  // rejected
+  CHANGE_STATE_REJECTED = 3;
+  // launched
+  CHANGE_STATE_LAUNCHED = 4;
+  // staged
+  CHANGE_STATE_STAGED = 5;
+}
+
+// Change meta data
+message ChangeRequest {
+  // change id
+  string change_id = 1;
+  // change state
+  ChangeState state = 2;
+  // user
+  string user_id = 3;
+  // user email
+  string user_email = 4;
+  // time stamp
+  google.protobuf.Timestamp updated_at = 5;
+  // current version
+  string current_version = 6;
+  // base version
+  string base_version = 7;
+  // message
+  string user_message = 8;
+  // diff
+  string diff = 9;
+  // approved_by
+  string approved_by = 10;
+  // created by
+  string created_by = 11;
+  // launched by
+  string launched_by = 12;
+  // approved_at
+  google.protobuf.Timestamp approved_at = 13;
+  // created_at
+  google.protobuf.Timestamp created_at = 14;
+  // launched_at
+  google.protobuf.Timestamp launched_at = 15;
+  // checkpoint name
+  string checkpoint_name = 16;
+  // rule name
+  string rule_name = 17;
+  // change type
+  ConfigChangeCategory change_category = 18;
+}

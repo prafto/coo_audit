@@ -1,0 +1,340 @@
+syntax = "proto3";
+
+package doordash_order_transmission2;
+
+import "common/common.proto";
+import "common/order.proto";
+import "common/order_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+
+service DoordashOrderTransmission {
+  rpc RaiseError(EmptyRequest) returns (EmptyRequest);
+  rpc CreateOrderTransmission(CreateOrderTransmissionRequest) returns (OrderTransmissionResponse);
+
+  rpc GetOrderTransmission(GetRequest) returns (OrderTransmissionResponse);
+  rpc GetUnclaimedOrderCount(EmptyRequest) returns (CountResponse);
+
+  rpc ListOrderTransmissionsForStore(ListOrderTransmissionsForStoreRequest) returns (ListOrderTransmissionsResponse);
+  rpc ListOrderTransmissionsForOrderPlacer(OrderPlacerRequest) returns (ListOrderTransmissionsResponse);
+  rpc ListOrderTransmissionsForDeliveries(DeliveryRequest) returns (ListOrderTransmissionsResponse);
+
+  // Transmission status
+  rpc UpdateOrderTransmitted(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc ResetOrderTransmittedStatus(SimpleRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderShouldBeManuallyTransmitted(OrderTransmissionUpdateBoolRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderManuallyTransmitted(OrderTransmissionUpdateBoolRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderNeedsSecondStoreConfirmation(OrderTransmissionUpdateBoolRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderFaxSucceeded(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderRobocallAborted(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateReplicantOrder(ReplicantPayloadRequest) returns (SimpleResponse);
+  rpc GetEstimatedTimeInOrderWaitlist(GetEstimatedTimeInOrderWaitlistRequest) returns (GetEstimatedTimeInOrderWaitlistResponse);
+
+  // Store events
+  rpc UpdateOrderStoreConfirmed(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderStoreReceived(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderStoreReconfirmed(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderOnsiteEstimatedReady(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderReadyForPickup(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+
+  // Order placer
+  rpc UpdateOrderSentToOrderPlacer(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc ResetOrderPlacerStatus(SimpleRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderClaimedByOrderPlacer(OrderTransmissionClaimedRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderEscalatedByOrderPlacer(OrderTransmissionEscalatedRequest) returns (OrderTransmissionResponse);
+
+  // Internal states
+  rpc UpdateOrderProtocols(OrderTransmissionUpdateProtocolsRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderPredictionTimes(OrderTransmissionUpdatePredictionTimesRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderIsAsap(OrderTransmissionUpdateBoolRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderSubtotal(OrderTransmissionUpdateIntRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderDeliveryId(OrderTransmissionUpdateLongRequest) returns (OrderTransmissionResponse);
+
+  // Delivery state
+  rpc UpdateOrderPickedUp(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderFulfilled(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+  rpc UpdateOrderCancelled(OrderTransmissionUpdateTimestampRequest) returns (OrderTransmissionResponse);
+
+  rpc TransmitOrder(TransmissionRequest) returns (TransmissionResponse);
+  rpc HandlePointOfSaleFailure(TransmissionRequest) returns (TransmissionResponse);
+
+  // Fax
+  rpc GetOrderPdf(GetOrderPdfRequest) returns (OrderPdfResponse);
+  rpc SendFaxStatus(SendFaxStatusRequest) returns (FaxStatusResponse);
+}
+
+message EmptyRequest {}
+
+message DeliveryRequest {
+  repeated int64 delivery_ids = 1;
+}
+
+message OrderTransmissionUpdatePredictionTimesRequest {
+  int64 store_order_cart_id = 1;
+  google.protobuf.Timestamp quoted_delivery_time = 2;
+  int32 estimated_prep_duration = 3;
+  google.protobuf.Timestamp estimated_pickup_time = 4;
+  DeliveryOptionInfo delivery_option_info = 5;
+}
+
+message OrderTransmissionEscalatedRequest {
+  int64 store_order_cart_id = 1;
+  string order_placer_escalation = 2;
+  google.protobuf.Timestamp order_placer_escalation_time = 3;
+}
+
+message OrderTransmissionClaimedRequest {
+  int64 store_order_cart_id = 1;
+  int64 order_placer_claimed_id = 2;
+  google.protobuf.Timestamp order_placer_claimed_time = 3;
+}
+
+message OrderTransmissionUpdateProtocolsRequest {
+  int64 store_order_cart_id = 1;
+  string order_protocol = 2;
+  string confirm_protocol = 3;
+}
+
+message OrderTransmissionUpdateTimestampRequest {
+  int64 store_order_cart_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  google.protobuf.BoolValue order_abandoned = 3;
+}
+
+message OrderTransmissionUpdateIntRequest {
+  int64 store_order_cart_id = 1;
+  int32 value = 2;
+}
+
+message OrderTransmissionUpdateBoolRequest {
+  int64 store_order_cart_id = 1;
+  bool value = 2;
+}
+
+message OrderTransmissionUpdateLongRequest {
+  int64 store_order_cart_id = 1;
+  int64 value = 2;
+}
+
+message GetRequest {
+  int32 deprecated_store_order_cart_id = 1;
+  int64 store_order_cart_id = 2;
+}
+
+message SimpleRequest {
+  int32 deprecated_store_order_cart_id = 1;
+  int64 store_order_cart_id = 2;
+}
+
+message OrderPlacerRequest {
+  int32 order_placer_id = 1;
+  bool unclaimed_only = 2;
+}
+
+message ListOrderTransmissionsForStoreRequest {
+  // retrival option
+  enum RetrievalOption {
+    // unknown
+    RETRIEVAL_OPTION_UNSPECIFIED = 0;
+    // include untransmitted
+    RETRIEVAL_OPTION_INCLUDE_UNTRANSMITTED = 1;
+  }
+  int64 store_id = 1;
+  google.protobuf.Timestamp quoted_delivery_start_time = 2;
+  bool include_cancelled = 3 [deprecated = true];
+  bool fulfilled = 4 [deprecated = true];
+  bool exclude_fulfilled = 5 [deprecated = true];
+  repeated RetrievalOption RetrievalOptions = 6;
+}
+
+message CountResponse {
+  int32 count = 1;
+}
+
+message ListOrderTransmissionsResponse {
+  repeated OrderTransmission order_transmissions = 1;
+}
+
+message CreateOrderTransmissionRequest {
+  OrderTransmission order_transmission = 1;
+}
+
+message OrderTransmissionResponse {
+  OrderTransmission order_transmission = 1;
+}
+
+message OrderTransmission {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+
+  int64 store_order_cart_id = 3;
+  int64 order_cart_id = 4;
+  int64 delivery_id = 5;
+  int64 store_id = 6;
+  int64 market_id = 7;
+  int64 submarket_id = 8;
+  int64 country_id = 9;
+
+  int32 migration_version = 10;
+
+  string order_protocol = 11;
+  string confirm_protocol = 12;
+
+  // When order finally sent
+  google.protobuf.Timestamp order_transmitted_time = 13;
+  bool should_be_manually_transmitted = 14;
+  bool manually_transmitted = 15;
+
+  // Merchant times
+  google.protobuf.Timestamp store_confirmed_time = 16;
+  google.protobuf.Timestamp store_reconfirmed_time = 17;
+  google.protobuf.Timestamp store_order_ready_time = 18;
+  google.protobuf.Timestamp store_order_received_time = 19;
+
+  bool second_store_confirmation_required = 20;
+
+  // Order placer
+  google.protobuf.Timestamp order_placer_sent_time = 21;
+  google.protobuf.Timestamp order_placer_claimed_time = 22;
+  google.protobuf.Timestamp order_placer_escalation_time = 23;
+
+  // User ID of OrderPlacer that claimed (will delete this redundant field soon)
+  int64 order_placer_claimed_id = 24;
+  string order_placer_escalation = 25;
+
+  // Fax timestamps and such
+  string fax_data = 26;
+
+  // Robocall confirmation digits, success timestamp
+  string robocall_data = 27;
+
+  // Fields that are duplicated from Delivery or other tables
+  bool is_asap = 28;
+  google.protobuf.Timestamp quoted_delivery_time = 29;
+  google.protobuf.Timestamp estimated_pickup_time = 30;
+  int32 estimated_prep_duration = 31;
+  google.protobuf.Timestamp onsite_estimated_ready_time = 32;
+
+  google.protobuf.Timestamp pickup_time = 33;
+
+  // this is either the delivery time, or possibly pickup time for pickup orders.
+  google.protobuf.Timestamp fulfilled_at = 34;
+
+  int32 order_subtotal = 35;
+
+  google.protobuf.Timestamp cancelled_at = 36;
+
+  // order uuid generated by order fulfillment service
+  string order_uuid = 37;
+
+  int64 starting_point_id = 38;
+  int64 business_id = 39;
+
+  common.DeliveryOptionType delivery_option_type = 40;
+
+  common.order_config.v1.OrderConfig.ConsumerExperience experience = 41;
+
+  google.protobuf.Timestamp auto_release_confirmed_at = 42;
+
+  // Retail context for this order transmission
+  RetailContext retail_context = 9001;
+
+  DeliveryContext delivery_context = 9002;
+}
+
+// RetailContext is the necessary context to decide whether to initiate a PickPack workflow in retail-service
+message RetailContext {
+  reserved 9;
+  reserved "is_retail_pick_pack";
+  // Shopping protocol, ie. how this order will be picked/packed
+  order.ShoppingProtocol shopping_protocol = 5;
+  // Customer Client Version
+  common.ClientVersion version = 6;
+  google.protobuf.StringValue retail_order_type = 8;
+  // Param that indicates if this is a retail pick pack order
+  google.protobuf.BoolValue is_retail_pick_pack_order = 10;
+}
+
+message DeliveryContext {
+  reserved 12;
+  reserved "is_employee";
+  common.DasherPickupProtocol dasher_pickup_protocol = 1;
+  google.protobuf.StringValue store_table_id = 2;
+  string fulfillment_type = 3;
+  bool auto_release_enabled = 4;
+  bool is_catering = 5;
+  common.DeliveryOptionType delivery_option_type = 6;
+  bool is_home_chef = 7;
+  bool is_immediate_dispatch_enabled = 8;
+  google.protobuf.StringValue consumer_id = 9;
+  google.protobuf.StringValue business_vertical_id = 10;
+  common.order_config.v1.OrderConfig.ConsumerExperience experience = 11;
+  bool is_employee_backup = 13;
+  DeliveryOptionInfo delivery_option_info = 14;
+}
+
+message TransmissionRequest {
+  int64 store_order_cart_id = 1;
+}
+
+message TransmissionResponse {
+  // acknowledgement of the request, not the actual transmission result.
+  bool ack = 1;
+}
+
+message SimpleResponse {
+  bool success = 1;
+}
+
+message ReplicantPayloadRequest {
+  string callId = 1;
+  string campaignId = 2;
+  string phone = 3;
+  string callerId = 4;
+  string status = 5;
+  bool callCompleted = 6;
+  bool callFailed = 7;
+  string callStartedAt = 8;
+  int32 callDuration = 9;
+  string callSuccessAt = 10;
+  google.protobuf.Struct callResults = 11;
+}
+
+message GetOrderPdfRequest {
+  string order_transmission_id = 1;
+}
+
+message OrderPdfResponse {
+  bytes pdf_content = 1;
+}
+
+message SendFaxStatusRequest {
+  string order_transmission_id = 1;
+  string fax_status = 2;
+  string fax_sid = 3;
+  string error_message = 4;
+}
+
+message FaxStatusResponse {
+  bool ack = 1;
+}
+
+message GetEstimatedTimeInOrderWaitlistRequest {
+  int64 store_id = 1;
+}
+
+message GetEstimatedTimeInOrderWaitlistResponse {
+  int32 estimated_seconds_in_order_waitlist = 1;
+}
+
+message DeliveryOptionInfo {
+  DeliveryWindow delivery_window = 1;
+}
+
+message DeliveryWindow {
+  google.protobuf.Timestamp range_min = 1;
+  google.protobuf.Timestamp range_max = 2;
+}

@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package pathfinder_service.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.pathfinder_service.rpc.api";
+
+// Request to get the available reports for a store
+message GetStoreAvailableReportsRequest {
+  // The store id for which we want to get the available reports
+  google.protobuf.StringValue store_id = 1;
+  // Can be used later to return custom reports based on the role (not part of v0)
+  google.protobuf.StringValue pinned_employee_uuid = 2;
+}
+
+// Response to get the available reports for a store
+message GetStoreAvailableReportsResponse {
+  // The available reports for the store
+  repeated ReportType report_type = 1;
+}
+
+// The type of report that can be generated for a store
+enum ReportType {
+  // Unspecified report type
+  REPORT_TYPE_UNSPECIFIED = 0;
+  // Report type for employee sales
+  REPORT_TYPE_EMPLOYEE_SALES = 1;
+  // Report type for daily sales summary
+  REPORT_TYPE_DAILY_SALES_SUMMARY = 2;
+}
+
+// Request to get a store report
+message GetStoreReportRequest {
+  // The store id for which we want to get the report
+  google.protobuf.StringValue store_id = 1;
+  // The type of report to get
+  ReportType report_type = 2;
+  // Start time
+  google.protobuf.Timestamp start_time = 3;
+  // End time
+  google.protobuf.Timestamp end_time = 4;
+}
+
+// Response to get a store report
+message GetStoreReportResponse {
+  // The date filter type to be shown by the FE
+  DateFilterType date_filter_type = 1;
+  // The report summary data
+  repeated SummarySection summary_section = 2;
+  reserved 3; // Deprecate old columns with no details
+  reserved "column"; // Deprecate old columns with no details
+  // The report list of rows: [
+  // {{REPORT_COLUMN_ORDERS, "15"}, {REPORT_COLUMN_SALES, "$100"}...},
+  // {{REPORT_COLUMN_ORDERS, "10"}, {REPORT_COLUMN_SALES, "$90"}...},
+  // ...]
+  repeated ReportRow rows = 4;
+  // The report footer data
+  Footer footer = 5;
+  // The report columns details: [each object contains column name and more details as needed]
+  repeated ReportColumnDetails columns = 6;
+  // Whether the report is printable
+  google.protobuf.BoolValue is_printable = 7;
+}
+
+// The footer of the report
+message Footer {
+  // Using oneOf in preparation for the future
+  oneof value {
+    // The text of the footer
+    google.protobuf.StringValue text = 1;
+  }
+}
+
+// Object representing a summary section in the report
+message SummarySection {
+  // The label of the summary section
+  SummarySectionLabel label = 1;
+  // The value of the summary section, the BE will use the header locale (accept-language) to format this for the FE
+  google.protobuf.StringValue value = 2;
+}
+
+// The labels of the summary section
+// Each of these have to be mapped in the FE to a localization string, we can choose to name them the same names to not have to write manual mappers
+enum SummarySectionLabel {
+  // Unspecified summary section label
+  SUMMARY_SECTION_LABEL_UNSPECIFIED = 0;
+  // The current time
+  SUMMARY_SECTION_LABEL_CURRENT_TIME = 1;
+  // The POS credit card sales
+  SUMMARY_SECTION_LABEL_CREDIT_CARD_SALES = 2;
+  // The POS cash sales
+  SUMMARY_SECTION_LABEL_CASH_SALES = 3;
+  // The POS credit card tips
+  SUMMARY_SECTION_LABEL_CREDIT_CARD_TIPS = 4;
+  // total gross sales
+  SUMMARY_SECTION_LABEL_TOTAL_GROSS_SALES = 5;
+  // total order volume
+  SUMMARY_SECTION_LABEL_TOTAL_ORDER_VOLUME = 6;
+  // total ticket size
+  SUMMARY_SECTION_LABEL_TOTAL_TICKET_SIZE = 7;
+}
+
+// The details of the report column
+message ReportColumnDetails {
+  // The column name
+  ReportColumn name = 1;
+  // The UI details of the report column
+  ReportColumnUiDetails ui_details = 2;
+}
+
+// The UI details of the report column
+message ReportColumnUiDetails {
+  // The minimum width of the column
+  google.protobuf.Int32Value min_width = 1;
+  // The maximum width of the column
+  google.protobuf.Int32Value max_width = 2;
+}
+
+// The columns of the report
+// Each of these have to be mapped in the FE to a localization string, we can choose to name them the same names to not have to write manual mappers
+enum ReportColumn {
+  // Unspecified report column
+  REPORT_COLUMN_UNSPECIFIED = 0;
+  // The name of the employee
+  REPORT_COLUMN_NAME = 1;
+  // The time the employee clocked in
+  REPORT_COLUMN_CLOCKED_IN = 2;
+  // The time the employee clocked out
+  REPORT_COLUMN_CLOCKED_OUT = 3;
+  // The time the employee was on shift
+  REPORT_COLUMN_TIME_ON_SHIFT = 4;
+  // The number of orders the employee took
+  REPORT_COLUMN_ORDERS = 5;
+  // The sales the employee made
+  REPORT_COLUMN_SALES = 6;
+  // The tips the employee is owed (Can be different than the tips the employee received, depending on tip pooling rules)
+  REPORT_COLUMN_TIPS = 7;
+  // sales breakdown for daily sales summary
+  REPORT_COLUMN_SALES_BREAKDOWN = 8;
+}
+
+// A row in the report
+message ReportRow {
+  // List of fields in the row: [
+  // {REPORT_COLUMN_ORDERS, "15"},
+  // {REPORT_COLUMN_SALES, "$100"}
+  // ...]
+  repeated ReportField fields = 1;
+}
+
+// A field in the report row
+message ReportField {
+  // The column name: REPORT_COLUMN_ORDERS, REPORT_COLUMN_TIME_ON_SHIFT, ...
+  ReportColumn name = 1;
+  // Using oneOf in preparation for the future where we might have actions as fields
+  oneof value {
+    // Localized value: $100, 6:00pm, ...
+    google.protobuf.StringValue formatted_value = 2;
+    // Action that can be taken on the field
+    Action action = 3;
+    // Icon text is used when the cell has a text which has a icon with it
+    IconText icon_text = 4;
+  }
+}
+
+// The position of the icon in the cell
+enum IconPosition {
+  // Unspecified icon position
+  ICON_POSITION_UNSPECIFIED = 0;
+  // The icon is on the left of the text
+  ICON_POSITION_START = 1;
+  // The icon is on the right of the text
+  ICON_POSITION_END = 2;
+}
+
+// The name of the icon to be displayed
+enum IconName {
+  // Unspecified icon name
+  ICON_NAME_UNSPECIFIED = 0;
+  // a green colored online dot icon
+  ICON_NAME_ONLINE_GREEN_FILLED_CIRCLE = 1;
+}
+
+// IconText message is used when the cell has a text which has a icon with it
+message IconText {
+  // The text to be displayed
+  google.protobuf.StringValue text = 1;
+  // The prism icon name to be displayed
+  IconName icon_name = 2;
+  // position of the icon
+  IconPosition icon_position = 3;
+}
+
+// The type of action that can be taken on a report field
+enum ActionType {
+  // unspecified action type
+  ACTION_TYPE_UNSPECIFIED = 0;
+  // close shift
+  ACTION_TYPE_CLOSE_SHIFT = 1;
+}
+
+// Action
+message Action {
+  // action type
+  ActionType type = 1;
+  // The label of the button
+  google.protobuf.StringValue label = 2;
+  // payload based on the action type
+  oneof payload {
+    // payload for a button to close shift
+    CloseShiftPayload data = 3;
+  }
+}
+
+// Payload for the close shift action
+message CloseShiftPayload {
+  // The shift UUID to close
+  google.protobuf.StringValue shift_uuid = 1;
+  // The employee UUID to close the shift for
+  google.protobuf.StringValue employee_uuid = 2;
+  // The start time of the shift
+  google.protobuf.Timestamp start_time = 3;
+}
+
+// The type of date filter to be shown by the FE
+enum DateFilterType {
+  // Unspecified date filter type
+  DATE_FILTER_TYPE_UNSPECIFIED = 0;
+  // The day selector date filter type
+  DATE_FILTER_TYPE_DAY_SELECTOR = 1;
+}

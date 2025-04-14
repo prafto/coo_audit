@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package pinot_service.v1;
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.pinot";
+option go_package = "github.com/doordash/services-protobuf/generated/pinot_service";
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service PinotService {
+    // Example Hermes client config. The options not listed here use Hermes default.
+    // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+    // Timeout after 700 milliseconds.
+    option (service_client.client_config).response_attempt_timeout_millis = 700;
+    // Make a total 4 attempts (initial + three retries).
+    option (service_client.client_config).retry_config.max_attempts = 4;
+    // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+    option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+    // Break the circuit if the error rate exceeds 80%.
+    option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+    // Ignore NOT_FOUND from circuit breaker error rate calculation.
+    option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+    // Provides a simplified input format to create / update an offline Pinot table.
+    rpc CreateOrUpdateOfflineTable(CreateOrUpdateOfflineTableRequest) returns (CreateOrUpdateOfflineTableResponse);
+}
+
+// Message representing metric and dimension columns.
+message Column {
+  // Subset of full types that we support. Exclude types like JSON that can get hairy and tank the
+  // performance of the table.
+  enum Type {
+    // Required unspecified type by linter, default to STRING.
+    TYPE_UNSPECIFIED = 0;
+    // 32-bit integer.
+    TYPE_INT = 1;
+    // 64-bit integer.
+    TYPE_LONG = 2;
+    // 32-bit floating point number.
+    TYPE_FLOAT = 3;
+    // 64-bit floating point number.
+    TYPE_DOUBLE = 4;
+    // Compact type for true and false.
+    TYPE_BOOLEAN = 5;
+    // Default max length is 512.
+    TYPE_STRING = 6;
+  }
+  // Column name.
+  string name = 1;
+  // The Pinot data type.
+  Type pinot_data_type = 2;
+  // Infer column as metric or dimension based on data type. However, an INT can be a dimension, so
+  // provide override.
+  bool override_to_dimension = 3;
+}
+
+// Timestamps are unique in Pinot so create a dedicated message. Expected to be in epoch
+// milliseconds.
+message TimestampColumn {
+  // Derived rollup columns of the timestamp for faster querying.
+  message Rollup {
+    // Granularity for rollup.
+    enum Granularity {
+      // Required unspecified type by linter, default to DAYS.
+      GRANULARITY_UNSPECIFIED = 0;
+      // Millisecond to second level rollup.
+      GRANULARITY_SECONDS = 1;
+      // Millisecond to minute level rollup.
+      GRANULARITY_MINUTES = 2;
+      // Millisecond to hour level rollup.
+      GRANULARITY_HOURS = 3;
+      // Millisecond to day level rollup.
+      GRANULARITY_DAYS = 4;
+    }
+    // Granularity for this rollup.
+    Granularity granularity = 1;
+    // Units for granularity e.g. 5 seconds, 24 minutes.
+    uint32 units = 2;
+    // Whether to represent this as milliseconds from epoch or string. The string format will be
+    // some truncation of yyyy-MM-dd HH:mm:ss.
+    bool is_string_format = 3;
+  }
+  // Column name.
+  string name = 1;
+  // Optional additional rollup columns to create along with the epoch milliseconds column.
+  repeated Rollup rollups = 2;
+}
+
+// Relevant parameters in determing where to put the Pinot table.
+message ResourceConfig {
+  // Enum for abstract tiering.
+  enum Tier {
+    // Required unspecified type by linter, default to T2.
+    TIER_UNSPECIFIED = 0;
+    // Customer-facing application.
+    TIER_T0 = 1;
+    // Internal application or high QPS dashboard.
+    TIER_T1 = 2;
+    // Other use cases.
+    TIER_T2 = 3;
+  }
+  // Abstract tier for grouping.
+  Tier tier = 1;
+  // Owner team name.
+  string tenant = 2;
+  // Estimated QPS for broker and serving sizing.
+  float estimated_qps = 3;
+  // Estimated daily volume in GB for server sizing.
+  float estimated_daily_volume_gb = 4;
+}
+
+// Simplified input format for Pinot tables.
+message CreateOrUpdateOfflineTableRequest {
+  // Table name
+  string name = 1;
+  // Metric and dimension columns.
+  repeated Column columns = 2;
+  // Primary timestamp column, required if non-snapshot table.
+  TimestampColumn primary_timestamp = 3;
+  // Additional timestamp columns.
+  repeated TimestampColumn additional_timestamps = 4;
+  // Indicates REFRESH or APPEND table.
+  bool is_snapshot_table = 5;
+  // Retention.
+  int32 retention_days = 6;
+  // Separate message for resourcing information.
+  ResourceConfig resource_config = 7;
+}
+
+// Wrapper for /tableConfigs response.
+message CreateOrUpdateOfflineTableResponse {
+  // Based on the response returned by /tableConfigs.
+  bool success = 1;
+  // The included message in /tableConfigs response.
+  string reason = 2;
+}

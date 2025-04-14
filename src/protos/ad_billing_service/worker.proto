@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package ad_billing_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "iguazu/kafka_headers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ad_billing_service";
+
+// This service processes ads-billing-invoicing related events
+service AdBillingWorkerService {
+  option (service_client.client_config).service_name = "ad-billing-service";
+  option (service_client.client_config).service_app = "worker-ad-billing-service";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // process a single event
+  rpc ProcessEvent(ProcessEventRequest) returns (ProcessEventResponse);
+  // archive a single event
+  rpc ArchiveEvent(ArchiveEventRequest) returns (ArchiveEventResponse);
+}
+
+// event type
+enum EventType {
+  // default value
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // BudgetTrackingEvent CDC string
+  EVENT_TYPE_BUDGET_TRACKING_CDC = 1;
+  // BudgetTrackingEvent pojo
+  EVENT_TYPE_BUDGET_TRACKING_EVENT = 2;
+  // OrderLifecycleEvent proto
+  EVENT_TYPE_ORDER_LIFECYCLE_EVENT = 3;
+  // BudgetTxn proto
+  EVENT_TYPE_BUDGET_TXN = 4;
+  // BudgetTransaction proto
+  EVENT_TYPE_BUDGET_TRANSACTION = 5;
+}
+
+// payload type
+enum PayloadType {
+  // default value
+  PAYLOAD_TYPE_UNSPECIFIED = 0;
+  // protobuf
+  PAYLOAD_TYPE_PROTOBUF = 1;
+  // avro, in iguazu format
+  PAYLOAD_TYPE_IGUAZU_AVRO = 2;
+  // json
+  PAYLOAD_TYPE_JSON = 3;
+  // adhoc string, not a json
+  PAYLOAD_TYPE_STRING = 4;
+}
+
+// EventEnvelope captures the event payload and its processing status for retry
+message EventEnvelope {
+  // type of event, event schema is outside this package
+  EventType event_type = 1;
+  // payload type
+  PayloadType payload_type = 2;
+  // actual payload
+  oneof payload {
+    // bytes payload for protobuf and avro
+    bytes bytes_payload = 3;
+    // string payload for string
+    google.protobuf.StringValue string_payload = 4;
+  }
+
+  // iguazu headers
+  com.doordash.iguazu.KafkaHeaders iguazu_headers = 5;
+
+  // list of root workers that procesed this event
+  repeated google.protobuf.StringValue completed_root_workers = 6;
+
+  // how many times it has already retried, this should be unset from Flink proxy
+  google.protobuf.Int32Value current_retry_times = 7;
+}
+
+// EventBundle should be processed as an atomic unit
+message EventBundle {
+  // A list of event envelopes
+  repeated EventEnvelope event_envelopes = 1;
+}
+
+// process a single event request
+message ProcessEventRequest {
+  // event envelope
+  EventEnvelope event_envelope = 1;
+
+  // debug options
+  repeated DebugOption debug_options = 2;
+
+  // request id
+  google.protobuf.StringValue request_id = 3;
+
+  // debug option
+  message DebugOption {
+    // debug option key
+    google.protobuf.StringValue key = 1;
+    // debug option value
+    google.protobuf.StringValue value = 2;
+  }
+}
+
+// process a single event response
+message ProcessEventResponse {
+  // whether the event is successfully processed
+  bool success = 1;
+  // error message if request failed
+  repeated google.protobuf.StringValue error_messages = 2;
+  // list of root workers that procesed this event in this cycle and in the past
+  repeated google.protobuf.StringValue completed_root_workers = 3;
+  // trace of intermediate messages, used for debugging
+  repeated google.protobuf.StringValue trace = 4;
+  // workers that proccessed the request, including non-root workers, used for debugging
+  repeated google.protobuf.StringValue processed_by = 5;
+  // result payload, only used for shadow testing
+  EventBundle result = 6;
+}
+
+// archive event to iguazu
+message ArchiveEventEnvelope {
+  // type of event, event schema is outside this package
+  google.protobuf.StringValue event_type = 1;
+  // string payload
+  google.protobuf.StringValue string_payload = 2;
+  // headers
+  google.protobuf.StringValue headers = 3;
+  // time when this event is received by archiver
+  google.protobuf.Timestamp archive_ts = 4;
+  // request id
+  google.protobuf.StringValue request_id = 5;
+}
+
+// archive event request
+message ArchiveEventRequest {
+  // event envelope to be archived
+  EventEnvelope event_envelope = 1;
+  // request id
+  google.protobuf.StringValue request_id = 2;
+}
+
+// archive event response
+message ArchiveEventResponse {
+  // whether the event is successfully archived
+  bool success = 1;
+}

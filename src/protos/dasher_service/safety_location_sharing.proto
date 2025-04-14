@@ -1,0 +1,313 @@
+syntax = "proto3";
+
+package dasher_service.safety;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.safety";
+
+// Safety Location Sharing APIs
+service LocationSharingService {
+  option (doordash.api.service) = {
+    name: "dasher-service-safety"
+    url: "dasher-service-safety.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["dasher-service"]
+    api_key_name: "DOORDASH_DASHER_SERVICE_API_KEY"
+    owner: {
+      id: "trust-safety-mobile"
+      name: "trust-and-safety"
+      slack_channel: "#tns-safedash-locationsharing"
+      email_alias: "tns-eng@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX
+    ]
+  };
+
+  // Get the Dx-Guardian Location Access status
+  rpc GetDasherLocationSharingAccessStatus(GetDasherLocationSharingAccessStatusRequest) returns (GetDasherLocationSharingAccessStatusResponse) {
+    option (google.api.http) = {get: "/dasher-service/v1/locationSharing/locationSharingAccessStatus"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+  // Get the Location data for the Dx
+  rpc GetDasherLocationSharingData(GetDasherLocationSharingDataRequest) returns (GetDasherLocationSharingDataResponse) {
+    option (google.api.http) = {get: "/dasher-service/v1/locationSharing/locationSharingData"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+  // Get all active location shares for a given Dx
+  rpc GetActiveLocationSharesForDasher(GetActiveLocationSharesForDasherRequest) returns (GetActiveLocationSharesForDasherResponse);
+  // Create Trusted Contact
+  rpc CreateTrustedContact(CreateTrustedContactRequest) returns (CreateTrustedContactResponse);
+  // Update Trusted Contact
+  rpc UpdateTrustedContact(UpdateTrustedContactRequest) returns (UpdateTrustedContactResponse);
+  // Get Trusted Contact
+  rpc GetTrustedContact(GetTrustedContactsRequest) returns (GetTrustedContactsResponse);
+  // Delete Trusted Contact
+  rpc DeleteTrustedContact(DeleteTrustedContactRequest) returns (DeleteTrustedContactResponse);
+  // Create Batch Trusted Contacts
+  rpc CreateBatchTrustedContact(BatchCreateTrustedContactRequest) returns (BatchCreateTrustedContactResponse);
+  // Manual Delivery Location Sharing
+  rpc ManualDeliveryLocationSharing(ManualDeliveryLocationSharingRequest) returns (ManualDeliveryLocationSharingResponse);
+  // Stop Location sharing session
+  rpc StopLocationSharing(StopLocationSharingRequest) returns (StopLocationSharingResponse);
+  // Check the sms opt status of contact number
+  rpc GetContactOptOutStatus(GetContactOptOutStatusRequest) returns (GetContactOptOutStatusResponse);
+}
+
+// Request for the location sharing data
+message GetDasherLocationSharingDataRequest {
+  string sharing_id = 1;
+}
+
+// Response for location sharing data for Dx
+message GetDasherLocationSharingDataResponse {
+  // Location sharing access status
+  LocationSharingAccessStatus access_status = 1;
+  // send the current gps lat/lng for the Dx, could be empty also
+  Location location = 2;
+  // one of the different status of Dx
+  DasherStatus dasher_status = 3;
+  // return delivery metadata when dx status is in route, could be empty also
+  DeliveryMetadata delivery_metadata = 4;
+}
+
+// Request for active location shares for Dx
+message GetActiveLocationSharesForDasherRequest {
+  int64 dasher_id = 1;
+}
+
+// Response containing all the active location shares for a Dx
+message GetActiveLocationSharesForDasherResponse {
+  repeated LocationShare active_location_shares = 1;
+}
+
+// Represents a specific share to a Dasher's trusted contact.
+message LocationShare {
+  string contact_id = 1;
+  string sharing_id = 2;
+  string sharing_type = 3;
+  repeated string delivery_uuids = 4;
+  // this field is only populated for LOCATION_SHARING_TYPE_SHARE_MANUAL_DELIVERY
+  google.protobuf.StringValue sharing_url = 5;
+}
+
+// Location sharing access status request
+message GetDasherLocationSharingAccessStatusRequest {
+  // Dx-Guardian-hash id
+  string hash_id = 1;
+}
+
+// Location sharing access status response
+message GetDasherLocationSharingAccessStatusResponse {
+  // Hash id
+  string hash_id = 1;
+  // Access Status
+  LocationSharingAccessStatus access_status = 2;
+  // expiry timestamp
+  google.protobuf.Timestamp access_expired_at = 3;
+  // First name of the dasher who is actively sharing
+  string dasher_first_name = 4;
+}
+
+// Location Sharing Access Status
+enum LocationSharingAccessStatus {
+  // Sharing status unknown
+  LOCATION_SHARING_ACCESS_STATUS_UNSPECIFIED = 0;
+  // Sharing status success
+  LOCATION_SHARING_ACCESS_STATUS_SUCCESS = 1;
+  // Sharing status failure
+  LOCATION_SHARING_ACCESS_STATUS_FAILURE = 2;
+  // Sharing status link expired
+  LOCATION_SHARING_ACCESS_STATUS_LINK_EXPIRED = 3;
+}
+
+// Create Trusted Contact Request
+message CreateTrustedContactRequest {
+  //deleted fields, do not re-use
+  reserved 4;
+  reserved "trusted_contact";
+
+  int64 dasher_id = 1;
+  string phone_number = 2;
+  LocationSharingSetting location_sharing_setting = 3;
+  string first_name = 5;
+  string last_name = 6;
+  int32 country_code = 7;
+}
+
+// Location sharing setting
+message LocationSharingSetting {
+  LocationSharingType type = 1;
+  google.protobuf.BoolValue enabled = 2;
+  LocationSharingAccessInterval access_interval = 4;
+  reserved 3;
+}
+
+// Location sharing type
+enum LocationSharingType {
+  LOCATION_SHARING_TYPE_UNSPECIFIED = 0;
+  LOCATION_SHARING_TYPE_ANYTIME = 1;
+  LOCATION_SHARING_TYPE_HOURLY = 2;
+  LOCATION_SHARING_TYPE_SHARE_MANUAL_DELIVERY = 3;
+}
+
+// Create Trusted Contact Response
+message CreateTrustedContactResponse {
+  TrustedContact contact = 1;
+}
+
+// Location sharing trusted contact struct
+message TrustedContact {
+  int64 dasher_id = 1;
+  string contact_id = 2;
+  string phone_number = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  LocationSharingSetting location_sharing_setting = 7;
+  string first_name = 8;
+  string last_name = 9;
+  int32 country_code = 10;
+  bool sms_opt_out = 11;
+}
+
+// Update Trusted Contact Request
+message UpdateTrustedContactRequest {
+  int64 dasher_id = 1;
+  string contact_id = 2;
+  LocationSharingSetting location_sharing_setting = 3;
+}
+
+// Update Trusted Contact Response
+message UpdateTrustedContactResponse {
+  TrustedContact contact = 1;
+}
+
+// Get Trusted Contact Request
+message GetTrustedContactsRequest {
+  int64 dasher_id = 1;
+}
+
+// Get Trusted Contact Response
+message GetTrustedContactsResponse {
+  repeated TrustedContact contact_list = 1;
+}
+
+// Delete Trusted Contact Request
+message DeleteTrustedContactRequest {
+  int64 dasher_id = 1;
+  string contact_id = 2;
+}
+
+// Delete Trusted Contact Response
+message DeleteTrustedContactResponse {
+  string contact_id = 1;
+}
+
+// Batch Create trusted Contacts
+message BatchCreateTrustedContactRequest {
+  repeated CreateTrustedContactRequest trusted_contacts = 1;
+}
+
+// Batch Create trusted Contacts response
+message BatchCreateTrustedContactResponse {
+  repeated CreateTrustedContactResponse trusted_contacts = 1;
+}
+
+//Manual Delivery Location Sharing Request
+message ManualDeliveryLocationSharingRequest {
+  int64 dasher_id = 1;
+  repeated string delivery_ids = 2;
+  string contact_id = 3;
+}
+
+//Manual Delivery Location Sharing Response
+message ManualDeliveryLocationSharingResponse {
+  string sharing_id = 1;
+  // This is a nullable field, if this is not null
+  // then the contact has sms opted out and Dx needs to share url manually
+  google.protobuf.StringValue sharing_url = 2;
+}
+
+// Containing interval marker
+message LocationSharingAccessInterval {
+  IntervalMarker from = 1;
+  IntervalMarker to = 2;
+}
+
+// Interval marker
+message IntervalMarker {
+  int32 hour = 1;
+  int32 minute = 2;
+}
+
+// Different Statuses of Dx
+enum DasherStatus {
+  DASHER_STATUS_UNSPECIFIED = 0;
+  DASHER_STATUS_ON_ROUTE = 1;
+  DASHER_STATUS_ENDED_DASH = 2;
+  DASHER_STATUS_CALLED_911 = 3;
+}
+
+// current GPS latitude and longitudes for Dx
+message Location {
+  // latitude of the Dx
+  double lat = 1;
+  // longitude of the Dx
+  double lng = 2;
+}
+
+// delivery related data for location sharing
+message DeliveryMetadata {
+  // customer address string without actual unit number
+  string cx_address = 1;
+  // mx address string
+  string mx_address = 2;
+  // address of dx next stop
+  string dx_next_stop_address = 3;
+  // delivery status
+  DeliveryStatus delivery_status = 4;
+}
+
+// request to stop Location sharing
+message StopLocationSharingRequest {
+  // sharing id of the sharing session between Dx and Trusted Contact
+  string sharing_id = 1;
+}
+
+// response to stop location sharing, currently Empty as nothing is returned
+message StopLocationSharingResponse {}
+
+// enum for delivery status
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_DX_HEADING_TO_CUSTOMER = 1;
+  DELIVERY_STATUS_DX_HEADING_TO_MERCHANT = 2;
+  DELIVERY_STATUS_DX_NOT_IN_DELIVERY = 3;
+}
+
+// request to check the opt out status of contact_no
+message GetContactOptOutStatusRequest {
+  string contact_no = 1;
+}
+
+// request to check the opt out status of contact_no
+message GetContactOptOutStatusResponse {
+  bool sms_opt_out = 1;
+}

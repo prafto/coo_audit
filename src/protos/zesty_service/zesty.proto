@@ -1,0 +1,591 @@
+syntax = "proto3";
+
+package zesty_service.v1;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "zesty_service/display_modules.proto";
+import "zesty_service/models.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/zesty_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.zesty_service.rpc.api";
+
+// Zesty service
+service ZestyService {
+  option (doordash.api.service) = {
+    url: "zesty-service-api.service.prod.ddsd"
+    name: "zesty-service"
+    port: 50051
+    name_spaces: ["zesty"]
+    owner: {
+      id: "zesty"
+      name: "zesty"
+      slack_channel: "#project-zesty-deploy"
+      email_alias: "eng-launchpad@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [
+      CX,
+      INTERNAL
+    ]
+  };
+
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Echo is a test endpoint for zesty
+  rpc Echo(EchoRequest) returns (EchoResponse);
+
+  // Get personalized recommendations based on user query
+  rpc GetRecommendationsForUserQueryV0(GetRecommendationsForUserQueryV0Request) returns (GetRecommendationsForUserQueryV0Response) {
+    option (google.api.http) = {get: "/zesty/v1/recommendations"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Get personalized recommendations for a batch of queries
+  rpc GetBatchRecommendationsV0(GetBatchRecommendationsV0Request) returns (GetBatchRecommendationsV0Response) {
+    option (google.api.http) = {
+      post: "/zesty/v1/recommendations/batch"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Submit user rating for a recommended store
+  rpc SubmitFeedbackV0(SubmitFeedbackV0Request) returns (SubmitFeedbackV0Response) {
+    option (google.api.http) = {
+      post: "/zesty/v1/feedback"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Create or update a user's self-submitted profile
+  rpc UpsertUserSubmittedProfileV0(UpsertUserSubmittedProfileV0Request) returns (UpsertUserSubmittedProfileV0Response) {
+    option (google.api.http) = {
+      post: "/zesty/v1/user_profile"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Retrieve a user's profile information
+  rpc GetUserProfileV0(GetUserProfileV0Request) returns (GetUserProfileV0Response) {
+    option (google.api.http) = {get: "/zesty/v1/user_profile"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Trigger an ingestion job
+  rpc TriggerZestyIngestionJob(TriggerZestyIngestionJobRequest) returns (TriggerZestyIngestionJobResponse);
+
+  // Trigger an external content ingestion job
+  rpc TriggerZestyExternalContentIngestionJob(TriggerZestyExternalContentIngestionJobRequest) returns (TriggerZestyExternalContentIngestionJobResponse);
+
+  // Trigger an indexing job
+  rpc TriggerZestyIndexingJob(TriggerZestyIndexingJobRequest) returns (TriggerZestyIndexingJobResponse);
+
+  // Trigger a user profile refresh job
+  rpc TriggerZestyUserProfileRefreshJob(TriggerZestyUserProfileRefreshJobRequest) returns (TriggerZestyUserProfileRefreshJobResponse);
+
+  // Submit user reaction for a store
+  rpc UpsertStoreReactionV1(UpsertStoreReactionV1Request) returns (UpsertStoreReactionV1Response) {
+    option (google.api.http) = {
+      post: "/zesty/v1/store_reactions"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // List store reactions, as of 2025-03-13 the main use case is listing bookmarked stores
+  rpc ListStoreReactionsV1(ListStoreReactionsV1Request) returns (ListStoreReactionsV1Response) {
+    option (google.api.http) = {get: "/zesty/v1/store_reactions"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Get the display modules for a store page
+  rpc GetStorePage(GetStorePageRequest) returns (GetStorePageResponse) {
+    option (google.api.http) = {get: "/zesty/v1/store/{store_id}/page"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Get a recommendation run's details
+  rpc GetRecommendationRunV0(GetRecommendationRunV0Request) returns (GetRecommendationRunV0Response) {
+    option (google.api.http) = {get: "/zesty/v1/recommendation_runs/{run_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Get suggested queries
+  rpc GetQuerySuggestions(GetQuerySuggestionsRequest) returns (GetQuerySuggestionsResponse) {
+    option (google.api.http) = {get: "/zesty/v1/queries/suggestions"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// Request for Echo
+message EchoRequest {
+  // Message to echo back in the response
+  string message = 1;
+}
+
+// Response for Echo
+message EchoResponse {
+  // Echoed message from the request
+  string messages = 1;
+}
+
+// Request to get personalized recommendations based on a user's query
+message GetRecommendationsForUserQueryV0Request {
+  // The search query or prompt from the user
+  string query = 1;
+  // Unique identifier for the consumer/user
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // lat coordinates for the user location
+  double latitude = 3;
+  // long coordinates for the user location
+  double longitude = 4;
+}
+
+// Response containing recommended stores/restaurants for the user
+message GetRecommendationsForUserQueryV0Response {
+  // List of recommended stores/restaurants
+  repeated RecommendationV0 recommendations = 1;
+  // Unique identifier for this recommendation session
+  string run_id = 2;
+}
+
+// Request to get personalized recommendations based on a user's query
+message GetBatchRecommendationsV0Request {
+  // List of recommendation queries to process in batch
+  repeated BatchRecommendationQueryV0 queries = 1;
+  // Optional metadata for the batch run (e.g., model version)
+  map<string, string> metadata = 2;
+}
+
+// Represents a recommendation query for a user
+message BatchRecommendationQueryV0 {
+  // The search query or prompt from the user
+  string query = 1;
+  // Unique identifier for the consumer/user
+  string consumer_id = 2;
+  // lat coordinates for the user location
+  double latitude = 3;
+  // long coordinates for the user location
+  double longitude = 4;
+}
+
+// Response containing recommended stores/restaurants for the user
+message GetBatchRecommendationsV0Response {
+  // List of results for each query in the batch
+  repeated SuccessfulBatchRecommendationResultV0 successful_batch_results = 1;
+  // List of results for each query in the batch that failed
+  repeated FailedBatchRecommendationResultV0 failed_batch_results = 2;
+  // Batch run identifier
+  string batch_run_id = 3;
+  // Timestamp when the batch processing started
+  google.protobuf.Timestamp processing_start_time = 4;
+  // Total processing time for the batch
+  google.protobuf.Duration processing_duration = 5;
+}
+
+// Represents a successful recommendation query with its corresponding recommendations
+message SuccessfulBatchRecommendationResultV0 {
+  // Unique identifier for this recommendation session
+  string run_id = 1;
+  // The recommendation query
+  BatchRecommendationQueryV0 query = 2;
+  // The recommended stores/restaurants
+  repeated RecommendationV0 recommendations = 3;
+  // Processing time for the query
+  google.protobuf.Duration processing_duration = 4;
+}
+
+// Represents a failed recommendation query with its corresponding error message
+message FailedBatchRecommendationResultV0 {
+  // Unique identifier for this recommendation session
+  string run_id = 1;
+  // The recommendation query
+  BatchRecommendationQueryV0 query = 2;
+  // The error message if the recommendation query failed
+  google.protobuf.StringValue error_message = 3;
+  // Processing time for the query
+  google.protobuf.Duration processing_duration = 4;
+}
+
+// Represents a recommended store/restaurant with its details
+message RecommendationV0 {
+  // Unique identifier for the store in the Zesty system
+  string zesty_store_id = 1;
+  // Name of the store/restaurant
+  string name = 2;
+  // Description of the store/restaurant
+  string description = 3;
+  // Physical location of the store
+  common.CommonAddress address = 4;
+  // List of badges/awards/tags associated with the store
+  // DEPRECATED: Use citations instead
+  repeated Badge badges = 5 [deprecated = true];
+  // Recommendation score normalized between 0 and 1
+  double normalized_score = 6;
+  // Whether the store is currently open
+  bool is_open = 7;
+  // The time the store will close
+  google.protobuf.Timestamp closing_time = 8;
+  // The time the store will open
+  google.protobuf.Timestamp opening_time = 9;
+  // The cuisine type of the store
+  string cuisine_type = 10;
+  // The area of the store (e.g. "Mission", "Sunnyvale")
+  string area_name = 11;
+  // The travel time to the store
+  TravelDetails travel_details = 12;
+  // The media associated with the store
+  repeated StoreMedia media_assets = 13;
+  // Store reaction for this recommendation
+  StoreReaction store_reaction = 14;
+  // List of sources for this recommendation and description
+  repeated Citation citations = 15;
+}
+
+// Represents the travel details to a store
+message TravelDetails {
+  // The distance to the store
+  google.protobuf.StringValue distance_in_miles = 1;
+  // The travel time to the store
+  google.protobuf.StringValue travel_time_in_mins = 2;
+  // The travel mode to the store
+  TravelMode travel_mode = 3;
+}
+
+// Represents the mode of travel to a store
+enum TravelMode {
+  // Default value when travel mode is not specified
+  TRAVEL_MODE_UNSPECIFIED = 0;
+  // Travel by car or motor vehicle
+  TRAVEL_MODE_DRIVING = 1;
+  // Travel by foot
+  TRAVEL_MODE_WALKING = 2;
+  // Travel by bicycle
+  TRAVEL_MODE_BICYCLING = 3;
+}
+
+// Request to submit a user rating for a recommended store
+message SubmitFeedbackV0Request {
+  // Type of rating (thumbs up/down)
+  RatingType type = 1;
+  // ID of the consumer submitting the rating
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // ID of the store being rated
+  string zesty_store_id = 3;
+  // (Optional text feedback from the user
+  google.protobuf.StringValue text = 4;
+  // ID of the recommendation session this rating is for
+  string run_id = 5;
+}
+
+// Response for submitting a rating (empty response)
+message SubmitFeedbackV0Response {}
+
+// Request to create or update a user's self-submitted profile
+message UpsertUserSubmittedProfileV0Request {
+  // Profile text submitted by the user
+  string text = 1;
+  // ID of the consumer whose profile is being updated
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Response for profile update request (empty response)
+message UpsertUserSubmittedProfileV0Response {}
+
+// Request to retrieve a user's profile
+message GetUserProfileV0Request {
+  // ID of the consumer whose profile is being requested
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Response containing a user's profile information
+message GetUserProfileV0Response {
+  // Profile text generated by AI based on user behavior/preferences
+  string ai_generated_profile = 1;
+  // Profile text directly submitted by the user
+  string user_submitted_profile = 2;
+}
+
+// triggers an ingestion job
+message TriggerZestyIngestionJobRequest {
+  // list of localities to process
+  repeated string localities = 1;
+  // corresponds to state in the US, necessary to dedupe localities
+  string administrative_area_level_1 = 2;
+  // flag to do an ingestion from scratch. Incremental ingestion by default.
+  bool should_ingest_from_scratch = 3;
+  // When set to true, skip snowflake fetch and ignore all other fields
+  // We will just re-hydrate existing data
+  bool refresh = 4;
+}
+
+// ingestion job response
+message TriggerZestyIngestionJobResponse {}
+
+// triggers an ingestion job for external (crawled) data
+message TriggerZestyExternalContentIngestionJobRequest {
+  // external sources
+  repeated ExternalContentSource sources = 1;
+}
+
+// external source of content
+enum ExternalContentSource {
+  // Default value
+  EXTERNAL_CONTENT_SOURCE_UNSPECIFIED = 0;
+  // eater
+  EXTERNAL_CONTENT_SOURCE_EATER = 1;
+  // infatuation
+  EXTERNAL_CONTENT_SOURCE_INFATUATION = 2;
+  // michelin
+  EXTERNAL_CONTENT_SOURCE_MICHELIN = 3;
+  // time out
+  EXTERNAL_CONTENT_SOURCE_TIMEOUT = 4;
+}
+
+// external ingestion job response
+message TriggerZestyExternalContentIngestionJobResponse {}
+
+// triggers an indexing job
+message TriggerZestyIndexingJobRequest {
+  // whether to add to a new collection or use an existing one
+  bool should_create_new_collection = 1;
+  // whether to index external content
+  bool should_index_external_content = 2;
+  // whether to index with geo embeddings
+  bool enable_geo_embedding = 3;
+}
+
+// indexing job response
+message TriggerZestyIndexingJobResponse {}
+
+// trigger user profile refresh job request
+message TriggerZestyUserProfileRefreshJobRequest {}
+
+// trigger user profile refresh job response
+message TriggerZestyUserProfileRefreshJobResponse {}
+
+// Request for submitting a rating, note, bookmark
+message UpsertStoreReactionV1Request {
+  // ID of the consumer submitting the rating
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // User's notes about this store
+  StoreReaction store_reaction = 2;
+}
+
+// Response for submitting a rating, note, bookmark
+message UpsertStoreReactionV1Response {}
+
+// Request for submitting a rating, note, bookmark
+message ListStoreReactionsV1Request {
+  // ID of the consumer submitting the rating
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // (Optional): Filter only bookmarked store reactions
+  google.protobuf.BoolValue is_bookmarked = 2;
+}
+
+// Response for submitting a rating, note, bookmark
+message ListStoreReactionsV1Response {
+  // List of store reactions along with basic information about the store like store name and image
+  repeated DecoratedStoreReaction decorated_store_reaction = 1;
+}
+
+// DecoratedStoreReaction includes store reaction with additional fields to
+// help the client render a store cell.
+message DecoratedStoreReaction {
+  // Store reaction
+  StoreReaction store_reaction = 1;
+  // Store name
+  string store_name = 2;
+  // Store images if there are any
+  repeated StoreMedia media_assets = 3;
+}
+
+// Request to get a store's page display modules
+message GetStorePageRequest {
+  // Unique identifier for the store
+  string store_id = 1;
+  // Unique identifier for the consumer/user
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // query
+  string query = 3;
+}
+
+// Response containing the store's page display modules
+message GetStorePageResponse {
+  // List of display modules for the store page
+  repeated DisplayModule display_modules = 1;
+}
+
+// Request to get a recommendation run's details
+message GetRecommendationRunV0Request {
+  // Unique identifier for the recommendation run
+  string run_id = 1;
+}
+
+// Response containing the recommendation run's details
+message GetRecommendationRunV0Response {
+  // List of nodes in the recommendation run
+  repeated RunNode nodes = 1;
+  // List of edges in the recommendation run
+  repeated RunEdge edges = 2;
+  // List of recommendation steps in json format
+  repeated RecommendationStepV0 recommendation_steps = 3;
+  // Unique identifier of the consumer who initiated the recommendation run
+  string consumer_id = 4;
+  // Status of the recommendation run
+  RunStatus status = 5;
+  // Duration of the recommendation run in milliseconds
+  google.protobuf.Int64Value duration_ms = 6;
+}
+
+// Status of the recommendation run
+enum RunStatus {
+  // Default value
+  RUN_STATUS_UNSPECIFIED = 0;
+  // Recommendation run is in progress
+  RUN_STATUS_IN_PROGRESS = 1;
+  // Recommendation run is complete
+  RUN_STATUS_COMPLETE = 2;
+  // Recommendation run failed
+  RUN_STATUS_FAILED = 3;
+  // Recommendation run was cancelled
+  RUN_STATUS_CANCELLED = 4;
+}
+
+// Node represents a node in the recommendation run
+message RunNode {
+  // Unique identifier for the node
+  string id = 1;
+  // Data associated with the node
+  Data data = 2;
+  // Type of the node
+  RunNodeType type = 3;
+}
+
+// Type of the node
+enum RunNodeType {
+  // Default value
+  RUN_NODE_TYPE_UNSPECIFIED = 0;
+  // Data node
+  RUN_NODE_TYPE_DATA = 1;
+  // Process node
+  RUN_NODE_TYPE_PROCESS = 2;
+  // Candidate node
+  RUN_NODE_TYPE_CANDIDATE = 3;
+  // Recommended node
+  RUN_NODE_TYPE_RECOMMENDED = 4;
+  // Not recommended node
+  RUN_NODE_TYPE_NOT_RECOMMENDED = 5;
+}
+
+// Edge represents an edge in the recommendation run
+message RunEdge {
+  // Unique identifier for the edge
+  string id = 1;
+  // Source node id of the edge
+  string source = 2;
+  // Target node id of the edge
+  string target = 3;
+}
+
+// Data represents the data associated with a node
+message Data {
+  // Label of the data
+  string label = 1;
+  // Content of the data
+  map<string, string> content = 2;
+}
+
+// Represents a step in the recommendation process
+message RecommendationStepV0 {
+  // Name of the recommendation step
+  string name = 1;
+  // Content of the recommendation step
+  map<string, string> content = 2;
+}
+
+// Request to get suggested queries
+message GetQuerySuggestionsRequest {
+  // Unique identifier for the consumer/user
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // lat coordinates for the user location
+  double latitude = 2;
+  // long coordinates for the user location
+  double longitude = 3;
+}
+
+// Response to get suggested queries
+message GetQuerySuggestionsResponse {
+  reserved 1;
+  reserved "query_suggestions";
+  // List of query suggestions
+  repeated QuerySuggestion queries = 2;
+}

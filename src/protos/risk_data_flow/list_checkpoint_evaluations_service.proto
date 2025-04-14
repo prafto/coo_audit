@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package risk_data_flow.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "risk-core.event.v1/risk_checkpoint_evaluation.proto";
+import "risk_data_flow/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.riskdataflow";
+
+/**
+ * A service to fetch previously computed Checkpoint Evaluations
+ */
+service ListCheckpointEvaluationsService {
+  option (doordash.api.service) = {
+    name: "risk-data-flow"
+    url: "risk-data-flow-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["risk-data-flow"]
+    api_key_name: "RISK_DATA_FLOW_API_KEY"
+    owner: {
+      id: "fraud-platform"
+      name: "fraud-platform"
+      slack_channel: "#ask-fraud-platform"
+      email_alias: "team-fraud@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 1000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // API to get all evaluations for given entities and checkpoints
+  rpc ListEvaluations(ListEvaluationsRequest) returns (ListEvaluationsResponse) {
+    option (google.api.http) = {
+      post: "/risk-data-flow/v1/checkpoint-evaluations"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Request for ListEvaluations API
+message ListEvaluationsRequest {
+  // Interval, [from, to)
+  message Interval {
+    // start_time
+    google.protobuf.Timestamp start_time = 1;
+    // end_time
+    google.protobuf.Timestamp end_time = 2;
+  }
+  // Return only logs within the given time interval [from, to). Does no filtering if null.
+  Interval time_filter = 1;
+
+  // Return only logs matching the given Identifier (type,id). e.g.  "(USER, 67031664)" or (ADDRESS, 3983823).
+  // This is mandatory. Blank identifier will be rejected with InvalidArgument.
+  Identifier identifier = 2;
+
+  // Return only logs whose checkpoint_name is in the list. If empty, all enabled checkpoints are returned.
+  repeated string checkpoint_names = 3;
+
+  // To get more pages after an initial request, pass back the `pagination_key` from the response.
+  //
+  // While the marker is structured, that is only meant to ease debugging. Clients should treat this
+  // as an opaque token that is only passed back and forth to the server for paging.
+  string pagination_key = 4;
+
+  // Number of logs to per page (defaults to 100).
+  int32 page_size = 5;
+
+  // Whether or not fact_results should be included.
+  // If allowlist is set, only allow the facts in the list.
+  //     To get zero facts, set an empty allowlist.
+  // If blocklist is set, allow all facts except the ones in the list.
+  //     To get all facts, set an empty blocklist.
+  // If neither is set, zero facts are included.
+  oneof fact_filter {
+    // Allow only the facts in this list
+    StringList allowlist = 6;
+    // Allow all facts except the ones in this list
+    StringList blocklist = 7;
+  }
+  // Object containing list of Strings. Workaround since oneof doesn't support repeated's
+  message StringList {
+    // List of names
+    repeated string names = 1;
+  }
+}
+
+// Response for ListEvaluations API
+message ListEvaluationsResponse {
+  // Resulting list of evaluations sorted by timestamp descending.
+  repeated risk_core.v1.events.v1.RiskCoreCheckpointEvaluationEvent results = 1;
+
+  // An opaque object to pass into the ListEvaluationsRequest to continue paging.
+  // A null value means no more next entries.
+  string pagination_key = 2;
+}

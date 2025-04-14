@@ -1,0 +1,385 @@
+syntax = "proto3";
+
+package postal_service.v1;
+
+import "common/notification.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "postal_service/feedback.proto";
+import "postal_service/messaging.proto";
+import "postal_service/voice.proto";
+import "postal_service/workflow.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/postal_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.postal_service";
+
+// message state
+enum MessageState {
+  // unspecified value for message state
+  MESSAGE_STATE_UNKNOWN_UNSPECIFIED = 0;
+
+  // message state is always new when getting the request initially
+  MESSAGE_STATE_NEW = 1;
+
+  // when the message needs to be duped in another channel
+  MESSAGE_STATE_DUPE = 2;
+
+  // when the primary channel failed and the request is being processed on the fallback channel
+  MESSAGE_STATE_CHANNEL_FALLBACK = 3;
+
+  // when the message failed to be delivered due to the provider and is capable of being retried with the fallback provider
+  MESSAGE_STATE_PROVIDER_FALLBACK = 4;
+}
+
+// SMS request event
+message SMSRequestEvent {
+  // message identifier
+  string message_id = 1;
+
+  // message state
+  MessageState message_state = 2;
+
+  // SendSMSRequest
+  SendSMSRequest send_sms_request = 3;
+
+  // provider, use this when error detected during sms status callback
+  string provider = 4;
+
+  // The origin of the event. Eg: the caller of the SendSMS endpoint
+  string source = 5;
+
+  // preference channel setting
+  map<string, bool> preference_setting = 6;
+
+  // grpc request time
+  int64 grpc_request_time = 7;
+
+  // list contains providers which failed to send/deliver message to the user.
+  // Prevents cycling in SMS fallback
+  repeated string failed_providers = 8;
+}
+
+// webhook type
+enum WebhookEventType {
+  // unspecified value
+  WEBHOOK_EVENT_TYPE_UNKNOWN_UNSPECIFIED = 0;
+
+  // sinch sms status
+  WEBHOOK_EVENT_TYPE_SINCH_SMS_STATUS_UPDATE = 1;
+
+  // twilio sms status
+  WEBHOOK_EVENT_TYPE_TWILIO_SMS_STATUS_UPDATE = 2;
+
+  // twilio voice status
+  WEBHOOK_EVENT_TYPE_TWILIO_VOICECALL_STATUS_UPDATE = 3;
+
+  // twilio voice digits
+  WEBHOOK_EVENT_TYPE_TWILIO_VOICECALL_DIGITS_UPDATE = 4;
+
+  // iterable email status
+  WEBHOOK_EVENT_TYPE_ITERABLE_EMAIL_STATUS_UPDATE = 5;
+
+  // sendgrid email status
+  WEBHOOK_EVENT_TYPE_SENDGRID_EMAIL_STATUS_UPDATE = 6;
+
+  // inteliquent masking call metadata update
+  WEBHOOK_EVENT_TYPE_INTELIQUENT_MASKING_CALL_UPDATE = 7;
+
+  // inteliquent sms status
+  WEBHOOK_EVENT_TYPE_INTELIQUENT_SMS_STATUS_UPDATE = 8;
+
+  // telesign sms status
+  WEBHOOK_EVENT_TYPE_TELESIGN_SMS_STATUS_UPDATE = 9;
+
+  // common incoming SMS event
+  WEBHOOK_EVENT_TYPE_INCOMING_SMS_CALLBACK = 10;
+
+  // twilio masking text status update
+  WEBHOOK_EVENT_TYPE_TWILIO_MASKING_TEXT_UPDATE = 11;
+
+  // twilio masking call status update
+  WEBHOOK_EVENT_TYPE_TWILIO_MASKING_CALL_UPDATE = 12;
+}
+
+// webhook event
+message WebhookEvent {
+  // status update type
+  WebhookEventType type = 1;
+
+  // raw event
+  string event_raw = 2;
+
+  // event timestamp
+  google.protobuf.Timestamp event_timestamp = 3;
+
+  // dd event id
+  string dd_event_id = 4;
+}
+
+// voice call request event
+message VoiceCallRequestEvent {
+  // voice call identifier
+  string voice_call_id = 1;
+  // CreateVoiceCallRequest
+  CreateVoiceCallRequest create_voice_call_request = 2;
+}
+
+// voice call status update event
+message VoiceCallStatusUpdateEvent {
+  // dd event id
+  string dd_event_id = 1;
+
+  // voice call type
+  VoiceCallType voice_call_type = 2;
+
+  // voice call subtype
+  VoiceCallSubtype voice_call_subtype = 3;
+
+  // timestamp for this update
+  google.protobuf.Timestamp timestamp = 4;
+
+  // voice call status update
+  VoiceCallStatus status = 5;
+
+  // voice call answeredBy update
+  VoiceCallAnsweredBy answered_by = 6;
+
+  // voice call digits update
+  google.protobuf.StringValue digits = 7;
+
+  // voice call from number
+  google.protobuf.StringValue from_number = 8;
+
+  // voice call error reason enum
+  VoiceCallErrorReason voice_call_error_reason = 9;
+
+  // voice call speech result update
+  google.protobuf.StringValue speech_result = 10;
+}
+
+// Push request event
+message PushRequestEvent {
+  // message identifier
+  string message_id = 1;
+
+  // message state
+  MessageState message_state = 2;
+
+  // SendPushRequest
+  SendPushRequest send_push_request = 3;
+
+  // The origin of the event. Eg: the caller of the SendPush endpoint
+  string source = 4;
+
+  // preference channel setting
+  map<string, bool> preference_setting = 5;
+
+  // grpc request time
+  int64 grpc_request_time = 6;
+
+  // SendPushV2RequestWithMetadata
+  SendPushV2RequestWithMetadata send_push_v2_request_with_metadata = 7;
+}
+
+// SendPushV2RequestWithMetadata in push request event
+message SendPushV2RequestWithMetadata {
+  // SendPushRequest
+  SendPushV2Request request = 1;
+
+  // notification_audience_type to denote the recipient's type
+  common.notification.v1.NotificationAudienceType notification_audience_type = 2;
+  // priority of the push (P0-P3)
+  common.notification.v1.NotificationPriority priority = 3;
+  // message type of the push (transactional/ marketing)
+  common.notification.v1.NotificationMessageType message_type = 4;
+  // sub message type of the push (reminders, doordash offers, etc.)
+  common.notification.v1.NotificationSubMessageType sub_message_type = 5;
+  // Notification campaign name
+  google.protobuf.StringValue notification_campaign_name = 6;
+}
+
+// Email request event
+message EmailRequestEvent {
+  // these are deleted values, do not reuse
+  reserved 4;
+  // these are deleted fields, do not reuse
+  reserved "send_email_v2_request";
+
+  // message identifier
+  string message_id = 1;
+
+  // SendEmailRequest
+  SendEmailRequest send_email_request = 2;
+
+  // The origin of the event. Eg: the caller of the SendEmail endpoint
+  string source = 3;
+
+  // SendEmailV2Request
+  SendEmailV2RequestWithMetadata send_email_v2_request_with_metadata = 5;
+}
+
+/**
+ * SendEmailV2RequestWithMetadata is a wrapper around SendEmailV2Request that includes additional campaign metadata
+ */
+message SendEmailV2RequestWithMetadata {
+  // these are deleted values, do not reuse
+  reserved 3, 4;
+  // these are deleted fields, do not reuse
+  reserved "from_email", "from_name";
+
+  // SendEmailV2Request
+  SendEmailV2Request request = 1;
+  // notification_audience_type to denote the recipient's type
+  common.notification.v1.NotificationAudienceType notification_audience_type = 2;
+  // priority of the email (P0-P3)
+  common.notification.v1.NotificationPriority priority = 5;
+  // message type of the email (transactional/ marketing)
+  common.notification.v1.NotificationMessageType message_type = 6;
+  // sub message type of the email (reminders, doordash offers, etc.)
+  common.notification.v1.NotificationSubMessageType sub_message_type = 7;
+  // Notification campaign name
+  google.protobuf.StringValue notification_campaign_name = 8;
+}
+
+// Notification hub request event
+message NotificationHubRequestEvent {
+  // message identifier
+  string message_id = 1;
+  // message state
+  MessageState message_state = 2;
+  // SendNotificationHubRequest
+  SendNotificationHubRequest send_notification_hub_request = 3;
+  // The origin of the event.
+  string source = 4;
+  // preference channel setting
+  map<string, bool> preference_setting = 5;
+  // field used to determine send push to iOS, Android, or both by default(unspecified)
+  DeviceType device_type = 6;
+}
+
+// Feedback Signal request event
+message FeedbackSignalRequestEvent {
+  // message identifier
+  string signal_id = 1;
+
+  // SendFeedbackSignalRequest
+  SendFeedbackSignalRequest send_feedback_signal_request = 2;
+
+  // The origin of the event. Eg: the caller of the FeedbackSignal endpoint
+  string source = 3;
+}
+
+// scheduler type
+enum SchedulerType {
+  // unspecified type
+  SCHEDULER_TYPE_UNKNOWN_UNSPECIFIED = 0;
+
+  // push delay fallback
+  SCHEDULER_TYPE_PUSH_DELAY_FALLBACK = 1;
+
+  // push delay
+  SCHEDULER_TYPE_PUSH_DELAY = 2;
+
+  // sms delay
+  SCHEDULER_TYPE_SMS_DELAY = 3;
+}
+
+// scheduler action
+enum SchedulerAction {
+  //unspecified type
+  SCHEDULER_ACTION_UNSPECIFIED = 0;
+
+  // add schedule
+  SCHEDULER_ACTION_ADD_SCHEDULE = 1;
+
+  // DEPRECATED(CancelScheduledNotification is deprecated)
+  // remove schedule
+  SCHEDULER_ACTION_REMOVE_SCHEDULE = 2 [deprecated = true];
+
+  // DEPRECATED(UpdateNotificationSchedule RPC is deprecated)
+  // update schedule
+  SCHEDULER_ACTION_UPDATE_SCHEDULE = 3 [deprecated = true];
+}
+
+// Scheduler Request Event
+message SchedulerRequestEvent {
+  // message identifier
+  string message_id = 1;
+
+  // scheduler type
+  SchedulerType scheduler_type = 2;
+
+  // SendSMSRequest
+  SendSMSRequest send_sms_request = 3;
+
+  // SendPushRequest
+  SendPushRequest send_push_request = 4;
+
+  // execution time in utc
+  google.protobuf.Timestamp execution_time = 5;
+
+  // preference channel setting
+  map<string, bool> preference_setting = 6;
+
+  // The origin of the event. Eg: the caller of the SendPush endpoint
+  string source = 7;
+
+  // scheduler action
+  SchedulerAction scheduler_action = 8;
+}
+
+// workflow type
+enum WorkflowType {
+  // unspecified type
+  WORKFLOW_TYPE_UNKNOWN_UNSPECIFIED = 0;
+
+  // workflow
+  WORKFLOW_TYPE_WORKFLOW = 1;
+
+  // api
+  WORKFLOW_TYPE_API = 2;
+}
+
+// workflow request event
+message WorkflowRequestEvent {
+  // message identifier
+  string message_id = 1;
+
+  // workflow type
+  WorkflowType workflow_type = 2;
+
+  // TriggerWorkflowRequest
+  TriggerWorkflowRequest trigger_workflow_request = 3;
+
+  // ExecuteApiRequest
+  ExecuteApiRequest execute_api_request = 4;
+
+  // The origin of the event. Eg: the caller of the TriggerWorkflow or ExecuteApi endpoint
+  string source = 5;
+}
+
+// workflow webhook event type
+enum WorkflowWebhookEventType {
+  // unspecified value
+  WORKFLOW_WEBHOOK_EVENT_TYPE_UNKNOWN_UNSPECIFIED = 0;
+
+  // iterable workflow updates
+  WORKFLOW_WEBHOOK_EVENT_TYPE_ITERABLE_WORKFLOW_STATUS_UPDATE = 1;
+}
+
+// workflow webhook event
+message WorkflowWebhookEvent {
+  // status update type
+  WorkflowWebhookEventType type = 1;
+
+  // raw event
+  string event_raw = 2;
+
+  // event timestamp
+  google.protobuf.Timestamp event_timestamp = 3;
+
+  // workflow id
+  string workflow_id = 4;
+}

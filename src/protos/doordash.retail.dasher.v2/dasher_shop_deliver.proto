@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/money.proto";
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+
+option java_package = "doordash.retail.dasher.v2";
+option java_multiple_files = true;
+option java_generic_services = true;
+package doordash.retail.dasher.v2;
+
+// Pick/pack service for dashers
+service DasherShopDeliverService {
+  /*
+   * Get Pick Items
+   *
+   * Retrieve the list of items to be picked and packed for this delivery. This call requires a delivery uuid to be
+   * specified.
+   *
+   */
+  rpc GetPickItems (GetPickItemsRequest) returns (GetPickItemsResponse);
+  /*
+   * Finish Pick
+   *
+   * Submit the results of the picking to the backend service all at once. This call requires a delivery uuid to be
+   * specified.
+   *
+   */
+  rpc FinishPickItems (FinishPickItemsRequest) returns (FinishPickItemsResponse);
+}
+// Request payload for Get Pick Items API
+message GetPickItemsRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+}
+
+// A group of order items
+message OrderItemGroup {
+  // Unique UUID to identify the group
+  string group_uuid = 1;
+  // Name of group
+  string name = 2;
+  // Sort ordering of the group to display on the client. Sort in ascending order.
+  int32 sort_order = 3;
+}
+
+// Response payload for Get Pick Items API
+message GetPickItemsResponse {
+  // Specific instructions to be displayed to the dasher on arrival
+  repeated string instructions = 1;
+  // List of items to be picked, along with the substitution preferences
+  repeated ItemRequested items_requested = 2;
+  // A barcode to be displayed during the checkout. If blank or missing, do not show.
+  string barcode_url = 3;
+  // Additional checkout instructions. If missing, do not show.
+  CheckoutInstructions checkout_instructions = 4;
+  // List of item groups. If empty, group by category.
+  repeated OrderItemGroup item_groups = 5;
+}
+
+// Request payload for Finish Pick API
+message FinishPickItemsRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  /*
+   * List of items that were actually picked with their pick result (picked, refunded, substituted etc). All items in
+   * the original pick work order must be present and accounted for in this request.
+   *
+   * In the case of substituted item the item UUID must be populated and a new PickResult added corresponding to the
+   * actually picked item.
+   */
+  repeated ItemFulfilled items_fulfilled = 3;
+}
+
+// Response payload for Finish Pick API
+message FinishPickItemsResponse {
+  // Indicates to the dasher client if an order is about to be cancelled.
+  bool should_cancel = 1;
+}
+
+/*
+ * PickResult stores the pick state for each item in the pick list.
+ */
+message ItemFulfilled {
+  // Item UUID that was picked
+  string uuid = 1;
+  // Possible states of this pick result
+  // TODO(amrik): rename enums below, and migrate dasher-mobile-bff to prevent breaking change
+  enum State {
+    // Unspecified and/or invalid
+    STATE_UNSPECIFIED = 0;
+    // Item was picked
+    STATE_PICKED = 1;
+    // Item was refunded
+    STATE_REFUNDED = 2;
+    // Item was substituted with a known in-catalog item
+    STATE_SUBSTITUTED = 3;
+  }
+  // The current state of this pick result, ie. whether picked, refunded or substituted
+  State state = 2;
+  // Quantity of this item that was actually picked
+  repeated common.QuantityInfo quantity_fulfilled = 5;
+  // Substituted order item id, only to be populated if the state is SUBSTITUTED. Blank otherwise.
+  string substituted_item_uuid = 4;
+}
+
+// Represents an item in a customer's order, along with it's category and possible substitutions
+message ItemRequested {
+  // Unique identifier for this item. This is NOT an item id, it is unique to retail-service.
+  string uuid = 1;
+  // Name to be displayed for this particular item
+  string name = 2;
+  // L1 category for grouping
+  string category = 3;
+  // Image url for this order item
+  string image_url = 4;
+  // purchase type
+  common.marketplace_purchase.v1.PurchaseType purchase_type = 5;
+  // Quantity requested by the consumer
+  common.QuantityInfo quantity_requested = 6;
+  // Unit for purchased item
+  FulfillmentUnit unit_requested = 7;
+  // Unit for fulfilled item
+  FulfillmentUnit unit_fulfilled = 8;
+  // Price for this item
+  money.MonetaryFields price_fulfilled = 9;
+  // approximate fulfillment quantity
+  double approximate_fulfill_quantity = 10;
+  // List of eligible substitutions for this particular cx and order item
+  repeated OrderItemEligibleSubstitution eligible_substitutions = 11;
+  // Sort ordering to display in the client within each group. Sort in ascending order.
+  int32 sort_order = 12;
+  // Substitution preference selected for the given item.
+  SubstitutionStatus substitution_status = 13;
+  // Group of item
+  string group_uuid = 14;
+  // Minimum fulfill quantity
+  double min_fulfillment_quantity = 15;
+  // Maximum fulfill quantity
+  double max_fulfillment_quantity = 16;
+  // Enable pick accuracy flow for this item
+  bool enable_pick_accuracy = 17;
+
+  // Status for what kind of substitution option the consumer selected.
+  enum SubstitutionStatus {
+    // Unspecified Substitution Status
+    SUBSTITUTION_STATUS_UNSPECIFIED = 0;
+    // Consumer requested to be contacted
+    SUBSTITUTION_STATUS_CONTACT_CUSTOMER = 1;
+    // Consumer requested to be refunded
+    SUBSTITUTION_STATUS_REFUND_CUSTOMER = 2;
+    // Consumer requested to substitute with a known in-catalog item
+    SUBSTITUTION_STATUS_SELECT_SUBSTITUTION = 3;
+  }
+  // Location information of this order item
+  LocationInfo location_info = 18;
+}
+
+// A possible substitution for a given order item
+message OrderItemEligibleSubstitution {
+  // Unique identifier for this item. This is NOT an item id, it is unique to retail-service.
+  string uuid = 1;
+  // Item name to display
+  string name = 2;
+  // Image url for this substitution
+  string image_url = 3;
+  // Price for this particular substitution
+  money.MonetaryFields price = 4;
+  // Unit for substitute item
+  FulfillmentUnit unit = 6;
+}
+
+// Additional checkout instructions
+message CheckoutInstructions {
+  // Variants of checkout instructions
+  enum Variant {
+    // Unspecified variant
+    VARIANT_UNSPECIFIED = 0;
+    // Use loyalty number and ask cashier to remove taxes
+    VARIANT_LOYALTY_NUMBER_AND_TAX_EXEMPTION = 1;
+  }
+
+  // Variant of checkout instructions
+  Variant variant = 1;
+  // The loyalty number to display
+  string loyalty_number = 2;
+}
+
+// Fulfillment Unit to determine pick type
+enum FulfillmentUnit {
+  //UNSPECIFIED
+  FULFILLMENT_UNIT_FIXED_PACKAGE_UNSPECIFIED = 0;
+  // each
+  FULFILLMENT_UNIT_FIXED_PACKAGE_EACH = 1;
+  // package
+  FULFILLMENT_UNIT_FIXED_PACKAGE_PACKAGE = 2;
+  // loose package Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_LBS = 10;
+  // loose package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_OZ = 11;
+  // loose package Measurement by KG (kg)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_KG = 12;
+  // loose package Measurement by Gram (g)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_GRAM = 13;
+  // pre packaged Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_LBS = 20;
+  // pre package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_OZ = 21;
+  // pre package Measurement by KG (kg)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_KG = 22;
+  // pre package Measurement by Gram (g)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_GRAM = 23;
+}
+
+// Represents location information of an item
+message LocationInfo {
+  // X coordinate of the location
+  double location_x = 1;
+  // Y coordinate of the location
+  double location_y = 2;
+}

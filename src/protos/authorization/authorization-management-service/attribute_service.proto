@@ -1,0 +1,242 @@
+syntax = "proto3";
+
+package authorization.authorization_management_service.v2;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/authorization/authorization_management_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.authorization";
+
+// Manage Attributes within the Authorization Platform, the attributes can be used on both user set and resource set.
+// TODO: It will not support deletion for now since it is more complicated with cascade usage detection.
+service AttributeService {
+  // Setup this service to be exposed via Unified Gateway.
+  option (doordash.api.service) = {
+    name: "authorization-management-attributes-service"
+    url: "authorization-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "authorization",
+      "authorization-management",
+      "access-management"
+    ]
+    owner: {
+      name: "identity-platform"
+      id: "identity-platform-team"
+      slack_channel: "#ask-access-management"
+      email_alias: "identity-platform@doordash.com"
+    }
+    api_key_name: "AUTHORIZATION-MANAGEMENT-SERVICE-API-KEY"
+    target_products: [INTERNAL]
+  };
+
+  // Upsert Custom Attributes by Application in Authorization platform
+  rpc UpsertCustomAttributesByApplication(UpsertCustomAttributesByApplicationRequest) returns (UpsertCustomAttributesByApplicationResponse) {
+    option (google.api.http) = {
+      post: "/authorization-management/v1/attributes"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get all Attributes of an application, including both custom and system types
+  rpc GetAttributesByApplication(GetAttributesByApplicationRequest) returns (GetAttributesByApplicationResponse) {
+    option (google.api.http) = {get: "/authorization-management/v1/attributes/{application_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Upsert System Attributes in Authorization platform
+  // Not exposing via UG because web client will not need to use this API for now.
+  rpc UpsertSystemAttributes(UpsertSystemAttributesRequest) returns (UpsertSystemAttributesResponse);
+}
+
+// Upsert custom attributes of the application
+message UpsertCustomAttributesByApplicationRequest {
+  // The Application to which the attribute will be used.
+  string application_id = 2;
+  // list of upsert custom attributes
+  repeated UpsertCustomAttribute upsert_custom_attributes = 3;
+}
+
+// Upsert custom attributes
+message UpsertCustomAttribute {
+  // Optional attribute id, present for update, absent for create, it will fail if present value is not in DB
+  google.protobuf.StringValue attribute_id = 2;
+  // [Non Updatable] Name of the attribute
+  string name = 3;
+  // Readable description of the attribute
+  google.protobuf.StringValue description = 4;
+  // [Non Updatable] Data type of the attribute, with default value and validation requirement set
+  DataType data_type = 5;
+  // [Non Updatable] the data source of the attribute
+  AttributeDataSource attribute_data_source = 6;
+}
+
+// range requirement to indicate int value is in a range
+message RangeRequirement {
+  // min value, inclusive
+  google.protobuf.Int64Value min = 2;
+  // max value, exclusive
+  google.protobuf.Int64Value max = 3;
+}
+
+// length requirement to indicate string is within the length
+message LengthRequirement {
+  // max length, inclusive
+  google.protobuf.Int64Value max_length = 2;
+}
+
+// list requirement to indicate a list of string values
+message ListRequirement {
+  // the list of possible string values, null inclusive
+  repeated google.protobuf.StringValue list_values = 2;
+}
+
+// the int64 data type
+message Int64Type {
+  // [Optional] the default value
+  google.protobuf.Int64Value default_value = 2;
+  // the range requirement
+  RangeRequirement range_requirement = 3;
+}
+
+// the string type
+message StringType {
+  // [Optional] the default value
+  google.protobuf.StringValue default_value = 2;
+  // length requirement
+  LengthRequirement length_requirement = 3;
+}
+
+// the list type
+message ListType {
+  // [Optional] the default value
+  google.protobuf.StringValue default_value = 2;
+  // list requirement
+  ListRequirement list_requirement = 3;
+}
+
+// data types supported
+message DataType {
+  // union of types
+  oneof type_choices {
+    // int64 type
+    Int64Type int64_type = 2;
+    // string type
+    StringType string_type = 3;
+    // list type
+    ListType list_type = 4;
+  }
+}
+
+// the custom attribute by application
+message CustomAttribute {
+  // application identifier
+  string application_id = 2;
+  // attribute uuid generated upon creation
+  string attribute_id = 3;
+  // Name of the attribute
+  string name = 4;
+  // [Optional] Readable description of the attribute
+  google.protobuf.StringValue description = 5;
+  // Data type of the attribute, with default value and validation requirement
+  DataType data_type = 6;
+  // the data source of the attribute
+  AttributeDataSource attribute_data_source = 7;
+}
+
+// upsert custom attributes by application response
+message UpsertCustomAttributesByApplicationResponse {
+  // the list of the custom attributes upserted
+  repeated CustomAttribute attributes = 2;
+}
+
+// get attributes by application request
+message GetAttributesByApplicationRequest {
+  // application id
+  string application_id = 2;
+}
+
+// get attributes by application response
+message GetAttributesByApplicationResponse {
+  // custom attributes
+  repeated CustomAttribute custom_attributes = 2;
+  // system attributes
+  repeated SystemAttribute system_attributes = 3;
+}
+
+// attribute data sources
+enum AttributeDataSource {
+  // default
+  ATTRIBUTE_DATA_SOURCE_UNSPECIFIED = 0;
+  // workday attribute source
+  ATTRIBUTE_DATA_SOURCE_WORKDAY = 1;
+  // custom application attribute source
+  ATTRIBUTE_DATA_SOURCE_CUSTOM_APPLICATION = 2;
+  // custom application resource type attribute source
+  ATTRIBUTE_DATA_SOURCE_CUSTOM_APPLICATION_RESOURCE_TYPE = 3;
+}
+
+// upsert system attribute
+message UpsertSystemAttribute {
+  // Optional attribute id, present for update, absent for create, it will fail if present value is not in DB
+  google.protobuf.StringValue attribute_id = 2;
+  // [Non Updatable] Name of the attribute
+  string name = 3;
+  // [Optional] Readable description of the attribute
+  google.protobuf.StringValue description = 4;
+  // [Non Updatable] Data type of the attribute, with default value and validation requirement set
+  DataType data_type = 5;
+  // [Non Updatable] the data source of the attribute
+  AttributeDataSource attribute_data_source = 6;
+}
+
+// the system attribute
+message SystemAttribute {
+  // attribute id
+  string attribute_id = 2;
+  // Name of the attribute
+  string name = 3;
+  // [Optional] Readable description of the attribute
+  google.protobuf.StringValue description = 4;
+  // Data type of the attribute, with default value and validation requirement set
+  DataType data_type = 5;
+  // the data source of the attribute
+  AttributeDataSource attribute_data_source = 6;
+}
+
+// upsert system attributes request
+message UpsertSystemAttributesRequest {
+  // list of attributes
+  repeated UpsertSystemAttribute attributes = 2;
+}
+
+// upsert system attributes response
+message UpsertSystemAttributesResponse {
+  // list of system attributes
+  repeated SystemAttribute attributes = 2;
+}

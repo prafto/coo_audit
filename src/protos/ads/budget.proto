@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package ads;
+
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ads";
+
+// Denotes the type of Segment Group, can be extended
+enum BudgetSegmentGroupSpendingInfoType {
+  // default
+  BUDGET_SEGMENT_GROUP_SPENDING_INFO_TYPE_UNSPECIFIED = 0;
+  // experiment segment type
+  BUDGET_SEGMENT_GROUP_SPENDING_INFO_TYPE_EXPERIMENT = 1;
+}
+
+// Wrapper for all Segment Group Spending
+message BudgetSegmentGroupSpendingInfo {
+  // type of segment group
+  BudgetSegmentGroupSpendingInfoType type = 1;
+  // Budget Segment Group Name
+  google.protobuf.StringValue segment_group_name = 2;
+  // lookup map for Budget Spending per Segment
+  map<string, BudgetSpendingInfo> segment_map = 3;
+}
+
+// Wrapper for overall Budget Spending
+message BudgetOverallSpendingInfo {
+  // Budget Spending for entire Campaign/AdGroup
+  BudgetSpendingInfo total = 1;
+  // Lookup map for Budget Spending per Segment Group
+  map<string, BudgetSegmentGroupSpendingInfo> segment_group_map = 2;
+  // Timestamp of Last Budget Configured
+  google.protobuf.Timestamp last_budget_configured_time = 3;
+  // Spend tracking timezone. Expecting the name of the timezone.
+  // See examples here: https://github.com/eggert/tz/blob/main/backward
+  // Default will be "America/New_York" if there are parsing errors
+  google.protobuf.StringValue timezone = 4;
+}
+
+// Budget Spent Information used for pacing
+message BudgetSpendingInfo {
+  // If the monthly goal requires multiple edits to be calculated
+  // it will be stored in this map. So that in read path, we first check if
+  // it is present, then use it. Otherwise, it will fallback to use avgDailyBudget for
+  // the calculation.
+  map<int32, money.MonetaryFields> monthly_goal = 1;
+  // Tracks the current's month spent. A map is needed since as time progresses
+  // we want to keep tracking and "forgetting" previous months in the write path.
+  map<int32, MonthlySpent> monthly_spent = 2;
+  // Tracks lifetime spent, for now only used for auctioned banners
+  money.MonetaryFields lifetime_spent = 3;
+}
+
+// Represent monthly spent
+message MonthlySpent {
+  // Accumulated spent
+  money.MonetaryFields spent = 1;
+  // Tracks the current's day spent, old entries will
+  // be deleted on write.
+  map<int32, DailySpent> daily_spent = 2;
+}
+
+// Represent daily spent
+message DailySpent {
+  // Accumulated spent
+  money.MonetaryFields spent = 1;
+  // Tracks the current's hourly spent, oldest entries will
+  // be deleted on write.
+  map<int32, money.MonetaryFields> hourly_spent = 3;
+}
+
+// Budget Experiment Metadata to be attached to a Bid/BudgetTransaction
+message BudgetExperimentInfo {
+  // Budget Experiment Name - only one budget experiment per campaign
+  google.protobuf.StringValue experiment_name = 1;
+  // Resolved Experiment Segment
+  google.protobuf.StringValue experiment_segment = 2;
+  // Optional mapping of a segment to its split percentage.
+  // Values are in the range [0.0, 1.0]
+  map<string, float> segment_split_pct_map = 3;
+}

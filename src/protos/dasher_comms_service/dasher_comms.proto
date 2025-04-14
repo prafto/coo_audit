@@ -1,0 +1,185 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package dasher_comms_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/notification_platform/notification_platform_service.proto";
+import "supply_demand_service/incentive.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_comms_service";
+
+// The DasherCommsService service definition.
+service DasherCommsService {
+  // [DEPRECATED] Sends a DX comm to a dasher.
+  rpc SendDasherComms(SendDasherCommsRequest) returns (SendDasherCommsResponse) {}
+  // Sends a DX comms to a dasher.
+  rpc SendDasherCommsV2(SendDasherCommsV2Request) returns (SendDasherCommsV2Response) {}
+}
+
+// The dx comm sending request
+message SendDasherCommsRequest {
+  //time to trigger message
+  google.protobuf.Timestamp send_at = 1;
+  //whether the incoming message is real-time
+  google.protobuf.BoolValue send_now = 2;
+  // source (ie., Iterable, FPN, Journey)
+  doordash.growth.notification_platform.v1.SourceType source = 3;
+  //target audience of comms
+  MessageRecipient recipients = 4;
+  // medium in which comms will be sent
+  repeated doordash.growth.notification_platform.v1.ChannelType channels = 5;
+  // message_type (Reminders, Product updates, etc...)
+  MessageType message_type = 6;
+  // contents as defined by notification platform
+  doordash.growth.notification_platform.v1.NotificationContent content = 7;
+  //latest time message can be sent
+  google.protobuf.Timestamp expires_at = 8;
+  //additional parameters to be passed into the request
+  map<string, string> metadata = 9;
+  //starting point targeted by message
+  google.protobuf.StringValue starting_point_id = 10;
+}
+
+// The dx comm sending request
+message SendDasherCommsV2Request {
+  //time to trigger message
+  google.protobuf.Timestamp scheduled_at = 1;
+  //whether the incoming message is real-time
+  google.protobuf.BoolValue send_now = 2;
+  //target audience of comms
+  MessageRecipient recipients = 3;
+  // medium in which comms will be sent
+  repeated Channel channels = 4;
+  // message_type (Reminders, Product updates, etc...)
+  MessageType message_type = 5;
+  // deprecated
+  NotificationContent content = 6 [deprecated = true];
+  //latest time message can be sent or viewed
+  google.protobuf.Timestamp expires_at = 7;
+  //additional parameters to be passed into the request
+  map<string, string> metadata = 8;
+  // contents associated with all channels
+  repeated NotificationContent contents = 9;
+}
+
+// The dx comm sending response
+message SendDasherCommsV2Response {
+  // The confirmation code of the dx comm sent
+  Confirmation confirmation = 1;
+  // Confirmation code of the dx comm sent
+  enum Confirmation {
+    // Unspecified confirmation code
+    CONFIRMATION_UNSPECIFIED = 0;
+    // The message was successfully sent
+    CONFIRMATION_SUCCESS = 1;
+    // The message was not sent due to bad request
+    CONFIRMATION_INVALID_INPUT = 2;
+    // The message was not sent due to internal error
+    CONFIRMATION_INTERNAL_ERROR = 3;
+  }
+  // Unique Notification uuid to track successfully processed/sent notification.
+  string notification_uuid = 2;
+}
+
+// The target audience for the comms. Either a list of ids or a predefined cohort
+message MessageRecipient {
+  // name of recipient cohort
+  string dasher_cohort_name = 1;
+  // list of dasher ids to receive message
+  repeated int64 dasher_ids = 2;
+  // set to true if using dasher id list instead of dasher cohorts
+  google.protobuf.BoolValue use_dasher_ids = 3;
+  // sp id
+  int64 sp_id = 4;
+}
+
+// The dx comm sending response
+message SendDasherCommsResponse {
+  // The confirmation code of the dx comm sent
+  string confirmation = 1;
+  // Unique Notification uuid to track successfully processed/sent notification.
+  string notification_uuid = 2;
+}
+
+// content of notification
+message NotificationContent {
+  // content can be push, email, sms
+  oneof content {
+    // the content of push notification
+    doordash.growth.notification_platform.v1.PushNotificationContent push_content = 1;
+    // the content of in-app notifications
+    InAppNotificationContent in_app_content = 2;
+  }
+}
+
+// content of in-app notification
+message InAppNotificationContent {
+  // prism icon to be displayed in the inbox of this notification
+  google.protobuf.StringValue icon = 1;
+  // screen displayed when notification is clicked in inbox
+  oneof screen {
+    // details regarding a template screen that is already registered
+    TemplateScreenInfo template_screen_details = 2;
+    // details regarding any non-template screen that needs to be redirected to
+    RedirectScreenInfo redirect_screen_details = 3;
+  }
+  // title of the notification in the inbox
+  google.protobuf.StringValue inbox_title = 4;
+  // description of the notification in the inbox
+  google.protobuf.StringValue inbox_description = 5;
+}
+
+// details regarding a template screen that is already registered
+message TemplateScreenInfo {
+  // name of the config
+  google.protobuf.StringValue config_name = 1;
+}
+
+// details regarding any non-template screen that needs to be redirected to
+message RedirectScreenInfo {
+  // deprecated
+  google.protobuf.StringValue inbox_title = 1 [deprecated = true];
+  // deprecated
+  google.protobuf.StringValue inbox_description = 2 [deprecated = true];
+  // target page of the notification
+  oneof target {
+    // contract-violation webview url
+    google.protobuf.StringValue webview_url = 3;
+    // local screen id to be redirected to
+    google.protobuf.StringValue screen_id = 4;
+  }
+}
+
+// Represents the Comms Channel
+enum Channel {
+  // unspecified channel
+  CHANNEL_UNSPECIFIED = 0;
+  // push notifications
+  CHANNEL_PUSH = 1;
+  //in-app notification
+  CHANNEL_IN_APP = 2;
+}
+
+// Represents the Comms Message Type
+enum MessageType {
+  // unspecified message type
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  // helpful prompts while a dasher is on the road
+  MESSAGE_TYPE_ON_THE_DASH_REMINDERS = 1;
+  // general reminders
+  MESSAGE_TYPE_NOTIFICATIONS_AND_REMINDERS = 2;
+  // messages regarding available promotions
+  MESSAGE_TYPE_OFFERS_AND_PROMOTIONS = 3;
+  // updates regarding product and app features
+  MESSAGE_TYPE_FEATURE_UPDATES = 4;
+  // transactional messages, essential to dashers
+  MESSAGE_TYPE_TRANSACTIONAL = 5;
+  // mobilization messages geared towards supply
+  MESSAGE_TYPE_SUPPLY_MOBILIZATION = 6;
+}

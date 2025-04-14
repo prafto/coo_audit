@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package doordash.retail.ml_infra.v1;
+
+import "common/code.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+
+// API definition for ML Infra Inference Service
+service MLInfraInferenceService {
+  // Inference service API for L1-L4 Taxonomy model
+  rpc L1L4TaxonomyInference(L1L4TaxonomyInferenceRequest) returns (L1L4TaxonomyInferenceResponse);
+
+  // Inference service API for Item Matcher model
+  rpc ItemMatcherInference(ItemMatcherInferenceRequest) returns (ItemMatcherInferenceResponse);
+}
+
+// Metadata of the caller cadence workflow
+message InferRequestMetadata {
+  // Callback token for reactivating the cadence workflow, it will be passed back
+  // in the response
+  string callback_token = 1;
+  // Optional, the name of the model to used for inference request. If not set,
+  // the service will choose the default model name
+  string model_name = 2;
+  // Optional, The version of the model to use for inference. If not set,
+  // the service will choose the latest version
+  string model_version = 3;
+  // Identifier of the caller, will be passed back and used for filtering
+  string caller = 4;
+}
+
+// Request for Inference
+message L1L4TaxonomyInferenceRequest {
+  // Metadata of the inference request
+  InferRequestMetadata metadata = 1;
+  // Inference parameters.
+  string normalized_text = 2;
+}
+
+// Response for Inference
+message L1L4TaxonomyInferenceResponse {
+  // Request id for tracking
+  string request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async inference callback
+message L1L4TaxonomyInferenceResult {
+  // Metadata of the inference request
+  InferRequestMetadata metadata = 1;
+  // Request ID
+  string request_id = 2;
+  // L1-L4 taxonomy
+  string taxonomy = 3;
+  // L1-L4 taxonomy ID
+  int64 taxonomy_id = 4;
+  // Confidence score from the model
+  float score = 5;
+  // Flag to indicate whether this result needs to be reviewed by annotators
+  bool need_review = 6;
+}
+
+// Input item for Item Matcher model
+message ItemMatcherItem {
+  // Item id
+  string item_id = 1;
+  // Item name
+  string mx_name = 2;
+  // Size
+  string mx_size = 3;
+  // UOM
+  string mx_uom = 4;
+  // Photo url
+  repeated string mx_photo_url = 5;
+  // UPC
+  string upc = 6;
+  // List of 3rd party data json
+  repeated ItemMatcherItemThirdParty third_party_data = 7;
+  // Vertical
+  string vertical = 8;
+}
+
+// 3p data for item to be matched
+message ItemMatcherItemThirdParty {
+  // Source Id
+  SourceId source_id = 1;
+  // Item Name
+  string item_name = 2;
+  // Size
+  string size = 3;
+  // Brand
+  string brand = 4;
+}
+
+// Candidate item for Item Matcher model
+message ItemMatcherCandidate {
+  // Item id
+  string item_id = 1;
+  // Clean item name
+  string clean_item_name = 2;
+  // Brand
+  string brand = 3;
+  // Manufacturer
+  string manufacturer = 4;
+}
+
+// Inference API Request for Item Matcher model
+message ItemMatcherInferenceRequest {
+  // Metadata of the inference request
+  InferRequestMetadata metadata = 1;
+  // Candidate item.
+  repeated ItemMatcherCandidate candidates = 2;
+  // Item to be matched.
+  ItemMatcherItem item_to_be_matched = 3;
+  // Flag to indicate whether it's an UPC match request
+  bool is_upc_match = 4;
+}
+
+// Inference API Response for Item Matcher model
+message ItemMatcherInferenceResponse {
+  // Request id for tracking
+  string request_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// DTO for async inference callback
+message ItemMatcherInferenceResult {
+  // Metadata of the inference request
+  InferRequestMetadata metadata = 1;
+  // Request ID
+  string request_id = 2;
+  // Item Id of ItemMatcherItem
+  string item_id = 3;
+  // Flag to indicate whether this result needs to be reviewed by annotators
+  bool need_review = 4;
+  // Result object for each ItemMatcherCandidate in the request
+  repeated ItemMatcherInferenceCandidateResult candidate = 5;
+}
+
+// DTO for Details for each Candidate in Item Matcher
+message ItemMatcherInferenceCandidateResult {
+  // Item Id of ItemMatcherCandidate
+  string item_id = 1;
+  // Flag to indicate whether it's a confident item match
+  bool is_confident_match = 2;
+  // Confidence score from the model
+  float score = 3;
+  // Model Source
+  ModelSource source = 4;
+}
+
+// Source id
+// buf:lint:ignore ENUM_VALUE_PREFIX
+// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+enum SourceId {
+  // Unknown source
+  SOURCE_UNKNOWN = 0;
+  // URPC V1
+  URPC_V1 = 1;
+  // GS1 US
+  GS1_US = 2;
+  // Nielsen
+  NIELSEN = 3;
+  // Label Insight
+  LABEL_INSIGHT = 4;
+  // Salsify
+  SALSIFY = 5;
+  // Upcitemdb
+  UPCITEMDB = 6;
+  // Syndigo
+  SYNDIGO = 7;
+}
+
+// Model Source
+enum ModelSource {
+  // Unknown source
+  MODEL_SOURCE_UNSPECIFIED = 0;
+  // Argil, in-house model
+  MODEL_SOURCE_ARGIL = 1;
+  // OpenAI
+  MODEL_SOURCE_OPENAI = 2;
+}

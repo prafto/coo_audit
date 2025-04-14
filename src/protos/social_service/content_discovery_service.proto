@@ -1,0 +1,862 @@
+syntax = "proto3";
+
+package social_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/facet_response_v2.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/common.proto";
+import "ratings_service/consumer_photo.proto";
+import "ratings_service/consumer_rating.proto";
+import "social_service/common.proto";
+import "social_service/creator_profile_service.proto";
+import "social_service/post.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.social_service";
+
+// This service is for exploratory purposes, to test different ways of presenting content in discovery flows,
+// all of which include user-generated content
+service ContentDiscoveryService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "social-service-web.service.prod.ddsd",
+    name_spaces: ["social_content_discovery"]
+    owner: {
+      id: "social-proof"
+      name: "social-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).service_name = "social-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Retrieves top stores in local area (submarket),
+  // displaying top stores, and highlighting user content associated with each store
+  // https://docs.google.com/document/d/102J3eGL8qXvE0RKMnnr1quTg_3s76rtYkRwQhR3zVoY/edit?usp=sharing
+  rpc GetTopLocalStores(GetTopLocalStoresRequest) returns (GetTopLocalStoresResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/top_local_stores/{submarket_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Retrieves a feed of content relevant to the user, this contains reviews, lists and posts from either other Cx or
+  // Merchants.
+  // https://docs.google.com/document/d/1MzLfvd2Tmt6EG-bzOOC4eZt9yWA9v2y2v_5Yo0DWaTs/edit
+  rpc GetFeed(GetFeedRequest) returns (GetFeedResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/feed"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+
+  // Retrieves a feed of content relevant to the user, this contains reviews, lists and posts from either other Cx or
+  // Merchants.
+  rpc GetExploreFeed(GetExploreFeedRequest) returns (GetExploreFeedResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/explore_feed"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+
+  // DEPRECATED -- DO NOT USE; Use BatchUpsertSocialContentPosts instead
+  // For data backfilling, ops created post, etc
+  rpc BatchUpsertFeedPosts(BatchUpsertFeedPostsRequest) returns (BatchUpsertFeedPostsResponse);
+
+  // For writing to social_content_post DB table, which serves as SOT for social content posts
+  rpc BatchUpsertSocialContentPosts(BatchUpsertSocialContentPostsRequest) returns (BatchUpsertSocialContentPostsResponse);
+
+  // API to fetch the List page.
+  rpc GetListPage(GetListPageRequest) returns (GetListPageResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/list/{list_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+
+  // API to process social list target interactions
+  rpc ProcessSocialListTargetInteractions(ProcessSocialListTargetInteractionsRequest) returns (ProcessSocialListTargetInteractionsResponse) {
+    option (google.api.http) = {
+      post: "/social_content_discovery/v1/process_social_list_target_interactions"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+}
+
+// Request message for GetTopLocalStores -- specifies input parameters for fetching top local stores
+message GetTopLocalStoresRequest {
+  // the submarket of the consumer requesting page
+  google.protobuf.Int64Value submarket_id = 1;
+  // the consumer id that is requesting page
+  google.protobuf.Int64Value requester_consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Response message for GetTopLocalStores -- powers page to display top local stores
+message GetTopLocalStoresResponse {
+  // the display experience for this page
+  DisplayExperience display_experience = 1;
+  // list of stores to display for response
+  repeated StoreWithUserContent stores = 2;
+}
+
+// The different display experiences for top local stores page
+enum DisplayExperience {
+  // unspecified display experience
+  DISPLAY_EXPERIENCE_UNSPECIFIED = 0;
+  // shows stores in a "story" format, where each store takes up entire page
+  DISPLAY_EXPERIENCE_STORY = 1;
+  // shows stores in a 2-column grid format, where stores are laid out in two columns
+  DISPLAY_EXPERIENCE_TWO_COLUMN_GRID = 2;
+}
+
+// A store with user content to display
+message StoreWithUserContent {
+  // id of store
+  google.protobuf.StringValue store_id = 1;
+  // uri to call to load store page -- the same format that we are using for explore/discovery surfaces
+  google.protobuf.StringValue store_navigation_uri = 2;
+  // image uri for loading mock for preview of store
+  google.protobuf.StringValue preview_photo_uri = 98;
+  // image uri for loading mock for see all view of store; only present for two column grid,
+  // and is shown when user taps on preview photo
+  google.protobuf.StringValue see_all_photo_uri = 99;
+}
+
+// GetFeedRequest
+message GetFeedRequest {
+  // cx_id of the user
+  google.protobuf.Int64Value consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // lat of the user geo
+  google.protobuf.DoubleValue lat = 2;
+  // lng of the user geo
+  google.protobuf.DoubleValue lng = 3;
+  // cursor of the next post content to fetch
+  google.protobuf.Int64Value cursor = 4;
+  // number of posts to fetch
+  google.protobuf.Int32Value limit = 5;
+  // submarket_id of the user
+  int64 submarket_id = 6 [
+    deprecated = true,
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // district_id of the user
+  int64 district_id = 7 [
+    deprecated = true,
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // sub_market id
+  google.protobuf.Int64Value sub_mkt_id = 8;
+  // district id
+  google.protobuf.Int64Value dist_id = 9;
+  // timezone
+  google.protobuf.StringValue timezone = 11;
+  // Post IDs that are seen by consumer in recent 5 min window
+  repeated google.protobuf.Int64Value viewed_post_ids = 12;
+}
+
+// Response for the GetFeedRequest
+message GetFeedResponse {
+  // content for the response.
+  repeated PostDM content = 1;
+  // cursor of the last post being returned
+  google.protobuf.Int64Value cursor = 4;
+}
+
+// PostDM
+message PostDM {
+  // Header of the Post
+  PostHeaderDM header = 1;
+  // Type of the post.
+  PostType post_type = 2;
+  // Id of this particular post.
+  google.protobuf.Int64Value post_id = 3;
+  // author info
+  PostAuthor author = 4;
+  // Data
+  oneof data {
+    // Review
+    ReviewContent review = 5;
+    // List
+    ListContent list = 6;
+    // Order
+    OrderContent order = 7;
+    // Poll
+    PollContent poll = 9;
+    // Leaderboard
+    LeaderboardContent leaderboard = 10;
+  }
+  // Post display type
+  PostDisplayType display_type = 8;
+
+  // post row display type
+  enum PostDisplayType {
+    // upspecified
+    POST_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // standard feed post layout
+    POST_DISPLAY_TYPE_STANDARD = 1;
+    // small card layout
+    POST_DISPLAY_TYPE_SMALL_CARD = 2;
+    // large card layout
+    POST_DISPLAY_TYPE_LARGE_CARD = 3;
+  }
+}
+
+// ReviewContent
+message ReviewContent {
+  // review associated with post
+  ratings_service.ConsumerReview consumer_review = 1;
+  // images associated with user-reviewed content
+  repeated ImageContent images = 2;
+  // store metadata for the store associated with the user-reviewed content
+  StoreDetails store_details = 3;
+}
+
+// OrderContent
+message OrderContent {
+  // images associated with user-reviewed content
+  repeated ImageContent images = 1;
+  // store metadata for the store associated with the user-reviewed content
+  StoreDetails store_details = 2;
+}
+
+// Header of the Post
+message PostHeaderDM {
+  // Badge data
+  repeated TextContent badges = 1;
+  // Line Items
+  repeated ContentRow line_items = 2;
+}
+
+// Type of post.
+enum PostType {
+  // unspecified
+  POST_TYPE_UNSPECIFIED = 0;
+  // a review
+  POST_TYPE_REVIEW = 1;
+  // a list
+  POST_TYPE_LIST = 2;
+  // an order
+  POST_TYPE_ORDER = 3;
+  // a poll
+  POST_TYPE_POLL = 4;
+  // a leaderboard
+  POST_TYPE_LEADERBOARD = 5;
+}
+
+// Request to fetch the List page.
+message GetListPageRequest {
+  // Id of the list being fetched.
+  google.protobuf.Int64Value list_id = 1;
+  // cx_id of the user
+  google.protobuf.Int64Value consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // lat of the user geo
+  google.protobuf.DoubleValue lat = 3;
+  // lng of the user geo
+  google.protobuf.DoubleValue lng = 4;
+  // submarket id
+  google.protobuf.Int64Value submarket_id = 5;
+  // district id
+  google.protobuf.Int64Value district_id = 6;
+  // offset for the list page fetch
+  google.protobuf.Int32Value offset = 7;
+  // limit for the list page fetch
+  google.protobuf.Int32Value limit = 8;
+  // timezone of the user geo
+  google.protobuf.StringValue timezone = 9;
+}
+
+//Response for fetching the List page.
+message GetListPageResponse {
+  // The Header DM for the list object.
+  ListHeaderDM header = 1;
+  // The Content DM for the list object.
+  ListContentDM content = 2;
+}
+
+// ListHeader DM - contains the Entirety of all the list header components.
+message ListHeaderDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // Line items to be included in the Title section
+    repeated ContentRow line_items = 1;
+    // metadata about the List creator
+    ListCreatorMetadata list_creator_metadata = 2;
+    // Cover image for the list
+    ImageContent cover_image_url = 3;
+    // Display attributes for the list
+    ListDisplayAttributes display_attributes = 4;
+    // leaderboard cuisines
+    repeated LeaderboardCuisine leaderboard_cuisines = 5;
+    // filters
+    repeated LeaderboardFilter filters = 6;
+  }
+}
+
+// Metadata related to the creator of the list.
+message ListCreatorMetadata {
+  // Details of the List creator.
+  CreatorProfileDetails creator_profile_details = 1;
+  // Additional line items to display within the Creator section of List Header.
+  repeated ContentRow line_items = 2;
+}
+
+// Display attributes for list
+message ListDisplayAttributes {
+  // primary background color
+  feed_service.Style.Color primary_bg_color = 1;
+  // secondary background color
+  feed_service.Style.Color secondary_bg_color = 2;
+  // header image for the list
+  ImageContent header_image = 3;
+  // list type
+  ratings_service.ListType list_type = 4;
+}
+
+// ListContent
+message ListContent {
+  // title of the list
+  ContentRow title = 1;
+  // individual cells within the list
+  repeated ListContentCell content = 2;
+}
+
+// Display module for the List Content
+message ListContentDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+  // flag to indicate if there is a next page for pagination
+  google.protobuf.BoolValue has_next_page = 6;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // the Content cell for the list, used to represent Stores, or other entities.
+    repeated ListContentCell contents = 1;
+  }
+}
+
+// cells of the ListContent
+message ListContentCell {
+  // type of the list
+  ListContentCellType type = 1;
+  // Data
+  oneof data {
+    // data related to a store.
+    StoreListCell store = 2;
+  }
+}
+
+// The Store cell within a list
+message StoreListCell {
+  // The store details
+  StoreDetails store_details = 1 [deprecated = true];
+  // Line items
+  repeated ContentRow line_items = 2;
+  // Recommended items for this store. Contains a mix of creator recommended items, and top liked/popular items of store
+  repeated ListStoreItemRecommendation item_recommendation = 3;
+  // Additional metadata related to the Store.
+  ListStoreMetadata store_metadata = 4;
+  // Tags associated with the Store
+  repeated TagContent tags = 5 [deprecated = true];
+  // Top UGC photos associated with the store
+  repeated ratings_service.PhotoDetails top_ugc_display_photos = 6;
+  // Items recommended by creator of list
+  repeated ListStoreItemRecommendation creator_recommended_items = 7;
+  // Other popular items of store, shown at bottom of page
+  repeated ListStoreItemRecommendation other_popular_items = 8;
+  // consumer review associated with the store
+  ratings_service.ConsumerReview consumer_review = 9;
+}
+
+// Item recommendation for a store.
+message ListStoreItemRecommendation {
+  // Item id of the recommended item.
+  google.protobuf.StringValue item_id = 1;
+  // Cover image url for this item.
+  ImageContent cover_image_url = 2;
+  // Line items associated with the item.
+  repeated ContentRow line_items = 3;
+  // flag to indicate if the item was liked by the author.
+  google.protobuf.BoolValue is_liked_item = 4;
+  // menu id associated with this item
+  google.protobuf.StringValue menu_id = 5;
+  // shape to display item recommendation cell
+  StoreItemDisplayShape display_shape = 6;
+}
+
+// Display shape for item cell
+enum StoreItemDisplayShape {
+  // unspecified
+  STORE_ITEM_DISPLAY_SHAPE_UNSPECIFIED = 0;
+  // square, which includes only item image
+  STORE_ITEM_DISPLAY_SHAPE_SQUARE = 1;
+  // rectangle, which includes image on left, and text on right
+  STORE_ITEM_DISPLAY_SHAPE_RECTANGLE = 2;
+  // square, with text line items underneath image
+  STORE_ITEM_DISPLAY_SHAPE_SQUARE_TEXT_UNDERNEATH = 3;
+}
+
+// Metadata object for Store.
+message ListStoreMetadata {
+  // Ratings data related to this store
+  ratings_service.StoreRatings store_ratings = 1;
+  // Flag to indicate if this store was saved by the Current Cx viewing the list.
+  google.protobuf.BoolValue is_saved_store = 2;
+  // store id belonging to the store
+  google.protobuf.StringValue store_id = 3;
+  // square cover image of store
+  ImageContent cover_square_image = 4;
+  // header image of store
+  ImageContent header_image = 5;
+  // navigation uri used to open store page
+  google.protobuf.StringValue navigation_uri = 6;
+  // if store is closed
+  google.protobuf.BoolValue is_closed = 7;
+  // if store is out of delivery radius
+  google.protobuf.BoolValue is_out_of_radius = 8;
+  // rank in leaderboard
+  google.protobuf.Int32Value rank = 9;
+}
+
+// Content cell type
+enum ListContentCellType {
+  // unspecified
+  LIST_CONTENT_CELL_TYPE_UNSPECIFIED = 0;
+  // store cell.
+  LIST_CONTENT_CELL_TYPE_STORE = 1;
+}
+
+// Author of a post.
+message PostAuthor {
+  // display name
+  google.protobuf.StringValue display_name = 1;
+  // thumbnail image
+  ImageContent thumbnail_image = 2;
+  // Consumer id of the author
+  google.protobuf.Int64Value author_id = 3;
+  // Consumer id of the author
+  google.protobuf.Int64Value author_cxid = 4;
+}
+
+// DEPRECATED -- DO NOT USE; Use BatchUpsertSocialContentPostsRequest instead
+// BatchUpsertPostsRequest represents a request to upsert multiple posts.
+message BatchUpsertFeedPostsRequest {
+  // Metadata for posts to be upserted
+  repeated UpsertPostsRequest requests = 1;
+}
+
+// DEPRECATED -- DO NOT USE; Use BatchUpsertSocialContentPostsResponse instead
+// BatchUpsertPostsResponse represents a response containing IDs of created posts.
+message BatchUpsertFeedPostsResponse {
+  // IDs of created post
+  repeated google.protobuf.Int64Value post_ids = 1;
+}
+
+// BatchUpsertPostsRequest represents a request to upsert multiple social content posts.
+message BatchUpsertSocialContentPostsRequest {
+  // Metadata for posts to be upserted
+  repeated UpsertSocialContentPostRequest requests = 1;
+}
+
+// BatchUpsertPostsResponse represents a response containing IDs of created posts.
+message BatchUpsertSocialContentPostsResponse {
+  // IDs of created post
+  repeated google.protobuf.StringValue post_ids = 1;
+}
+
+// UpsertPostsRequest represents a request to upsert a single post.
+message UpsertSocialContentPostRequest {
+  // ID of the post -- if not provided, autogenerated by service
+  google.protobuf.StringValue post_id = 1;
+  // Original source record id of post -- e.g. for a consumer review, it would be the uuid of the consumer review
+  google.protobuf.StringValue original_source_record_id = 2;
+  // Original data origin source of post -- e.g. for a consumer review, it would be RATINGS_SERVICE
+  google.protobuf.StringValue data_origin_source = 3;
+  // Type of social content -- e.g. for a consumer review, it would be CONSUMER_REVIEW
+  google.protobuf.StringValue type = 4;
+  // Title of social content post
+  google.protobuf.StringValue title = 5;
+  // Subtitle of social content post
+  google.protobuf.StringValue subtitle = 6;
+  // Body text of social content post
+  google.protobuf.StringValue body_text = 7;
+  // Marked up body text of social content post
+  google.protobuf.StringValue marked_up_body_text = 8;
+  // Experience associated with social content -- DOORDASH, CAVIAR, etc
+  google.protobuf.StringValue experience = 9;
+  // Creator id of social content -- e.g. consumer_id
+  google.protobuf.StringValue creator_id = 10;
+  // Creator type of social content -- e.g. CONSUMER
+  google.protobuf.StringValue creator_type = 11;
+  // Business id associated with the creator of social content -- e.g. the business id of store that created a reel
+  google.protobuf.Int64Value creator_business_id = 12;
+  // Numeric rating associated with post -- e.g. for consumer review, it would be number of stars given for review, 1-5
+  google.protobuf.Int32Value rating_numeric = 13;
+  // Store ids associated with social content
+  repeated google.protobuf.Int64Value tagged_store_ids = 14;
+  // Item ids associated with social content
+  repeated google.protobuf.StringValue tagged_item_ids = 15;
+  // Metadata for any possible media associated with post
+  repeated SocialContentPostMediaMetadata media_metadata = 16;
+  // Whether this post is active/visible
+  google.protobuf.BoolValue is_active = 17;
+  // If provided, is timestamp of post creation time. If not, auto-generated by DB
+  google.protobuf.Int64Value created_at_epoch_seconds = 18;
+  // If provided, is timestamp of when post was updated. If not, auto-generated by DB
+  google.protobuf.Int64Value updated_at_epoch_seconds = 19;
+}
+
+// Contains metadata for media associated with a social content post
+message SocialContentPostMediaMetadata {
+  // Id of media
+  google.protobuf.StringValue media_id = 1;
+  // Type of media -- e.g. PHOTO, VIDEO
+  google.protobuf.StringValue media_type = 2;
+  // Url of media
+  google.protobuf.StringValue media_url = 3;
+}
+
+// DEPRECATED -- DO NOT USE; Use UpsertSocialContentPostRequest instead
+// UpsertPostsRequest represents a request to upsert a single post.
+message UpsertPostsRequest {
+  // ID of the post
+  google.protobuf.Int64Value post_id = 1;
+  // ID of the author
+  google.protobuf.Int64Value author_id = 2;
+  // Type of the author
+  google.protobuf.StringValue author_type = 3;
+  // ID of the owner
+  google.protobuf.Int64Value owner_id = 4;
+  // Type of the owner
+  google.protobuf.StringValue owner_type = 5;
+  // IDs of stores tagged in the post
+  repeated google.protobuf.Int64Value tagged_store_ids = 6;
+  // Type of the post
+  google.protobuf.StringValue post_type = 7;
+
+  // Content of the post
+  oneof data {
+    // Data specific to review posts
+    FeedReviewPost review_post = 8;
+    // Data specific to review posts
+    FeedOrderPost order_post = 9;
+  }
+
+  // Timestamp of post creation time
+  google.protobuf.Int64Value created_at = 10;
+  // Timestamp of post update time
+  google.protobuf.Int64Value updated_at = 11;
+}
+
+// ReviewPost represents data specific to a review post.
+message FeedReviewPost {
+  // ID of the review
+  google.protobuf.StringValue review_id = 1;
+  // Text of the review
+  google.protobuf.StringValue review_text = 2;
+  // Rating given in the review
+  google.protobuf.Int64Value rating = 3;
+  // ID of the review
+  google.protobuf.StringValue order_id = 4;
+
+  // List of image attachments in the review
+  repeated ImageReviewAttachment image_attachments = 5;
+}
+
+// ReviewPost represents data specific to a review post.
+message FeedOrderPost {
+  // ID of the delivery
+  google.protobuf.Int64Value delivery_uuid = 1;
+  // ID of the review
+  google.protobuf.StringValue order_id = 2;
+
+  // List of image attachments in the review
+  repeated ImageReviewAttachment image_attachments = 5;
+}
+
+// ImageReviewAttachment represents an image attachment in a review post.
+message ImageReviewAttachment {
+  // ID of the photo
+  google.protobuf.StringValue photo_id = 1;
+  // URL of the photo
+  google.protobuf.StringValue photo_url = 2;
+  // ID of the tagged item in the photo
+  google.protobuf.StringValue tagged_item_id = 3 [deprecated = true];
+  // Name of the tagged item in the photo
+  google.protobuf.StringValue tagged_item_name = 4 [deprecated = true];
+  // Title of the photo
+  google.protobuf.StringValue title = 5;
+  // Subtitle of the photo
+  google.protobuf.StringValue subtitle = 6;
+  // Tagged items
+  repeated PhotoTaggedItem tagged_items = 7;
+}
+
+// Tagged item in the photo
+message PhotoTaggedItem {
+  // ID of the tagged item in the photo
+  google.protobuf.StringValue item_id = 3;
+  // Name of the tagged item in the photo
+  google.protobuf.StringValue item_name = 4;
+}
+
+// process social list target interactions request
+message ProcessSocialListTargetInteractionsRequest {
+  // social list target interaction to be processed
+  message Data {
+    // list id
+    google.protobuf.StringValue list_id = 1;
+    // target
+    ratings_service.Target target = 2;
+    // interaction
+    SocialListTargetInteraction interaction = 3;
+  }
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // list of social list target interactions to be processed
+  repeated Data data = 2;
+}
+
+// process social list target interactions result
+message ProcessSocialListTargetInteractionsResult {
+  // social list target interactions result
+  message Data {
+    // list id
+    google.protobuf.StringValue list_id = 1;
+    // target
+    ratings_service.Target target = 2;
+    // interaction
+    SocialListTargetInteraction interaction = 3;
+    // interaction count
+    google.protobuf.Int64Value interaction_count = 4;
+  }
+  // list of social list target interactions results
+  repeated Data data = 1;
+}
+
+// process social list target interactions response
+message ProcessSocialListTargetInteractionsResponse {
+  // return result or error
+  oneof value {
+    // result
+    ProcessSocialListTargetInteractionsResult result = 1;
+    // error
+    ContentDiscoveryError error = 2;
+  }
+}
+
+// error details
+message ContentDiscoveryError {
+  // error code
+  ContentDiscoveryErrorCode error_code = 1;
+  // error message
+  google.protobuf.StringValue error_message = 2;
+}
+
+// business logic error codes for content discovery
+enum ContentDiscoveryErrorCode {
+  // unspecified error
+  CONTENT_DISCOVERY_ERROR_CODE_UNSPECIFIED = 0;
+  // invalid parameter (possibly null) error
+  CONTENT_DISCOVERY_ERROR_CODE_INVALID_PARAMETER = 1;
+}
+
+// GetExploreFeedRequest
+message GetExploreFeedRequest {
+  // cx_id of the user
+  google.protobuf.Int64Value consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // lat of the user geo
+  google.protobuf.DoubleValue lat = 2;
+  // lng of the user geo
+  google.protobuf.DoubleValue lng = 3;
+  // cursor of the next post content to fetch
+  google.protobuf.Int64Value cursor = 4;
+  // number of posts to fetch
+  google.protobuf.Int32Value limit = 5;
+  // sub_market id
+  google.protobuf.Int64Value submarket_id = 6;
+  // district id
+  google.protobuf.Int64Value district_id = 7;
+  // timezone
+  google.protobuf.StringValue timezone = 8;
+  // Post IDs that are seen by consumer in recent 5 min window
+  repeated google.protobuf.Int64Value viewed_post_ids = 9;
+}
+
+// Response for the GetExploreFeedRequest
+message GetExploreFeedResponse {
+  // rows for the response.
+  repeated PostRowDM rows = 1;
+  // cursor of the last post being returned
+  google.protobuf.Int64Value cursor = 4;
+}
+
+// PostRowDM
+message PostRowDM {
+  // cards for the post dm
+  repeated PostDM cards = 1;
+  // display type
+  PostRowDisplayType display_type = 2;
+
+  // post row display type
+  enum PostRowDisplayType {
+    // upspecified
+    POST_ROW_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // single card view
+    POST_ROW_DISPLAY_TYPE_SINGLE_CARD = 1;
+    // two cards view
+    POST_ROW_DISPLAY_TYPE_TWO_CARDS = 2;
+  }
+}
+
+// leaderboard cuisine
+message LeaderboardCuisine {
+  // cuisine
+  ContentRow cuisine = 1;
+  // list id
+  google.protobuf.StringValue list_id = 2;
+  // is current
+  google.protobuf.BoolValue is_current = 3;
+}
+
+// Represents a pill filter
+message LeaderboardFilter {
+  // pill filter id
+  google.protobuf.StringValue id = 1;
+  // name of pill filter
+  google.protobuf.StringValue name = 2;
+  // default state of the filter
+  LeaderboardFilterStateType default_state = 3;
+
+  // post row display type
+  enum LeaderboardFilterStateType {
+    // upspecified
+    LEADERBOARD_FILTER_STATE_TYPE_UNSPECIFIED = 0;
+    // selected
+    LEADERBOARD_FILTER_STATE_TYPE_ENABLED = 1;
+    // unselected
+    LEADERBOARD_FILTER_STATE_TYPE_DISABLED = 2;
+  }
+}

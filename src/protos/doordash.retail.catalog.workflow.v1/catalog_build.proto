@@ -1,0 +1,499 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package doordash.retail.catalog.workflow.v1;
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "doordash.retail.catalog.v1/legacy.proto";
+import "doordash.retail.catalog.v1/tool.proto";
+import "doordash.retail.catalog.crdb.v1/product_item.proto";
+import "doordash.retail.catalog.crdb.v1/global_product_item.proto";
+
+import "common/money.proto";
+
+option java_generic_services = true;
+
+// workflow client enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailWorkflowClient {
+    // unspecified format
+    WORKFLOW_CLIENT_UNSPECIFIED = 0;
+    // Dashmart
+    DASHMART = 1;
+    // catalog workflow tool
+    CATALOG_WORKFLOW_TOOL = 2;
+    // merchant portal tool
+    MX_PORTAL_TOOL = 3;
+}
+
+// workflow type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailWorkflowType {
+    // unspecified
+    WORKFLOW_TYPE_UNSPECIFIED = 0;
+    // mpc build by merchant file/data
+    MPC_BUILD_BY_MX_FILE = 1;
+    // mpc build by data object
+    MPC_BUILD_BY_DATA_OBJECT = 2;
+    // mpc build by URPC
+    MPC_BUILD_BY_URPC = 3;
+    // merchant product (catalog and inventory) build by data object
+    MERCHANT_PRODUCT_BUILD_BY_DATA_OBJECT = 4;
+}
+
+// workflow status enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailWorkflowStatus {
+    // unspecified
+    RETAIL_WORKFLOW_STATUS_UNSPECIFIED = 0;
+    // created
+    WORKFLOW_CREATED = 1;
+    // in progress
+    IN_PROGRESS = 2;
+    // done
+    DONE = 3;
+    // terminated
+    TERMINATED = 4;
+    // error
+    ERROR = 5;
+}
+
+// item stage enum for MPC
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum MpcBuildItemStage {
+    // unspecified format
+    WORKFLOW_STATUS_UNSPECIFIED = 0;
+    // latest stage the item is in, which can be any of the following stages below
+    LATEST = 1;
+    // receive raw item data from merchant
+    RAW_MERCHANT_DATA_RECEIVED = 2;
+    // urpc match found
+    URPC_MATCH_FOUND = 3;
+    // urpc match not found
+    URPC_MATCH_NOT_FOUND = 4;
+    // urpc match selected
+    URPC_MATCH_SELECTED = 5;
+    // urpc match rejected
+    UPRC_MATCH_REJECTED = 6;
+    // work item is approved to be published
+    APPROVED = 7;
+    // successfully published to catalog service
+    PUBLISHED_TO_CATALOG_SERVICE_SUCCEED = 8;
+    // failed to publish to catalog service
+    PUBLISHED_TO_CATALOG_SERVICE_FAILED = 9;
+}
+
+// catalog source enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailItemSource {
+    // unspecified format
+    ITEM_SOURCE_UNSPECIFIED = 0;
+    // RETAIL_CATALOG_PLATFORM
+    RETAIL_CATALOG_PLATFORM = 1;
+    // WOFLOW
+    WOFLOW = 2;
+    // INVISIBLE
+    INVISIBLE = 3;
+    // Merchant
+    MERCHANT = 4;
+    // Ops
+    OPS = 5;
+}
+
+// item type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailItemType {
+    // unspecified format
+    ITEM_TYPE_UNSPECIFIED = 0;
+    // merchant catalog
+    MPC = 1;
+    // universal catalog
+    URPC = 2;
+}
+
+// file type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailFileType {
+    // unspecified format
+    FILE_TYPE_UNSPECIFIED = 0;
+    // csv
+    CSV = 1;
+}
+
+// merchant product creation error type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum MerchantProductCreationErrorType {
+    // unspecified error type
+    ERROR_TYPE_UNSPECIFIED = 0;
+    // Found multiple existing active MPC items linked to the given dd_sic
+    DD_SIC_LINKED_TO_MULTIPLE_ITEMS = 1;
+    // Fails in MPC creation
+    MPC_CREATION_FAILED = 2;
+    // Fails in inventory creation
+    INVENTORY_CREATION_OR_UPDATE_FAILED = 3;
+    // Merchant product creation failure caused by invalid data, eg. missing dd_sic
+    INVALID_MERCHANT_PRODUCT_DATA = 4;
+    // Searching product items by dd_sics request failed
+    SEARCH_MPC_BY_DD_SIC_FAILED = 5;
+    // Fail to create MPC or inventory due to existing active MPC items (duplicates) found by dd_sic for the business
+    EXISTING_MPC_ITEMS_FOUND_BY_DDSIC = 6;
+    // Unable to create MPC because the category is not supported
+    CATEGORY_NOT_SUPPORTED = 7;
+}
+
+// retail workflow object
+message RetailWorkflow {
+    // workflow id
+    google.protobuf.StringValue id = 1;
+    // workflow name (optional)
+    google.protobuf.StringValue workflow_name = 2;
+    // workflow status
+    RetailWorkflowStatus status = 3;
+    // workflow type
+    RetailWorkflowType workflow_type = 4;
+    // workflow config version
+    google.protobuf.StringValue workflow_config_version = 5;
+    // item type
+    RetailItemType item_type = 6;
+    // client type
+    RetailWorkflowClient client = 7;
+    // business id (optional)
+    google.protobuf.Int64Value business_id = 8;
+    // url string (optional)
+    google.protobuf.StringValue source_file_url = 9;
+    // created by
+    google.protobuf.StringValue created_by = 10;
+    // created timestamp
+    google.protobuf.Timestamp created_at = 11;
+    // updated by
+    google.protobuf.StringValue updated_by = 12;
+    // updated timestamp
+    google.protobuf.Timestamp updated_at = 13;
+    // workflow statistics - key = item stage (for mpc, it is MpcBuildItemStage), value = number of items in that stage
+    map<string, google.protobuf.Int64Value> stats = 14;
+}
+
+// workflow item object - primarily used for response to make it more descriptive to clients
+message RetailItemObject {
+    // mpc object
+    doordash.retail.catalog.crdb.v1.ProductItem mpc_item = 1;
+    // urpc object
+    doordash.retail.catalog.crdb.v1.GlobalProductItem urpc_item = 2;
+    // item type used to describe the json object
+    RetailItemType item_type = 3;
+}
+
+// workflow item object
+message RetailWorkflowItem {
+    // workflow item id
+    google.protobuf.StringValue id = 1;
+    // FK to workflow id
+    google.protobuf.StringValue workflow_id = 2;
+    // the item
+    RetailItemObject item_object = 3;
+    // current stage of this item
+    google.protobuf.StringValue item_stage = 4;
+    // indicator whether this item is excluded
+    google.protobuf.BoolValue is_excluded = 5;
+    // exclusion reason (optional)
+    google.protobuf.StringValue exclusion_reason = 6;
+    // raw item id (may not be unique)
+    google.protobuf.StringValue raw_item_id = 7;
+    // computed item id (unique)
+    google.protobuf.StringValue computed_item_id = 8;
+    // match list e.g. dd_sic (optional)
+    repeated string match_ids = 9;
+    // created timestamp
+    google.protobuf.Timestamp created_at = 10;
+    // updated timestamp
+    google.protobuf.Timestamp updated_at = 11;
+}
+
+// API for retail workflow service
+service RetailWorkflowService {
+    // create a retail workflow
+    rpc CreateRetailWorkflow(CreateRetailWorkflowRequest) returns (CreateRetailWorkflowResponse);
+
+    // create a retail workflow from a file
+    rpc CreateRetailWorkflowFromFile(CreateRetailWorkflowFromFileRequest) returns (CreateRetailWorkflowFromFileResponse);
+
+    // create a retail workflow to build catalog and inventory from data object
+    rpc CreateRetailMerchantProductWorkflowFromObjects(CreateRetailMerchantProductWorkflowFromObjectsRequest) returns (CreateRetailMerchantProductWorkflowFromObjectsResponse);
+
+    // update workflow status
+    rpc UpdateRetailWorkflowStatus(UpdateRetailWorkflowStatusRequest) returns (UpdateRetailWorkflowStatusResponse);
+
+    // list workflows matching one or more criteria, supporting pagination
+    rpc GetRetailWorkflowsByCriteria(GetRetailWorkflowsByCriteriaRequest) returns (GetRetailWorkflowsByCriteriaResponse);
+
+    // get a list of workflows by workflow ids
+    rpc GetRetailWorkflowsByIds(GetRetailWorkflowsByIdsRequest) returns (GetRetailWorkflowsByIdsResponse);
+
+    // create workflow items
+    rpc CreateRetailWorkflowItems(CreateRetailWorkflowItemsRequest) returns (CreateRetailWorkflowItemsResponse);
+
+    // update workflow item match
+    rpc UpdateRetailWorkflowItemMatch(UpdateRetailWorkflowItemMatchRequest) returns (UpdateRetailWorkflowItemMatchResponse);
+
+    // get workflow items matching one or more criteria, supporting pagination
+    rpc GetRetailWorkflowItemsByCriteria(GetRetailWorkflowItemsByCriteriaRequest) returns (GetRetailWorkflowItemsByCriteriaResponse);
+
+    // get workflow items by item ids - get the latest stage of workflow items by item ids
+    rpc GetRetailWorkflowItemsByIds(GetRetailWorkflowItemsByIdsRequest) returns (GetRetailWorkflowItemsByIdsResponse);
+}
+
+// request to create workflow building merchant products from data objects
+message CreateRetailMerchantProductWorkflowFromObjectsRequest {
+    // client enum to indicate caller, for example 'MX_PORTAL_TOOL' in this case
+    RetailWorkflowClient client = 1;
+    // workflow type, for example 'MERCHANT_PRODUCT_BUILD_BY_DATA_OBJECT'
+    RetailWorkflowType workflow_type = 2;
+    // item type the client wants to create, for example 'MPC'
+    RetailItemType item_type = 3;
+    // business id, required for MPC creation
+    google.protobuf.Int64Value business_id = 4;
+    // store id, required for inventory creation
+    google.protobuf.Int64Value store_id = 5;
+    // workflow name (optional)
+    google.protobuf.StringValue workflow_name = 6;
+    // a list of merchant product objects containing info to create catalog and inventory items
+    repeated MerchantProduct merchant_products = 7;
+    // user id
+    google.protobuf.StringValue created_by = 8;
+    // idempotency token
+    google.protobuf.StringValue idempotency_token = 9;
+}
+
+// Response to create workflow building merchant products from data objects
+message CreateRetailMerchantProductWorkflowFromObjectsResponse {
+    // Results of each merchant product creation
+    repeated MerchantProductCreationResult results = 1;
+}
+
+// result of merchant product creation
+message MerchantProductCreationResult {
+    // dd_sic of the MPC item to be created
+    google.protobuf.StringValue dd_sic = 1;
+    // whether the item creation is succeeded or not
+    google.protobuf.BoolValue is_success = 2;
+    // In case of failure, error message indicating detailed failure reason
+    google.protobuf.StringValue error_message = 3;
+    // In case of failure, error type to help clients to distinguish error reason
+    MerchantProductCreationErrorType error_type = 4;
+}
+
+// A product to be created for the merchant, including information to create both catalog and inventory
+message MerchantProduct {
+    // dd_sic for linked urpc, required to create MPC
+    google.protobuf.StringValue dd_sic = 1;
+    // global catalog id, required to create MPC
+    google.protobuf.StringValue global_catalog_id = 2;
+    // price of the product to be created, required for inventory
+    money.MonetaryFields price = 3;
+    // item availability, required for inventory
+    google.protobuf.BoolValue in_stock = 4;
+    // upc of the product to be added, required for both MPC and inventory creation
+    google.protobuf.StringValue upc = 5;
+    // L4 taxonomy id of the product to be added, required for MPC creation
+    google.protobuf.Int64Value product_category_id = 6;
+}
+
+// request to create workflow from items
+message CreateRetailWorkflowRequest {
+    // client enum to indicate caller
+    RetailWorkflowClient client = 1;
+    // workflow type
+    RetailWorkflowType workflow_type = 2;
+    // item type the client wants to create
+    RetailItemType item_type = 3;
+    // business id (optional)
+    google.protobuf.Int64Value business_id = 4;
+    // workflow name (optional)
+    google.protobuf.StringValue workflow_name = 5;
+    // mpc object
+    repeated doordash.retail.catalog.crdb.v1.ProductItem mpc_items = 6;
+    // urpc object
+    repeated doordash.retail.catalog.crdb.v1.GlobalProductItem urpc_items = 7;
+    // idempotency token
+    google.protobuf.StringValue idempotency_token = 8;
+}
+
+// response to create workflow from items
+message CreateRetailWorkflowResponse {
+    // generated workflow id
+    google.protobuf.StringValue workflow_id = 1;
+}
+
+// request to create workflow from a file
+message CreateRetailWorkflowFromFileRequest {
+    // client enum to indicate caller
+    RetailWorkflowClient client = 1;
+    // workflow type
+    RetailWorkflowType workflow_type = 2;
+    // item type the client wants to create
+    RetailItemType item_type = 3;
+    // business id (optional)
+    google.protobuf.Int64Value business_id = 4;
+    // workflow name (optional)
+    google.protobuf.StringValue workflow_name = 5;
+    // user id
+    google.protobuf.StringValue created_by = 6;
+    // file name
+    google.protobuf.StringValue file_name = 7;
+    // file type
+    RetailFileType file_type = 8;
+    // idempotency token
+    google.protobuf.StringValue idempotency_token = 9;
+}
+
+// response to create workflow from a file
+message CreateRetailWorkflowFromFileResponse {
+    // workflow id
+    google.protobuf.StringValue workflow_id = 1;
+    // presigned s3 url
+    google.protobuf.StringValue presigned_url = 2;
+}
+
+// request to get workflows by list of ids
+message GetRetailWorkflowsByIdsRequest {
+    // list of ids
+    repeated google.protobuf.StringValue workflow_ids = 1;
+}
+
+// response to get workflows by list of ids
+message GetRetailWorkflowsByIdsResponse {
+    // map of workflow ids to objects
+    map<string, RetailWorkflow> workflow_objects = 1;
+}
+
+// request to update workflow status
+message UpdateRetailWorkflowStatusRequest {
+    // workflow id
+    google.protobuf.StringValue workflow_id = 1;
+    // new status
+    google.protobuf.StringValue new_status = 2;
+    // updated by
+    google.protobuf.StringValue updated_by = 3;
+}
+
+// response to update workflow status
+message UpdateRetailWorkflowStatusResponse {
+    // updated workflow object
+    RetailWorkflow workflow = 1;
+}
+
+// request to get workflows by different criteria. the criteria will be AND together.
+message GetRetailWorkflowsByCriteriaRequest {
+    // by merchant
+    google.protobuf.Int64Value business_id = 1;
+    // by user who creates the workflows
+    google.protobuf.StringValue created_by = 2;
+    // by workflow type
+    RetailWorkflowType workflow_type = 3;
+    // by workflow status
+    google.protobuf.StringValue workflow_status = 4;
+    // by workflow name
+    google.protobuf.StringValue workflow_name = 5;
+    // by workflow item type
+    RetailItemType item_type = 6;
+    // by client type
+    RetailWorkflowClient client = 7;
+    // page size to return
+    google.protobuf.Int64Value page_size = 8;
+    // page offset for pagination. leave blank on first call.
+    google.protobuf.StringValue page_token = 9;
+}
+
+// response to get workflows by different criteria
+message GetRetailWorkflowsByCriteriaResponse {
+    // list of workflows matching the given criteria
+    repeated RetailWorkflow workflows = 1;
+    // pagination offset (optional)
+    google.protobuf.StringValue page_token = 2;
+}
+
+// request to get workflow items by different criteria. the criteria will be AND together.
+message GetRetailWorkflowItemsByCriteriaRequest {
+    // workflow id
+    google.protobuf.StringValue workflow_id = 1;
+    // workflow item stage
+    google.protobuf.StringValue workflow_item_stage = 2;
+    // workflow item source
+    RetailItemSource workflow_item_source = 3;
+    // pagination size
+    google.protobuf.Int64Value page_size = 4;
+    // pagination offset
+    google.protobuf.StringValue page_token = 5;
+}
+
+// response to get workflow items by different criteria
+message GetRetailWorkflowItemsByCriteriaResponse {
+    // list of workflow items
+    repeated RetailWorkflowItem workflow_items = 1;
+    // pagination token
+    google.protobuf.StringValue page_token = 2;
+}
+
+// the item triplets of 1) original/raw mx item, 2) cleaned/enhanced version of raw mx item, and 3) optional match list
+//  note: exclude urpc item for now since there's no use case for it
+message RetailItemMatch {
+    // item type
+    RetailItemType item_type = 1;
+    // match list (optional)
+    repeated string match_ids = 2;
+    // raw mpc item submitted by merchant or uploaded by ops
+    doordash.retail.catalog.crdb.v1.ProductItem merchant_provided_mpc_item = 3;
+    // mpc item created by doordash
+    doordash.retail.catalog.crdb.v1.ProductItem doordash_curated_mpc_item = 4;
+}
+
+// request to create items for existing workflow (needed during prototype since catalog service processes file upload and we don't yet have kafka)
+message CreateRetailWorkflowItemsRequest {
+    // workflow id
+    google.protobuf.StringValue workflow_id = 1;
+    // list of item matches
+    repeated RetailItemMatch item_matches = 2;
+    // idempotency token
+    google.protobuf.StringValue idempotency_token = 3;
+}
+
+// response to create items for existing workflow
+message CreateRetailWorkflowItemsResponse {
+    // workflow id
+    google.protobuf.StringValue workflow_id = 1;
+    // workflow items created
+    repeated RetailWorkflowItem workflow_items = 2;
+}
+
+// request to update workflow item match
+message UpdateRetailWorkflowItemMatchRequest {
+    // workflow item id
+    google.protobuf.StringValue workflow_item_id = 1;
+    // source
+    RetailItemSource source = 2;
+    // updated by
+    google.protobuf.StringValue updated_by = 3;
+    // current stage of this item. for mpc, it is MpcBuildItemStage enum.
+    google.protobuf.StringValue item_stage = 4;
+    // matched id e.g. dd sic
+    google.protobuf.StringValue match_id = 5;
+}
+
+// response to update workflow item match
+message UpdateRetailWorkflowItemMatchResponse {
+    // latest workflow item record
+    RetailWorkflowItem workflow_item = 1;
+}
+
+// request to get workflow item by item ids
+message GetRetailWorkflowItemsByIdsRequest {
+    // workflow item ids
+    repeated string workflow_item_ids = 1;
+}
+
+// response to get workflow item by item ids
+message GetRetailWorkflowItemsByIdsResponse {
+    // list of workflow items
+    repeated RetailWorkflowItem workflow_items = 1;
+}

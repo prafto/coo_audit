@@ -1,0 +1,267 @@
+syntax = "proto3";
+
+package dasher_handoffs_service.consumer_location.v1;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dasher_handoffs_service/consumer_location/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_handoffs_service.consumer_location";
+
+// ConsumerLocationService using Asgard server library in a Guice environment.
+service ConsumerLocationService {
+  option (doordash.api.service) = {
+    name: "dasher-handoffs-service-ug-web"
+    url: "dasher-handoffs-service-ug-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "locations",
+      "deliveries"
+    ]
+    api_key_name: "DASHER_HANDOFFS_SERVICE_API_KEY"
+    owner: {
+      id: "dx-handoffs-alerts"
+      name: "dx-handoffs"
+      slack_channel: "#team-dx-handoff-oncall"
+      email_alias: "dx-handoffs@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX
+    ]
+  };
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 6000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 7000;
+  // internal error
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 13;
+
+  // gRPC endpoint fronted by Unified Gateway for collecting Cx locations
+  rpc RecordConsumerLocation(RecordConsumerLocationRequest) returns (RecordConsumerLocationResponse) {
+    option (google.api.http) = {
+      post: "/cx/locations/v1/record"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      target_products: [CX]
+      authorization: [CX_USER]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+
+  // gRPC endpoint fronted by Unified Gateway for sharing Cx location preference
+  rpc RecordConsumerLocationSharingPreference(RecordConsumerLocationSharingPreferenceRequest) returns (RecordConsumerLocationSharingPreferenceResponse) {
+    option (google.api.http) = {
+      post: "/cx/locations/v1/sharing_preference"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      target_products: [CX]
+      authorization: [CX_USER]
+    };
+  }
+
+  // gRPC endpoint fronted by Unified Gateway for fetching Cx location collection config
+  rpc ConsumerLocationCollectionConfig(ConsumerLocationCollectionConfigRequest) returns (ConsumerLocationCollectionConfigResponse) {
+    option (google.api.http) = {get: "/cx/locations/v1/collection_config"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      target_products: [CX]
+      authorization: [CX_USER]
+    };
+  }
+
+  // gRPC endpoint fronted by Unified Gateway for sharing consumer location with delivery person
+  rpc ShareConsumerLocation(ShareConsumerLocationRequest) returns (ShareConsumerLocationResponse) {
+    option (google.api.http) = {get: "/dx/deliveries/v1/{delivery_uuid}/cx_location"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      target_products: [DX]
+      authorization: [DX_USER]
+    };
+  }
+}
+
+// Request to record consumer location
+message RecordConsumerLocationRequest {
+  // Consumer ID of the consumer who generated this location
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // Category of the telemetry event
+  string address_id = 2;
+
+  // locations sorted from earliest location to latest
+  repeated ConsumerLocation locations = 3;
+
+  // The Dx device type that generated this location
+  // values:
+  //  ios
+  //  android
+  string device_type = 4;
+
+  // The id of the device that generated this location.
+  string device_id = 5;
+}
+
+// Consumer location data collected from the device
+message ConsumerLocation {
+  // latitude value, Between -90° and 90°
+  double lat = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // longitude value, Between -180° and 180°
+  double lng = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // the UNIX timestamp of this location
+  google.protobuf.Timestamp timestamp = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The magnitude of Dx speed, in m/s; -1 indicates unavailable
+  double speed = 4;
+
+  // The direction of movement, in degrees, compared to true North. Between 0° and 359.9°; -1 indicates unavailable
+  double course = 5;
+
+  // Altitude compared to sea level, in m.
+  // Positive if above sea level, negative if below it. Reported as 0 if unavailable (along with -1 for vertical_accuracy)
+  double altitude = 6;
+
+  // Accuracy of lateral position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getAccuracy()
+  double horizontal_accuracy = 7;
+
+  // Accuracy of vertical position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getVerticalAccuracyMeters()
+  double vertical_accuracy = 8;
+
+  // NTP timestamp of the event.
+  google.protobuf.Timestamp ntp_timestamp = 9;
+}
+
+// Response to record consumer location
+message RecordConsumerLocationResponse {
+  // Whether the request was successful
+  bool success = 1;
+
+  // Whether to continue collecting Cx location
+  bool continue_collect_cx_location = 2;
+}
+
+// Request to record consumer location sharing preference
+message RecordConsumerLocationSharingPreferenceRequest {
+  // Consumer ID of the consumer who generated this location
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // Current delivery UUID of the consumer
+  string delivery_uuid = 2;
+
+  // Location sharing preference - one of the following values:
+  //  "never_share_with_delivery_person"
+  //  "keep_sharing_for_this_order"
+  //  "stop_sharing_for_this_order"
+  string location_sharing_preference = 3;
+}
+
+// Response to record consumer location sharing preference
+message RecordConsumerLocationSharingPreferenceResponse {
+  // Whether the request was successful
+  bool success = 1;
+
+  // Whether to share location on order
+  bool should_share_location_on_order = 2;
+
+  // Whether to share location with delivery person
+  bool should_share_location_with_delivery_person = 3;
+}
+
+// Request to fetch consumer location collection config
+message ConsumerLocationCollectionConfigRequest {
+  // Consumer ID of the consumer who generated this location
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // Current delivery UUID of the consumer
+  string delivery_uuid = 2;
+  // The id of the device that generated this request.
+  string device_id = 3;
+}
+
+// Response to fetch consumer location collection config
+message ConsumerLocationCollectionConfigResponse {
+  // used for deprecated field numbers
+  reserved 1;
+  // used for deprecated field names
+  reserved "should_share_cx_location";
+  // Boolean corresponding to Cx location sharing preference opt-in or opt-out, default is false
+  bool cx_location_sharing_enabled = 2;
+  // Boolean corresponding to Cx location sharing eligibility, default is false
+  bool cx_location_sharing_eligible = 3;
+  // Boolean corresponding to Cx location collection allowed, default is false
+  bool cx_location_collection_allowed = 4;
+  // Boolean corresponding to whether to continue polling for config, default is false
+  bool continue_polling_for_config = 5;
+}
+
+// Request to share consumer location with delivery person
+message ShareConsumerLocationRequest {
+  // Dasher ID of the consumer who generated this location
+  string dasher_id = 1 [(doordash.api.inject_id) = DX_ID];
+
+  // Active Delivery UUID of the dasher
+  string delivery_uuid = 2;
+
+  // Active shift ID of the dasher
+  string shift_id = 3;
+}
+
+// Response to share consumer location with delivery person
+message ShareConsumerLocationResponse {
+  // Delivery UUID of the consumer and dasher
+  string delivery_uuid = 1;
+
+  // Whether the consumer has allowed to share Cx location
+  bool allowed_to_share_cx_location = 2;
+
+  // Consumer locations - currently only one location will be shared
+  repeated ConsumerLocation locations = 3;
+
+  // Reason for not sharing the consumer location
+  CxLocationNotSharedReason cx_location_not_shared_reason = 4;
+}
+
+// Reason for not sharing the consumer location
+enum CxLocationNotSharedReason {
+  // Default value
+  CX_LOCATION_NOT_SHARED_REASON_UNSPECIFIED = 0;
+  // Cx location sharing feature is disabled
+  CX_LOCATION_NOT_SHARED_REASON_FEATURE_DISABLED = 1;
+  // Cx location sharing is opted out for this order
+  CX_LOCATION_NOT_SHARED_REASON_CX_OPTED_OUT = 2;
+  // Cx location is not available
+  CX_LOCATION_NOT_SHARED_REASON_CX_LOCATION_UNAVAILABLE = 3;
+  // Cx location sharing duration has expired
+  CX_LOCATION_NOT_SHARED_REASON_CX_LOCATION_SHARED_DURATION_EXPIRED = 4;
+  // This order is not eligible for Cx location sharing
+  CX_LOCATION_NOT_SHARED_REASON_DELIVERY_NOT_ELIGIBLE = 5;
+  // Delivery is not in a valid state for Cx location sharing
+  CX_LOCATION_NOT_SHARED_REASON_DELIVERY_STATE_NOT_ELIGIBLE = 6;
+  // Dx is too far from the Destination
+  CX_LOCATION_NOT_SHARED_REASON_DX_TOO_FAR_FROM_DESTINATION = 7;
+}

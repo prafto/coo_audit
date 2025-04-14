@@ -1,0 +1,325 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package delivery_service.adjustments.v1;
+
+import "consumer_profile_service/consumer.proto";
+import "consumer_profile_service/consumer_address_link.proto";
+import "delivery_service/delivery_core.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.delivery.adjustments";
+
+// Service to proxy requests from Delivery to DSJ
+service DeliveryAdjustmentsService {
+  // Grpc method ConsumerDeliveryReschedule
+  rpc ConsumerDeliveryReschedule(ConsumerDeliveryRescheduleRequest) returns (ConsumerDeliveryRescheduleResponse);
+  // Grpc method ChangeDeliveryAddress
+  rpc ChangeDeliveryAddress(ChangeDeliveryAddressRequest) returns (ChangeDeliveryAddressResponse);
+  // Grpc method to ChangeDeliveryAddressV2
+  rpc ChangeDeliveryAddressV2(ChangeDeliveryAddressV2Request) returns (ChangeDeliveryAddressV2Response);
+
+  // Grpc method [IsAddressReplaceable]
+  rpc IsAddressReplaceable(IsAddressReplaceableRequest) returns (IsAddressReplaceableResponse);
+
+  // Grpc method [ChangeDeliveryAddress]
+  rpc ChangeDeliveryAddressV3(ChangeDeliveryAddressV3Request) returns (ChangeDeliveryAddressV3Response);
+}
+
+// Reschedule request from dispatch
+message ConsumerDeliveryRescheduleRequest {
+  // request param delivery_id
+  google.protobuf.StringValue delivery_uuid = 1;
+  // request param asap flag
+  bool is_asap = 2;
+  // schedule time for reschedule
+  google.protobuf.Timestamp new_scheduled_time = 3;
+  // eta prediction id
+  google.protobuf.Int64Value eta_prediction_id = 4;
+  // updated google estimate
+  google.protobuf.StringValue google_estimate = 5;
+  // Delivery window start time
+  google.protobuf.Timestamp delivery_window_start_time = 6;
+  // Delivery window end time
+  google.protobuf.Timestamp delivery_window_end_time = 7;
+}
+
+// Is address replaceable request
+message IsAddressReplaceableRequest {
+  // buf:lint:ignore delivery_uuid
+  string delivery_uuid = 1;
+  // address (not ConsumerAddressLink) being considered for replacement
+  google.protobuf.Int64Value address_id = 2;
+}
+
+// Reschedule consumer delivery response
+message ConsumerDeliveryRescheduleResponse {
+  // Created Error message to log error
+  message Error {
+    // delivery_uuid
+    google.protobuf.StringValue input_value = 1;
+    // exception description
+    google.protobuf.StringValue message = 2;
+  }
+  // new quoted time after reschedule
+  google.protobuf.Timestamp new_quoted_time = 1;
+  // error
+  Error error = 2;
+}
+
+// Is address replaceable response
+message IsAddressReplaceableResponse {
+  // boolean value if the address is replaceable
+  bool is_address_replaceable = 1;
+}
+
+// Change Delivery Address Request {
+message ChangeDeliveryAddressRequest {
+  // request param delivery_id
+  int64 delivery_id = 1;
+  // request param consumer_address_link_id
+  int64 consumer_address_link_id = 2;
+  // request param consumer_id
+  int64 consumer_id = 3;
+}
+
+// Change Delivery Address  response
+message ChangeDeliveryAddressResponse {
+  // Created Error message to log error
+  message Error {
+    // delivery_id
+    int64 delivery_id = 1;
+    // exception description
+    google.protobuf.StringValue message = 2;
+  }
+
+  // error
+  Error error = 2;
+}
+
+// Change Delivery Address Request V2
+message ChangeDeliveryAddressV2Request {
+  // Updatable fields into DeliveryAudienceInfo
+  message UpdateFields {
+    Recipient recipient = 1;
+    Business business = 2;
+    DropoffDetails dropoff_details = 3;
+  }
+
+  // Recipient refers to the consumer to which the delivery would be dropped off at
+  message Recipient {
+    google.protobuf.StringValue first_name = 1;
+    google.protobuf.StringValue last_name = 2;
+    google.protobuf.StringValue phone_number = 3;
+    // Not yet supported; if this needs support, remove comment and add the support in the implementation
+    google.protobuf.StringValue email = 4;
+  }
+
+  // Business here refers to the merchant's business
+  message Business {
+    google.protobuf.StringValue business_name = 1;
+  }
+
+  // Address and dropoff instructions
+  message DropoffDetails {
+    // Instructions for dropoff aka dasher instructions
+    google.protobuf.StringValue dropoff_instructions = 1;
+    // Dropoff address to update
+    UpdatableAddress address = 2;
+    // entry code for dropoff
+    google.protobuf.StringValue entry_code = 3;
+    // parking instructions for dropoff
+    google.protobuf.StringValue parking_instructions = 4;
+    // boolean value if the address is commercial
+    google.protobuf.BoolValue is_commercial = 5;
+    // boolean value if the address is invalid secondary
+    google.protobuf.BoolValue is_invalid_secondary = 6;
+    // boolean value if the address is missing secondary
+    google.protobuf.BoolValue is_missing_secondary = 7;
+    // boolean value if the address location is overridden
+    google.protobuf.BoolValue is_location_overridden = 8;
+    //Dasher parking details
+    DasherParkingDetails dasher_parking_details = 9;
+    // Dropoff preferences
+    repeated DropOffPreference dropoff_preferences = 10;
+  }
+
+  // Dropoff preferences
+  message DropOffPreference {
+    google.protobuf.StringValue instructions = 1;
+    google.protobuf.StringValue option_id = 2;
+    google.protobuf.BoolValue is_default = 3;
+  }
+
+  //Parking details for dasher to update
+  message DasherParkingDetails {
+    google.protobuf.StringValue prompt_message = 1;
+    google.protobuf.StringValue prompt_input_text = 2;
+    google.protobuf.StringValue show_prompt = 3;
+    google.protobuf.StringValue prompt_input_hint = 4;
+    google.protobuf.StringValue promp_title = 5;
+  }
+
+  // Address to update, all fields required to enforce address consistency during updates
+  message UpdatableAddress {
+    int64 id = 1;
+    string street = 2;
+    string city = 3;
+    string state = 4;
+    string zip_code = 5;
+    string subpremise = 6;
+    string printable_address = 7;
+    google.protobuf.DoubleValue lat = 8;
+    google.protobuf.DoubleValue lng = 9;
+    int64 consumer_address_link_id = 10;
+    google.protobuf.DoubleValue manual_lat = 11;
+    google.protobuf.DoubleValue manual_lng = 12;
+    google.protobuf.StringValue building_name = 13;
+    google.protobuf.StringValue google_place_id = 14;
+    google.protobuf.StringValue source_place_id = 15;
+    repeated google.protobuf.StringValue formatted_address_segmented_non_user_editable_fields = 16;
+  }
+
+  int64 consumer_id = 1;
+  delivery_service.core.DeliveryIdentifier delivery_identifier = 2;
+  UpdateFields update_fields = 3;
+}
+
+//Change Delivery Address Response V2
+message ChangeDeliveryAddressV2Response {
+  reserved 1;
+  delivery_service.core.DeliveryIdentifier delivery_identifier = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// Change Delivery Address request
+message ChangeDeliveryAddressV3Request {
+  // delivery_id
+  int64 delivery_id = 1;
+  // delivery_uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+  // consumer_address_link
+  doordash_consumer_profile_service.ConsumerAddressLink consumer_address_link = 3;
+  // Consumer consumer
+  doordash_consumer_profile_service.Consumer consumer = 4;
+  // dropoff_location_info
+  google.protobuf.StringValue dropoff_location_info = 12;
+  // google estimate
+  google.protobuf.StringValue google_estimate = 6;
+  // quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 7;
+  //soft_requirements for drive
+  google.protobuf.StringValue soft_requirements = 8;
+  // eta prediction id
+  google.protobuf.Int64Value eta_prediction_id = 9;
+  // eta_prediction_updated_at google.protobuf.Timestamp
+  google.protobuf.Timestamp eta_prediction_updated_at = 10;
+  //UpdateFields
+  UpdateFields update_fields = 11;
+
+  //update fields message
+  message UpdateFields {
+    Recipient recipient = 1;
+    Business business = 2;
+    DropoffDetails dropoff_details = 3;
+  }
+
+  // Recipient refers to the consumer to which the delivery would be dropped off at
+  message Recipient {
+    google.protobuf.StringValue first_name = 1;
+    google.protobuf.StringValue last_name = 2;
+    google.protobuf.StringValue phone_number = 3;
+    // Not yet supported; if this needs support, remove comment and add the support in the implementation
+    google.protobuf.StringValue email = 4;
+  }
+
+  // Business here refers to the merchant's business
+  message Business {
+    google.protobuf.StringValue business_name = 1;
+  }
+
+  // Address and dropoff instructions
+  message DropoffDetails {
+    // Instructions for dropoff aka dasher instructions
+    google.protobuf.StringValue dropoff_instructions = 1;
+    // Dropoff address to update
+    UpdatableAddress address = 2;
+    // entry code for dropoff
+    google.protobuf.StringValue entry_code = 3;
+    // parking instructions for dropoff
+    google.protobuf.StringValue parking_instructions = 4;
+    // boolean value if the address is commercial
+    google.protobuf.BoolValue is_commercial = 5;
+    // boolean value if the address is invalid secondary
+    google.protobuf.BoolValue is_invalid_secondary = 6;
+    // boolean value if the address is missing secondary
+    google.protobuf.BoolValue is_missing_secondary = 7;
+    // boolean value if the address location is overridden
+    google.protobuf.BoolValue is_location_overridden = 8;
+    //Dasher parking details
+    DasherParkingDetails dasher_parking_details = 9;
+    // Dropoff preferences
+    repeated DropOffPreference dropoff_preferences = 10;
+    // Location preference
+    delivery_service.core.LocationPreference location_preference = 11;
+  }
+
+  // Dropoff preferences
+  message DropOffPreference {
+    google.protobuf.StringValue instructions = 1;
+    google.protobuf.StringValue option_id = 2;
+    google.protobuf.BoolValue is_default = 3;
+  }
+
+  //Parking details for dasher to update
+  message DasherParkingDetails {
+    google.protobuf.StringValue prompt_message = 1;
+    google.protobuf.StringValue prompt_input_text = 2;
+    google.protobuf.StringValue show_prompt = 3;
+    google.protobuf.StringValue prompt_input_hint = 4;
+    google.protobuf.StringValue promp_title = 5;
+  }
+
+  // Country info related to DeliveryAddress
+  message CountryInfo {
+    google.protobuf.StringValue country_name = 1;
+    google.protobuf.StringValue country_short_name = 2;
+    google.protobuf.BoolValue allows_pre_tipping = 3;
+    google.protobuf.BoolValue allows_post_tipping = 4;
+  }
+
+  // Address to update, all fields required to enforce address consistency during updates
+  message UpdatableAddress {
+    int64 id = 1;
+    string street = 2;
+    string city = 3;
+    string state = 4;
+    string zip_code = 5;
+    string subpremise = 6;
+    string printable_address = 7;
+    google.protobuf.DoubleValue lat = 8;
+    google.protobuf.DoubleValue lng = 9;
+    int64 consumer_address_link_id = 10;
+    google.protobuf.DoubleValue manual_lat = 11;
+    google.protobuf.DoubleValue manual_lng = 12;
+    google.protobuf.StringValue building_name = 13;
+    google.protobuf.StringValue google_place_id = 14;
+    CountryInfo country_info = 15;
+    google.protobuf.StringValue source_place_id = 16;
+    google.protobuf.DoubleValue navigation_lat = 17;
+    google.protobuf.DoubleValue navigation_lng = 18;
+    repeated google.protobuf.StringValue formatted_address_segmented_non_user_editable_fields = 19;
+  }
+}
+
+// Change Delivery Address  response
+message ChangeDeliveryAddressV3Response {
+  // reserved
+  reserved 1;
+  delivery_service.core.DeliveryIdentifier delivery_identifier = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}

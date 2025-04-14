@@ -1,0 +1,575 @@
+syntax = "proto3";
+
+package menuevent.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+import "menu/menu_suspension_service.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/event";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menu.event";
+
+// menu change event
+message MenuChangeEvent {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // menuv2 partition key of a store menu.
+  string store_menu_id = 3;
+  // store id of which this menu belongs to.
+  string store_id = 4;
+  // when an update is too large, especially the item changes, messages will be cut in chunks for item_changes, all chunks will share the same chunk id. Needs sequence in chunk, kafka order by PK will do.
+  ChunkInfo chunk_info = 5;
+  // menu changes
+  MenuChanges menu_changes = 6;
+  // category changes
+  CategoryChanges category_changes = 7;
+  // item changes
+  ItemChanges item_changes = 8;
+  // extra changes
+  ExtraChanges extra_changes = 9;
+  // menu structure changes
+  MenuStructureChanges menu_structure_changes = 10;
+  // audit log to user context
+  map<string, string> user_context = 11;
+  // store special hours changes
+  StoreSpecialHoursChanges store_special_hours_changes = 12;
+  // business_id
+  string business_id = 13;
+}
+
+message MenuItemChangeEvent {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // Event is published from menu-data-service at source_published_timestamp, later flink-mds fans out at published_timestamp
+  google.protobuf.Timestamp source_published_timestamp = 11;
+  // menuv2 partition key of a store menu.
+  string store_menu_id = 3;
+  // store id of which this menu belongs to.
+  string store_id = 4;
+  // when an update is too large, especially the item changes, messages will be cut in chunks for item_changes, all chunks will share the same chunk id. Needs sequence in chunk, kafka order by PK will do.
+  ChunkInfo chunk_info = 5;
+  MenuItemChanges menu_item_changes = 6;
+  // menu_change_event_id that triggered this item change event.
+  string menu_change_event_id = 7;
+  menu.EntityMaps entity_maps = 8;
+  menu.MenuStructure menu_structure = 9;
+  // audit log to user context
+  map<string, string> user_context = 10;
+}
+
+// The Snowflake table schema for debugging MenuItemChangeEvent.
+message MenuItemChangeEventFlat {
+  // UUID of event
+  string event_id = 1;
+  // When the original MenuChangeEvent was published from menu-data-service.
+  google.protobuf.Timestamp source_published_timestamp = 2;
+  // Identical to store_id.
+  string store_menu_id = 3;
+  string menu_id = 4;
+  string item_id = 5;
+  LinkStatus link_status = 6;
+  // Name of the menu client that initiated the change.
+  string invoker_client = 7;
+}
+
+// Records the menu change event to be reprocessed when something goes wrong.
+// See the "Menu CDC Event Reprocessing" design doc.
+message ReprocessRecord {
+  // The menuv2 partition key of a store menu.
+  string store_menu_id = 1;
+  // The ID of menu items.
+  repeated string item_ids = 2;
+  // Where the record was generated, e.g. FLINK_MDS, MENU_DATA_SERVICE.
+  string source = 3;
+  // When the menu change event failed.
+  google.protobuf.Timestamp failed_at = 4;
+  // The cause of the failure.
+  string failure_cause = 5;
+  // When the original menu change event was published.
+  google.protobuf.Timestamp original_published_at = 6;
+  // The ID of the original menu change event.
+  string original_change_event_id = 7;
+  // The retry count.
+  int32 retry_count = 8;
+  // The original menu change event.
+  // Should only be used if we need to rebuild the item ids to fan out.
+  MenuChangeEvent original_menu_change_event = 9;
+  // The original suspension change event.
+  // Should only be used if we need to rebuild the item ids to fan out.
+  SuspensionChangeEvent original_suspension_change_event = 10;
+}
+
+message MenuItemChanges {
+  repeated MenuItem menu_items = 1;
+}
+
+message MenuItem {
+  string item_id = 1;
+  string menu_id = 2;
+  LinkStatus link_status = 3;
+}
+
+enum LinkStatus {
+  CT_UNKNOWN = 0;
+  // item belongs to menu
+  CT_ACTIVE = 1;
+  // item does not belong to menu
+  CT_DELETE = 2;
+}
+
+message SuspensionChangeEvent {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // menuv2 partition key of a store menu.
+  string store_menu_id = 3;
+  // when an update is too large, messages will be cut in chunks for suspension_changes, all chunks will share the same chunk id. Needs sequence in chunk, kafka order by PK will do.
+  ChunkInfo chunk_info = 4;
+  // suspension changes
+  SuspensionChanges suspension_changes = 5;
+  // audit log to user context
+  map<string, string> user_context = 6;
+  // menu structure
+  menu.MenuStructure menu_structure = 7;
+}
+
+// chunk info
+message ChunkInfo {
+  // uuid of the chunk.
+  string id = 1;
+  // number of chunks
+  google.protobuf.Int64Value number_of_chunks = 2;
+  // size of each chunk
+  google.protobuf.Int64Value size_of_chunk = 3;
+  // index of current chunk in the list.
+  google.protobuf.Int64Value chunk_index = 4;
+}
+
+// menu changes
+message MenuChanges {
+  // menu change
+  repeated MenuChange menu_change = 1;
+}
+
+// category changes
+message CategoryChanges {
+  // category change
+  repeated CategoryChange category_change = 1;
+}
+
+// item changes
+message ItemChanges {
+  // item change
+  repeated ItemChange item_change = 1;
+}
+
+// extra changes
+message ExtraChanges {
+  // extra change
+  repeated ExtraChange extra_change = 1;
+}
+
+// Deprecated, use MenuEventChangeKind instead.
+// TODO: Remove ChangeKind after 09/15 and after confirming no use cases in code.
+enum ChangeKind {
+  option deprecated = true;
+  CK_NOOP = 0;
+  CK_CREATE = 1;
+  CK_UPDATE = 2;
+}
+
+enum MenuEventChangeKind {
+  // Not set.
+  ME_CK_UNSET = 0;
+  // No changes in menu structure. In this case we could only set the current field to avoid sending duplicated payload.
+  ME_CK_NOOP = 1;
+  // A brand new menu structure. Previous menu structure will not be set.
+  ME_CK_CREATE = 2;
+  // **Potential** menu structure updates. Both previous and current menu structure will be set. Clients need to compare
+  // them to generate the delta.
+  ME_CK_UPDATE = 3;
+}
+
+message MenuStructureChanges {
+  // current menu structure
+  menu.MenuStructure current = 1;
+  // previous menu structuree
+  menu.MenuStructure previous = 2;
+  // Use MenuEventChangeKind instead
+  ChangeKind change_kind = 3 [deprecated = true];
+  // There are 3 cases according to https://sourcegraph.prod.build.doordash.red/github.com/doordash/menu-data-service/-/blob/src/main/kotlin/com/doordash/rpc/menu/common/repository/MenuChangePublishRepository.kt#L363
+  // Case 1: Both previous and current structure present, we need to compare prev and current to figure
+  //  out the delta. In such case both current and previous will be set
+  // Case 2: Previous structure does not exist and current structure exist. In such case only current is set.
+  // Case 3: User does not include a structure in the payload which makes current structure to be a null. However in
+  // case, we set the MenuStructureChanges.current = prevMenuStructure which I believe is a bug but some of our code may
+  // already depends on this behaviour.
+  // So in order to distinguish the above cases, we introduce another flag that indicate whether the structure has
+  // actually changed or not.
+  MenuEventChangeKind menu_event_change_kind = 4;
+}
+
+// store special hours changes
+message StoreSpecialHoursChanges {
+  // current store special hours
+  repeated menu.HoursException current = 1;
+  // previous store special hours
+  repeated menu.HoursException previous = 2;
+}
+
+// cetegory change
+message CategoryChange {
+  // current category
+  Category current = 1;
+  // previous category
+  Category previous = 2;
+}
+
+// menu change
+message MenuChange {
+  // current menu
+  Menu current = 1;
+  // previous menu
+  Menu previous = 2;
+}
+
+// item change
+message ItemChange {
+  // current item
+  Item current = 1;
+  // previous item
+  Item previous = 2;
+}
+
+// extra change
+message ExtraChange {
+  // current extra
+  Extra current = 1;
+  // previous extra
+  Extra previous = 2;
+}
+
+// menu
+message Menu {
+  // id
+  string id = 1;
+  // title
+  string title = 2;
+  string subtitle = 3;
+  repeated menu.Hours hours = 4;
+  repeated menu.HoursException hours_exceptions = 5;
+  bool is_active = 6;
+  repeated string category_ids = 7;
+  menu.VehicleInfo vehicle_info = 8;
+  menu.ImageInfo image_info = 9;
+  menu.VendorInfo vendor_info = 10;
+  google.protobuf.BoolValue is_business_enabled = 11;
+  google.protobuf.Int64Value created_at = 12;
+  google.protobuf.Int64Value updated_at = 13;
+  google.protobuf.StringValue locale = 14;
+}
+
+// category
+message Category {
+  string id = 1;
+  repeated string item_ids = 2;
+  menu.VendorInfo vendor_info = 3;
+  menu.VehicleInfo vehicle_info = 4;
+  menu.CategoryDisplayInfo display_info = 5;
+  bool is_active = 6;
+  google.protobuf.Int64Value created_at = 7;
+  google.protobuf.Int64Value updated_at = 8;
+  repeated menu.ItemEntity item_entities = 9;
+  menu.CategoryAggregatedInfo aggregated_info = 10;
+}
+
+// item
+message Item {
+  string id = 1;
+  repeated string extra_ids = 2;
+  menu.ItemDisplayInfo display_info = 3;
+  repeated string tags = 4;
+  menu.OverridableItemPurchaseList item_purchases = 5;
+  google.protobuf.BoolValue is_valid = 6;
+  google.protobuf.Int64Value created_at = 7;
+  google.protobuf.Int64Value updated_at = 8;
+  menu.PaymentInfo payment_info = 9;
+  menu.OverridableItemVisibility visibility = 10;
+  menu.DishInfo dish_info = 11;
+  repeated EntityPath entity_paths = 12;
+  menu.VendorInfo vendor_info = 13;
+  google.protobuf.Int32Value min_age_requirement = 14;
+}
+
+message EntityPath {
+  repeated menu.MenuNode nodes = 1;
+}
+
+// extra
+message Extra {
+  string id = 1;
+  repeated string option_ids = 2;
+  repeated string tags = 3;
+  menu.ExtraDisplayInfo display_info = 4;
+  google.protobuf.BoolValue is_valid = 5;
+  google.protobuf.Int64Value created_at = 6;
+  google.protobuf.Int64Value updated_at = 7;
+  repeated EntityPath entity_paths = 8;
+  menu.VendorInfo vendor_info = 9;
+}
+
+// menu change event in case of an error in sending the changes
+message MenuChangeEventError {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // menuv2 partition key of a store menu.
+  string store_menu_id = 3;
+  // store id of which this menu belongs to.
+  string store_id = 4;
+  // menu_change_event_id related to the error.
+  string menu_change_event_id = 5;
+}
+
+// suspension change event in case of an error in sending the changes
+message SuspensionChangeEventError {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // menuv2 partition key of a store menu.
+  string store_menu_id = 3;
+  // store id of which this menu belongs to.
+  string store_id = 4;
+  // suspension_change_event_id related to the error.
+  string suspension_change_event_id = 5;
+}
+
+message SuspensionChanges {
+  // suspension change
+  repeated SuspensionChange suspension_change = 1;
+}
+
+message SuspensionChange {
+  // current suspension
+  menususpensionservice.SuspensionEntity current = 1;
+  // previous suspension
+  menususpensionservice.SuspensionEntity previous = 2;
+}
+
+message SharedMenuUpdateShadowEvent {
+  // uuid of event
+  string event_id = 1;
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp published_timestamp = 2;
+  // menu v2 partition key of a store menu.
+  string store_menu_id = 3;
+  // menu id.
+  string menu_id = 4;
+  // shadow_id.
+  string shadow_id = 5;
+  // shadow mode, client or server side fan out
+  string shadow_mode = 6;
+  // s3 bucket for the putStoreMenuRequest payload
+  string s3_bucket = 7;
+  // s3 key for the putStoreMenuRequest payload
+  string s3_key = 8;
+  // client that calls the menu service endpoint
+  string client = 9;
+  // whether menu is a shared menu
+  bool is_shared_menu = 10;
+}
+
+// An error detected during menu validation process.
+// This schema is designed to be ingested by Iguazu.
+// https://github.com/doordash/iguazu-client/blob/master/iguazu-client-proxy/README.md#iguazu-kafka-proxy-client
+message MenuValidationEvent {
+  google.protobuf.Timestamp detection_time = 1;
+  string invoker_client = 2 [deprecated = true]; // Use client instead.
+  // The client that called Menu Data Service, e.g. MX_MENU_TOOLS_BFF, POINT_OF_SALE, POINT_OF_SALE_FOR_CNG.
+  // Or SCAN if this event comes from the menu scan process.
+  string client = 10;
+  string store_id = 3;
+
+  string menu_id = 4;
+  string menu_title = 12; // menu.title
+  string menu_subtitle = 13; // menu.subtitle
+  string menu_external_id = 14; // menu.vendor_info.external_id
+
+  string category_id = 5;
+
+  string item_title = 15; // The top level item.display_info.title
+  string item_external_id = 16; // The top level item.vendor_info.external_id
+  string item_id = 17; // The top level item id.
+
+  string entity_id = 6;
+  // E.g. menu, category, item, option, extra, item_suspension.
+  string entity_type = 7;
+  // Entity title is helpful for searching the entity in DIME.
+  // E.g. menu.title, category.display_info.title, item.display_info.title, extra.display_info.title.
+  string entity_title = 8;
+  // The vendor_info.external_id of the entity.
+  string entity_external_id = 11;
+
+  // Error message of a violation.
+  string error_message = 9;
+
+  // The rating of a factor in menu quality score calculation.
+  double rating = 18;
+}
+
+/*
+ * MenuEntityResolutionProcessingAuditEvent is used to record the entity resolution processing result.
+ * It includes the following information:
+ * 1. single entity metadata
+ * 2. matching metadata
+ * 3. matching result
+ * 4. resolution result
+ * 5. flag processed entities
+ */
+message MenuEntityResolutionProcessingAuditEvent {
+  // single entity metadata
+  string trigger_event = 1; // trigger event of the target entity
+  string data_origin = 2; // data origin of the target entity
+  string store_menu_id = 3; // store menu id
+  string business_id = 4; // business id
+  string target_entity_id = 5; // target entity id
+  string target_entity_type = 6; // target entity type
+  bool is_historical = 7; // whether the target entity is historical
+
+  // matching metadata
+  string matching_rule = 8; // matching rule
+  string matching_algorithm_version = 9; // matching algorithm version
+  map<string, string> values_to_match = 10; // values to match in the target entity
+  string matching_es_query = 11; // ES query used for matching
+
+  // matching result
+  string match_status = 12; // match status
+  int32 matched_entity_count = 13; // number of matched entities
+  float matched_max_score = 14; // max score of matched entities
+  float matched_min_score = 15; // min score of matched entities
+  repeated MatchedEntityForAuditEvent matched_entities = 16; // matched entities
+
+  // resolution result
+  string identity_resolution_status = 17; // identity resolution status
+  int32 entity_link_count = 18; // number of entity links
+  repeated EntityLinkForAuditEvent entity_links = 19; // resolved entities (entity links)
+
+  // flag processed entities
+  string flag_processed_entities_status = 20; // flag processed entities status
+}
+
+/*
+ * MatchedEntityForAuditEvent is similar to MatchedEntity in entityresolution.proto but with less fields to:
+ * 1. reduce the size of the message
+ * 2. comply with the Iguazu schema data type requirements:
+ *   https://devconsole.doordash.team/codelabs/iguazu+proxy+client+onboarding%2ftutorial?step=4
+ */
+message MatchedEntityForAuditEvent {
+  // matched store_menu_id
+  string matched_store_menu_id = 1;
+  // matched business_id
+  string matched_business_id = 2;
+  // matched entity id
+  string matched_entity_id = 3;
+  // matched entity type
+  string matched_entity_type = 4;
+  // matched values of the target entity
+  map<string, string> matched_values = 5;
+  // similarity score indicating the match quality
+  float score = 6;
+  // whether the matched entity comes from the historical index
+  bool is_historical = 7;
+}
+
+/*
+ * EntityLinkForAuditEvent is similar to ResolvedEntity in entityresolution.proto but with less fields to:
+ * 1. reduce the size of the message
+ * 2. comply with the Iguazu schema data type requirements:
+ *   https://devconsole.doordash.team/codelabs/iguazu+proxy+client+onboarding%2ftutorial?step=4
+ */
+message EntityLinkForAuditEvent {
+  // store_id_hash
+  string store_id_hash = 1;
+  // menu_id
+  string menu_id = 2;
+  // entity_id
+  string entity_id = 3;
+  // business_id
+  string business_id = 4;
+  // canonical_id
+  string canonical_id = 5;
+  // representative_id
+  string representative_id = 6;
+  // entity status
+  string entity_status = 7;
+  // attributes
+  map<string, string> attributes = 8;
+}
+
+/**
+ * Audit event for Menu Entity Resolution umbrella of processes:
+ * - entity mapping/menu mapping/id drift
+ * - entity linking
+ */
+message MenuEntityResolutionAuditEvent {
+  // store_id
+  string store_id = 1;
+  // business_id
+  string business_id = 2;
+  // entity resolution process
+  // ex. MENU_MAPPING, ENTITY_LINKING
+  string event_type = 3;
+  // trace_id/correlation_id for process
+  string trace_id = 4;
+  // optional sub-operation within process
+  google.protobuf.StringValue span_event_type = 5;
+  // equivalent to trace_id for span
+  google.protobuf.StringValue span_id = 6;
+  // matching_algorithm_version
+  string matching_algorithm_version = 7;
+  // result/state/status of process at publish time
+  string event_result = 8;
+  // additional event result details
+  google.protobuf.StringValue event_result_data = 9;
+  // target_entity_id
+  // id may be newly created
+  string target_entity_id = 10;
+  // target_entity_type
+  string target_entity_type = 11;
+  // target_entity matching features
+  google.protobuf.StringValue target_entity_features = 12;
+  // other properties helpful for auditing, but not necessarily for matching itself
+  google.protobuf.StringValue target_entity_debug_data = 13;
+  // id of matching entity, if any
+  google.protobuf.StringValue match_entity_id = 14;
+  // matching_entity raw features
+  google.protobuf.StringValue match_entity_features = 15;
+  // additional details from matching
+  google.protobuf.StringValue match_artifacts = 16;
+  // total number of candidates identified from candidate selection
+  google.protobuf.Int64Value num_candidates = 17;
+  // id for a candidate set
+  google.protobuf.StringValue candidates_set_id = 18;
+  // strategy for candidates selection
+  google.protobuf.StringValue candidates_selection_strategy = 19;
+  // matching features of candidates
+  google.protobuf.StringValue candidates_features = 20;
+  // input for candidates selection
+  google.protobuf.StringValue candidates_selection_input = 21;
+  // result of candidates selection
+  google.protobuf.StringValue candidates_selection_result = 22;
+  // where event took place e.g. service + app
+  google.protobuf.StringValue event_origin = 23;
+  // extra informational details
+  google.protobuf.StringValue event_context = 24;
+}

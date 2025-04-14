@@ -1,0 +1,403 @@
+syntax = "proto3";
+
+package order_service_planner.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/prism/components/text.proto";
+import "component-catalog.common/prism/shared/icon.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/order_service_planner";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "order_service_planner";
+
+// APIs for Offer Presentation Service
+service OfferPresentationService {
+  // Set timeout to 2 seconds after prod deployment
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 6000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 7000;
+  option (doordash.api.service) = {
+    name: "order-service-offer"
+    url: "graph-runner-order-service-offer.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["order-service-offer"]
+    // will update owner session but to pass UG option validation atm
+    owner: {
+      id: "order-platform-default-bucket"
+      name: "order-service-offer"
+      slack_channel: "#eng-order-platform"
+      email_alias: "order-platform@doordash.com"
+    }
+    target_products: [CX]
+  };
+  // Fetch delivery options for batch request.
+  rpc ExecuteActionAndGetNextPage(ExecuteActionAndGetNextPageRequest) returns (ExecuteActionAndGetNextPageResponse) {
+    option (google.api.http) = {
+      post: "/order-service-offer/v1/offer/execute-action"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+// Request for serving SDUI for Post Checkout Cx Feedback
+message ExecuteActionAndGetNextPageRequest {
+  reserved 4, 5;
+  reserved "client_id", "cart_info";
+  // Workflow identifier.
+  string workflow_id = 1;
+  // Identifier of the page, if null then send first page.
+  google.protobuf.StringValue page_id = 2;
+  // Input parameters which are expected to be fed to side_effect_coroutine of the page.
+  SideEffectMetadata action_metadata = 3;
+  // ConsumerId Injected from UG
+  google.protobuf.StringValue consumer_id = 6 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Metadata for side effect
+message SideEffectMetadata {
+  reserved 1, 2, 5;
+  reserved "offers_page_metadata", "offers_page_clicked_metadata", "metadata";
+  // Will contain one of the metadata structure for all pages
+  oneof side_effect_metadata {
+    // Side effect for eligibility
+    CheckEligibilityPageSideEffect check_eligibility = 3;
+    // Side effect for offer bottom sheet
+    OfferBottomSheetSideEffects offer_bottom_sheet = 4;
+    // Accept Offer
+    AcceptOfferSideEffects accept_offer = 6;
+    // Substitution
+    GetSubstitutionSideEffects get_substitution = 7;
+  }
+}
+
+// CheckEligibilityPageSideEffect
+message CheckEligibilityPageSideEffect {
+  reserved 1;
+  reserved "identifier";
+  // customer information necessary for the optimization
+  CustomerContext customer_context = 2;
+  // list of skus for which FulfilmentPlan needs to be generated
+  repeated ItemSkuContext skus = 3;
+  // RequestIdentifier
+  GetPlansRequestIdentifier request_identifier = 4;
+}
+
+// Response for serving SDUI for Post Checkout Cx Feedback
+message ExecuteActionAndGetNextPageResponse {
+  reserved 4;
+  reserved "cart_uuid";
+  // Lego Page Response
+  lego.response.v1.LegoPageResponse lego_page_response = 1;
+  // Workflow identifier.
+  string workflow_id = 2;
+  // Identifier of the page, if null then send the first page.
+  google.protobuf.StringValue page_id = 3;
+  // Additional output data for different side effects
+  SideEffectOutputData output_data = 5;
+}
+
+// SideEffectOutputData message
+message SideEffectOutputData {
+  // One of field for side effect output data
+  oneof side_effect_output_data {
+    // Eligibility check data
+    CheckEligibilityPageSideEffectOutputData check_eligibility_data = 1;
+    // Get Offers data
+    OfferBottomSheetSideEffectOutputData bottom_sheet_data = 2;
+    // Accept Offers data
+    AcceptOfferSideEffectOutputData accept_offer_data = 3;
+    // Substitution data
+    GetSubstitutionSideEffectOutputData get_substitution_data = 4;
+  }
+}
+
+// CheckEligibilityPageSideEffectOutputData message
+message CheckEligibilityPageSideEffectOutputData {
+  // Eligibility for offers
+  bool eligible_for_offers = 1;
+}
+
+// OfferBottomSheetSideEffect output message
+message OfferBottomSheetSideEffectOutputData {
+  reserved 1;
+  reserved "offer_details";
+  // offer id: right now store_id | msid
+  string offer_id = 2;
+  // This is an offer that will be passed back
+  OrderOffer offer_with_selected_option = 3;
+  // Original cart metadata for telemetry
+  CartMetadata original_cart_metadata = 4;
+  // Offer metadata for telemetry
+  CartMetadata offer_cart_metadata = 5;
+  // Persistent info banner
+  PersistentBanner offer_persistent_entrypoint_banner = 6;
+}
+
+// Persistent banner message
+message PersistentBanner {
+  // title
+  component_catalog.common.prism.components.v1.Text leading_text = 1;
+  // leading icon
+  component_catalog.common.prism.shared.v1.Icon leading_icon = 2;
+  // action icon
+  component_catalog.common.prism.shared.v1.Icon trailing_icon = 3;
+  // action text
+  component_catalog.common.prism.components.v1.Text trailing_text = 4;
+}
+
+// Original cart data
+message CartMetadata {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // eta in minutes
+  google.protobuf.Int32Value eta = 2;
+  // item data
+  repeated ItemMetadata original_item_data = 3;
+}
+
+// Original item data
+message ItemMetadata {
+  // merchant supplied item id
+  google.protobuf.StringValue msid = 1;
+  // Universal Retail Product Catalogue code of item
+  google.protobuf.StringValue urpc = 2 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+  // item name
+  google.protobuf.StringValue name = 3;
+  // item unit price
+  money.MonetaryFields unit_price_monetary_fields = 4;
+}
+
+// AcceptOfferSideEffect data
+message AcceptOfferSideEffectOutputData {
+  // New cartId
+  string cart_uuid = 1;
+  // Indicates that a cart already existed and was updated with the offer
+  bool is_cart_submitted = 2;
+}
+
+// SubstitutionSideEffectOutputData
+message GetSubstitutionSideEffectOutputData {
+  reserved 1;
+  reserved "substitution_preferences";
+  // substitution preferences
+  repeated SubstitutionFulfillmentMetadata substitution_fulfillment_metadata = 2;
+  // is substitution enabled for the store
+  bool is_substitution_enabled = 3;
+  // is item_instructions enabled for the store
+  bool is_item_instructions_enabled = 4;
+}
+
+// Item sku information for the cart
+message ItemSkuContext {
+  reserved 4, 5;
+  reserved "l1_category_id", "l2_category_id";
+  // sku of item
+  string merchant_supplied_id = 1;
+  // Quantity of the item to be fulfilled
+  common.QuantityInfo quantity_info = 2;
+  // submarket id
+  string submarket_id = 3;
+  // business id
+  string business_id = 6;
+  // store id
+  string store_id = 7;
+  // current item price, only used for Bottom sheet
+  money.MonetaryFields original_price = 8;
+  // current item name
+  string item_name = 9;
+  // current item image url
+  string item_image_url = 10;
+  // store name
+  string store_name = 11;
+}
+
+// Request Identifier to cache fulfillment plans
+message GetPlansRequestIdentifier {
+  reserved 1;
+  reserved "identifier", "cart_uuid";
+  // Version Id to store the version of the call
+  // For example, Call 1: cartId 1234 v81234(timestamp)  Call 2: cartId 1234 v81235(timestamp)
+  string version = 2;
+  // nullable cart uuid, you must have one id and a version
+  google.protobuf.StringValue cart_uuid_nullable = 3;
+}
+
+// OfferBottomSheetSideEffects
+message OfferBottomSheetSideEffects {
+  // Caller Identifier metadata used to cache fulfillment plan
+  GetPlansRequestIdentifier request_identifier = 1;
+  // customer information necessary for the optimization
+  CustomerContext customer_context = 2;
+  // List of skus for which a Fulfillment plan will be generated
+  repeated ItemSkuContext skus = 3;
+}
+
+// Customer Context
+message CustomerContext {
+  reserved 2;
+  reserved "consumer_id";
+  // creator id
+  string user_id = 1;
+  // customer location
+  common.Location customer_location = 3;
+  // submarket id
+  string submarket_id = 4;
+  // district id
+  string district_id = 5;
+  // Used in place of store country name. Replace this once store country name is populated
+  string consumer_country_short_name = 6;
+  // locale aka Accept Language header
+  string locale = 7;
+}
+
+// AcceptOfferSideEffects
+message AcceptOfferSideEffects {
+  // The accepted offer in the response
+  OrderOffer offer_with_selected_option = 1;
+  // cart uuid of current cart, which will be deleted
+  string cart_uuid = 2;
+}
+
+// SubstitutionSideEffects
+message GetSubstitutionSideEffects {
+  reserved 2;
+  reserved "consumer_id";
+  // cart uuid of current cart
+  string cart_uuid = 1;
+}
+
+// Metadata for fetching config
+message FetchConfigInputMetadata {}
+
+// Metadata for OffersPage
+message OffersPageMetadata {
+  option deprecated = true;
+}
+
+// Metadata for OffersClickedPage
+message OffersClickedPageMetadata {
+  option deprecated = true;
+}
+
+// Order Offer
+message OrderOffer {
+  reserved 1, 2, 3;
+  reserved "offer_instruction", "offer_options", "consumer_id";
+  // The offer option selected
+  OfferOption offer_option = 4;
+}
+
+// Offer Option
+message OfferOption {
+  reserved 1, 2, 3, 7;
+  reserved "offer_item", "offer_option_tag", "delivery_info", "line_items";
+  // store_id is the id of the store
+  string store_id = 4;
+  // optional: store_name is the name of the store
+  string store_name = 5;
+  // menu_id is the id of the menu
+  string menu_id = 6;
+  // offer_items is the list of items in the offer
+  repeated OfferItem offer_items = 8;
+}
+
+// Offer Item
+message OfferItem {
+  // menu_item_id is the id of the menu item
+  int64 menu_item_id = 1;
+  // name is the name of the item
+  string name = 2;
+  // unit_price_monetary_fields is the price of the item
+  money.MonetaryFields unit_price_monetary_fields = 3;
+  // image_url is the url of the image
+  string image_url = 4;
+  // quantity_info is the quantity of the item
+  common.QuantityInfo item_quantity_info = 5;
+  // (P0 add as "") description is the description of the item
+  string description = 6;
+  // (p0 add as "") category_name is the name of the category
+  string category_name = 7;
+  // (default = substitute) substitution_preference is the preference for substitution
+  string substitution_preference = 8;
+  // (default to "") special_instruction is the instruction for the item
+  string special_instruction = 9;
+  // purchase_type is the type of purchase
+  string purchase_type = 10;
+}
+
+// Substitution fulfillment metadata for the cart item
+message SubstitutionFulfillmentMetadata {
+  // merchant supplied id
+  string original_item_merchant_supplied_id = 1;
+  // substitution preference
+  SubstitutionPreference substitution_preference = 2;
+}
+
+// substitution preference information for the cart item
+message SubstitutionPreference {
+  reserved 1;
+  reserved "original_item_merchant_supplied_id";
+  // is substitution enabled for the product item
+  bool is_substitution_enabled = 2;
+  // is item_instructions enabled for the product item
+  bool is_item_instructions_enabled = 3;
+  // if Cx has already reviewed this subs.
+  bool cx_reviewed = 4;
+  // out of stock preference
+  string oos_preference = 5;
+  // retail item substitution items
+  repeated ItemMetadata substitution_items = 6;
+  // item instructions
+  string item_instructions = 7;
+  // Generic category OOS preference data for displaying to Cx flows
+  GenericCategoryOosPrefData generic_category_oos_pref_data = 8;
+  // Generic category OOS preference metadata for displaying to Cx flows
+  message GenericCategoryOosPrefData {
+    // display title for generic OOS preference. Eg: "Any similar whole milk" or "Any similar eggs"
+    string display_title = 1;
+    // display sub title for generic OOS preference.
+    string display_sub_title = 2;
+    // is available
+    bool is_available = 3;
+  }
+  // item metadata
+  message ItemMetadata {
+    // item name
+    string name = 1;
+    // business merchant supplied id
+    string merchant_supplied_id = 2;
+  }
+}

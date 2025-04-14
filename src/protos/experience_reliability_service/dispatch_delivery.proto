@@ -1,0 +1,1142 @@
+syntax = "proto3";
+package experience_reliability_service.dispatch_delivery_api;
+
+import "common/bundle_order_info.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "drive_order_service/drive_order.proto";
+import "drive_protobuf/drive_order.proto";
+import "drive_protobuf/drive_support_as_a_service_config.proto";
+import "drive_protobuf/drive_transaction.proto";
+import "experience_reliability_service/common.proto";
+import "experience_reliability_service/order_resolution.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "team_management/portal.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+// WARN: These APIs are specific for use in Dispatch UI.
+// These are not expected to be called by other microservices
+// Please reach out to delivery-reliability team if you have a use-case to hit any of the services below
+// Most probably, you'll need a subset of the fields which the team may provide as a separate endpoint.
+service DispatchDeliveryAPI {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  option (doordash.api.service) = {
+    name: "teammate-experience-service"
+    url: "teammate-experience-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["teammate-experience-service"]
+    api_key_name: "TEAMMATE_EXPERIENCE_SERVICE_API_KEY"
+    owner: {
+      name: "teammate-experience-service"
+      id: "teammate-experience-alerts"
+      slack_channel: "#ask-teammate-experience"
+      email_alias: "team-teammate-experience@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  rpc GetDispatchDeliveryById(DispatchDeliveryByIdRequest) returns (DispatchDeliveryByIdResponse);
+  rpc GetDeliveryDetailByDeliveryIds(GetDeliveryDetailByDeliveryIdsRequest) returns (GetDeliveryDetailByDeliveryIdsResponse);
+
+  // get latest deliveries of a consumer by consumer id
+  // this is to replace existing DSJ endpoint: https://github.com/doordash/doorstep-django/blob/09b02c40ff269f6faa9b8be09b373fa642e66730/doordash/consumer/api/consumer/v1/api.py#L95
+  // this is used under https://admin-gateway.doordash.com/support/customer/consumer/541299457
+  // example request url: https://admin-gateway.doordash.com/dsj/v1/consumers/541299457/deliveries/?all_fields=1&expand=merchant&expand=order_cart&extra=delivery_address.printable_address&include_participant_carts=true&limit=30&show_cancelled=true
+  rpc GetDeliveriesByConsumerId(GetDeliveriesByConsumerIdRequest) returns (GetDeliveriesByConsumerIdResponse);
+
+  rpc ManuallyAssignShiftToDelivery(ManuallyAssignShiftToDeliveryRequest) returns (ManuallyAssignShiftToDeliveryResponse);
+  rpc ManuallyUnassignShiftFromDelivery(ManuallyUnassignShiftFromDeliveryRequest) returns (ManuallyUnassignShiftFromDeliveryResponse);
+
+  // replacing dsj endpoint /v1/merchant_payment_adjustments/
+  // dsj reference https://github.com/doordash/doorstep-django/blob/a299f65e295e6c97065e32ff844a1503ffee6ef3/doordash/delivery/api/error/v1/api.py#L60
+  rpc CreateMerchantPaymentAdjustment(CreateMerchantPaymentAdjustmentRequest) returns (CreateMerchantPaymentAdjustmentResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/create-merchant-payment-adjustment-thq"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Endpoints for modifying a dispatch delivery.
+  // These are to replace existing DSJ endpoint: https://github.com/doordash/doorstep-django/blob/8a554c8646c433b41d93913eee5a274c1e7173d7/doordash/dispatch/api/v2/api/base.py#L857
+  rpc DropOffByDeliveryId(DropOffByDeliveryIdRequest) returns (DropOffByDeliveryIdResponse);
+  rpc RevertDropOffByDeliveryId(RevertDropOffByDeliveryIdRequest) returns (RevertDropOffByDeliveryIdResponse);
+  rpc PickUpByDeliveryId(PickUpByDeliveryIdRequest) returns (PickUpByDeliveryIdResponse);
+  rpc RevertPickUpByDeliveryId(RevertPickUpByDeliveryIdRequest) returns (RevertPickUpByDeliveryIdResponse);
+  rpc ChangeAddressByDeliveryId(ChangeAddressByDeliveryIdRequest) returns (ChangeAddressByDeliveryIdResponse);
+
+  // Transmit an order again. Used in dispatch for the "re-send order" button to re-send cancelled orders.
+  rpc ReSendOrder(ReSendOrderRequest) returns (ReSendOrderResponse);
+
+  // Returns a list of addresses which can be used for this delivery. Used by the "Change address" button in Dispatch.
+  rpc GetDeliveryAddresses(GetDeliveryAddressesRequest) returns (GetDeliveryAddressesResponse);
+
+  // Fund a red card. Used by the "Fund Red Card" button in Dispatch.
+  rpc FundRedCard(FundRedCardRequest) returns (FundRedCardResponse);
+}
+
+message FundRedCardRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.Int32Value amount = 2;
+}
+
+message FundRedCardResponse {}
+
+message ReSendOrderRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message ReSendOrderResponse {
+  // This used be be called actual_order_place_time in DSJ
+  google.protobuf.Timestamp order_transmitted_time = 1;
+  google.protobuf.Timestamp order_placer_sent_time = 2;
+}
+
+message CreateMerchantPaymentAdjustmentRequest {
+  google.protobuf.StringValue delivery = 1; // delivery_uuid
+  google.protobuf.BoolValue add_payment = 2;
+  google.protobuf.StringValue reason = 3; // Should be in MerchantPaymentAdjustmentReasons. Made this StringValue for migration purpose.
+  google.protobuf.StringValue explanation = 4;
+  google.protobuf.Int32Value amount = 5;
+  repeated google.protobuf.Int64Value items = 6; // order_item ids, only being used in event.metadata creation.
+  google.protobuf.Int64Value salesforce_id = 7;
+  // The ids of the dispatch errors being disputed. Required for mx error charge disputes.
+  repeated google.protobuf.Int64Value disputed_dispatch_error_ids = 8;
+}
+
+message CreateMerchantPaymentAdjustmentResponse {
+  // The name of this enum is included as the "description" error string when this API returns the INVALID_PRECONDITION grpc response code.
+  enum InvalidPreconditionError {
+    // Default for if no enum matches
+    INVALID_PRECONDITION_ERROR_UNSPECIFIED = 0;
+    // The mx error charge refund was denied because the refund deadline has passed.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_DEADLINE_HAS_PASSED = 1;
+    // The mx error charge refund was denied because the dispatch error was already refunded.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_ERROR_CHARGE_ALREADY_REFUNDED = 2;
+    // The mx error charge was denied because the store has disputed too many charges.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_STORE_HAS_DISPUTED_TOO_MANY_CHARGES = 3;
+    // The mx cancelled order made refund was denied because the refund deadline has passed.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DISPUTE_DENIED_DEADLINE_HAS_PASSED = 4;
+    // The mx cancelled order made refund was denied because the mx was already refunded.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_ERROR_CHARGE_ALREADY_REFUNDED = 5;
+    // The mx cancelled order made was denied because the store did not confirm the order prior to cancellation.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_STORE_DID_NOT_CONFIRM_ORDER_PRIOR_TO_CANCELLATION = 6;
+    // The mx cancelled order made was denied because the store did not mark the order as ready.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_STORE_DID_NOT_MARK_ORDER_AS_READY = 7;
+    // The mx cancelled order made was denied because the cancellation was Mx initiated or Mx fault.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_CANCELLATION_WAS_MX_INITIATED_OR_MX_FAULT = 8;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and items unavailable.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_ITEMS_UNAVAILABLE = 9;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx could not fulfill order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_COULD_NOT_FULFILL = 10;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx did not receive the order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_ORDER_NOT_RECEIVED = 11;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx cancelled the order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_CANCELLED_BY_MX = 12;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and dx not at fault they received wrong order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_NOT_DX_FAULT = 13;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and too long wait time for dx
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_LONG_WAIT_TIME = 14;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and store was marked closed
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_STORE_CLOSED = 15;
+    // The mx cancelled order made was denied because the delivery was not cancelled
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DELIVERY_IS_NOT_CANCELLED = 16;
+    // The mx error charge refund was denied because the store is currently disallowed for disputes (typically an abuser identified by Mx S&O)
+    INVALID_PRECONDITION_ERROR_STORE_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 17;
+    // The mx error charge refund was denied because the disputing user is currently disallowed for disputes (typically an abuser identified by Mx S&O)
+    INVALID_PRECONDITION_ERROR_USER_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMEN = 18;
+    // The mx order remade was denied because the delivery was not cancelled
+    INVALID_PRECONDITION_ERROR_ORDER_REMADE_DELIVERY_IS_NOT_CANCELLED = 19 [deprecated = true]; // this will be replaced by 21
+    // The mx error charge dispute was denied because the order did not pass one or more fraud heuristics
+    INVALID_PRECONDITION_ERROR_ORDER_DID_NOT_PASS_MX_ERROR_CHARGE_DISPUTE_FRAUD_HEURISTICS = 20;
+    // The mx dispute was denied because the delivery was already cancelled - for all non cxl reasons dispute
+    INVALID_PRECONDITION_ERROR_NON_CXL_DISPUTE_DENIED_DELIVERY_WAS_CANCELLED = 21;
+  }
+}
+
+message GetDeliveryDetailByDeliveryIdsRequest {
+  google.protobuf.StringValue audience = 1;
+  google.protobuf.StringValue dispatcher_role = 2;
+  repeated int64 delivery_ids = 3;
+  repeated google.protobuf.StringValue delivery_uuids = 4;
+}
+
+message GetDeliveryDetailByDeliveryIdsResponse {
+  repeated DispatchDeliveryByIdResponse deliveries = 1;
+}
+
+// Request from ERS to Admin-Gateway for the Dispatch scenario
+message DispatchDeliveryByIdRequest {
+  google.protobuf.StringValue audience = 1;
+  google.protobuf.StringValue dispatcher_role = 2;
+  int64 delivery_id = 3;
+  google.protobuf.StringValue delivery_uuid = 4;
+  google.protobuf.FieldMask field_mask = 5;
+}
+
+// Response from ERS to Admin-Gateway for the Dispatch scenario
+message DispatchDeliveryByIdResponse {
+  reserved 107;
+  google.protobuf.Int64Value delivery_id = 1;
+  google.protobuf.Int32Value estimated_prep_time = 2;
+  GoogleEstimate google_estimate = 3;
+  google.protobuf.StringValue public_id = 4;
+  google.protobuf.Int64Value cash_on_delivery = 5;
+  google.protobuf.Int64Value shift_id = 6;
+  google.protobuf.StringValue fulfillment_type = 7;
+  google.protobuf.Int64Value pickup_address_id = 8;
+  google.protobuf.Int64Value delivery_address_id = 9;
+  google.protobuf.BoolValue is_asap = 10;
+  google.protobuf.Timestamp abandoned_at = 11;
+  google.protobuf.Timestamp actual_delivery_time = 12;
+  google.protobuf.Timestamp actual_order_place_time = 13;
+  google.protobuf.Timestamp actual_pickup_time = 14;
+  google.protobuf.BoolValue cancelled = 15;
+  google.protobuf.Int32Value total = 16;
+  Charge charge = 17;
+  google.protobuf.Int32Value charge_total = 18;
+  google.protobuf.FloatValue commission_rate = 19;
+  google.protobuf.BoolValue confirmed_by_driver = 20;
+  google.protobuf.BoolValue confirmed_by_restaurant = 21;
+  google.protobuf.StringValue country_shortname = 22;
+  PaymentLineItems creator_payment_line_items = 23;
+  google.protobuf.Timestamp dasher_assigned_time = 24;
+  google.protobuf.Timestamp dasher_at_store_time = 25;
+  google.protobuf.Timestamp dasher_confirmed_at_consumer_time = 26;
+  google.protobuf.Timestamp dasher_confirmed_at_store_time = 27;
+  google.protobuf.Timestamp dasher_confirmed_time = 28;
+  DasherPayDetails dasher_pay_details = 29;
+  google.protobuf.Int32Value dasher_pay_estimate = 30;
+  Address delivery_address = 31;
+  google.protobuf.Timestamp delivery_window_end_time = 32;
+  google.protobuf.Timestamp delivery_window_start_time = 33;
+  google.protobuf.BoolValue did_assign_to_driver = 34;
+  google.protobuf.BoolValue did_deliver = 35;
+  google.protobuf.BoolValue did_pick_up = 36;
+  google.protobuf.Int32Value discount_amount = 37;
+  DriveDeliveryInfo drive_delivery_info = 38;
+  google.protobuf.Int64Value drive_order_id = 39;
+  Driver driver = 40;
+  repeated Error errors = 41;
+  google.protobuf.Timestamp estimated_pickup_time = 42;
+  google.protobuf.Int32Value tip_amount = 43;
+  repeated Event events = 44;
+  google.protobuf.StringValue external_delivery_id = 45;
+  google.protobuf.StringValue external_order_reference = 46;
+  google.protobuf.StringValue external_store_id = 47;
+  google.protobuf.Int32Value fees_tax_amount = 48;
+  google.protobuf.DoubleValue tax_rate = 49;
+  Funding funding = 50;
+  Consumer consumer = 51;
+  google.protobuf.Int64Value id = 52;
+  google.protobuf.BoolValue is_big_order = 53;
+  google.protobuf.BoolValue is_catering_setup = 54;
+  google.protobuf.BoolValue is_cold_chain = 55;
+  google.protobuf.BoolValue is_consumer_pickup = 56;
+  google.protobuf.BoolValue is_from_store_to_us = 57;
+  google.protobuf.BoolValue is_grocery_or_retail_delivery = 58;
+  google.protobuf.BoolValue is_returnable = 59;
+  google.protobuf.BoolValue is_today = 60;
+  google.protobuf.Int32Value lateness_index = 61;
+  google.protobuf.BoolValue manually_assigned = 62;
+  Menu menu = 63;
+  google.protobuf.StringValue object_type = 64;
+  google.protobuf.Int64Value onsite_estimated_prep_time = 65;
+  OrderCart order_cart = 66;
+  OrderPlacer order_placer_claimed = 67;
+  google.protobuf.Timestamp order_placer_sent_time = 68;
+  google.protobuf.StringValue order_protocol = 69;
+  google.protobuf.StringValue order_special_instructions = 70;
+  repeated Order orders = 71;
+  repeated google.protobuf.Int64Value original_delivery_ids = 72;
+  google.protobuf.Int64Value parent_delivery = 73;
+  google.protobuf.StringValue payment_policy = 74;
+  Address pickup_address = 75;
+  google.protobuf.StringValue pickup_instructions = 76;
+  google.protobuf.StringValue pickup_phone_number = 77;
+  common.PhoneNumberComponents pickup_phone_number_components = 78;
+  google.protobuf.Timestamp pickup_window_end_time = 79;
+  google.protobuf.Timestamp pickup_window_start_time = 80;
+  google.protobuf.Int32Value post_tip_amount = 81;
+  google.protobuf.Timestamp quoted_delivery_time = 82;
+  repeated Receipt receipts = 83;
+  Store restaurant = 84;
+  google.protobuf.Int64Value return_delivery_id = 85;
+  google.protobuf.BoolValue should_be_manually_assigned = 86;
+  google.protobuf.BoolValue should_be_manually_placed = 87;
+  google.protobuf.BoolValue signature_required = 88;
+  google.protobuf.StringValue source = 89;
+  google.protobuf.Timestamp store_confirmed_time = 90;
+  google.protobuf.Int32Value store_payout_total = 91;
+  google.protobuf.Int32Value store_payout_total_no_errors = 92;
+  google.protobuf.Int64Value submarket = 93;
+  google.protobuf.Timestamp submitted_at = 94;
+  google.protobuf.Int32Value subtotal = 95;
+  google.protobuf.Int32Value subtotal_tax_amount = 96;
+  repeated SupportDeliveryBannerContent support_delivery_banner_contents = 97;
+  repeated DispatchSupportSalesforceCaseRecord support_salesforce_case_records = 98;
+  google.protobuf.Int32Value tax_amount = 99;
+  google.protobuf.StringValue delivery_uuid = 100;
+  google.protobuf.Timestamp cancelled_at = 101;
+  repeated DriveDeliveryItem drive_delivery_items = 102;
+  google.protobuf.Int32Value merchant_tip_amount = 103;
+  google.protobuf.Int32Value refundable_discount_amount = 104;
+  google.protobuf.BoolValue is_non_partnered_grocery_store = 105;
+  google.protobuf.BoolValue is_partnered_grocery_store = 106;
+  google.protobuf.Int32Value merchant_tip_adjustment_amount = 108;
+  google.protobuf.StringValue parent_delivery_uuid = 109;
+  repeated google.protobuf.StringValue original_delivery_uuids = 110;
+  google.protobuf.StringValue return_delivery_uuid = 111;
+  google.protobuf.StringValue payment_gateway = 112;
+  com.doordash.drive.api.saas.v1.SupportAsAServiceConfig support_as_a_service_config = 114;
+  google.protobuf.BoolValue is_p2p = 115;
+  CancellationPendingRefundInfo cancellation_pending_refund_info = 116;
+  DdfwConfigs ddfw_configs = 117;
+  repeated DriveFulfillmentTag drive_fulfillment_tags = 118;
+  google.protobuf.Timestamp customer_arrival_time = 119;
+  DasherCheckoutPaymentMethod dasher_checkout_payment_method = 120;
+  // If this delivery is a post-cancellation reorder, this field stores information about the parent order and reorder type
+  order.CancellationReorderInfo cancellation_reorder_info = 121;
+  google.protobuf.BoolValue delivery_pin_required = 122;
+  drive_order_service.v1.PickupVerificationMetadata pickup_verification_metadata = 123;
+  google.protobuf.Int64Value batch_id = 124;
+  order.OrderCreationContext order_creation_context = 125; // context for order creation
+}
+
+// Dasher Checkout Payment Method
+enum DasherCheckoutPaymentMethod {
+  // Dasher payment method is unspecified
+  DASHER_CHECKOUT_PAYMENT_METHOD_UNSPECIFIED = 0;
+  // Dasher uses a red-card at Point of Sale.
+  DASHER_CHECKOUT_PAYMENT_METHOD_RED_CARD = 1;
+  // Dasher uses a barcode at Point of Sale.
+  DASHER_CHECKOUT_PAYMENT_METHOD_BARCODE = 2;
+}
+
+// Drive fulfillment tag - keep in sync with drive.proto
+enum DriveFulfillmentTag {
+  // Not specified
+  DRIVE_FULFILLMENT_TAG_UNSPECIFIED = 0;
+  // PIZZA
+  DRIVE_FULFILLMENT_TAG_PIZZA = 1;
+  // PARCEL
+  DRIVE_FULFILLMENT_TAG_PARCEL = 2;
+  // DSD
+  DRIVE_FULFILLMENT_TAG_DSD = 3;
+  // DSS
+  DRIVE_FULFILLMENT_TAG_DSS = 4;
+  // P2P
+  DRIVE_FULFILLMENT_TAG_P2P = 5;
+  // PHARMACY
+  DRIVE_FULFILLMENT_TAG_PHARMACY = 6;
+  // ALCOHOL
+  DRIVE_FULFILLMENT_TAG_ALCOHOL = 7;
+  // FLOWERS
+  DRIVE_FULFILLMENT_TAG_FLOWERS = 8;
+  // CASH_ON_DELIVERY
+  DRIVE_FULFILLMENT_TAG_CASH_ON_DELIVERY = 9;
+  // RETAIL
+  DRIVE_FULFILLMENT_TAG_RETAIL = 10;
+  // GROCERY
+  DRIVE_FULFILLMENT_TAG_GROCERY = 11;
+  // VOICE
+  DRIVE_FULFILLMENT_TAG_VOICE = 12;
+}
+
+// Keep in sync with order.proto states.
+message CancellationPendingRefundInfo {
+  // State of the refund.
+  enum CancellationRefundState {
+    // CANCELLATION_REFUND_STATE_UNSPECIFIED.
+    CANCELLATION_REFUND_STATE_UNSPECIFIED = 0;
+    // Cancelled delivery is awaiting user to select refund method.
+    CANCELLATION_REFUND_STATE_PENDING = 1;
+    // Refund was completed.
+    CANCELLATION_REFUND_STATE_COMPLETED = 2;
+  }
+
+  // The state of the cancelled delivery.
+  CancellationRefundState state = 1;
+}
+
+message DdfwOrderFlags {
+  google.protobuf.BoolValue is_expensed_order = 1;
+  // true if the order was placed as a business profile order
+  google.protobuf.BoolValue is_business_profile_order = 2;
+}
+
+message DdfwConfigs {
+  DdfwOrderFlags order_flags = 1;
+  string team_name = 2;
+  money.MonetaryFields used_budget_amount = 3;
+  repeated team_management.TeamMember admins = 4;
+}
+
+message OrderPlacer {
+  google.protobuf.StringValue email = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.Int64Value id = 3;
+  google.protobuf.StringValue last_name = 4;
+  google.protobuf.StringValue object_type = 5;
+}
+
+message DispatchSupportSalesforceCaseRecord {
+  google.protobuf.StringValue case_number = 1;
+  google.protobuf.StringValue case_origin = 2;
+  google.protobuf.StringValue case_status = 3;
+  google.protobuf.StringValue case_uid = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.StringValue customer_type = 6;
+}
+
+message Address {
+  google.protobuf.StringValue printable_address = 1;
+  google.protobuf.StringValue street = 2;
+  google.protobuf.StringValue city = 3;
+  google.protobuf.StringValue subpremise = 4;
+  google.protobuf.StringValue state = 5;
+  google.protobuf.StringValue zip_code = 6;
+  google.protobuf.FloatValue lng = 7;
+  google.protobuf.FloatValue lat = 8;
+  google.protobuf.Int64Value id = 9;
+  google.protobuf.StringValue dasher_instructions = 10;
+  google.protobuf.StringValue country = 11;
+  google.protobuf.StringValue shortname = 12;
+}
+
+// ToDo: Once the item-level refunds project is done, reference
+// drive_protobuf/drive_order.proto drive_service.drive_order.DriveOrderItem
+message DriveDeliveryItem {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Int32Value quantity = 3;
+  google.protobuf.Int32Value price = 4;
+  google.protobuf.StringValue external_id = 5;
+  google.protobuf.StringValue barcode = 6;
+  google.protobuf.Int64Value id = 7;
+  google.protobuf.StringValue special_instructions = 8;
+}
+
+message SupportDeliveryBannerContent {
+  ers.api.common.DeliveryTypeChoice delivery_type = 1;
+  google.protobuf.StringValue content = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message Receipt {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue image_url = 2;
+  google.protobuf.StringValue recipient_name = 3;
+  google.protobuf.Int32Value tip_amount = 4;
+  google.protobuf.BoolValue viewed_by_merchant = 5;
+}
+
+message Order {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.StringValue consumer_name = 2;
+  google.protobuf.Int64Value id = 3;
+  google.protobuf.BoolValue is_inflated = 4;
+  google.protobuf.StringValue object_type = 5;
+  repeated OrderItem order_items = 6;
+  DRSPaymentLineItem payment_line_items = 7;
+  google.protobuf.DoubleValue tax_rate = 8;
+  FeesTaxDetail fees_tax_detail = 9;
+  DiscountDetail discount_detail = 10;
+}
+
+message DRSPaymentLineItem {
+  PriceMonetaryFields top_off_total_monetary_fields = 1;
+}
+
+message PriceMonetaryFields {
+  google.protobuf.StringValue currency = 1;
+  google.protobuf.Int32Value decimal_places = 2;
+  google.protobuf.StringValue display_string = 3;
+  google.protobuf.Int32Value unit_amount = 4;
+}
+
+message FeesTaxDetail {
+  google.protobuf.Int32Value delivery_fee_tax_amount = 1;
+  google.protobuf.Int32Value legislative_fee_tax_amount = 2;
+  google.protobuf.Int32Value min_order_fee_tax_amount = 3;
+  google.protobuf.Int32Value service_fee_tax_amount = 4;
+  google.protobuf.Int32Value priority_fee_tax_amount = 5;
+}
+
+message DiscountDetail {
+  repeated money.DiscountBreakdown discount_breakdowns = 1;
+}
+
+message OrderItem {
+  google.protobuf.Int32Value additional_cost = 1;
+  DiscountInfo discount_info = 2;
+  google.protobuf.Int64Value id = 3;
+  Item item = 4;
+  google.protobuf.Int32Value num_incorrect = 5;
+  google.protobuf.Int32Value num_missing = 6;
+  repeated ItemOption options = 7;
+  google.protobuf.Int64Value order = 8;
+  google.protobuf.Int32Value quantity = 9;
+  google.protobuf.Int32Value single_price = 10;
+  google.protobuf.StringValue special_instructions = 11;
+  google.protobuf.StringValue substitution_preference = 12;
+  google.protobuf.Int32Value ebt_amount = 13;
+}
+
+message DiscountInfo {
+  ers.api.common.DiscountItemCallout callout = 1;
+  google.protobuf.StringValue source = 2;
+  money.MonetaryFields original_price = 3;
+}
+
+message Item {
+  ItemCategory category = 1;
+  google.protobuf.StringValue category_title = 2;
+  google.protobuf.StringValue description = 3;
+  repeated ItemExtra extras = 4;
+  google.protobuf.StringValue image_url = 5;
+  google.protobuf.BoolValue is_temp_deactivated = 6;
+  google.protobuf.Int64Value menu_item_number = 7;
+  google.protobuf.Int64Value menu_version = 8;
+  google.protobuf.Int32Value min_age_requirement = 9;
+  google.protobuf.StringValue name = 10;
+  google.protobuf.StringValue object_type = 11;
+  google.protobuf.Int32Value price = 12;
+  money.MonetaryFields price_monetary_fields = 13;
+  google.protobuf.Int32Value price_without_inflation = 14;
+  money.MonetaryFields price_without_inflation_monetary_fields = 15;
+  repeated ItemTag tags = 16;
+  google.protobuf.Int64Value temp_deactivation_ttl = 17;
+  google.protobuf.Int64Value id = 18;
+}
+
+message ItemExtra {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue object_type = 2;
+  google.protobuf.Int32Value min_num_options = 3;
+  google.protobuf.Int32Value max_num_options = 4;
+  google.protobuf.Int32Value num_free_options = 5;
+  google.protobuf.StringValue title = 6;
+  google.protobuf.StringValue description = 7;
+  google.protobuf.Int32Value sort_id = 8;
+  repeated ItemOption options = 9;
+}
+
+message ItemOption {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue object_type = 2;
+  google.protobuf.StringValue name = 3;
+  google.protobuf.StringValue description = 4;
+  google.protobuf.Int32Value price = 5;
+  money.MonetaryFields price_monetary_fields = 6;
+  google.protobuf.Int32Value price_without_inflation = 7;
+  money.MonetaryFields price_without_inflation_monetary_fields = 8;
+  ItemExtra parent = 9 [deprecated = true]; // deprecated. parent is only used for parent.title field. use parent_title instead as this field is not being populated.
+  google.protobuf.StringValue extra_title = 10;
+  google.protobuf.BoolValue is_free = 12;
+  google.protobuf.StringValue parent_title = 13;
+}
+
+message ItemTag {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue friendly_name = 3;
+  google.protobuf.StringValue group = 4; // dynamic value but making it StringValue for easier parsing on bff
+  google.protobuf.StringValue image_url = 5;
+}
+
+message ItemCategory {
+  google.protobuf.StringValue title = 1;
+}
+
+message OrderCart {
+  google.protobuf.Int32Value applied_service_fee = 1;
+  google.protobuf.DoubleValue applied_service_rate = 2;
+  google.protobuf.BoolValue contains_alcohol = 3;
+  google.protobuf.Int32Value delivery_fee = 4;
+  DeliveryFeeDetails delivery_fee_details = 5;
+  google.protobuf.Int32Value discount_amount = 6;
+  DiscountDetails discount_details = 7;
+  google.protobuf.Int32Value extra_sos_delivery_fee = 8;
+  google.protobuf.Int64Value id = 9;
+  google.protobuf.BoolValue is_bike_friendly = 10;
+  google.protobuf.BoolValue is_first_ordercart = 11;
+  google.protobuf.BoolValue is_group_order_cart = 12;
+  google.protobuf.Int32Value max_individual_cost = 13;
+  google.protobuf.Int32Value min_order_fee = 14;
+  google.protobuf.StringValue payment_method = 15;
+  ServiceRateDetails service_rate_details = 16;
+  google.protobuf.StringValue submit_platform = 17;
+  google.protobuf.Int32Value subtotal = 18;
+  google.protobuf.Int32Value tax_amount = 19;
+  google.protobuf.Int32Value tip_amount = 20;
+  google.protobuf.BoolValue top_off_enabled = 21;
+  google.protobuf.Int32Value total = 22;
+  google.protobuf.Timestamp submitted_at = 23;
+  Consumer creator = 24;
+  google.protobuf.StringValue order_special_instructions = 25;
+  repeated Order orders = 26;
+  google.protobuf.Int32Value dasher_fee = 27 [deprecated = true]; // use DasherPayDetails instead
+  money.LegislativeFeeDetails legislative_fee_details = 28;
+  google.protobuf.BoolValue is_gift = 29;
+  google.protobuf.Int32Value applied_discounts = 30;
+  google.protobuf.Int32Value service_fee = 31;
+  Consumer subsidizing_consumer = 32 [deprecated = true]; // not used in dispatch
+  money.MonetaryFields grand_total = 33;
+  money.MonetaryFields total_before_tip = 34;
+  google.protobuf.StringValue order_uuid = 35;
+  repeated DiscountComponent discount_components = 36;
+  repeated money.GenericFeeItemDetails generic_fee_item_details = 37;
+  money.PriorityFeeDetails priority_fee_details = 38;
+  google.protobuf.Int32Value external_gift_card_credit = 39;
+  common.bundle_order_info.v1.BundleOrderInfo bundle_order_info = 40;
+  google.protobuf.Int32Value ebt_amount = 41;
+  reserved 42;
+  reserved "overauth_total";
+  OverauthConfig overauth_config = 43;
+  google.protobuf.Int32Value reward_points_redemption = 44;
+  google.protobuf.BoolValue is_caredash = 45;
+  google.protobuf.Int32Value hsa_fsa_amount = 46;
+  google.protobuf.StringValue cart_uuid = 47;
+}
+
+message OverauthConfig {
+  money.BasisPoint overauth_percentage = 1;
+  money.MonetaryFields overauth_amount = 2;
+  money.MonetaryFields order_total_with_overauth = 3;
+}
+
+message ServiceRateDetails {
+  google.protobuf.DoubleValue final_rate = 1;
+  money.MonetaryFields final_fee = 2;
+  google.protobuf.DoubleValue original_rate = 3;
+  money.MonetaryFields original_fee = 4;
+  ServiceFeeDiscount discount = 5;
+  google.protobuf.StringValue message = 6;
+}
+
+message ServiceFeeDiscount {
+  money.MonetaryFields amount = 1;
+}
+
+message DiscountDetails {
+  money.MonetaryFields applied_discount = 1;
+  money.MonetaryFields additional_subtotal = 2;
+  google.protobuf.StringValue message = 3;
+  google.protobuf.StringValue required_action = 4;
+}
+
+message DiscountComponent {
+  google.protobuf.Int64Value source_id = 1;
+  google.protobuf.StringValue group = 2;
+  google.protobuf.Int32Value amount = 3;
+}
+
+message DeliveryFeeDetails {
+  money.MonetaryFields surge_fee = 1;
+  money.MonetaryFields final_fee = 2;
+  money.MonetaryFields original_fee = 3;
+  FeeDiscount discount = 4;
+}
+
+message FeeDiscount {
+  money.MonetaryFields amount = 1;
+  google.protobuf.StringValue discount_type = 2;
+  google.protobuf.StringValue source_type = 3;
+  money.MonetaryFields min_subtotal = 4;
+  google.protobuf.StringValue text = 5;
+  google.protobuf.StringValue description = 6;
+}
+
+message Menu {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.BoolValue is_business_enabled = 2;
+  google.protobuf.BoolValue is_catering = 3;
+  google.protobuf.StringValue name = 4;
+  google.protobuf.StringValue object_type = 5;
+  // is_actual_menu - required
+  // true -> this is the actual menu used for this delivery
+  // false -> the actual menu has been hard deleted, and instead this is the latest active menu
+  google.protobuf.BoolValue is_actual_menu = 6;
+}
+
+message GoogleEstimate {
+  TextValuePair duration = 1;
+  TextValuePair distance = 2;
+  TextValuePair duration_in_traffic = 3;
+  google.protobuf.BoolValue has_tolls = 4;
+}
+
+message TextValuePair {
+  google.protobuf.StringValue text = 1;
+  google.protobuf.Int64Value value = 2;
+}
+
+message Funding {
+  google.protobuf.Int32Value fundable_amount = 1;
+  google.protobuf.Int32Value funded_amount = 2;
+  google.protobuf.Int32Value last_decline_amount = 3;
+}
+
+message Charge {
+  google.protobuf.Int32Value additional_charged = 1;
+  google.protobuf.Int64Value id = 2;
+  google.protobuf.Int32Value refunded = 3;
+  google.protobuf.Int32Value total = 4;
+}
+
+message Consumer {
+  google.protobuf.StringValue catering_contact_email = 1;
+  google.protobuf.StringValue email = 2;
+  google.protobuf.StringValue first_name = 3;
+  google.protobuf.Int64Value id = 4;
+  google.protobuf.StringValue last_name = 5;
+  google.protobuf.StringValue object_type = 6;
+  google.protobuf.StringValue phone_number = 7;
+  common.PhoneNumberComponents phone_number_components = 8;
+  google.protobuf.Int64Value subscription_id = 9;
+  google.protobuf.BoolValue subscription_status = 10;
+  google.protobuf.Int64Value user_id = 11;
+  google.protobuf.Int32Value vip_tier = 12;
+  google.protobuf.StringValue experience = 13;
+}
+
+message PaymentLineItems {
+  google.protobuf.Int32Value subtotal = 1;
+  google.protobuf.Int32Value tax_amount = 2;
+  google.protobuf.Int32Value subtotal_tax_amount = 3;
+  google.protobuf.Int32Value fees_tax_amount = 4;
+  google.protobuf.Int32Value service_fee = 5;
+  money.MonetaryFields subtotal_monetary_fields = 6;
+  money.MonetaryFields tax_amount_monetary_fields = 7;
+  money.MonetaryFields subtotal_tax_amount_monetary_fields = 8;
+  money.MonetaryFields fees_tax_amount_monetary_fields = 9;
+  money.MonetaryFields service_fee_monetary_fields = 10;
+}
+
+message DasherPayDetails {
+  google.protobuf.Int32Value actual_pay = 1;
+  google.protobuf.BoolValue actual_pay_may_change = 2 [deprecated = true]; // not populated
+  money.MonetaryFields actual_pay_monetary_fields = 3;
+  google.protobuf.Int32Value base_pay = 4;
+  money.MonetaryFields base_pay_monetary_fields = 5;
+  google.protobuf.Int32Value cancellation_pay = 6;
+  money.MonetaryFields cancellation_pay_monetary_fields = 7;
+  google.protobuf.Int32Value cash_withdrawal_from_mx = 8;
+  money.MonetaryFields cash_withdrawal_from_mx_monetary_fields = 9;
+  google.protobuf.Int32Value dasher_offered_pay = 10;
+  money.MonetaryFields dasher_offered_pay_monetary_fields = 11;
+  google.protobuf.Int32Value dd_additional_pay = 12;
+  money.MonetaryFields dd_additional_pay_monetary_fields = 13;
+  google.protobuf.Int32Value doordash_contribution_amount = 14;
+  money.MonetaryFields doordash_contribution_amount_monetary_fields = 15;
+  google.protobuf.BoolValue is_high_ar_incentive_eligible = 16 [deprecated = true]; // not populated
+  google.protobuf.StringValue modal_type = 17;
+  google.protobuf.Int32Value offered_pay = 18;
+  money.MonetaryFields offered_pay_monetary_fields = 19;
+  google.protobuf.Int32Value on_time_bonus = 20;
+  money.MonetaryFields on_time_bonus_monetary_fields = 21;
+  google.protobuf.Int32Value post_tip_amount = 22;
+  money.MonetaryFields post_tip_amount_monetary_fields = 23;
+  google.protobuf.Int32Value post_tip_remaining_days = 24;
+  google.protobuf.Int32Value pre_tip_amount = 25;
+  money.MonetaryFields pre_tip_amount_monetary_fields = 26;
+  google.protobuf.Int32Value setup_pay_earned = 27;
+  money.MonetaryFields setup_pay_earned_monetary_fields = 28;
+  google.protobuf.Int32Value sos_amount = 29;
+  money.MonetaryFields sos_amount_monetary_fields = 30;
+  google.protobuf.Int32Value tip_amount = 31;
+  money.MonetaryFields tip_amount_monetary_fields = 32;
+  google.protobuf.Timestamp created_at = 33;
+  google.protobuf.Int32Value peak_pay = 34;
+  money.MonetaryFields peak_pay_monetary_fields = 35;
+  money.MonetaryFields local_mandate_pay_monetary_fields = 36;
+  money.MonetaryFields performance_pay_monetary_fields = 37;
+  google.protobuf.Int32Value order_placement_pay = 38;
+  money.MonetaryFields order_placement_pay_monetary_fields = 39;
+  google.protobuf.Int32Value long_wait_pay = 40;
+  money.MonetaryFields long_wait_pay_monetary_fields = 41;
+}
+
+message DriveDeliveryInfo {
+  google.protobuf.BoolValue is_route_based = 1;
+  google.protobuf.StringValue order_type = 2;
+  google.protobuf.Int32Value commission_tax = 3;
+  google.protobuf.Int32Value commission_subtotal = 4;
+  google.protobuf.Int32Value tip_paid_by_mx = 5;
+  google.protobuf.Int32Value promotion = 6;
+  google.protobuf.Int32Value promotion_subsidy = 7;
+  google.protobuf.Int32Value tip_adjustment = 8;
+  google.protobuf.Int32Value dasher_regulatory_fee = 9;
+  google.protobuf.Int32Value aggregator_fee = 10;
+  google.protobuf.Int32Value pre_tip = 11;
+  google.protobuf.Int32Value cancellation_fee = 12;
+  google.protobuf.Int32Value merchant_fee_adjustment = 13;
+  google.protobuf.Int32Value cancellation_adjustment = 14;
+  google.protobuf.BoolValue is_item_level_refunds_eligible = 15;
+  repeated com.doordash.drive.api.driveTransaction.DriveTransaction drive_transactions = 16;
+  google.protobuf.StringValue pickup_business_name = 17;
+  google.protobuf.Int64Value developer_id = 18;
+  drive_service.drive_order.LineOfBusiness line_of_business = 19;
+  google.protobuf.StringValue invoicing_group_id = 20;
+  google.protobuf.BoolValue has_invoicing_group_id = 21;
+  RedeliveryDetails redelivery_details = 22;
+  DispatchPaymentDetails payment_details = 23;
+}
+
+message Driver {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.Int64Value id = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue phone_number = 4;
+  common.PhoneNumberComponents phone_number_components = 5;
+  google.protobuf.Int64Value vehicle_type_id = 6;
+}
+
+message Error {
+  google.protobuf.StringValue category = 1;
+  google.protobuf.Int32Value consumer_charge = 2;
+  google.protobuf.Int32Value consumer_credits = 3;
+  google.protobuf.StringValue consumer_explanation = 4;
+  google.protobuf.Int32Value consumer_refund = 5;
+  repeated google.protobuf.StringValue cre_categories = 6;
+  google.protobuf.StringValue created_by = 7;
+  google.protobuf.StringValue dasher_explanation = 8;
+  google.protobuf.Int32Value dasher_penalty = 9;
+  google.protobuf.Int64Value delivery = 10;
+  google.protobuf.StringValue dispatch_notes = 11;
+  google.protobuf.StringValue fault = 12;
+  google.protobuf.Int64Value id = 13;
+  google.protobuf.StringValue order = 14;
+  google.protobuf.StringValue participant_credits = 15; // dynamic value but making it StringValue for easier parsing on bff
+  google.protobuf.StringValue participant_refunds = 16; // dynamic value but making it StringValue for easier parsing on bff
+  google.protobuf.StringValue shift = 17;
+  google.protobuf.StringValue source = 18;
+  google.protobuf.Int32Value store_charge = 19;
+  google.protobuf.StringValue store_explanation = 20;
+  google.protobuf.Int32Value store_refund = 21;
+  google.protobuf.StringValue payment_action = 22;
+  google.protobuf.Int32Value consumer_loyalty_reward_refund = 23;
+  google.protobuf.Int32Value consumer_external_gift_card_refund = 24;
+  google.protobuf.Int32Value consumer_ebt_refund = 25;
+  google.protobuf.Int32Value consumer_reward_points_refund = 26;
+  google.protobuf.Int32Value consumer_hsa_fsa_refund = 27;
+  repeated experience_reliability_service.order_resolution.PromotionDetail promotion_details = 28;
+}
+
+message Event {
+  int64 id = 1;
+  ers.api.common.EventCategory category = 2;
+  google.protobuf.Timestamp created_at = 3;
+  DispatchUser created_by = 4;
+  int64 delivery = 5;
+  Issue issue = 6;
+  google.protobuf.StringValue metadata = 7;
+  string id_string = 8; // id (field 1) in string format
+}
+
+message Issue {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue event_category = 2;
+  google.protobuf.Timestamp created_at = 3;
+  DispatchUser created_by = 4;
+  google.protobuf.Timestamp resolved_at = 5;
+  google.protobuf.StringValue resolved_by = 6;
+  google.protobuf.Timestamp claimed_at = 7;
+  google.protobuf.StringValue claimed_by = 8;
+  google.protobuf.StringValue notes = 9;
+  EventData event_data = 10;
+  ers.api.common.DeliveryForIssue delivery = 11;
+  repeated ers.api.common.IssueExtra extra = 12;
+  google.protobuf.Int64Value zendesk_id = 13;
+  google.protobuf.StringValue salesforce_case_uid = 14;
+}
+
+message EventData {
+  google.protobuf.StringValue dasher_other_reasons = 1;
+  google.protobuf.StringValue dasher_reasons = 2;
+  google.protobuf.StringValue language = 3;
+}
+
+message EventMetadata {
+  google.protobuf.Timestamp created_at = 1;
+  int64 delivery_id = 2;
+  google.protobuf.StringValue delivery_uuid = 3;
+  google.protobuf.StringValue reason = 4;
+  google.protobuf.FloatValue distance_in_meters = 6;
+  google.protobuf.Int64Value driver_id = 7;
+  google.protobuf.Int64Value shift_id = 8;
+  google.protobuf.Int64Value store_id = 9;
+  google.protobuf.Timestamp quoted_delivery_time = 10;
+  google.protobuf.StringValue location = 11;
+  google.protobuf.StringValue location_description = 12;
+  google.protobuf.FloatValue accuracy_meters = 13;
+  google.protobuf.FloatValue distance_from_customer = 14;
+  google.protobuf.StringValue image_service_url = 15;
+  google.protobuf.FloatValue lat = 16;
+  google.protobuf.FloatValue lng = 17;
+  google.protobuf.StringValue photo_url = 19;
+  google.protobuf.Timestamp estimated_pickup_time = 20;
+  google.protobuf.Timestamp estimated_assign_time = 21;
+  google.protobuf.Timestamp estimated_drop_off_time = 22;
+  google.protobuf.Int64Value new_driver_id = 23;
+  google.protobuf.Int64Value old_driver_id = 24;
+  repeated google.protobuf.Int64Value current_route = 25;
+  google.protobuf.FloatValue distance_from_next_loc_to_pickup = 26;
+  google.protobuf.FloatValue road_distance_from_next_loc_to_pickup = 27;
+  google.protobuf.FloatValue road_duration_from_next_loc_to_pickup = 28;
+  google.protobuf.BoolValue dasher_unassigned_at_store = 29;
+  google.protobuf.Int64Value shift = 30;
+  google.protobuf.Timestamp estimated_order_place_time = 31;
+  google.protobuf.BoolValue is_partner = 32;
+  google.protobuf.Int32Value subtotal = 33;
+  google.protobuf.Int64Value consumer_id = 34;
+  google.protobuf.StringValue consumer_name = 35;
+  google.protobuf.BoolValue is_asap = 36;
+  google.protobuf.Int64Value market_id = 37;
+  google.protobuf.StringValue market_name = 38;
+  google.protobuf.StringValue order_protocol = 39;
+  google.protobuf.Int64Value starting_point_id = 40;
+  google.protobuf.StringValue starting_point_name = 41;
+  google.protobuf.StringValue store_name = 42;
+  google.protobuf.Int64Value submarket_id = 43;
+  google.protobuf.StringValue submarket_name = 44;
+}
+
+message DispatchUser {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue email = 2;
+  google.protobuf.StringValue first_name = 3;
+  google.protobuf.StringValue last_name = 4;
+  google.protobuf.StringValue object_type = 5;
+}
+
+message Store {
+  Address address = 1;
+  google.protobuf.Int64Value business_id = 2;
+  google.protobuf.StringValue catering_phone_number = 3;
+  .common.PhoneNumberComponents catering_phone_number_components = 4;
+  google.protobuf.StringValue confirm_protocol = 5;
+  google.protobuf.Int64Value id = 6;
+  google.protobuf.BoolValue is_partner = 7;
+  google.protobuf.Int64Value market = 8;
+  google.protobuf.StringValue name = 9;
+  google.protobuf.StringValue object_type = 10;
+  google.protobuf.StringValue order_protocol = 11;
+  google.protobuf.StringValue partnership_ordering_instructions = 12;
+  google.protobuf.StringValue phone_number = 13;
+  .common.PhoneNumberComponents phone_number_components = 14;
+  google.protobuf.Int64Value submarket = 15;
+  google.protobuf.StringValue timezone = 16;
+  google.protobuf.BoolValue is_exempt_from_chargebacks = 17;
+  google.protobuf.StringValue email = 18;
+  google.protobuf.StringValue contact_emails = 19;
+  google.protobuf.StringValue error_report_emails = 20;
+}
+
+message GetDeliveriesByConsumerIdRequest {
+  // required, retrieve consumer's latest deliveries by consumer id
+  google.protobuf.Int64Value consumer_id = 1;
+  // required, 30 by default(fetch 30 latest deliveries of the consumer) and should NOT be greater than 30
+  google.protobuf.Int32Value limit = 2;
+}
+
+message GetDeliveriesByConsumerIdResponse {
+  repeated DeliveryByConsumerIdResponse deliveries = 1;
+
+  message DeliveryByConsumerIdResponse {
+    google.protobuf.StringValue delivery_uuid = 1;
+    google.protobuf.Timestamp created_at = 2;
+    google.protobuf.StringValue store_name = 3;
+    google.protobuf.Int32Value grand_total = 4;
+    google.protobuf.Int32Value discounts_used = 5;
+    google.protobuf.Int32Value refunds_to_consumer = 6;
+    google.protobuf.Int32Value credits_to_consumer = 7;
+    google.protobuf.Int64Value id = 8;
+    google.protobuf.Int64Value parent_delivery = 9;
+    google.protobuf.StringValue parent_delivery_uuid = 10;
+    google.protobuf.Timestamp cancelled_at = 11;
+    google.protobuf.StringValue iso_4217_currency_code = 12;
+    google.protobuf.BoolValue is_group_cart = 13;
+  }
+}
+
+message ManuallyAssignShiftToDeliveryRequest {
+  google.protobuf.Int64Value dispatcher_id = 1;
+  google.protobuf.Int64Value delivery_id = 2;
+  google.protobuf.Int64Value shift_id = 3;
+  google.protobuf.BoolValue allow_future_assignment = 4;
+}
+
+message ManuallyAssignShiftToDeliveryResponse {}
+
+message ManuallyUnassignShiftFromDeliveryRequest {
+  google.protobuf.Int64Value dispatcher_id = 1;
+  google.protobuf.Int64Value delivery_id = 2;
+  google.protobuf.Int64Value shift_id = 3;
+  google.protobuf.StringValue reason = 4;
+  google.protobuf.StringValue explanation = 5;
+  google.protobuf.BoolValue unassign_excused = 6;
+}
+
+message ManuallyUnassignShiftFromDeliveryResponse {
+  google.protobuf.Int64Value delivery_id = 1;
+}
+
+message DropOffByDeliveryIdRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message DropOffByDeliveryIdResponse {
+  repeated DropOffByDeliveryIdErrorCode error_code = 1;
+}
+
+// Error codes for DropOffByDeliveryId
+enum DropOffByDeliveryIdErrorCode {
+  // Unknown error
+  DROP_OFF_BY_DELIVERY_ID_ERROR_CODE_UNSPECIFIED = 0;
+  // No dasher is assigned to the delivery
+  DROP_OFF_BY_DELIVERY_ID_ERROR_CODE_NO_DASHER_ASSIGNED = 1;
+}
+
+message RevertDropOffByDeliveryIdRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.BoolValue is_unassign_excused = 2;
+}
+
+message RevertDropOffByDeliveryIdResponse {
+  repeated RevertDropOffByDeliveryIdErrorCode error_code = 1;
+}
+
+// Error codes for RevertDropOffByDeliveryId
+enum RevertDropOffByDeliveryIdErrorCode {
+  // Unknown error
+  REVERT_DROP_OFF_BY_DELIVERY_ID_ERROR_CODE_UNSPECIFIED = 0;
+  // Revert has been rejected due to potential abuse.
+  // See JIRA DRPX-285 for more details.
+  REVERT_DROP_OFF_BY_DELIVERY_ID_ERROR_CODE_POTENTIAL_ABUSE = 1;
+}
+
+message PickUpByDeliveryIdRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message PickUpByDeliveryIdResponse {
+  repeated PickUpByDeliveryIdErrorCode error_code = 1;
+}
+
+// Error codes for PickUpByDeliveryId
+enum PickUpByDeliveryIdErrorCode {
+  // Unknown error
+  PICK_UP_BY_DELIVERY_ID_ERROR_CODE_UNSPECIFIED = 0;
+  // No dasher is assigned to the delivery
+  PICK_UP_BY_DELIVERY_ID_ERROR_CODE_NO_DASHER_ASSIGNED = 1;
+}
+
+message RevertPickUpByDeliveryIdRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message RevertPickUpByDeliveryIdResponse {
+  repeated RevertPickUpByDeliveryIdErrorCode error_code = 1;
+}
+
+// Error codes for RevertPickUpByDeliveryId
+enum RevertPickUpByDeliveryIdErrorCode {
+  // Unknown error
+  REVERT_PICK_UP_BY_DELIVERY_ID_ERROR_CODE_UNSPECIFIED = 0;
+  // The delivery has a red card swipe associated with it
+  REVERT_PICK_UP_BY_DELIVERY_ID_ERROR_CODE_RED_CARD_SWIPE = 1;
+}
+
+message ChangeAddressByDeliveryIdRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  int64 delivery_address_id = 2;
+}
+
+message ChangeAddressByDeliveryIdResponse {
+  repeated ChangeAddressByDeliveryIdErrorCode error_code = 1;
+  google.protobuf.StringValue printable_address = 2;
+}
+
+// Error codes for ChangeAddressByDeliveryId
+enum ChangeAddressByDeliveryIdErrorCode {
+  // Unknown error
+  CHANGE_ADDRESS_BY_DELIVERY_ID_ERROR_CODE_UNSPECIFIED = 0;
+  // Cannot change delivery address of pick up orders
+  CHANGE_ADDRESS_BY_DELIVERY_ID_ERROR_CODE_IS_PICKUP_ORDER = 1;
+  // Address selected is outside the allowed delivery radius
+  CHANGE_ADDRESS_BY_DELIVERY_ID_ERROR_CODE_OUTSIDE_DELIVERY_RADIUS = 2;
+  // No address adjustments can be processed for restricted items
+  CHANGE_ADDRESS_BY_DELIVERY_ID_ERROR_CODE_RESTRICTED_TYPES = 3;
+  // Unhandled error
+  CHANGE_ADDRESS_BY_DELIVERY_ID_ERROR_CODE_UNHANDLED = 4;
+}
+
+message GetDeliveryAddressesRequest {
+  google.protobuf.StringValue delivery_uuid = 1; // required
+  google.protobuf.Int32Value page_size = 2; // optional
+  google.protobuf.StringValue page_token = 3; // optional, for pagination
+}
+
+message GetDeliveryAddressesResponse {
+  repeated Address addresses = 1;
+  google.protobuf.StringValue next_page_token = 2; // optional, included if there are more pages of results
+
+  message Address {
+    google.protobuf.Int64Value address_id = 1;
+    google.protobuf.Int64Value consumer_address_link_id = 2;
+    google.protobuf.StringValue city = 3;
+    google.protobuf.StringValue country = 4;
+    google.protobuf.DoubleValue lat = 5;
+    google.protobuf.DoubleValue lng = 6;
+    google.protobuf.StringValue printable_address = 7;
+    google.protobuf.StringValue shortname = 8;
+    google.protobuf.StringValue state = 9;
+    google.protobuf.StringValue street = 10;
+    google.protobuf.StringValue subpremise = 11;
+    google.protobuf.StringValue zip_code = 12;
+    google.protobuf.BoolValue is_address_replaceable = 13;
+    google.protobuf.StringValue dasher_instructions = 15;
+  }
+}
+
+message RedeliveryDetails {
+  google.protobuf.Int64Value redelivery_id = 1;
+  google.protobuf.Int64Value redelivery_previous_delivery_id = 2;
+  google.protobuf.Int64Value redelivery_previous_doordash_id = 3;
+  google.protobuf.Int64Value redelivery_next_delivery_id = 4;
+  google.protobuf.Int64Value redelivery_next_doordash_id = 5;
+  google.protobuf.Int32Value redelivery_attempt_count = 6;
+}
+
+message DispatchPaymentDetails {
+  google.protobuf.StringValue payment_method_uuid = 1;
+}

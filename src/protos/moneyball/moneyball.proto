@@ -1,0 +1,394 @@
+syntax = "proto3";
+
+package moneyball.v1;
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.moneyball.v1";
+
+// Backend Service for Forecasting APIs
+// https://docs.google.com/document/d/1VPILwMEVMGGtZFinaVB7NLn3AizRN-tklp3_sft52Yo/edit#heading=h.gsb2o5u53fwb
+service MoneyballService {
+  // Generate forecast profile (e.g. run time and cost estimates) before onboarding a new forecast
+  rpc ProfileForecast(ProfileForecastRequest) returns (ProfileForecastResponse);
+
+  // Create a PR for the YAML runner configs, and merge it into GitHub Repo to onboard a new forecast
+  rpc CreateForecast(CreateForecastRequest) returns (CreateForecastResponse);
+
+  // Create a PR for the YAML runner configs, and merge it into GitHub Repo to update an existing forecast
+  rpc UpdateForecast(UpdateForecastRequest) returns (UpdateForecastResponse);
+
+  // Delete forecast with a PR
+  rpc DeleteForecast(DeleteForecastRequest) returns (DeleteForecastResponse);
+
+  // Retrieve the forecast runner config attributes given the forecast name or filters
+  rpc GetForecastConfigs(GetForecastConfigsRequest) returns (GetForecastConfigsResponse);
+
+  // Kick off an on-demand forecast run via Dagster execution API
+  rpc RunForecast(RunForecastRequest) returns (RunForecastResponse);
+
+  // Check the Dagster run status or Dagster Asset status on a run date
+  rpc CheckForecastStatus(CheckForecastStatusRequest) returns (CheckForecastStatusResponse);
+
+  // Get back forecast predictions query based on the run date
+  rpc FetchForecastPredictions(FetchForecastPredictionsRequest) returns (FetchForecastPredictionsResponse);
+}
+
+// Request object for the ProfileForecast endpoint
+message ProfileForecastRequest {
+  // unique identifier for the forecast, default value: "metric_name__group_col"
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // number of groups to forecast on
+  // this could serve as an independent input to generate run time and cost estimates
+  int32 num_groups = 3;
+  // the sql query to fetch the actuals dataframe
+  string actuals_sql = 4;
+  // column names in the actuals dataframe to indicate granularity
+  string group_col = 5;
+  // column name in the actuals dataframe to indicate target time series
+  string target_col = 6;
+  // column name in the actuals dataframe to indicate date
+  string date_col = 7;
+  // optional details needed to generate the forecast profile
+  message Details {
+    // number of time units (day, week, month, year etc.) ahead to make forecasts for
+    int32 forecast_horizon = 1;
+    // additional fields required for XP forecast
+    message Experimentation {
+      // entity ID that needs to be matched with 'entity_units' in the curie config file
+      // e.g. `user_id`, `switchback_id`, etc.
+      string unit_col = 1;
+      // numerator column from Experimentation Platform
+      string numerator = 2;
+      // denominator column from Experimentation Platform
+      string denominator = 3;
+    }
+    // additional fields required for XP forecast
+    Experimentation experimentation = 2;
+  }
+  // optional details needed to to generate the forecast profile
+  Details details = 8;
+}
+
+// Response object for the ProfileForecast endpoint
+message ProfileForecastResponse {
+  // number of groups to forecast on
+  int32 num_groups = 1;
+  // cost estimate string message with format "low/medium/high[expected cost per forecast run]"
+  string cost = 2;
+  // run time estimate string message with format "low/medium/high[expected run time per forecast run]"
+  string run_time = 3;
+}
+
+// Request object for the CreateForecast endpoint
+message CreateForecastRequest {
+  // unique identifier for the forecast, default value: "metric_name__group_col"
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // list of email addresses who own this metric
+  repeated string owner_emails = 3;
+  // source of this metric, Firefly, Curie, etc.
+  // we may use this information for the Dagster sensors, model algorithm, etc.
+  string source = 4;
+  // list of days to run, e.g. [“Monday”, “Tuesday”, “Thursday”].
+  // [] means it doesn't need to run regularly, only for on demand run
+  repeated string schedule = 5;
+  // the sql query to fetch the actuals dataframe
+  // need to be pre-aggregated at the desired granularity
+  // include a country column with 2 letter country code to apply country level holiday impact, if absent, will default all data to US
+  string actuals_sql = 6;
+  // column name in the actuals dataframe to indicate date
+  string date_col = 7;
+  // column name in the actuals dataframe to indicate target time series
+  string target_col = 8;
+  // column names in the actuals dataframe to indicate granularity.
+  // e.g. submarket_id for single dimension, or country__vertical__segment for multiple dimensions, use __ as dimension separator
+  string group_col = 9;
+  // optional details needed to create the forecast
+  message Details {
+    // the tables/etls we should listen to for data readiness
+    repeated string upstream_etl_ids = 1;
+    // additional fields required for XP forecast
+    message Experimentation {
+      // entity ID that needs to be matched with 'entity_units' in the curie config file
+      // e.g. `user_id`, `switchback_id`, etc.
+      string unit_col = 1;
+      // numerator column from Experimentation Platform
+      string numerator = 2;
+      // denominator column from Experimentation Platform
+      string denominator = 3;
+    }
+    // additional fields required for XP forecast
+    Experimentation experimentation = 2;
+    // forecast runner config overrides in JSON format
+    // {
+    //     "forecast_horizon": 7,
+    //     "runner": {
+    //         "pre_train": false,
+    //         "predict": false,
+    //         "train": false
+    //     }
+    // }
+    string runner_config_overrides = 3;
+  }
+  // optional details needed to create the forecast
+  Details details = 10;
+  // whether to auto merge the PR
+  bool auto_merge = 11;
+  // UUID of the metric, used to fetch actuals query from UMP
+  string metric_id = 12;
+  // UUIDs of the dimensions, used to fetch actuals query from UMP
+  repeated string dimension_ids = 13;
+  // The UTC based cron schedule to run the forecast job, e.g. https://crontab.guru/#30_13_*_*_Mon
+  string cron_schedule = 14;
+}
+
+// Response object for the CreateForecast endpoint
+message CreateForecastResponse {
+  // the PR link to merge forecast runner configs to Forecast Factory repo
+  string pr_link = 1;
+  // YAML runner configs for the forecast run
+  string runner_configs = 2;
+}
+
+// Request object for the UpdateForecast endpoint
+message UpdateForecastRequest {
+  // unique identifier for the forecast, default value: "metric_name__group_col"
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // column names in the actuals dataframe to indicate granularity.
+  // e.g. submarket_id for single dimension, or country__vertical__segment for multiple dimensions, use __ as dimension separator
+  string group_col = 3;
+  // source of this metric, Firefly, Curie, etc.
+  // we may use this information for the Dagster sensors, model algorithm, etc.
+  string source = 4;
+  // forecast runner config overrides in JSON format
+  // {
+  //     "predictive_scaling_config": {
+  //         "services": {
+  //             "sibyl-prediction-service": {
+  //                 "sublevel": {
+  //                     "web-cng": ""
+  //                 }
+  //             }
+  //         }
+  //     }
+  // }
+  string runner_config_overrides = 5;
+  // whether to auto merge the PR
+  bool auto_merge = 6;
+  // whether to delete the override entry, if true, auto merge will be disabled
+  bool delete = 7;
+  // forecast status
+  ForecastStatus forecast_status = 8;
+}
+
+// Response object for the UpdateForecast endpoint
+message UpdateForecastResponse {
+  // the PR link to merge forecast runner configs to Forecast Factory repo
+  string pr_link = 1;
+  // YAML runner configs for the forecast run
+  string runner_configs = 2;
+  // forecast status
+  ForecastStatus forecast_status = 3;
+}
+
+// Request object for the DeleteForecast endpoint
+message DeleteForecastRequest {
+  // unique identifier for the forecast, default value: "metric_name__group_col"
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // column names in the actuals dataframe to indicate granularity.
+  // e.g. submarket_id for single dimension, or country__vertical__segment for multiple dimensions, use __ as dimension separator
+  string group_col = 3;
+  // source of this metric, Firefly, Curie, etc.
+  // we may use this information for the Dagster sensors, model algorithm, etc.
+  string source = 4;
+}
+
+// Response object for the DeleteForecast endpoint
+message DeleteForecastResponse {
+  // the PR link to delete a forecast
+  string pr_link = 1;
+}
+
+// Request object for the GetForecastConfigs endpoint
+message GetForecastConfigsRequest {
+  // unique identifier for the forecast, default value: "metric_name__group_col"
+  string forecast_name = 1;
+  // list of attribute-value filters to be applied on the configs the forecast
+  // ["forecast_name: forecast_1", "metric_name: metric_1", "experiment.get_data_from_curie: True"]
+  repeated string filters = 2;
+  // the list of attributes to be retrieved from forecast config
+  // ["forecast_name", "metric_name", "group_col", "actuals_sql", "predictions_table_name", "experiment.get_data_from_curie"]
+  repeated string attributes = 3;
+}
+
+// Response object for the GetForecastConfigs endpoint
+message GetForecastConfigsResponse {
+  // forecast configs value in JSON format
+  // {
+  //     "forecast_1": {
+  //         "forecast_name": "forecast_1",
+  //         "metric_name": "metric_1",
+  //         "group_col": "group_1",
+  //         "actuals_sql": "sql1",
+  //         "predictions_table_name": "table_metric_1",
+  //         "experiment.get_data_from_curie": true
+  //     },
+  //     "forecast_2": {
+  //         "forecast_name": "forecast_2",
+  //         "metric_name": "metric_1",
+  //         "group_col": "group_2",
+  //         "actuals_sql": "sql2",
+  //         "predictions_table_name": "table_metric_1",
+  //         "experiment.get_data_from_curie": true
+  //     }
+  // }
+  string forecast_configs = 1;
+  // forecast onboarding status
+  // {
+  //     "forecast_1": "FORECAST_STATUS_ONBOARD_PENDING",
+  //     "forecast_2": "FORECAST_STATUS_ONBOARD_DEPLOYED"
+  // }
+  string forecast_statuses = 2;
+}
+
+// Request object for the RunForecast endpoint
+message RunForecastRequest {
+  // the unique identifier to kick off a forecast run
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // column names in the actuals dataframe to indicate granularity.
+  string group_col = 3;
+  // the date for the forecast to generate from
+  string run_date = 4;
+  // forecast runner config overrides in JSON format
+  // {
+  //     "runner": {
+  //         "pre_train": false,
+  //         "predict": false,
+  //         "train": false
+  //     }
+  // }
+  string runner_config_overrides = 5;
+  // the timestamp for the forecast to generate at (for sub-daily use case)
+  string run_timestamp = 6;
+}
+
+// Response object for the RunForecast endpoint
+message RunForecastResponse {
+  // Dagster run id that can be used to query status
+  string dagster_run_id = 1;
+  // Dagster run link can be used to track forecast run
+  string dagster_run_link = 2;
+}
+
+// Request object for the CheckForecastStatus endpoint
+message CheckForecastStatusRequest {
+  // the unique identifier to check forecast status
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // column names in the actuals dataframe to indicate granularity.
+  string group_col = 3;
+  // check Dagster Asset readiness on the run_date
+  string run_date = 4;
+  // check Dagster run status based on the id
+  string dagster_run_id = 5;
+}
+
+// enum for forecast run and asset status
+enum ForecastStatus {
+  // default zero value
+  FORECAST_STATUS_UNSPECIFIED = 0;
+  // forecast job run asset not generated
+  FORECAST_STATUS_ASSET_NOT_READY = 1;
+  // forecast job run asset generated
+  FORECAST_STATUS_ASSET_READY = 2;
+  // https://docs.dagster.io/_modules/dagster/_core/storage/pipeline_run#DagsterRunStatus
+  // Dagster run not yet in progress
+  FORECAST_STATUS_RUN_NOT_IN_PROGRESS = 3;
+  // Dagster run in progress
+  FORECAST_STATUS_RUN_IN_PROGRESS = 4;
+  // Dagster run succeeded
+  FORECAST_STATUS_RUN_SUCCESS = 5;
+  // Dagster run failed
+  FORECAST_STATUS_RUN_FAILURE = 6;
+  // Dagster run canceled
+  FORECAST_STATUS_RUN_CANCELED = 7;
+  // forecast onboard pending
+  FORECAST_STATUS_ONBOARD_PENDING = 8;
+  // forecast onboard deployed
+  FORECAST_STATUS_ONBOARD_DEPLOYED = 9;
+  // forecast deleted
+  FORECAST_STATUS_DELETED = 10;
+}
+
+// Response object for the CheckForecastStatus endpoint
+message CheckForecastStatusResponse {
+  // status of the forecast on a run date or the specific run id
+  ForecastStatus forecast_status = 1;
+}
+
+// Request object for the FetchForecastPredictions endpoint
+message FetchForecastPredictionsRequest {
+  // the unique identifier to fetch the forecast predictions
+  string forecast_name = 1;
+  // name of the metric to forecast
+  string metric_name = 2;
+  // column names in the actuals dataframe to indicate granularity.
+  string group_col = 3;
+  // the date for the forecast to generate from
+  string run_date = 4;
+  // the dimension values of the groups
+  repeated string group_names = 5;
+  // start date you need forecast predictions from
+  string target_start_date = 6;
+  // span range you need forecast predictions for, from target start date, default to 1
+  int32 span = 7;
+  // target timepoint col for the forecast table, default to target_date
+  string target_timepoint_col = 8;
+  // prediction col for the forecast table, default to forecast_value
+  string prediction_col = 9;
+  // additional cols to be fetched from the forecast table
+  repeated string additional_cols = 10;
+  // table name to fetch from non-standard forecast tables or derivatives tables
+  string table = 11;
+  // fully custom sql query to fetch forecast results
+  string sql = 12;
+  // group name col for the forecast table, default to group_name
+  string group_name_col = 13;
+  // whether to fetch query only without running the query
+  bool fetch_query_only = 14;
+  // whether to use the latest run_date from forecast table
+  bool use_latest_run_date = 15;
+}
+
+// Response object for the FetchForecastPredictions endpoint
+message FetchForecastPredictionsResponse {
+  // forecast predictions value in JSON format
+  // [
+  //     {
+  //         "target_date": "2023-01-30",
+  //         "group_name": "NV",
+  //         "forecast_value": "100",
+  //     },
+  //     {
+  //         "target_date": "2023-01-31",
+  //         "group_name": "Retail",
+  //         "forecast_value": "101",
+  //     },
+  // ]
+  string predictions = 1;
+  // sql to query forecast predictions
+  string predictions_sql = 2;
+  // run_date used in the query, empty if dynamic run_date is used
+  string run_date = 3;
+}

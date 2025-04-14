@@ -1,0 +1,206 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package supply_demand_service;
+
+import "common/service_client_config.proto";
+import "dasher_homescreen_service/homescreen_service_v1.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "supply_demand_service/supply_demand_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.supply_demand_service";
+
+// RPCs to define access for Dx
+service DasherAccessService {
+  option (service_client.client_config).service_name = "supply-demand-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).response_attempt_timeout_millis = 2500;
+
+  // Get access information for a bulk amount of SPs for a Dx
+  rpc GetBulkAccessWithMetadata(GetBulkAccessWithMetadataRequest) returns (GetBulkAccessWithMetadataResponse);
+
+  // Get access information for a bulk amount of SPs for a Dx; supports fetching multiple earnings modes in bulk.
+  rpc GetBulkAccessWithMetadataV2(GetBulkAccessWithMetadataV2Request) returns (GetBulkAccessWithMetadataV2Response);
+
+  // Get access config for a list of starting points and dasher
+  rpc GetAccessConfig(GetAccessConfigRequest) returns (GetAccessConfigResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+}
+
+// Request for GetBulkAccessWithMetadata
+message GetBulkAccessWithMetadataRequest {
+  reserved 5;
+  reserved "earnings_mode";
+
+  // list of SP ids that we need for
+  repeated google.protobuf.StringValue starting_point_ids = 1;
+
+  // the vehicle type id of the Dx
+  google.protobuf.StringValue vehicle_type_id = 2;
+
+  // the dasher id
+  google.protobuf.StringValue dasher_id = 3;
+
+  // the current SP of the Dx
+  google.protobuf.StringValue dasher_location_starting_point_id = 4;
+
+  // Earnings mode type
+  dasher_homescreen_service.v1.EarningsModeId earnings_mode_id = 6;
+}
+
+// Request for GetBulkAccessWithMetadataV2
+message GetBulkAccessWithMetadataV2Request {
+  // list of SP ids that we need for
+  repeated google.protobuf.StringValue starting_point_ids = 1;
+
+  // the vehicle type id of the Dx
+  google.protobuf.StringValue vehicle_type_id = 2;
+
+  // the dasher id
+  google.protobuf.StringValue dasher_id = 3;
+
+  // the current SP of the Dx
+  google.protobuf.StringValue dasher_location_starting_point_id = 4;
+
+  // list of Earnings Modes to get access for
+  repeated dasher_homescreen_service.v1.EarningsModeId earnings_mode_ids = 5;
+}
+
+// Response for GetBulkAccessWithMetadata
+message GetBulkAccessWithMetadataResponse {
+  // map of SP id to access information
+  map<string, AccessWithMetadata> access_by_starting_point = 1;
+}
+
+// Response for GetBulkAccessWithMetadata
+message GetBulkAccessWithMetadataV2Response {
+  // list of  access information
+  repeated AccessWithMetadata access_info = 1;
+}
+
+// Object to contain access information for a SP
+message AccessWithMetadata {
+  // source of truth for dash access
+  google.protobuf.BoolValue has_dash_access = 1;
+  // related metadata for the access
+  AccessMetadata metadata = 2;
+  // starting point id that access information is relevant to
+  google.protobuf.StringValue starting_point_id = 3;
+  // earnings mode that access information is relevant to
+  dasher_homescreen_service.v1.EarningsModeId earnings_mode_id = 4;
+}
+
+// container for related metadata for the access
+message AccessMetadata {
+  reserved 2;
+  reserved "waitlist_info";
+  reserved 5;
+  reserved "time_mode_access_status";
+
+  // busyness of the sp
+  Busyness busyness = 1;
+
+  // waitlist information
+  WaitlistMetadata waitlist_metadata = 3;
+
+  // suggested shift information
+  supply_demand_service.SuggestedShift suggested_shift = 4;
+
+  // time mode access status
+  TimeModeAccessMetadata time_mode_access_metadata = 6;
+}
+
+// container for time mode access metadata, if relevant
+message TimeModeAccessMetadata {
+  // time mode access status
+  TimeModeAccessStatus time_mode_access_status = 1;
+
+  // number of on-time deliveries required to regain access to time mode, if TimeModeAccessStatus is FRAUD_BLOCKED
+  google.protobuf.Int32Value num_deliveries_to_regain_access = 2;
+}
+
+// Enum for the reason for (lack of) time mode access to convey this info to Dx
+enum TimeModeAccessStatus {
+  // access status unspecified
+  TIME_MODE_ACCESS_STATUS_UNSPECIFIED = 0;
+  // has access
+  TIME_MODE_ACCESS_STATUS_ACCESS_GRANTED = 1;
+  // time mode access blocked by fraud
+  TIME_MODE_ACCESS_STATUS_FRAUD_BLOCKED = 2;
+  // time mode not enabled
+  TIME_MODE_ACCESS_STATUS_TIME_MODE_NOT_ENABLED = 3;
+  // decline count reached
+  TIME_MODE_ACCESS_STATUS_DECLINE_COUNT_REACHED = 4;
+  // above time mode caps; NB this will become irrelevant once Time Mode access is redesigned.
+  TIME_MODE_ACCESS_STATUS_ABOVE_CAPS = 5;
+  // no offer mode access; NB this will become irrelevant once Time Mode access is redesigned.
+  TIME_MODE_ACCESS_STATUS_NO_OFFER_MODE_ACCESS = 6;
+}
+
+// Enum to match the busyness of the SP
+enum Busyness {
+  // unknown busyness
+  BUSYNESS_UNSPECIFIED = 0;
+  // not busy
+  BUSYNESS_NOT_BUSY = 1;
+  // normal busyness
+  BUSYNESS_NORMAL = 2;
+  // busy
+  BUSYNESS_BUSY = 3;
+  // very busy
+  BUSYNESS_VERY_BUSY = 4;
+}
+
+// container for the waitlist metadata
+message WaitlistMetadata {
+  // delivery progress
+  google.protobuf.Int64Value delivery_progress = 1;
+
+  // delivery goal
+  google.protobuf.Int64Value delivery_goal = 2;
+
+  // dasher created at time
+  google.protobuf.Timestamp dasher_created_at = 3;
+}
+
+// request object for the GetAccessConfig endpoint
+message GetAccessConfigRequest {
+  // dasher id
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // starting point ids
+  repeated google.protobuf.Int32Value starting_point_ids = 2;
+}
+
+// response object for the GetAccessConfig endpoint
+message GetAccessConfigResponse {
+  // map from spid to config
+  map<int32, AccessConfig> access_config_per_starting_point = 1;
+}
+
+// config for a given dasher and sp
+message AccessConfig {
+  // how many 30 min windows a dash now shift can have in total
+  google.protobuf.Int32Value dash_now_end_time_windows = 1;
+
+  // whether the dx can see scheduling slots
+  google.protobuf.BoolValue can_see_scheduling_slots = 2;
+
+  // how many days out the dx can schedule
+  google.protobuf.Int32Value scheduling_horizon_days = 3;
+
+  // [deprecated] this is replaced by total_shift_windows
+  reserved 4;
+  reserved "can_extend_shift";
+
+  // how many 30 min windows a shift (schedule or dash now) can have in total
+  google.protobuf.Int32Value total_shift_windows = 5;
+
+  // whether the dx has the early access reward
+  google.protobuf.BoolValue has_early_access_reward = 6;
+}

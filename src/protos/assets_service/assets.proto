@@ -1,0 +1,1023 @@
+syntax = "proto3";
+
+package assets_service.v1;
+
+import "assets_service/common.proto";
+import "assets_service/jira_tickets.proto";
+import "common/service_client_config.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/assets_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.assetsservice";
+
+/**
+ * Design Doc:
+ * https://docs.google.com/document/d/1ft4flpBjM5wungM4PEUmK4E2zCLojsfP-30VEPGiljk/edit#
+ * Service Implementation: https://github.com/doordash/assets-service
+ */
+service AssetsService {
+  // Example Hermes client config. The options not listed here use Hermes
+  // default. The following applies for all RPCs in the service, if not
+  // overridden on individual RPCs.
+
+  // Timeout after 5 seconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 15000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retryable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // List Slack Channels at Doordash (Currently only returning Eng Support
+  // Channels).
+  rpc ListSlackChannels(ListSlackChannelsRequest) returns (ListSlackChannelsResponse);
+  // Get Slack Channel by channel id (Currently only returning Eng Support
+  // Channels).
+  rpc GetSlackChannel(GetSlackChannelRequest) returns (GetSlackChannelResponse);
+  // Upsert (register/edit) a DoorDash Slack Channel
+  rpc UpsertSlackChannel(UpsertSlackChannelRequest) returns (UpsertSlackChannelResponse);
+  // Get response times for all support channels within a time range
+  rpc GetResponseTimeForChannels(GetResponseTimeForChannelsRequest) returns (GetResponseTimeForChannelsResponse);
+  // Lists support request data for a support channel within a time range
+  // (Currently only returning response time data)
+  rpc ListSupportRequestsForChannel(ListSupportRequestsForChannelRequest) returns (ListSupportRequestsForChannelResponse);
+  // List the total support metrics for each user
+  rpc ListSupportMetricsForUsers(ListSupportMetricsForUsersRequest) returns (ListSupportMetricsForUsersResponse);
+  // Get Monthly Time Saved Metrics
+  rpc GetMonthlySupportMetrics(GetMonthlySupportMetricsRequest) returns (GetMonthlySupportMetricsResponse);
+  // List all support channel metrics for a user
+  rpc ListSupportMetricsForUserByChannel(ListSupportMetricsForUserByChannelRequest) returns (ListSupportMetricsForUserByChannelResponse);
+  // Updates the specified slack message's response time
+  rpc UpdateSlackMessageResolutionTime(UpdateSlackMessageResolutionTimeRequest) returns (UpdateSlackMessageResolutionTimeResponse);
+  // Clobbers the existing set of links attached to a given entity with the
+  // given payload. If passed an empty list, it will remove all links on that
+  // entity.
+  rpc SetAttachedLinksForEntity(SetAttachedLinksForEntityRequest) returns (SetAttachedLinksForEntityResponse);
+
+  // List Links
+  rpc ListLinksForEntity(ListLinksForEntityRequest) returns (ListLinksForEntityResponse);
+
+  // List and filter Github pull requests. Currently syncs once a day from Github at 00:00 UTC.
+  // You can view more information about the sync workflow here: https://doordash.atlassian.net/wiki/spaces/Eng/pages/3819831473/Pull+Request+Backfill+-+Github+Integration
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+
+  // list repo and project names
+  rpc ListRepoAndProjectNames(ListRepoAndProjectNamesRequest) returns (ListRepoAndProjectNamesResponse);
+
+  // List of pull request counts per user
+  rpc ListPullRequestCountsByUser(ListPullRequestCountsByUserRequest) returns (ListPullRequestCountsByUserResponse);
+
+  // list repo builds
+  rpc ListRepoBuilds(ListRepoBuildsRequest) returns (ListRepoBuildsResponse);
+
+  // list outages
+  rpc ListOutages(ListOutagesRequest) returns (ListOutagesResponse);
+
+  // list delivery counts
+  rpc ListDeliveryCounts(ListDeliveryCountsRequest) returns (ListDeliveryCountsResponse);
+  // get jira ticket metrics by channel id
+  rpc GetTicketMetrics(GetTicketMetricsRequest) returns (GetTicketMetricsResponse);
+
+  // list jira tickets by channel id
+  rpc ListTickets(ListTicketsRequest) returns (ListTicketsResponse);
+
+  // list csat metrics by channel id
+  rpc ListCsat(ListCsatRequest) returns (ListCsatResponse);
+}
+
+/**
+   Pull Request review state, comes from github activity on a PR.
+   {
+     "state": "WAITING_FOR_REVIEWER",
+     "start_time": "2022-05-29T01:42:54Z",
+     "end_time": "2022-05-31T18:24:21Z",
+     "github_user": "usename-dd"
+   }
+*/
+message PullRequestReviewState {
+  // action name from github
+  // example: 'APPROVED' | 'WAITING_FOR_REVIEWER' | 'WAITING_FOR_AUTHOR'
+  string state = 1;
+  // start time
+  google.protobuf.Timestamp start_time = 2;
+  // end time
+  google.protobuf.Timestamp end_time = 3;
+  // github user name
+  string github_user = 4;
+}
+
+/**
+   Pr review state
+   {
+     "event_actor": "pullapprove-enterprise-primary",
+     "event_time": "2022-11-14T17:47:21Z",
+     "event_type": "UnlabeledEvent",
+     "label": "Dev Console approval needed"
+   }
+*/
+message PullRequestLabelState {
+  // github user or bot
+  string event_actor = 1;
+  // event time
+  google.protobuf.Timestamp event_time = 2;
+  // event type
+  // example: "PullRequestCommit" | "PullRequestReview" | "ReviewRequestedEvent" | "IssueComment" | "ConvertToDraftEvent" | "ReadyForReviewEvent" | "LabeledEvent" | "UnlabeledEvent"
+  string event_type = 3;
+  // label
+  string label = 4;
+}
+
+/**
+   pull request object
+*/
+message PullRequest {
+  // url from github (Primary Key)
+  string url = 10;
+  // pr number of the repo
+  int32 pr_number = 20;
+  // repo name in github
+  string repo_name = 30;
+  // not used yet
+  string project_name = 40;
+  // closed at date
+  google.protobuf.Timestamp closed_at = 50;
+  // created at date
+  google.protobuf.Timestamp created_at = 60;
+  // merged at date
+  google.protobuf.Timestamp merged_at = 70;
+  // updated at date
+  google.protobuf.Timestamp updated_at = 80;
+  // pr title
+  string title = 90;
+  // github user name who authored the pr
+  string author = 100;
+  // people tagged for review
+  repeated string reviewers = 110;
+  // people who commented or approved the pr
+  repeated string participants = 120;
+  // review start date
+  google.protobuf.Timestamp review_started_at = 130;
+  // review complete date
+  google.protobuf.Timestamp review_completed_at = 140;
+  // first response
+  google.protobuf.Timestamp review_first_responded_at = 150;
+  // first responder
+  string review_first_responder = 160;
+  // pr timeline activities
+  repeated PullRequestReviewState review_states = 170;
+  // pr additions count
+  int32 additions = 180;
+  // pr deletetions count
+  int32 deletions = 190;
+  // files changed count
+  int32 changed_files = 200;
+  // git object id
+  string merge_oid = 210;
+  // merge commited date
+  google.protobuf.Timestamp merge_committed_date = 220;
+  // tag name
+  string deploy_tag_name = 230;
+  // tag date
+  google.protobuf.Timestamp deploy_tag_date = 240;
+  // release tag name
+  string release_tag_name = 250;
+  // json of label state
+  repeated PullRequestLabelState label_states = 260;
+  // Deprecated: Use `affected_services_v2` instead.
+  repeated string affected_services = 270 [deprecated = true];
+  // Deprecated: Use `affected_services_v2` instead.
+  map<string, string> affected_services_map = 280 [deprecated = true];
+  // Array of the services that have been changed in this PR
+  repeated AffectedService affected_services_v2 = 290;
+}
+
+/*
+   AffectedService describe a single service that has been affected by a PullRequest. Only populated for PR made in monorepos.
+*/
+message AffectedService {
+  // Service name
+  string service_name = 1;
+  // Optional: Tag name e.g. "1.1.0"
+  string tag = 2;
+  // Optional: Deploy date e.g. "2023-10-15T14:30:00Z"
+  google.protobuf.Timestamp deploy_date = 3;
+}
+
+/**
+   pull request filters
+   filters can be dynamically built using values and operators, for example:
+   {
+     "page_size": 200,
+     "order_by": "-pr_number",
+     "pr_number": [
+       {
+         "operator": ">",
+         "value": 100
+       }
+     ],
+     "additions": [
+       {
+         "operator": ">=",
+         "value": 100
+       }
+     ],
+     "author": [
+       {
+         "operator": "like",
+         "value": "adam"
+       }
+     ],
+     "closed_at": [
+       {
+         "operator": "is not null"
+       }
+     ]
+   }
+*/
+message ListPullRequestsRequest {
+  // pagination token (last url from previous response)
+  string next_token = 1;
+  // page size (max 500)
+  int32 page_size = 2;
+  // filters
+  PullRequestFilters filters = 3;
+}
+
+/**
+   Pull Request Filters
+*/
+message PullRequestFilters {
+  // PR number of the repo
+  repeated Int32FilterClause pr_number = 10;
+  // list of PR numbers of the repo
+  repeated ListInt32FilterClause pr_numbers = 15;
+  // PR github url
+  repeated StringFilterClause url = 20;
+  // repo name in github
+  repeated StringFilterClause repo_name = 30;
+  // a list of repo names in github
+  repeated ListStringFilterClause repo_names = 35;
+  // github project name
+  repeated StringFilterClause project_name = 40;
+  // a list of github project names
+  repeated ListStringFilterClause project_names = 45;
+  // closed at date
+  repeated TimestampFilterClause closed_at = 50;
+  // created at date
+  repeated TimestampFilterClause created_at = 60;
+  // merged at date
+  repeated TimestampFilterClause merged_at = 70;
+  // updated at date
+  repeated TimestampFilterClause updated_at = 80;
+  // PR title
+  repeated StringFilterClause title = 90;
+  // github user name who authored the pr
+  repeated StringFilterClause author = 100;
+  // list of github user names who authored the pr
+  repeated ListStringFilterClause authors = 105;
+  // people tagged for review
+  repeated ListStringFilterClause reviewers = 110;
+  // people who commented or approved the pr
+  repeated ListStringFilterClause participants = 120;
+  // review start date
+  repeated TimestampFilterClause review_started_at = 130;
+  // review complete date
+  repeated TimestampFilterClause review_completed_at = 140;
+  // first response
+  repeated TimestampFilterClause review_first_responded_at = 150;
+  // first responder
+  repeated StringFilterClause review_first_responder = 160;
+  // filter on multiple first responders
+  repeated ListStringFilterClause review_first_responders = 161;
+  // pr additions count
+  repeated Int32FilterClause additions = 180;
+  // pr deletetions count
+  repeated Int32FilterClause deletions = 190;
+  // files changed count
+  repeated Int32FilterClause changed_files = 200;
+  // git object id
+  repeated StringFilterClause merge_oid = 210;
+  // merge commited date
+  repeated TimestampFilterClause merge_committed_date = 220;
+  // tag name
+  repeated StringFilterClause deploy_tag_name = 230;
+  // tag date
+  repeated TimestampFilterClause deploy_tag_date = 240;
+  // release tag name
+  repeated StringFilterClause release_tag_name = 250;
+  // direct managers okta username: exmaple: firstname.lastname
+  repeated ListStringFilterClause reports_parents = 260;
+  // anyone who reports to this manager e.g. director -> manager -> IC
+  repeated StringFilterClause manager = 270;
+  // groups / team name e.g. developer-console
+  repeated ListStringFilterClause groups = 280;
+  // anyone who reports to this manager e.g. director -> manager -> IC
+  repeated ListStringFilterClause managers = 290;
+  // addition count + deletion count
+  repeated Int32FilterClause total_lines_changed = 300;
+  // pr in draft mode
+  repeated BoolFilterClause is_draft = 310;
+  // services affected in pr
+  repeated ListStringFilterClause affected_services = 320;
+  // Services that were affected by this PR. Key is service name, value is release tag.
+  repeated MapFilterClause affected_services_map = 330;
+}
+
+/**
+   pull request response array of pr objects
+*/
+message ListPullRequestsResponse {
+  // prs list
+  repeated PullRequest pull_requests = 10;
+  // next pagination token (pr url)
+  string next_token = 20;
+}
+
+/**
+   list pull request counts request
+*/
+message ListPullRequestCountsByUserRequest {
+  // enum of user field that can be grouped by
+  enum GroupBy {
+    // default unspecified
+    GROUP_BY_UNSPECIFIED = 0;
+    // author of a pr
+    GROUP_BY_AUTHOR = 1;
+    // participant in a pr
+    GROUP_BY_PARTICIPANT = 2;
+    // reviewer of a pr
+    GROUP_BY_REVIEWER = 3;
+  }
+  // pr filters
+  PullRequestFilters filters = 10;
+  // user field to group counts by
+  GroupBy group_by = 20;
+}
+
+/**
+   list pull request counts by user response
+*/
+message ListPullRequestCountsByUserResponse {
+  // participants
+  repeated PullRequestCountByUserRecord users = 10;
+}
+
+/**
+   Pr count record
+*/
+message PullRequestCountByUserRecord {
+  // pull request count for a user
+  int32 pr_count = 10;
+  // github name
+  string github_name = 20;
+  // The name before your doordash email e.g. ted.glen
+  string name = 30;
+  // first name
+  string first_name = 40;
+  // last name
+  string last_name = 50;
+  // First responder to a pr count
+  int32 first_responder_count = 60;
+}
+
+// list repos and projects request
+message ListRepoAndProjectNamesRequest {}
+
+/**
+   list of repos and projects
+*/
+message ListRepoAndProjectNamesResponse {
+  // list of projects
+  repeated string projects = 10;
+  // list of repos
+  repeated string repos = 20;
+}
+
+/**
+   github repo build with pull requests
+*/
+message RepoBuild {
+  // release tag name e.g. 1.2.0
+  string release_tag_name = 10;
+  // list of pull requests included in the build
+  repeated PullRequest pull_requests = 20;
+}
+
+/**
+   list repo request
+*/
+message ListRepoBuildsRequest {
+  // repo name e.g. assets-service
+  string repo_name = 10;
+}
+
+/**
+   Returns a list of pull requests grouped together by there release tag name (build) for example:
+   [
+     {
+       "release_tag_name": "1.12.0",
+       "pull_requests": [prs here]
+     }
+   ]
+   Example usage: https://devconsole.doordash-int.com/catalog/default/component/dev-console/builds
+*/
+message ListRepoBuildsResponse {
+  // list of repo builds
+  repeated RepoBuild builds = 10;
+}
+
+/**
+ * Request payload for ListSupportMetricsForUsers
+ */
+message ListSupportMetricsForUsersRequest {
+  // Required: Start of filter range for request creation date
+  google.protobuf.Timestamp request_created_at_start_date = 10;
+  // Required: End of filter range for request creation date
+  google.protobuf.Timestamp request_created_at_end_date = 20;
+  // Required: The percentile of response time (0.0 - 1.0) ex 0.9 -> P90
+  float time_to_first_response_percentile = 30;
+  /*
+   * List for name [primary key]
+   * ex: ["jonathan.wong"]
+   * Notes: Empty filter matches all users
+   */
+  repeated string user_names = 40;
+  // Pagination token
+  string next_token = 50;
+  // Page size (max 500)
+  int32 page_size = 60;
+}
+
+/**
+ * Response payload for ListSupportMetricsForUsersResponse
+ */
+message ListSupportMetricsForUsersResponse {
+  // list of user's support metrics
+  repeated SupportMetricsForUser support_metrics = 10;
+  // next pagination token
+  string next_token = 20;
+}
+
+/**
+ * Request payload for ListSupportMetricsForUserByChannel
+ */
+message ListSupportMetricsForUserByChannelRequest {
+  // Required: User's name [primary key] ex: jonathan.wong
+  string user_name = 10;
+  // Required: The percentile of response time (0.0 - 1.0) ex 0.9 -> P90
+  float time_to_first_response_percentile = 20;
+  // Required: Start of filter range for request creation date
+  google.protobuf.Timestamp request_created_at_start_date = 30;
+  // Required: End of filter range for request creation date
+  google.protobuf.Timestamp request_created_at_end_date = 40;
+}
+
+/**
+ * Response payload for ListSupportMetricsForUserByChannel
+ */
+message ListSupportMetricsForUserByChannelResponse {
+  // Support channel metrics for a user
+  SupportMetricsForUserByChannel support_metrics_for_user = 20;
+}
+
+/**
+ * Request payload for UpdateSlackMessageResolutionTime
+ */
+message UpdateSlackMessageResolutionTimeRequest {
+  // The Slack conversation ID for the channel
+  string channel_id = 10;
+  // The Slack message timestamp for the parent message
+  string request_id = 20;
+  // Resolution time (null if not resolved)
+  string resolution_timestamp = 30;
+}
+
+/**
+ * Response payload for UpdateSlackMessageResolutionTime
+ */
+message UpdateSlackMessageResolutionTimeResponse {
+  // Success if true
+  bool success = 10;
+}
+
+/**
+ * Request for ListSlackChannels
+ */
+message ListSlackChannelsRequest {}
+
+/**
+ * Response for ListSlackChannels. Returns only Eng Support Channels.
+ */
+message ListSlackChannelsResponse {
+  // List of all slack channels (currently only Eng Support channels)
+  repeated SlackChannel slack_channels = 10;
+}
+
+/**
+ * Request for GetSlackChannel
+ */
+message GetSlackChannelRequest {
+  // Unique Slack channel id. This is the conversation id in Slack API.
+  string channel_id = 10;
+}
+
+/**
+ * Response for GetSlackChannel. Returns an Eng Support Channel by id.
+ */
+message GetSlackChannelResponse {
+  // A slack channel record (currently only Eng Support channels)
+  SlackChannel slack_channel = 10;
+}
+
+/**
+ * Request for UpsertSlackChannel
+ */
+message UpsertSlackChannelRequest {
+  // The Slack conversation ID for the channel
+  string channel_id = 10;
+  // A list of D3 group ids that own the channel
+  repeated string owner_group_ids = 20;
+  // True if Slack metrics should be tracked
+  bool enable_response_time_tracking = 30;
+  // The DD email of the user who updated the channel
+  string updated_by = 40;
+  // Optional: If owner group is non-eng. If true, owner_group_ids can be empty
+  bool is_non_eng = 50;
+}
+
+/**
+ * Response for UpsertSlackChannel
+ */
+message UpsertSlackChannelResponse {
+  // The upserted channel
+  SlackChannel slack_channel = 10;
+}
+
+// ------------------------------------------------
+
+/**
+ *  Request payload for ListOutages
+ */
+message ListOutagesRequest {
+  // Required: Start of filter range for creation date
+  google.protobuf.Timestamp created_at_start_date = 10;
+  // Required: End of filter range for creation date of an outage
+  google.protobuf.Timestamp created_at_end_date = 20;
+  // Pagination token
+  string next_token = 30;
+  // Page size (max 500)
+  int32 page_size = 40;
+}
+
+/**
+ * Response payload for ListOutages
+ */
+message ListOutagesResponse {
+  // List of outages
+  repeated Outage outages = 10;
+  // Pagination token
+  string next_token = 20;
+}
+
+// ------------------------------------------------
+
+/**
+ *  Request payload for ListDeliveryCounts
+ */
+message ListDeliveryCountsRequest {
+  // Required: Start of filter range for date. (Inclusive)
+  google.protobuf.Timestamp start_date = 10;
+  // Required: End of filter range for date. (Inclusive)
+  google.protobuf.Timestamp end_date = 20;
+  // Pagination token
+  string next_token = 30;
+  // Page size (max 500)
+  int32 page_size = 40;
+}
+
+/**
+ * Response payload for ListDeliveryCounts
+ */
+message ListDeliveryCountsResponse {
+  // List of delivery counts
+  repeated DeliveryCount delivery_counts = 10;
+  // Pagination token
+  string next_token = 20;
+}
+
+// ------------------------------------------------
+message ListLinksForEntityRequest {
+  // Required: enum value from LinkType that maps to an attached entity
+  LinkType attached_entity_type = 10;
+  // Required: attached entity id like a slack_channels.id
+  string attached_entity_id = 20;
+}
+
+// ------------------------------------------------
+message ListLinksForEntityResponse {
+  // list of links
+  repeated Link links = 10;
+}
+
+/**
+ * Request for GetResponseTimeForChannels
+ */
+message GetResponseTimeForChannelsRequest {
+  // The beginning of the time frame to query messages from
+  google.protobuf.Timestamp start_date = 10;
+  // The end of the time frame to query messages from
+  google.protobuf.Timestamp end_date = 20;
+  // The percentile of response time
+  float percentile = 30;
+  // Optional: The channel ids to query, defauls to all channels
+  repeated string channel_ids = 40;
+}
+
+/**
+ * Request for GetMonthlySupportMetrics
+ */
+message GetMonthlySupportMetricsRequest {
+  // Required: Start of filter range for request creation date
+  google.protobuf.Timestamp start_date = 10;
+  // Required: End of filter range for request creation date
+  google.protobuf.Timestamp end_date = 20;
+  // Optional: The channel ids to query, defaults to all channels
+  repeated string channel_ids = 30;
+}
+
+/**
+ * Response for GetMonthlySupportMetrics
+ */
+message GetMonthlySupportMetricsResponse {
+  // List of time saved metrics
+  repeated AggregatedTimeSavedMetricForChannel aggregated_time_saved_metrics = 10;
+}
+
+// ------------------------------------------------
+/**
+ * Request for SetAttachedLinksForEntityRequest
+ */
+message SetAttachedLinksForEntityRequest {
+  // list of Link Stubs
+  repeated LinkStub links = 10;
+  // enum value from LinkType that maps to an attached entity
+  LinkType attached_entity_type = 20;
+  // attached entity id like a slack_channels.id
+  string attached_entity_id = 30;
+}
+
+// ------------------------------------------------
+message SetAttachedLinksForEntityResponse {
+  // list of all links attached to the entity.
+  repeated Link links = 10;
+}
+
+/**
+ * Response for GetResponseTimeForChannels
+ */
+message GetResponseTimeForChannelsResponse {
+  // List of support requests for all channels in the given time frame
+  repeated SupportMetricsForChannel support_channel_metrics = 10;
+}
+
+/**
+ * Request for ListSupportRequestsForChannel
+ */
+message ListSupportRequestsForChannelRequest {
+  // The beginning of the time frame to query messages from
+  google.protobuf.Timestamp start_date = 10;
+  // The end of the time frame to query messages from
+  google.protobuf.Timestamp end_date = 20;
+  // The channel id to query
+  string channel_id = 30;
+  // The optional pagination Token.
+  string next_token = 40;
+}
+
+/**
+ * Response for ListSupportRequestsForChannel
+ */
+message ListSupportRequestsForChannelResponse {
+  // A list of response times for a channel's support requests within the given
+  // time range
+  repeated RequestResponseTime request_response_times = 10;
+  // The pagination Token. If this is given, it means that there are more pages.
+  string next_token = 20;
+}
+
+// ------------------------------------------------
+// enum link types
+enum LinkType {
+  // The required default unspecified state for an enum.
+  LINK_TYPE_UNSPECIFIED = 0;
+  // type slack_channel
+  LINK_TYPE_SLACK_CHANNEL = 10;
+  // type service
+  LINK_TYPE_SERVICE = 20;
+}
+
+/**
+ * Model of a Slack Channel at DoorDash
+ */
+message SlackChannel {
+  // Unique Slack channel id. This is the conversation id in Slack API.
+  string id = 10;
+  // Unique Slack channel name (without #) e.g. ask-dev-console.
+  string name = 20;
+  // Snapshots of the GoCleary group(s) who own the channel
+  repeated GroupReference owner_groups = 35;
+  // The status of the channel - "active", "deleted", or "archived"
+  string status = 40;
+  // A description of the slack channel pulled from Slack.
+  string description = 50;
+  // List of links that are resources associated with the channel
+  repeated Link links = 60;
+  // True if Slack metrics are being tracked
+  bool enable_response_time_tracking = 70;
+  // The last time message data for the channel was synced with Slack
+  google.protobuf.Timestamp last_synced_at = 80;
+  // The last time the channel metadata was changed
+  google.protobuf.Timestamp updated_at = 90;
+  // The DoorDash email of the person who last updated the channel metadata
+  string updated_by = 100;
+  // If the channel is non-eng
+  bool is_non_eng = 110;
+}
+
+/*
+ * DEPRECATED
+ * (This should be removed. Use V3 Group entities instead).
+ * A reference to a group. Like a GroupSnapshot but smaller.
+ */
+message GroupReference {
+  // True if it does not exist.
+  bool not_found = 1;
+  // The GoCleary ID, A unique 4 character numerical ID found at the end of a
+  // goCleary URL.
+  string id = 2;
+  // Human friendly name of the group. May contain spaces and non-url safe
+  // characters.
+  string display_name = 3;
+  // A kebab-case transformation of the name.
+  string ref_name = 20;
+}
+
+/**
+ * Response time data for a channel
+ */
+message SupportMetricsForChannel {
+  // Slack channel id. This is the conversation id in Slack API.
+  string channel_id = 10;
+  // Slack channel name (without #) e.g. 'ask-dev-console'.
+  string channel_name = 20;
+  // The overall response time for the channel, given a date range and
+  // percentile
+  google.protobuf.Duration time_to_first_response = 30;
+  // The total number requests in the given date range
+  int32 requests_count = 40;
+  // The total number of answered requests in the given date range
+  int32 answered_requests_count = 50;
+}
+
+/**
+ * Gets the total question answers and percentile response time
+ * for a user
+ */
+message SupportMetricsForUser {
+  // User's name [primary key] ex: jonathan.wong
+  string user_name = 10;
+  // The number of total requests in the given date range
+  int32 first_responses_count = 20;
+  // The time to first response of the given percentile and date range,
+  // across all questions in the support channel.
+  google.protobuf.Duration time_to_first_response = 30;
+  // Number of channels the user is active in
+  int32 channel_count = 40;
+}
+
+/**
+ * Metrics of a user's activity in a Support Channel
+ */
+message SupportMetricsForUserInChannel {
+  // Slack channel id. This is the conversation id in Slack API.
+  string channel_id = 10;
+  // Slack channel name (without #) e.g. 'ask-dev-console'.
+  string channel_name = 20;
+  // The time to first response of the given percentile and date range,
+  // across all questions in the support channel.
+  google.protobuf.Duration time_to_first_response = 30;
+  // The number of total requests in the given date range
+  int32 first_responses_count = 40;
+}
+
+/**
+ * Gets all support channel metrics that the user is active in
+ */
+message SupportMetricsForUserByChannel {
+  // User's name [primary key] ex: jonathan.wong
+  string user_name = 10;
+  // Response metrics for the first responder in a channel
+  repeated SupportMetricsForUserInChannel support_channel_metrics = 20;
+}
+
+/**
+ * Response time data for a support request
+ */
+message RequestResponseTime {
+  // The timestamp of the request
+  google.protobuf.Timestamp request_timestamp = 10;
+  // The response time for the request, null if no first response
+  google.protobuf.Duration response_time = 20;
+  // The resolution time for the request, null if not resolved
+  google.protobuf.Duration resolution_time = 30;
+}
+
+/*
+ * A stub of a link, used for creating, updating link objects.
+ */
+message LinkStub {
+  // The url of the link
+  string url = 10;
+  // A human readable label for the url
+  string label = 20;
+  // An optional description for the url
+  string description = 30;
+}
+
+/*
+ * A link object
+ */
+message Link {
+  // primary id
+  string id = 7;
+  // The url of the link
+  string url = 10;
+  // A human readable label for the url
+  string label = 20;
+  // An optional description for the url
+  string description = 30;
+  // enum value from LinkType that maps to an attached entity
+  LinkType attached_entity_type = 40;
+  // attached entity id like a slack_channels.id
+  string attached_entity_id = 50;
+}
+
+/**
+ *  An outage with it's linked action items
+ */
+message Outage {
+  // id of the outage
+  string id = 10;
+  // Jira ticket associated with outage
+  JiraTicket jira_ticket = 20;
+  // Action items linked to jira ticket
+  repeated JiraTicket jira_action_items = 31;
+}
+
+// Incident severity level
+enum IncidentSeverity {
+  // Default unspecified state of enum
+  INCIDENT_SEVERITY_UNSPECIFIED = 0;
+  // Incident Level S0
+  INCIDENT_SEVERITY_S0 = 10;
+  // Incident Level S1
+  INCIDENT_SEVERITY_S1 = 20;
+  // Incident Level S2
+  INCIDENT_SEVERITY_S2 = 30;
+}
+
+// Ticket status from Jira
+enum JiraStatus {
+  // Default unspecified state of enum
+  JIRA_STATUS_UNSPECIFIED = 0;
+  // New
+  JIRA_STATUS_NEW = 10;
+  // PM in progress
+  JIRA_STATUS_PM_IN_PROGRESS = 20;
+  // ABANDONED
+  JIRA_STATUS_ABANDONED = 30;
+  // PM Review
+  JIRA_STATUS_PM_REVIEW = 40;
+  // DIRECTOR REVIEW (S0 ONLY)
+  JIRA_STATUS_DIRECTOR_REVIEW = 50;
+  // Remediation
+  JIRA_STATUS_REMEDIATION = 60;
+  // Closed
+  JIRA_STATUS_CLOSED = 70;
+  // None
+  JIRA_STATUS_NONE = 80;
+  // TO DO
+  JIRA_STATUS_TO_DO = 90;
+  // IN PROGRESS
+  JIRA_STATUS_IN_PROGRESS = 100;
+  // DONE
+  JIRA_STATUS_DONE = 110;
+  // BLOCKED
+  JIRA_STATUS_BLOCKED = 120;
+  // WON'T DO
+  JIRA_STATUS_WONT_DO = 130;
+}
+
+// Priority status from Jira
+enum JiraPriority {
+  // Default unspecified state of enum
+  JIRA_PRIORITY_UNSPECIFIED = 0;
+  // Critical (P0)
+  JIRA_PRIORITY_CRITICAL = 10;
+  // Major (P1)
+  JIRA_PRIORITY_MAJOR = 20;
+  // Normal (P2)
+  JIRA_PRIORITY_NORMAL = 30;
+  // Low (P3)
+  JIRA_PRIORITY_LOW = 40;
+  // Unprioritized
+  JIRA_PRIORITY_UNPRIORITIZED = 50;
+  // P0 (Show Stopper)
+  JIRA_PRIORITY_P0 = 60;
+  // P1 (Critical)
+  JIRA_PRIORITY_P1 = 70;
+  // P3 (Minor)
+  JIRA_PRIORITY_P3 = 80;
+  // P4 (Minimal Importance)
+  JIRA_PRIORITY_P4 = 90;
+  // None
+  JIRA_PRIORITY_NONE = 100;
+  // P2
+  JIRA_PRIORITY_P2 = 110;
+}
+
+/**
+ * Jira for an outage
+ */
+message JiraTicket {
+  // Id from snowflake
+  string id = 10;
+  // total deliveries lost
+  int32 total_lost = 20;
+  // total time down in minutes
+  int32 max_down = 30;
+  // Date ticket was created
+  google.protobuf.Timestamp created = 40;
+  // Jira ID
+  string jira_key = 50;
+  // Severity of the outage ex. S0, S1, S2
+  IncidentSeverity severity = 60;
+  // Description of the outage
+  string title = 70;
+  // Google doc postmortem link
+  string postmortem_link = 80;
+  // Jira ids of the linked action items
+  repeated string action_items = 90;
+  // Ticket status ex. 'New', 'PM in progress', 'ABANDONED'
+  string status_string = 101;
+  // Email of assignee
+  string assignee_email = 110;
+  // Email of reporter
+  string reporter_email = 120;
+  // Pev id of the incident
+  string pev_id = 130;
+  // For action items only. Jira id of the parent
+  string parent_jira_key = 140;
+  // For action items only. ex: P0 (Show Stopper), Noraml (P2), P2 (Important)
+  string priority_string = 151;
+  // Enum value of status
+  JiraStatus status_type = 160;
+  // Enum value of priority
+  JiraPriority priority_type = 170;
+  // If total lost is missing
+  bool is_total_lost_missing = 180;
+  // Support costs
+  google.protobuf.FloatValue support_cost = 190;
+}
+
+/**
+ * Delivery count
+ */
+message DeliveryCount {
+  // Date for the number of deliveries
+  google.protobuf.Timestamp date = 10;
+  // Total number of deliveries for that day
+  int32 delivery_total = 20;
+}
+
+/**
+ * Aggregated Support Metric for a channel
+ */
+message AggregatedTimeSavedMetricForChannel {
+  // The channel id
+  string channel_id = 10;
+  // Time to first response
+  google.protobuf.Duration time_to_first_response = 20;
+  // Time to resolution
+  google.protobuf.Duration time_to_resolution = 30;
+  // Date of the metric
+  google.protobuf.Timestamp date = 40;
+}

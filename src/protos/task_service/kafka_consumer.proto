@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package task_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "state_change_events/delivery_state_change.proto";
+import "task_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.task_service";
+
+// Service for delivery lifecycle event Kafka consumer
+service DeliveryLifecycleKafkaConsumerService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  // Add RESOURCE_EXHAUSTED to the set of retryable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Reprocess failed Kafka messages
+  rpc ReprocessFailedMessages(ReprocessFailedMessagesRequest) returns (ReprocessFailedMessagesResponse);
+
+  // Save state change event
+  rpc SaveDeliveryStateChangeEvent(SaveDeliveryStateChangeEventRequest) returns (SaveDeliveryStateChangeEventResponse);
+
+  // Produce state change event
+  rpc ProduceDeliveryStateChangeEvent(ProduceDeliveryStateChangeEventRequest) returns (ProduceDeliveryStateChangeEventResponse);
+
+  rpc ProcessAssignDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessUnassignDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessConfirmDasher(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessDropoffDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessCancelDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessCreateDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessPickupDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessUpdateDeliveryAddress(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+  rpc ProcessSwitchToPickupDelivery(state_change_events.DeliveryEvent) returns (task_service.v2.ActionResponse);
+}
+
+// Request to reprocess failed Kafka messages
+message ReprocessFailedMessagesRequest {
+  // Reprocess failed requests from N seconds back
+  google.protobuf.Int64Value seconds_back = 1;
+
+  // Or reprocess messages from a created time
+  google.protobuf.Timestamp from = 2;
+  // To a created time
+  google.protobuf.Timestamp to = 3;
+}
+
+// Details from reprocessing a specific failed message
+message ReprocessFailedMessageDetail {
+  // ID of the Kafka failure record
+  google.protobuf.StringValue id = 1;
+
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 2;
+}
+
+// Response from processing failed Kafka messages
+message ReprocessFailedMessagesResponse {
+  // Details on the failed messages that were successfully reprocessed
+  repeated ReprocessFailedMessageDetail successful_messages = 1;
+}
+
+// Request to save delivery state change event
+message SaveDeliveryStateChangeEventRequest {
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 1;
+  // event payload from the delivery lifecycle event
+  state_change_events.DeliveryEvent state_change_event = 2;
+}
+
+// Response from saving delivery state change event
+message SaveDeliveryStateChangeEventResponse {}
+
+// Request to produce delivery state change event
+message ProduceDeliveryStateChangeEventRequest {
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 1;
+  // event payload from the delivery lifecycle event
+  state_change_events.DeliveryEvent state_change_event = 2;
+}
+
+// Response from producing delivery state change event
+message ProduceDeliveryStateChangeEventResponse {}

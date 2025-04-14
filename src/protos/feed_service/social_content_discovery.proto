@@ -1,0 +1,334 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package feed_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "component-catalog.cx/search/filter.proto";
+import "component-catalog.cx/social/ugc_list_preview_card.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/common.proto";
+import "feed_service/facet.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/mx_crm.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/common.proto";
+import "social_service/common.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_MULTIPLE_FILES
+option java_multiple_files = true;
+option java_outer_classname = "SocialContentDiscoveryFeedApi";
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.feed_service.social_content_discovery";
+
+// Service for displaying user generated-heavy content in a feed-like manner on discovery areas
+// Initial use case: https://docs.google.com/document/d/1gpw-bSABUwCT2iyc6I9Px8CVCZfLxeJhsB7e2IYPzsQ/edit?usp=sharing
+service SocialContentDiscoveryService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "feed-service-web.service.prod.ddsd",
+    name_spaces: ["social_content_discovery"]
+    owner: {
+      id: "social-proof"
+      name: "social-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 200;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  // Retrieves top local stores, displaying them in a 2 column tile grid
+  rpc GetTopLocalStores(GetTopLocalStoresRequest) returns (GetTopLocalStoresResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v2/top_local_stores"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Social Lists Collection landing page. e.g. social lists available to consumer in a given area
+  rpc GetSocialListsLandingPageFacetFeed(GetSocialListsLandingPageFacetFeedRequest) returns (GetSocialListsLandingPageFacetFeedResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/social_lists_page"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_LITE_GUEST,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd_device_id"},
+        {field: "X-ENABLE-VERBOSE-LOGGING"},
+        {field: "X-FACETS-VERSION"}]
+    };
+  }
+
+  // Social content explore feed page. Displays variety of user social content close to user
+  rpc GetSocialContentExploreFeed(GetSocialContentExploreFeedRequest) returns (GetSocialContentExploreFeedResponse) {
+    option (google.api.http) = {get: "/social_content_discovery/v1/social_content_explore_feed"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_LITE_GUEST,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd_device_id"},
+        {field: "X-ENABLE-VERBOSE-LOGGING"},
+        {field: "X-FACETS-VERSION"}]
+    };
+  }
+}
+
+// Request message for GetTopLocalStores -- specifies input parameters for fetching top local stores
+message GetTopLocalStoresRequest {
+  // lat
+  double lat = 1;
+  // lng
+  double lng = 2;
+  // submarket id
+  int64 submarket_id = 3;
+  // district id
+  int64 district_id = 4;
+  // opaque to clients, and represented as a string -- used to power pill filters
+  google.protobuf.StringValue cursor = 5;
+  // the consumer id that is loading/requesting this page
+  google.protobuf.Int64Value consumer_id = 6 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Response message for GetTopLocalStores -- contains list of top local stores,
+// as well as filters for choosing stores that fit a certain criteria
+message GetTopLocalStoresResponse {
+  // page header
+  PageHeader header = 1;
+  // list of pill filters, to filter stores by criteria
+  repeated PillFilter filters = 2;
+  // list of stores, where each is presented as a tile in a 2 column grid
+  repeated StorePreviewTile stores = 3;
+}
+
+// Request message for GetSocialListLandingPageFacetFeed -- specifies input parameters for fetching social lists collection landing page
+message GetSocialListsLandingPageFacetFeedRequest {
+  // Fields that include consumer_id, consumer location (lat, lng, district, submarket id), and others
+  CommonFacetRequestFields common_fields = 1;
+}
+
+// Response message for GetSocialListLandingPageFacetFeed -- contains display modules to show on the social list landing page
+message GetSocialListsLandingPageFacetFeedResponse {
+  // header of page
+  SocialListsLandingPageHeader header = 1;
+  // UGC/Social tile collections to display
+  repeated UGCListTileCollectionDM tile_collections = 2;
+}
+
+// Request message for GetSocialContentExploreFeedRequest -- specifies input parameters for fetching social content explore feed
+message GetSocialContentExploreFeedRequest {
+  // Fields that include consumer_id, consumer location (lat, lng, district, submarket id), and others
+  CommonFacetRequestFields common_fields = 1;
+  // Page response display type
+  PageDisplayType display_type = 2;
+
+  // page display type
+  enum PageDisplayType {
+    // unspecified
+    PAGE_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // grid view of small cards
+    PAGE_DISPLAY_TYPE_GRID_VIEW = 1;
+    // immersive view, where each card takes the entire screen
+    PAGE_DISPLAY_TYPE_IMMERSIVE_VIEW = 2;
+  }
+}
+
+// Response message for GetSocialContentExploreFeedResponse -- contains content to display for social content explore feed
+message GetSocialContentExploreFeedResponse {
+  // page header
+  PageHeader header = 1;
+  // filters (contains cuisine and typical pill filters)
+  repeated component_catalog.cx.search.v1.Filter filters = 2;
+  // rows of posts to display.
+  repeated PostRow rows = 3;
+  // cursor to next paginated page
+  google.protobuf.StringValue cursor = 4;
+  // given that response is paginated (and thus truncated), total_content_count contains the total content count
+  google.protobuf.Int64Value total_content_count = 5;
+}
+
+// PostRow -- contains a row of posts
+message PostRow {
+  // id
+  google.protobuf.StringValue id = 1;
+  // various social content posts to display
+  repeated Post posts = 2;
+  // display type
+  PostRowDisplayType display_type = 3;
+
+  // post row display type
+  enum PostRowDisplayType {
+    // unspecified
+    POST_ROW_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // single card per row view
+    POST_ROW_DISPLAY_TYPE_SINGLE_CARD = 1;
+    // two cards per row view
+    POST_ROW_DISPLAY_TYPE_TWO_CARDS = 2;
+    // post covers entire screen (immersive view)
+    POST_ROW_DISPLAY_TYPE_FULL_SCREEN = 3;
+  }
+}
+
+// Post -- contains a singular post
+message Post {
+  // id of this particular post.
+  google.protobuf.StringValue id = 1;
+  // Type of the post.
+  PostType post_type = 2;
+  // Post display type
+  PostDisplayType display_type = 3;
+  // Data
+  oneof data {
+    // Reel
+    MxCrmAnnouncement reel = 4;
+  }
+
+  // post display type
+  enum PostDisplayType {
+    // unspecified
+    POST_DISPLAY_TYPE_UNSPECIFIED = 0;
+    // small card layout
+    POST_DISPLAY_TYPE_SMALL_CARD = 1;
+    // large card layout
+    POST_DISPLAY_TYPE_LARGE_CARD = 2;
+    // post immersive view (covers entire page)
+    POST_DISPLAY_TYPE_IMMERSIVE = 3;
+  }
+
+  // Type of post.
+  enum PostType {
+    // unspecified
+    POST_TYPE_UNSPECIFIED = 0;
+    // reel
+    POST_TYPE_REEL = 1;
+    // photo
+    POST_TYPE_PHOTO = 2;
+  }
+}
+
+// Represents a page header
+message PageHeader {
+  // title of page
+  google.protobuf.StringValue title = 1;
+}
+
+// Represents a pill filter
+message PillFilter {
+  // pill filter id
+  google.protobuf.StringValue id = 1;
+  // title of pill filter
+  google.protobuf.StringValue title = 2;
+  // opaque to clients, this will tell backend what exact filter to apply
+  google.protobuf.StringValue cursor = 3;
+}
+
+// Represents a store tile, which includes an image, and various number of metadata line items
+message StorePreviewTile {
+  // store id
+  google.protobuf.StringValue id = 1;
+  // image
+  social_service.v1.ImageContent image = 2;
+  // deprecated -- do not use
+  reserved 3;
+  reserved "metadata_items_items";
+  // lines of text under image
+  repeated social_service.v1.ContentRow metadata_line_items = 7;
+  // deprecated -- do not use
+  reserved 4;
+  reserved "navigation_uri";
+  // uri to call to load store page
+  google.protobuf.StringValue store_navigation_uri = 6;
+  // store-level ratings metadata for store
+  ratings_service.StoreRatings store_ratings = 5;
+}
+
+// Header data of social lists landing page.
+message SocialListsLandingPageHeader {
+  // title of header
+  google.protobuf.StringValue title = 1;
+  // subtitle of header
+  google.protobuf.StringValue subtitle = 2;
+}
+
+// Represents a collection of UGC/Social list tiles,
+// which can either be displayed as a 2D grid of tiles, or a carousel of tiles
+message UGCListTileCollectionDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // layout type of collection
+    TileCollectionLayout layout_type = 1;
+    // tiles in collection
+    repeated component_catalog.cx.social.v1.UGCListPreviewCard tiles = 2;
+    // title of collection
+    google.protobuf.StringValue title = 3;
+    // subtitle of collection
+    google.protobuf.StringValue subtitle = 4;
+  }
+}
+
+// Layout of a collection of tiles
+enum TileCollectionLayout {
+  // Unspecified layout
+  TILE_COLLECTION_LAYOUT_UNSPECIFIED = 0;
+  // A 2D grid of tiles
+  TILE_COLLECTION_LAYOUT_GRID_VIEW = 1;
+  // A horizontal scrollable carousel of tiles
+  TILE_COLLECTION_LAYOUT_CAROUSEL_VIEW = 2;
+}

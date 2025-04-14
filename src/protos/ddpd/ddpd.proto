@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+package ddpd.v1;
+
+option go_package = "github.com/doordash/services-protobuf/generated/ddpd";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ddpd";
+
+// DDPDService is a simple RPC service for exposing some ddpd functionality to other services
+service DDPDService {
+  // PageTeam is for paging a Doordash team via pagerduty
+  rpc PageTeam(PageTeamRequest) returns (PageTeamResponse) {}
+  // PagePerson is for paging an individual via pagerduty
+  rpc PagePerson(PagePersonRequest) returns (PagePersonResponse) {}
+  // ListOncalls returns oncall information by Doordash team
+  rpc ListOncalls(ListOncallsRequest) returns (ListOncallsResponse) {}
+  // GetTeamOncall returns oncall information for a single Doordash team
+  rpc GetTeamOncall(GetTeamOncallRequest) returns (GetTeamOncallResponse) {}
+  // ListAliases returns all ddpd aliases that match the request's included_types
+  rpc ListAliases(ListAliasesRequest) returns (ListAliasesResponse) {}
+  // GetAlias returns a single ddpd alias searched by either the name or the service_id where service_id takes precedence
+  rpc GetAlias(GetAliasRequest) returns (GetAliasResponse) {}
+}
+
+// ListAliasesRequest contains request details for listing aliases
+message ListAliasesRequest {
+  // AliasType is an enum to specify the type of alias
+  enum AliasType {
+    // ALIAS_TYPE_UNSPECIFIED is the unspecified type of alias
+    ALIAS_TYPE_UNSPECIFIED = 0;
+    // ALIAS_TYPE_DO_NOT_PAGE represents an alias that is not to be paged
+    ALIAS_TYPE_DO_NOT_PAGE = 1;
+    // ALIAS_TYPE_RESPONSE_PLAY represents a pagerduty response play
+    ALIAS_TYPE_RESPONSE_PLAY = 2;
+  }
+
+  // included_types is a list of included types of aliases, empty will return all types of aliases
+  repeated AliasType included_types = 1;
+}
+
+// ListAliasesResponse is the response from the api containing the aliases
+message ListAliasesResponse {
+  // aliases is a list of Alias type objects
+  repeated Alias aliases = 1;
+}
+
+// Alias is the object defining what an alias from ddpd looks like
+message Alias {
+  // name is the human readable name of the alias
+  string name = 1;
+  // response_play represents the id of the response play if it is one
+  string response_play = 2;
+  // do_not_page represents a bool value that this alias should not be paged
+  bool do_not_page = 3;
+  // schedule_id is the pagerduty id for the schedule of this alias
+  string schedule_id = 4;
+  // service_id is the pagerduty id for the service attached to this alias
+  string service_id = 5;
+}
+
+// GetAliasRequest is the request object for querying a specific alias. Will query by name or service_id, service_id supercedes name if both are provided
+message GetAliasRequest {
+  // filter represents the filter by which we wish to query (either by name or service_id)
+  oneof filter {
+    // name is the name we want to query by
+    string name = 1;
+    // service_id is the pagerduty service identifier to search by
+    string service_id = 2;
+  }
+}
+
+// GetAliasResponse is the response provided when querying a specific alias
+message GetAliasResponse {
+  // alias is the Alias object returned by the service
+  Alias alias = 1;
+}
+
+// GetTeamOncallRequest is the target for looking up oncall information
+message GetTeamOncallRequest {
+  // Required. name is the team name
+  string name = 1;
+}
+
+// GetTeamOncallResponse message is the summary oncall information for a given DD service
+message GetTeamOncallResponse {
+  reserved 4;
+
+  // primary represents the set of primary oncall engineer names (DEPRECATED)
+  repeated string primary = 1 [deprecated = true];
+  // secondary represents the set of secondary oncall engineer names (DEPRECATED)
+  repeated string secondary = 2 [deprecated = true];
+  // schedule_name is the human readable name of the pagerduty schedule
+  string schedule_name = 3;
+
+  // primary_user is the set of primary oncall engineer user records
+  repeated User primary_user = 5;
+  // secondary_user is the set of secondary oncall engineer user records
+  repeated User secondary_user = 6;
+  // oncall_user is the current set users that are oncall, this may or may not be the primary
+  repeated User oncall_user = 7;
+}
+
+// User represents a PagerDuty User object.
+message User {
+  // id is the PagerDuty ID for this user
+  string id = 1;
+  // name is the PagerDuty name for this user
+  string name = 2;
+  // email is the PagerDuty email for this user
+  string email = 3;
+}
+
+// ListOncallsRequest is the target for looking up oncall information.
+// Intentionally empty message in case we decide to pass in arguments later
+message ListOncallsRequest {}
+
+// ListOncallsResponse message is the summary oncall information for a given DD service
+message ListOncallsResponse {
+  // Oncall message represents a single team/service oncall information
+  message Oncall {
+    // primary represents the primary oncall engineer
+    string primary = 1;
+    // secondary represents the secondary (escalated) oncall engineer
+    string secondary = 2;
+    // schedule_name is the human readable name of the pagerduty schedule
+    string schedule_name = 3;
+    // schedule_url is the pagerduty url to the schedule
+    string schedule_url = 4;
+  }
+  // oncalls is a list of the team oncalls information
+  repeated Oncall oncalls = 1 [deprecated = true];
+}
+
+// PageUrgency represents how urgent a page is
+enum PageUrgency {
+  // PAGE_URGENCY_UNSPECIFIED represents an unspecified urgency
+  PAGE_URGENCY_UNSPECIFIED = 0;
+  // PAGE_URGENCY_LOW represents a low urgency page
+  PAGE_URGENCY_LOW = 1;
+  // PAGE_URGENCY_HIGH represents a high urgency page
+  PAGE_URGENCY_HIGH = 2;
+}
+
+// PageTeamRequest contains fields for paging a team with additional information.
+message PageTeamRequest {
+  // Required. target is the entity we want to page.  It could be a team/service or an individual
+  string target = 1;
+  // Required. requester is the person doing the paging
+  string requester = 2;
+  // Optional. title is for customizing the event
+  string title = 3;
+  // Optional. description is for customizing the event
+  string description = 4;
+  // Optional. conference_url is for setting the meeting link
+  string conference_url = 5;
+  // Optional. conference_number is for setting the meeting phone number
+  string conference_number = 6;
+  // Optional. page urgency, default is high urgency
+  PageUrgency urgency = 7;
+}
+
+// PageTeamRequest contains fields for paging a team with additional information.
+message PagePersonRequest {
+  // Required. target is the entity we want to page.  It could be a team/service or an individual
+  string target = 1;
+  // Required. requester is the person doing the paging
+  string requester = 2;
+  // Optional. title is for customizing the event
+  string title = 3;
+  // Optional. description is for customizing the event
+  string description = 4;
+  // Optional. conference_url is for setting the meeting link
+  string conference_url = 5;
+  // Optional. conference_number is for setting the meeting number
+  string conference_number = 6;
+  // Optional. body is for providing an incident description
+  string body = 7;
+  // Optional. page urgency, default is high urgency
+  PageUrgency urgency = 8;
+}
+
+// PageTeamResponse returns a url to the newly created Pagerduty incident
+message PageTeamResponse {
+  // incident_url is a url to the newly created Pagerduty incident
+  string incident_url = 1;
+}
+
+// PagePersonResponse returns a url to the newly created Pagerduty incident
+message PagePersonResponse {
+  // incident_url is a url to the newly created Pagerduty incident
+  string incident_url = 1;
+}

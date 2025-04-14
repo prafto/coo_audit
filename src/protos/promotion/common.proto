@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/common.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+message ProductIds {
+  common.ProductIdType type = 1;
+  repeated string ids = 2;
+  repeated string allowed_names = 3;
+  // optional field that is a list of ids that are priority ids
+  repeated string priority_ids = 4;
+  // optional field that determines whether priority items are required for a sponsored brand ad to serve
+  google.protobuf.BoolValue is_priority_product_id_required = 5;
+}
+
+message MerchantIds {
+  common.MerchantIdType type = 1;
+  repeated string ids = 2;
+}
+
+enum NudgeableReason {
+  NUDGEABLE_REASON_UNSPECIFIED = 0;
+  NUDGEABLE_REASON_CONSUMER_NOT_DASHPASS = 1;
+  NUDGEABLE_REASON_DASHPASS_PAYMENT_METHOD_NOT_QUALIFIED = 2;
+  NUDGEABLE_REASON_SUBTOTAL = 3;
+  NUDGEABLE_REASON_STORE_NOT_SUPER_SAVED_FOR_CX = 4;
+  NUDGEABLE_REASON_SCHEDULE_AND_SAVE = 5;
+  NUDGEABLE_REASON_STORE_NOT_CLAIMED = 6;
+  NUDGEABLE_REASON_STORE_NOT_SAVED = 7;
+  NUDGEABLE_REASON_REQUIRED_ITEM_PURCHASE_QUANTITY_NOT_QUALIFIED = 8;
+  NUDGEABLE_REASON_REQUIRED_ITEM_SUBTOTAL_NOT_QUALIFIED = 9;
+  NUDGEABLE_REASON_INELIGIBLE_FOR_TOKEN_NO_DASHPASS = 10; // counterpart in token.proto
+  NUDGEABLE_REASON_ITEM_COUPON_NOT_CLAIMED = 11;
+}
+
+message AvailabilityStatus {
+  enum Type {
+    TYPE_UNKNOWN = 0;
+    TYPE_IN_STOCK = 1;
+    TYPE_OUT_OF_STOCK = 2;
+    TYPE_ITEM_NOT_EXIST = 3;
+    TYPE_ITEM_NOT_ORDERABLE = 4;
+    TYPE_ITEM_ORDERABLE = 5;
+  }
+}
+
+// definition of production info at global dd_sic level used in ads-exchange and promo-streaming
+message ProductInfo {
+  // dd_sic value to identify product
+  string dd_sic = 1;
+  // enum for product type
+  enum RestrictionType {
+    // use unknown as default value
+    RESTRICTION_TYPE_UNKNOWN = 0;
+    // use regular for non-alcohol items/products
+    RESTRICTION_TYPE_REGULAR = 1;
+    // use to indicate item/product is alcohol
+    RESTRICTION_TYPE_ALCOHOL = 2;
+  }
+  // restriction type
+  RestrictionType restriction_type = 2;
+}
+
+message ItemWithOptions {
+  ProductIds parent_ids = 1;
+  repeated ItemWithOptions options = 2;
+
+  // If True then for parent_ids to get discounted, the at least one option from ItemWithOptions must match
+  google.protobuf.BoolValue require_option_match = 3;
+}
+
+enum PromotionStackingType {
+  // unknown stacking type
+  PROMOTION_STACKING_TYPE_NOT_SPECIFIED = 0;
+  // item promotions can be stacked with each other and on top of other promotions
+  PROMOTION_STACKING_TYPE_ITEM_DISCOUNT = 1;
+  // cart promotions can be stacked on top of other promotions, but max 1 cart level promotion can be applied
+  PROMOTION_STACKING_TYPE_CART_DISCOUNT = 2;
+  // credit-like promotions can be stacked on top of other promotions
+  PROMOTION_STACKING_TYPE_LOYALTY_REWARDS = 3;
+  PROMOTION_STACKING_TYPE_PARTNERSHIP_BENEFIT = 4;
+}
+
+/**
+ * Persisted state in the DB
+ */
+enum State {
+  // UNSPECIFIED state
+  STATE_UNSPECIFIED = 0;
+  // Entity is eligible to serve
+  STATE_ELIGIBLE = 1;
+  // Entity is paused and cannot serve
+  STATE_PAUSED = 2;
+  // Entity is in draft and cannot serve
+  STATE_DRAFT = 3;
+  // Entity is rejected and cannot serve
+  STATE_REJECTED = 4;
+  // Entity is in review and cannot serve
+  STATE_IN_REVIEW = 5;
+  // Entity is cancelled and cannot serve
+  STATE_CANCELLED = 6;
+  // Entity is in Test
+  STATE_TEST = 7;
+}
+
+/**
+ * Info about the state change persisted in the DB
+ */
+
+message StateChangeInfo {
+  // enums values for the state change reason
+  enum StateChangeReason {
+    // UNSPECIFIED state change reason
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    UNSPECIFIED = 0;
+    // state change reason is manual (by user)
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    REASON_MANUAL = 1;
+    // budget cap reached - usually due to a billing
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    BUDGET_CAP_REACHED = 2;
+
+    // When campaign enters test mode from Draft state or from Eligible state if start date is in the future
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    NON_LIVE_TO_TEST = 3;
+
+    // When campaign enters test mode from Eligible State if start date is in the past
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    LIVE_TO_TEST = 4;
+
+    // When campaign changes state triggered by the Campaign Moderation tool
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    ADMIN_MODERATION = 5;
+  }
+
+  // reason for the state change
+  StateChangeReason reason_for_state_change = 1;
+  // specific details about the state change
+  google.protobuf.StringValue state_change_details = 2;
+}
+
+/**
+ * Calculated status only on the read path
+ * Does NOT get persisted in the DB and will be erased on all write paths
+ */
+enum DerivedStatus {
+  // UNSPECIFIED derived campaign status
+  DERIVED_STATUS_UNSPECIFIED = 0;
+  // Campaign is eligible to serve
+  DERIVED_STATUS_ELIGIBLE = 1;
+  // Campaign is paused and cannot serve
+  DERIVED_STATUS_PAUSED = 2;
+  // Campaign is in draft and cannot serve
+  DERIVED_STATUS_DRAFT = 3;
+  // Campaign is rejected and cannot serve
+  DERIVED_STATUS_REJECTED = 4;
+  // Campaign is in review and cannot serve
+  DERIVED_STATUS_IN_REVIEW = 5;
+  // Campaign is scheduled to be served/published.
+  DERIVED_STATUS_SCHEDULED = 6;
+  // Campaign is currently being served/published.
+  DERIVED_STATUS_SERVING = 7;
+  // Campaign has ended.
+  DERIVED_STATUS_ENDED = 8;
+  // Campaign is cancelled and cannot serve.
+  DERIVED_STATUS_CANCELLED = 9;
+  // Campaign is incomplete due to premature information.
+  DERIVED_STATUS_INCOMPLETE = 10;
+  // Campaign is in test mode.
+  DERIVED_STATUS_TEST = 11;
+}

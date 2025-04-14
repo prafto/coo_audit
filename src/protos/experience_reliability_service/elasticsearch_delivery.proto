@@ -1,0 +1,258 @@
+syntax = "proto3";
+package experience_reliability_service.elasticsearch_delivery.v1;
+
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "experience_reliability_service/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.elasticsearch_delivery";
+
+service ElasticSearchDeliveryService {
+  rpc GetESDeliveries(QueryESDeliveriesRequest) returns (QueryESDeliveriesResponse);
+  rpc IndexDelivery(IndexDeliveryRequest) returns (IndexDeliveryResponse);
+
+  // Search for stores by fields associated with deliveries.
+  // Supports matching by delivery id or delivery recipient email address.
+  rpc SearchStoresByDelivery(SearchStoresByDeliveryRequest) returns (SearchStoresByDeliveryResponse);
+
+  // Search deliveries. See https://drd.sh/qNQ8w8huZiTEKV73/ on how to use it.
+  rpc SearchDeliveries(SearchDeliveriesRequest) returns (SearchDeliveriesResponse);
+}
+
+// At least one of `query` and `page_token` is required.
+message SearchStoresByDeliveryRequest {
+  // (optional) A string query to search for. Results match on delivery_id or recipient_email_address.
+  // This can be omitted if a `page_token` is provided.
+  google.protobuf.StringValue query = 1;
+  // (optional) The number of results to return per-page.
+  google.protobuf.Int32Value page_size = 2;
+  // (optional) When scrolling through multiple pages,
+  // pass the `next_page_token` or `previous_page_token` field from the previous response.
+  // If `query` is passed as well, the `query` must match the query used to generate the `page_token`.
+  google.protobuf.StringValue page_token = 3;
+}
+
+message SearchStoresByDeliveryResponse {
+  repeated google.protobuf.Int64Value store_ids = 1;
+  // (optional) A base64 encoded PageToken protobuf. This can be passed in a request to get the next page.
+  google.protobuf.StringValue next_page_token = 2;
+  // The total number of results in all pages.
+  google.protobuf.Int32Value total_size = 4;
+
+  // PageToken is used to store information for pagination.
+  // The PageToken protobuf is never used directly by the API. Instead, PageToken is base64 encoded and
+  // included in the response as a string. PageToken should be used as an opaque string - the client
+  // does not need to know how to decode or encode it. We use a protobuf so that it's easier to maintain
+  // backwards compatibility on the server.
+  message PageToken {
+    // required - the query used in the original search
+    google.protobuf.StringValue query = 1;
+    // required - the max created_at timestamp in the previous page
+    google.protobuf.Int64Value search_after_created_at = 2;
+    // required - the last store_id in the previous page. Used as a sort tie-breaker if multiple results have
+    // the same timestamp.
+    google.protobuf.Int64Value search_after_store_id = 3;
+  }
+}
+
+message QueryESDeliveriesRequest {
+  string search_term = 1;
+  repeated Filter filters = 2;
+  // The hardcoded elasticsearch query to use.
+  // Depending on where a search is done from, we search by different fields and use different scoring rules.
+  SearchType search_type = 3;
+
+  // Defines a set of hardcoded elasticsearch queries which the API supports.
+  // Depending of where a search is done from, we search by different fields and use different scoring rules.
+  enum SearchType {
+    // By default it uses CUSTOMER_SUPPORT if no filters are given, or DRIVE_PORTAL if filters are given.
+    UNKNOWN = 0;
+    // A search designed to be used from the customer support page in Dispatch.
+    CUSTOMER_SUPPORT = 1;
+    // A search designed to be used from the merchant support page in Dispatch.
+    MERCHANT_SUPPORT = 2;
+    // A search designed to be used from the Drive portal page.
+    DRIVE_PORTAL = 3;
+    // A search designed to be used from the merchant payment adjustment bulk tool
+    BULK_TOOL_MERCHANT_PAYMENT_ADJUSTMENT = 4;
+  }
+}
+
+message Filter {
+  string filter_key = 1; // Name of the thing we're filtering on e.g. start_date / cancelled
+  QueryType query_type = 2; // Action of the query (Match/GTE/LTE/Exists, etc)
+  oneof filter_value { // Value passed in to the filter e.g. 01/02/2021 / True
+    google.protobuf.BoolValue bool_value = 3;
+    google.protobuf.StringValue string_value = 4;
+    google.protobuf.Int64Value int_value = 5;
+    google.protobuf.DoubleValue double_value = 6;
+    google.protobuf.Timestamp datetime_value = 7;
+    IntegerList integer_list_value = 8;
+  }
+}
+
+message IntegerList {
+  repeated int64 integers = 1;
+}
+
+message StringList {
+  repeated string strings = 1;
+}
+
+enum QueryType {
+  UNKNOWN = 0;
+  MATCH = 1; // fuzzier match
+  TERM = 2; // exact match
+  GREATER_THAN_OR_EQUAL = 3;
+  LESS_THAN_OR_EQUAL = 4;
+  TERMS = 5; // list of ids to match
+  EXISTS = 6; // Field exists / is not null.
+  GREATER_THAN = 7;
+  LESS_THAN = 8;
+}
+
+message QueryESDeliveriesResponse {
+  repeated ESDelivery es_deliveries = 1;
+}
+
+message SearchDeliveriesRequest {
+  repeated ers.api.common.SortByField sort_by = 2;
+  // Search term used to search order ID, customer first name, or dasher first name.
+  // Order ID is composed of either external_order_reference, doordash_drive_id, or delivery_uuid/delivery_uuid_short
+  google.protobuf.StringValue search_term = 3;
+  // Max limit and offsets are defined in
+  // https://drd.sh/4Gl4BfZNGuFDOZew/
+  google.protobuf.Int64Value limit = 4;
+  google.protobuf.Int64Value offset = 5;
+  // Apply any amount of filters to your query.
+  MultiSearchFilter multi_search_filter = 16;
+  reserved 1;
+}
+
+message MultiSearchFilter {
+  oneof filter {
+    MultiSearchFilterList filters_list = 1;
+    SearchFilter search_filter = 2;
+  }
+  google.protobuf.BoolValue must_not = 3; // Whether we should negate the filter (eg. not <query>). Default false.
+}
+
+message MultiSearchFilterList {
+  repeated MultiSearchFilter filters = 1;
+  Operation operation = 2;
+}
+
+enum Operation {
+  // Filters will be ANDed together.
+  OPERATION_AND = 0;
+  // Filters will be ORed together.
+  OPERATION_OR = 1;
+}
+
+message SearchFilter {
+  ers.api.common.ESDeliveryField key = 1;
+  QueryType query_type = 2;
+  oneof filter_value {
+    google.protobuf.BoolValue bool_value = 3;
+    google.protobuf.StringValue string_value = 4;
+    google.protobuf.Int64Value int_value = 5;
+    google.protobuf.DoubleValue double_value = 6;
+    google.protobuf.Timestamp datetime_value = 7;
+    IntegerList integer_list_value = 8;
+    StringList string_list_value = 9;
+  }
+  reserved 10;
+}
+
+message SearchDeliveriesResponse {
+  repeated ESDelivery es_deliveries = 1;
+  // Total count of deliveries disregarding limit and offset.
+  google.protobuf.Int64Value total_deliveries = 2;
+}
+
+message ESDelivery {
+  google.protobuf.StringValue timezone = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp submitted_at = 3;
+  google.protobuf.Timestamp cancelled_at = 4;
+  google.protobuf.Timestamp quoted_delivery_time = 5;
+  bool is_asap = 6;
+  bool is_from_store_to_us = 7;
+  bool is_route_based = 8;
+  bool is_test = 9;
+  bool is_preassignable = 10;
+  google.protobuf.Timestamp actual_delivery_time = 11;
+  google.protobuf.Timestamp actual_pickup_time = 12;
+  GeoPoint delivery_address = 13;
+  GeoPoint pickup_address = 14;
+  google.protobuf.Int64Value district_id = 15;
+  google.protobuf.Int64Value business_id = 16;
+  google.protobuf.Int64Value market_id = 17;
+  google.protobuf.Int64Value submarket_id = 18;
+  google.protobuf.StringValue external_delivery_id = 19;
+  google.protobuf.StringValue drive_order_id = 20;
+  google.protobuf.StringValue doordash_drive_id = 21;
+  google.protobuf.StringValue delivery_uuid = 22;
+  google.protobuf.StringValue delivery_uuid_short = 23;
+  Consumer consumer = 24;
+  Dasher dasher = 25;
+  Store store = 26;
+  google.protobuf.Int64Value unified_primary_business_id = 27;
+  google.protobuf.Timestamp quoted_pickup_time = 28;
+  google.protobuf.Timestamp completed_at = 29;
+  order.OrderStatus delivery_status = 31;
+  google.protobuf.StringValue external_order_reference = 32;
+  google.protobuf.Int64Value delivery_id = 33;
+  GiftRecipient gift_recipient = 34;
+  google.protobuf.StringValue order_sub_status = 35;
+  bool is_consumer_pickup = 36;
+  reserved 30;
+}
+
+message GeoPoint {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lon = 2;
+}
+
+message Consumer {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue full_name = 4;
+  google.protobuf.StringValue email = 5;
+  google.protobuf.StringValue phone_number = 6;
+  google.protobuf.StringValue experience = 7;
+}
+
+message Dasher {
+  google.protobuf.StringValue first_name = 1;
+  google.protobuf.StringValue last_name = 2;
+  google.protobuf.StringValue full_name = 3;
+  google.protobuf.StringValue phone_number = 4;
+}
+
+message Store {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue phone_number = 3;
+  google.protobuf.Int64Value unified_primary_store_id = 4;
+}
+
+message IndexDeliveryRequest {
+  oneof delivery_entity_id {
+    int64 delivery_id = 1;
+    string delivery_uuid = 2; // Not functional at this time. Please only use delivery_id
+  }
+}
+
+message IndexDeliveryResponse {}
+
+message GiftRecipient {
+  google.protobuf.StringValue full_name = 1;
+  google.protobuf.StringValue phone_number = 2;
+}

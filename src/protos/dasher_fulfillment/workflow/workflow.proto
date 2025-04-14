@@ -1,0 +1,224 @@
+syntax = "proto3";
+package dasher_app_platform.workflow.v1;
+
+import "action-catalog/dx/dap/navigate.proto";
+import "common/service_client_config.proto";
+import "dasher_fulfillment/common/foundry_tracing.proto";
+import "dasher_fulfillment/screen.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_app_platform.workflow";
+
+// Service definition for dasher fulfillment workflow service
+service WorkflowService {
+  option (doordash.api.service) = {
+    name: "dasher-fulfillment-workflow-service"
+    url: "dasher-fulfillment-web-tier0.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["foundry"]
+    api_key_name: "DASHER-FULFILLMENT-API-KEY"
+    owner: {
+      name: "dasher-app-platform-team"
+      id: "dasher-app-platform-team"
+      slack_channel: "#ask-dx-app-platform"
+      email_alias: "dasher-app-platform@doordash.com"
+    }
+    target_products: [
+      DX,
+      CX,
+      MX
+    ]
+  };
+  // Service name
+  option (service_client.client_config).service_name = "workflow-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  // UG GetWorkflow definition for POST /foundry/v1/getWorkflow/{workflow_name}
+  rpc GetWorkflowV2(GetWorkflowV2Request) returns (GetWorkflowV2Response) {
+    option (google.api.http) = {
+      post: "/foundry/v1/workflow/fetch/{workflow_name}",
+      body: "payload"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [
+        DX,
+        CX,
+        MX
+      ]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // GetWorkflow definition for GET /v1/dasher/workflow/{workflow_name}
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
+
+  // PostWorkflow definition for POST /v1/workflows/{workflow_name}/
+  rpc PostWorkflow(PostWorkflowRequest) returns (PostWorkflowResponse);
+
+  // PostWorkflow definition for
+  // UG POST /foundry/v1/postWorkflow/{workflow_name}
+  rpc PostWorkflowV2(PostWorkflowV2Request) returns (PostWorkflowV2Response) {
+    option (google.api.http) = {
+      post: "/foundry/v1/workflow/update/{workflow_name}",
+      body: "payload"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [
+        DX,
+        CX,
+        MX
+      ]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 15
+      }
+    };
+  }
+}
+
+// Workflow request
+message GetWorkflowRequest {
+  // The name of workflow
+  string workflow_name = 1;
+  // The version of workflow
+  string version = 2;
+  // dasher id as context
+  int64 dasher_id = 3;
+  // Metadata used for rendering screens
+  google.protobuf.Struct screen_parameters = 4;
+}
+
+// Workflow response
+message GetWorkflowResponse {
+  // UUID for the workflow generated
+  string id = 1;
+  // The type of workflow as defined in workflow manifest
+  string type = 2;
+  // workflow version
+  string version = 3;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 4;
+  // Initial navigation for the first screen. Must be either push or present
+  action_catalog.dx.dap.v1.LocalNavigation init_navigation = 5;
+  // The screens composing the workflow
+  repeated dasher_app_platform.screen.v1.ScreenResponse screens = 6;
+  // Tracing context for the workflow
+  dasher_app_platform.tracing.v1.FoundryTracingContext tracing_info = 7;
+}
+
+// Workflow request v2 for UG
+message GetWorkflowV2Request {
+  // The name of workflow
+  string workflow_name = 1;
+  // The version of workflow
+  string version = 2;
+  // Metadata used for rendering screens
+  GetWorkflowPayload payload = 3;
+}
+
+// Post workflow payload
+message GetWorkflowPayload {
+  // Metadata used for rendering screens
+  google.protobuf.Struct workflow_parameters = 1;
+}
+
+// Workflow response v2 for UG
+message GetWorkflowV2Response {
+  // enveloped response
+  GetWorkflowResponse value = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Metadata of the response workflow
+message WorkflowMetadata {
+  // The version of the workflow
+  string version = 1;
+  // string experiment = 2;
+}
+
+// Post workflow request
+message PostWorkflowRequest {
+  // The name of workflow
+  string workflow_name = 1;
+  // The version of workflow
+  string version = 2;
+  // Parent screen_id of the action
+  string screen_id = 3;
+  // action_id referenced for request
+  string action_id = 4;
+  // Data bag
+  google.protobuf.StringValue data = 5;
+  // Metadata used for rendering screens
+  google.protobuf.Struct screen_parameters = 6;
+  // Workflow Id override
+  string workflow_id = 7;
+}
+
+// Post workflow response
+message PostWorkflowResponse {
+  // UUID for the workflow generated
+  string id = 1;
+  // The type of workflow as defined in workflow manifest
+  string type = 2;
+  // workflow version
+  string version = 3;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 4;
+  // Initial navigation for the first screen. Must be either push or present
+  action_catalog.dx.dap.v1.Navigation next_action = 5;
+  // The screens composing the workflow
+  repeated dasher_app_platform.screen.v1.ScreenResponse screens = 6;
+  // Tracing context for the workflow
+  dasher_app_platform.tracing.v1.FoundryTracingContext tracing_info = 7;
+}
+
+// Post workflow request
+message PostWorkflowV2Request {
+  // The name of workflow
+  string workflow_name = 1;
+  // The version of workflow
+  string version = 2;
+  // Parent screen_id of the action
+  string screen_id = 3;
+  // action_id referenced for request
+  string action_id = 4;
+  // payload
+  PostWorkflowPayload payload = 5;
+  // Workflow Id override
+  string workflow_id = 7;
+}
+
+// Post workflow payload
+message PostWorkflowPayload {
+  // Data bag
+  google.protobuf.StringValue data = 1;
+  // Metadata used for rendering screens
+  google.protobuf.Struct workflow_parameters = 2;
+}
+
+// Post workflow response
+message PostWorkflowV2Response {
+  // enveloped response
+  PostWorkflowResponse value = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}

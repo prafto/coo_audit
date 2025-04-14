@@ -1,0 +1,673 @@
+syntax = "proto3";
+
+package doordash.payin.payment_method.v2;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "data_classification.v1/data_classification.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+import "payin/errors.proto";
+import "payin/payer_v1.proto";
+import "payin/payment_method_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/payment_method/v2";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payin.payment_method.v2";
+
+// Payment Method V2 Service
+service PaymentMethodV2Service {
+  option (doordash.api.service) = {
+    name: "payin-platform-payer.service"
+    url: "payin-platform-payer.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["payin-platform"]
+    // api_key_name should follow a format similar to
+    api_key_name: "PAYIN_PLATFORM_API_KEY"
+    owner: {
+      name: "payment"
+      id: "payment-platform"
+      slack_channel: "#ask-eng-payin"
+      email_alias: "eng-payment@doordash.com"
+    }
+    target_products: [CX]
+  };
+  // Service info
+  option (service_client.client_config).service_name = "payin-platform";
+  option (service_client.client_config).service_app = "payer";
+  // Retry config
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 20;
+  // This matches default hermes behavior, consider to add 8 RESOURCE_EXHAUSTED when rate limiter is implemented
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 10;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 14;
+  // Circuit Breaker config
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 30;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 15000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 2000;
+
+  // Create Payment Method V2
+  rpc CreatePaymentMethodV2(CreatePaymentMethodV2Request) returns (CreatePaymentMethodV2Response);
+
+  // Validate Payment Method V2
+  rpc ValidatePaymentMethodV2(ValidatePaymentMethodV2Request) returns (ValidatePaymentMethodV2Response);
+
+  // Search Payment Methods V2
+  rpc SearchPaymentMethodsV2(SearchPaymentMethodsV2Request) returns (SearchPaymentMethodsV2Response);
+
+  // List Payment Methods With Token
+  rpc ListPaymentMethodTokensByPayer(ListPaymentMethodTokensByPayerRequest) returns (ListPaymentMethodTokensByPayerResponse);
+
+  // Initiate Pin Session For Payment Method
+  rpc InitiatePaymentMethodPinSession(InitiatePaymentMethodPinSessionRequest) returns (InitiatePaymentMethodPinSessionResponse);
+
+  // Get Remaining Balance For Payment Method
+  rpc GetPaymentMethodRemainingBalance(GetPaymentMethodRemainingBalanceRequest) returns (GetPaymentMethodRemainingBalanceResponse);
+
+  // Confirm Payment Method
+  rpc ConfirmPaymentMethod(ConfirmPaymentMethodRequest) returns (ConfirmPaymentMethodResponse);
+
+  // Clone Payment Method For Payer
+  rpc ClonePaymentMethodForPayer(ClonePaymentMethodForPayerRequest) returns (ClonePaymentMethodForPayerResponse);
+
+  // Create or Update Payment Method Tag
+  rpc CreateOrUpdatePaymentMethodTag(CreateOrUpdatePaymentMethodTagRequest) returns (CreateOrUpdatePaymentMethodTagResponse);
+
+  // Remove Payment Method Tag
+  rpc RemovePaymentMethodTag(RemovePaymentMethodTagRequest) returns (RemovePaymentMethodTagResponse);
+
+  // Get Payment Method by Payer Reference Id and Tag Type
+  rpc GetPaymentMethodByPayerReferenceIdAndTagType(GetPaymentMethodByPayerReferenceIdAndTagTypeRequest) returns (GetPaymentMethodByPayerReferenceIdAndTagTypeResponse);
+
+  // Get Default Payment Method By Payment Profile Type
+  rpc GetDefaultPaymentMethodByPaymentProfileType(GetDefaultPaymentMethodByPaymentProfileTypeRequest) returns (GetDefaultPaymentMethodByPaymentProfileTypeResponse);
+
+  // Create Session Token
+  rpc CreateSessionToken(CreateSessionTokenRequest) returns (CreateSessionTokenResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/payin-platform/v2/create-session-token"
+
+      // Needed for post, patch, put methods. Omit for others.
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Create Consumer Profile
+  rpc CreateConsumerProfile(CreateConsumerProfileRequest) returns (CreateConsumerProfileResponse) {
+    option (google.api.http) = {
+      post: "/payin-platform/v2/create-consumer-profile"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Get pan tokens for payment methods
+  rpc GetPanTokensByPaymentMethodIds(GetPanTokensByPaymentMethodIdsRequest) returns (GetPanTokensByPaymentMethodIdsResponse);
+
+  // Complete Account Linking
+  rpc CompleteAccountLinking(CompleteAccountLinkingRequest) returns (CompleteAccountLinkingResponse) {
+    option (google.api.http) = {
+      post: "/payin-platform/v2/complete-account-linking"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// Create PaymentMethod Card Data type
+message CreatePaymentMethodCardData {
+  // Card number
+  google.protobuf.StringValue number = 1;
+
+  // Card cvv
+  google.protobuf.StringValue cvv = 2;
+
+  // Card expiration month
+  google.protobuf.StringValue exp_month = 3;
+
+  // Card expiration year
+  google.protobuf.StringValue exp_year = 4;
+
+  // Card billing zip code
+  google.protobuf.StringValue zip = 5;
+
+  // Card iin
+  google.protobuf.StringValue iin = 6;
+
+  // Card last 4 digits
+  google.protobuf.StringValue last4 = 7;
+}
+
+// CreatePaymentMethodDigitalWalletCardData
+message CreatePaymentMethodDigitalWalletCardData {
+  // tokenized digital wallet card number
+  google.protobuf.StringValue number = 1;
+
+  // cryptogram
+  google.protobuf.StringValue cryptogram = 2;
+
+  // eci
+  google.protobuf.StringValue eci = 3;
+
+  // expiration month (in two digit format)
+  google.protobuf.StringValue exp_month = 4;
+
+  // expiration year (in two digit format)
+  google.protobuf.StringValue exp_year = 5;
+
+  // zip
+  google.protobuf.StringValue zip = 6;
+
+  // google transaction id
+  google.protobuf.StringValue google_transaction_id = 7;
+
+  // source card last four
+  google.protobuf.StringValue source_card_last_four = 8;
+
+  // cardholder name
+  google.protobuf.StringValue cardholder_name = 9 [(data_classification.v1.data_classification).pii = true];
+}
+
+// CreatePaymentMethodEbtCardData
+message CreatePaymentMethodEbtCardData {
+  // tokenized EBT card number
+  google.protobuf.StringValue number = 1;
+}
+
+// Create Payment Method v2 Request
+message CreatePaymentMethodV2Request {
+  // payer
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payer data
+  doordash.payin.common.v1.PayerData payer_data = 2;
+
+  // true if we want to set the new payment method to default
+  google.protobuf.BoolValue set_default = 3;
+
+  // true if payment method alreay scanned by fraud
+  google.protobuf.BoolValue is_scanned = 4;
+  // true if payment method is already active by fraud
+  google.protobuf.BoolValue is_active = 5;
+
+  // whether or not to have provider validate payment method
+  google.protobuf.BoolValue validate_payment_method = 6;
+
+  // payment method data
+  CreatePaymentMethodCardData card_data = 7;
+
+  // Transaction level fraud data from client side providers
+  money.ClientFraudContext client_fraud_context = 8;
+
+  // payment method type
+  doordash.payin.payment_method.v1.PaymentMethodType payment_method_type = 9;
+
+  // Payment config token
+  google.protobuf.StringValue payment_config_token = 10;
+
+  //payment method token
+  google.protobuf.StringValue token = 11;
+
+  //tokenization provider
+  doordash.payin.common.v1.TokenizationProvider tokenization_provider = 12;
+
+  // is an imported payment method which doesn't require cvv
+  google.protobuf.BoolValue is_imported_payment_method = 13;
+
+  // digital wallet card data
+  CreatePaymentMethodDigitalWalletCardData digital_wallet_card_data = 14;
+
+  // ebt card data
+  CreatePaymentMethodEbtCardData ebt_card_data = 15;
+}
+
+// Create payment method v2 response
+message CreatePaymentMethodV2Response {
+  // payment method
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+}
+
+// Validate payment method v2 request
+message ValidatePaymentMethodV2Request {
+  // card data to validate
+  // the `ItemizedCardData` seems wrong since its missing
+  // addressline1, addressline2, city, state, zip
+  doordash.payin.common.v1.CardData card_data = 1;
+
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 3;
+  //true if validating cvc
+  google.protobuf.BoolValue check_cvc = 4;
+  //true if checking if a card is pre-existing
+  google.protobuf.BoolValue check_existing_card = 5;
+}
+
+// Validate payment method v2 response
+message ValidatePaymentMethodV2Response {
+  // validated payment method
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+}
+
+// Search payment methods v2 request
+message SearchPaymentMethodsV2Request {
+  // Fingerprint of the payment method.
+  google.protobuf.StringValue fingerprint = 1;
+
+  // Tokenization provider by which the payment method was created
+  doordash.payin.common.v1.TokenizationProvider tokenization_provider = 2;
+
+  // Flag to search only active payment method, default True.
+  google.protobuf.BoolValue active_only = 3;
+
+  // Flag to include digital wallet card, default False.
+  google.protobuf.BoolValue include_digital_wallet = 4;
+
+  // Number of records to return for each page. Defaults to 10
+  google.protobuf.Int32Value limit = 5;
+
+  // Encoded cursor for pagination.
+  google.protobuf.StringValue cursor = 6;
+}
+
+// Search payment methods v2 response
+message SearchPaymentMethodsV2Response {
+  // the number of payment methods found
+  google.protobuf.Int32Value count = 1;
+
+  // whether there are more payment methods to paginate through;
+  // currently returns false since all the payment methods are returned
+  google.protobuf.BoolValue has_more = 2;
+
+  // list of payment methods found
+  repeated doordash.payin.payment_method.v1.PaymentMethod data = 3;
+
+  // cursor to continue searching with, currently unimplemented
+  google.protobuf.StringValue cursor = 4;
+}
+
+// List payment methods with token request
+message ListPaymentMethodTokensByPayerRequest {
+  // Payer to retrieve payment methods for
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+  // Should return only active payment methods, default True.
+  google.protobuf.BoolValue active_only = 2;
+}
+
+// List payment methods with token response
+message ListPaymentMethodTokensByPayerResponse {
+  // List of payment methods
+  repeated TokenizedPaymentMethod payment_methods = 1;
+}
+
+// Tokenized Payment Method
+message TokenizedPaymentMethod {
+  // Tokenized card number
+  google.protobuf.StringValue token = 1;
+  // last 4 digits of card number
+  google.protobuf.StringValue last4 = 2;
+  // card expiration year
+  google.protobuf.StringValue exp_year = 3;
+  // card expiration month
+  google.protobuf.StringValue exp_month = 4;
+  // card iin
+  google.protobuf.StringValue iin = 5;
+  // card zip
+  google.protobuf.StringValue zip = 6;
+  // payment method type, ex. card
+  google.protobuf.StringValue type = 7;
+  //payment method id
+  google.protobuf.StringValue payment_method_id = 8;
+}
+
+// Initiate pin session for payment method
+message InitiatePaymentMethodPinSessionRequest {
+  // payer identifier
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+  // id of the payment method needing pin session
+  google.protobuf.StringValue payment_method_id = 2;
+  // ebt merchant id of the snap-elgible store
+  google.protobuf.StringValue snap_merchant_id = 3;
+}
+
+// Initiate pin session
+message PaymentMethodPinSession {
+  // tran id of the returned pin session (ebt)
+  google.protobuf.StringValue tran_id = 1;
+  // accu id of the returned pin session (ebt)
+  google.protobuf.StringValue accu_id = 2;
+}
+
+// Initiate pin session response
+message InitiatePaymentMethodPinSessionResponse {
+  // [DEPRECATED] returned pin session metadata for auth
+  PaymentMethodPinSession pin_session = 1 [deprecated = true];
+  // tran id of the returned pin session (ebt) //legacy
+  google.protobuf.StringValue tran_id = 2;
+  // accu id of the returned pin session (ebt) //legacy
+  google.protobuf.StringValue accu_id = 3;
+  // Info needed for initiating pin session for Fiserv
+  FiservPinSession fiserv_pin_session = 4;
+  // Info needed for initiating pin session for Forage
+  ForagePinSession forage_pin_session = 5;
+}
+
+// Info needed for initiate pin session for Fiserv
+message FiservPinSession {
+  // tran id
+  google.protobuf.StringValue tran_id = 1;
+  // accu id
+  google.protobuf.StringValue accu_id = 2;
+  // pinpad redirect url
+  google.protobuf.StringValue redirect_url = 3;
+}
+
+// Info needed for initiate pin session for Forage
+message ForagePinSession {
+  // session token
+  google.protobuf.StringValue session_token = 1;
+  // payment ref
+  google.protobuf.StringValue payment_ref = 2;
+}
+
+// Get remaining balance for payment method
+message GetPaymentMethodRemainingBalanceRequest {
+  // payer identifier
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+  // id of the payment method
+  google.protobuf.StringValue payment_method_id = 2;
+
+  // Reserving the field numbers of snap_merchant_id and tran_id
+  reserved 3, 4;
+
+  reserved "snap_merchant_id", "tran_id";
+
+  // EBT specific request data
+  GetRemainingBalanceEbtRequestData ebt_data = 5;
+}
+
+// GetRemainingBalanceEbtRequest
+message GetRemainingBalanceEbtRequestData {
+  // ebt merchant id of the snap-elgible store
+  google.protobuf.StringValue snap_merchant_id = 1;
+  // (optional) tran_id of the request
+  google.protobuf.StringValue tran_id = 2;
+}
+
+// Get remaining balance response
+message GetPaymentMethodRemainingBalanceResponse {
+  // remaining balance
+  google.protobuf.Int32Value balance = 1;
+}
+
+// Confirm Payment Method Request
+message ConfirmPaymentMethodRequest {
+  // payment method id
+  google.protobuf.StringValue payment_method_id = 1;
+  //  (optional) set as default payment method or not
+  google.protobuf.BoolValue set_default = 2;
+}
+
+// Confirm Payment Method Response
+message ConfirmPaymentMethodResponse {
+  // confirmed payment method
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+}
+
+// Clone Payment Method For Payer Request
+message ClonePaymentMethodForPayerRequest {
+  // payer
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payer data
+  doordash.payin.common.v1.PayerData payer_data = 2;
+
+  // payment provider
+  doordash.payin.common.v1.PgpCode payment_provider = 3;
+
+  // payment method type
+  doordash.payin.payment_method.v1.PaymentMethodType payment_method_type = 4;
+
+  // destination account
+  google.protobuf.StringValue destination_account = 5;
+
+  // limit the number of payment methods to be cloned, the number of cards that we actually clone are min(limit_count_based_on_updated_at, payer's payment_method_list.size)
+  google.protobuf.Int32Value limit_count_based_on_updated_at = 6;
+
+  // true if the customer is trustworthy, it's based on risk data platform if cx is hvu status and whale segment
+  google.protobuf.BoolValue is_trust_worthy = 7;
+}
+
+// Clone Payment Method For Payer Response
+message ClonePaymentMethodForPayerResponse {
+  // customer with cloned payment method
+  doordash.payin.payer.v1.PaymentGatewayProviderCustomer customer = 1;
+
+  // list of PaymentGatewayProviderDetails
+  repeated doordash.payin.payment_method.v1.PaymentGatewayProviderDetails details = 2;
+}
+
+// ---- PAYMENT METHOD TAGS ----
+
+// create or update payment method tag with payer reference, tag type, and payment method id
+// if the payer reference + tag type combination already exists, it will
+// update the payment method tag record with the provided payment method id
+message CreateOrUpdatePaymentMethodTagRequest {
+  // reference id and type of payer that owns the payment method tag
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payment method tag with provided type will be created or updated
+  doordash.payin.payment_method.v1.PaymentMethodTagType payment_method_tag_type = 2;
+
+  // id of payment method to tag
+  google.protobuf.StringValue payment_method_id = 3;
+}
+
+// create or update payment method tag response
+message CreateOrUpdatePaymentMethodTagResponse {
+  // unique id of payment method tag
+  google.protobuf.StringValue payment_method_tag_id = 1;
+
+  // id of the payer that owns the payment method tag
+  google.protobuf.StringValue payer_id = 2;
+
+  // payer reference
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 3;
+
+  // type of payment method tag fetched in the response
+  doordash.payin.payment_method.v1.PaymentMethodTagType payment_method_tag_type = 4;
+
+  // id of payment method with the payment method tag
+  google.protobuf.StringValue payment_method_id = 5;
+}
+
+// remove payment method tag request
+message RemovePaymentMethodTagRequest {
+  // reference id and type of payer that owns the payment method tag
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payment method tag with provided type will be removed
+  doordash.payin.payment_method.v1.PaymentMethodTagType payment_method_tag_type = 2;
+}
+
+// remove payment method tag response
+message RemovePaymentMethodTagResponse {
+  // is remove successful
+  google.protobuf.BoolValue is_success = 1;
+}
+
+// get payment method by payer reference id and tag type request
+message GetPaymentMethodByPayerReferenceIdAndTagTypeRequest {
+  // reference id and type of payer that owns the payment method tag
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payment method with provided type will be removed
+  doordash.payin.payment_method.v1.PaymentMethodTagType payment_method_tag_type = 2;
+}
+
+// get payment method by payer reference id and tag type response
+message GetPaymentMethodByPayerReferenceIdAndTagTypeResponse {
+  // payment method
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+}
+
+// get default payment method of the payer by payment profile type
+message GetDefaultPaymentMethodByPaymentProfileTypeRequest {
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // payment profile selected
+  .common.PaymentProfileType payment_profile_type = 2;
+}
+
+// Request message for creating a session token
+message CreateSessionTokenRequest {
+  // method for create session token
+  oneof method {
+    // Request for creating a session token for Pay by Bank via Fiserv
+    CreateSessionTokenPayByBankFiservRequest fiserv_pay_by_bank = 1;
+  }
+}
+
+// Response message for creating a session token
+message CreateSessionTokenResponse {
+  // Unique identifier for the session token
+  string token_id = 1;
+  // Timestamp indicating when the token was issued
+  google.protobuf.Timestamp issued_on = 2;
+  // Duration in seconds for which the token is valid
+  int32 expires_in_seconds = 3;
+  // Public key associated with the session
+  string public_key = 4;
+  // Algorithm used for encryption or hashing
+  string algorithm = 5;
+  // Current status of the session token
+  string status = 6;
+}
+
+// Request message for creating a session token for Pay by Bank via Fiserv
+message CreateSessionTokenPayByBankFiservRequest {
+  // Indicates whether a public key is required for the session token
+  google.protobuf.BoolValue public_key_required = 1;
+}
+
+// Request to create a consumer profile
+message CreateConsumerProfileRequest {
+  // Customer ID (CxId) retrieved from unified gateway context
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // Method for creating consumer profile
+  oneof method {
+    // Request for creating a consumer profile for Pay by Bank via Fiserv
+    CreateConsumerProfileFiservPayByBankRequest fiserv_pay_by_bank = 2;
+  }
+}
+
+// Request specific to Fiserv Pay by Bank
+message CreateConsumerProfileFiservPayByBankRequest {}
+
+// Response for creating a consumer profile
+message CreateConsumerProfileResponse {
+  // Provider-specific response
+  oneof provider_response {
+    // Response specific to Fiserv Pay by Bank
+    CreateConsumerProfileFiservPayByBankResponse fiserv_pay_by_bank = 1;
+  }
+}
+
+// Response specific to Fiserv Pay by Bank
+message CreateConsumerProfileFiservPayByBankResponse {
+  // fd_customer_id associated with CxId for Fiserv Pay by Bank
+  string fd_customer_id = 1;
+}
+
+// get default payment method by payment profile type response
+message GetDefaultPaymentMethodByPaymentProfileTypeResponse {
+  // default payment method of the payer based on payment profile type
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+}
+
+// retrieve a list of pan tokens by payment method ids request
+message GetPanTokensByPaymentMethodIdsRequest {
+  // payment method ids
+  repeated google.protobuf.StringValue payment_method_ids = 1;
+}
+
+// retrieve a list of pan tokens by payment method ids response
+message GetPanTokensByPaymentMethodIdsResponse {
+  // pan token information
+  repeated PanTokenInformation pan_tokens = 1;
+}
+
+// pan token information for a payment method
+message PanTokenInformation {
+  // payment method id
+  google.protobuf.StringValue payment_method_id = 1;
+  // pan token
+  google.protobuf.StringValue pan_token = 2;
+}
+
+// Request to complete account linking
+message CompleteAccountLinkingRequest {
+  // Method for completing account linking
+  oneof method {
+    // Request for completing account linking for Pay by Bank via Fiserv
+    CompleteAccountLinkingFiservPayByBankRequest fiserv_pay_by_bank = 1;
+  }
+  // Customer ID (CxId) retrieved from unified gateway context
+  string consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Request specific to Fiserv Pay by Bank account linking
+message CompleteAccountLinkingFiservPayByBankRequest {
+  // One-time nonce used to complete the account linking process
+  google.protobuf.StringValue nonce = 1;
+}
+
+// Response for completing account linking
+message CompleteAccountLinkingResponse {
+  // Provider-specific response
+  oneof provider_response {
+    // Response specific to Fiserv Pay by Bank
+    CompleteAccountLinkingFiservPayByBankResponse fiserv_pay_by_bank = 1;
+  }
+}
+
+// Response specific to Fiserv Pay by Bank account linking
+message CompleteAccountLinkingFiservPayByBankResponse {
+  // ID of the linked payment method
+  google.protobuf.StringValue payment_method_id = 1;
+
+  // Whether the account linking was successful
+  google.protobuf.BoolValue success = 2;
+
+  // Details about any errors that occurred during linking
+  doordash.payin.errors.v1.ErrorInfo error_info = 3;
+}

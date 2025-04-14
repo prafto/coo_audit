@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package drive_order_service.v1;
+
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "drive_order_service/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "drive_order_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.drive_order_service";
+
+// CheckoutAuditService exposes endpoints to manage a drive order's audit data
+service DriveCheckoutAuditService {
+  option (service_client.client_config).service_name = "drive-order-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+
+  // Create a Drive Checkout Audit entry in DB
+  rpc CreateDriveCheckoutAuditStatusByExternalDeliveryId(CreateDriveCheckoutAuditStatusByExternalDeliveryIdRequest) returns (CreateDriveCheckoutAuditStatusByExternalDeliveryIdResponse);
+
+  // Get a Drive Checkout Audit entry from DB
+  rpc GetDriveCheckoutAuditStatusByDeliveryId(GetDriveCheckoutAuditStatusByDeliveryIdRequest) returns (GetDriveCheckoutAuditStatusByDeliveryIdResponse);
+}
+
+// Contains information needed to GetParcelOrderByBarcodeRequest
+message CreateDriveCheckoutAuditStatusByExternalDeliveryIdRequest {
+  // External Delivery ID
+  google.protobuf.StringValue external_delivery_id = 1;
+  // Boolean representing whether or not the dasher passed the audit (deprecated due to name change)
+  google.protobuf.BoolValue audit_successful = 2 [deprecated = true];
+  // Developer ID
+  google.protobuf.Int64Value developer_id = 3;
+  // Boolean representing whether or not the dasher passed the audit
+  // TODO: Deprecate this field and rely on `checkout_audit_status`
+  google.protobuf.BoolValue is_audit_successful = 4;
+  // Time period describing when the audit was conducted
+  AuditPeriod audit_period = 5;
+  // Count of items to be audited as configured by Mx
+  google.protobuf.Int32Value requested_audit_item_count = 6;
+  // Count of items that completed audit
+  google.protobuf.Int32Value audited_item_count = 7;
+  // List of items that passed audit
+  repeated AuditedItem successful_audit_items = 8;
+  // List of items that failed audit
+  repeated AuditedItem failed_audit_items = 9;
+  // Audit status as sent by Mx
+  CheckoutAuditStatus checkout_audit_status = 10;
+}
+
+// Enum representing the audit status send by the Mx during the order's checkout
+enum CheckoutAuditStatus {
+  // Unspecified
+  CHECKOUT_AUDIT_STATUS_UNSPECIFIED = 0;
+  // The audit has passed
+  CHECKOUT_AUDIT_STATUS_PASSED = 1;
+  // The audit has failed
+  CHECKOUT_AUDIT_STATUS_FAILED = 2;
+  // The audit has been skipped
+  CHECKOUT_AUDIT_STATUS_SKIPPED = 3;
+}
+
+// Time period describing when the audit was conducted
+message AuditPeriod {
+  // Start time of the audit
+  google.protobuf.Timestamp start_time = 1;
+  // End time of the audit
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// Details regarding the items that completed audit (success/fail)
+message AuditedItem {
+  // External item id of the audited item
+  google.protobuf.StringValue external_item_id = 1;
+  // upc scanned for the item
+  google.protobuf.StringValue upc_scanned = 2;
+  // reason for failed audit, if any
+  AuditFailedReason failure_reason = 3;
+  // External instance id associated with the item
+  google.protobuf.StringValue external_instance_id = 4;
+}
+
+// Enum representing the reason for failure of audit of the item
+enum AuditFailedReason {
+  // Unspecified
+  AUDIT_FAILED_REASON_UNSPECIFIED = 0;
+  // Item audited has scan mismatch
+  AUDIT_FAILED_REASON_SCAN_MISMATCH = 1;
+  // Item audited expired
+  AUDIT_FAILED_REASON_ITEM_EXPIRED = 2;
+}
+
+// Contains whether or not the audit signal was received
+message CreateDriveCheckoutAuditStatusByExternalDeliveryIdResponse {
+  // Boolean representing whether or not the signal has been successfully received by the app
+  google.protobuf.BoolValue signal_received = 1;
+}
+
+// Contains the delivery id passed by dasher app
+message GetDriveCheckoutAuditStatusByDeliveryIdRequest {
+  // Delivery ID
+  google.protobuf.Int64Value delivery_id = 1;
+}
+
+// Contains the audit status
+message GetDriveCheckoutAuditStatusByDeliveryIdResponse {
+  // Audit Status
+  AuditStatus audit_status = 1;
+}
+
+// Enum representing whether or not the signal has been successfully received by the app. "Completion" refers to whether or not the signal has been sent.
+enum AuditStatus {
+  // Unspecified
+  AUDIT_STATUS_UNSPECIFIED = 0;
+  // The audit has been completed and passed
+  AUDIT_STATUS_COMPLETED_PASS = 1;
+  // The audit has been completed and failed
+  AUDIT_STATUS_COMPLETED_FAIL = 2;
+  // The audit has not been completed
+  AUDIT_STATUS_NOT_COMPLETED = 3;
+}

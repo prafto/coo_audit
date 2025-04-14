@@ -1,0 +1,190 @@
+syntax = "proto3";
+package workflow_platform.workflow_platform_extended.v1;
+
+import "common/service_client_config.proto";
+import "experience_reliability_service/workflow_platform.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.workflow_platform";
+
+/**
+   Extended APIs for workflow platform. These are meant to be implemented by other services.
+   Workflow platform will be responsible of calling these endpoints to orchestrate workflow configuration and execution.
+*/
+service WorkflowPlatformExtendedService {
+  // DEPRECATED - DO NOT USE
+  rpc GetAllAutomations(GetAllAutomationsRequest) returns (GetAllAutomationsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+
+  /**
+     All Services that got onboarded to workflow platform need to implement this
+  */
+  rpc ExecuteAutomation(ExecuteAutomationRequest) returns (ExecuteAutomationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 45000;
+  }
+
+  /**
+     Services that need their automations to be validated when publishing workflows need to implement this
+  */
+  rpc ValidateAutomation(ValidateAutomationRequest) returns (ValidateAutomationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  /**
+     Services that alter the manual decision before returning to the client need to implement this
+  */
+  rpc ExecuteManualDecisionAutomation(ExecuteManualDecisionAutomationRequest) returns (ExecuteManualDecisionAutomationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 45000;
+  }
+}
+
+// request to get all automations that the service holds
+message GetAllAutomationsRequest {
+  // purposely left blank
+}
+
+// response to get all automations
+message GetAllAutomationsResponse {
+  // all available automations
+  repeated experience_reliability_service.workflow_platform_api.Automation automations = 1;
+}
+
+// request for executing automation
+message ExecuteAutomationRequest {
+  // workflow where this node belongs
+  int32 workflow_id = 1;
+
+  // name or library_name of the automation
+  string automation_name = 2;
+
+  // kept as string to be backwards compatible
+  string automation_type = 3; // system_decision, consequence, copy_value
+
+  // session data that's passed between node executions. Useful for tracking purposes (e.g. request_id)
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowSessionData session_data = 5;
+
+  // current contexts within workflow execution
+  repeated experience_reliability_service.workflow_platform_api.WorkflowContextV2 contexts = 7;
+
+  // node's input arguments
+  repeated experience_reliability_service.workflow_platform_api.NodeArgumentValue arguments = 8;
+
+  // optional metadata from the client
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowRequestMetadata metadata = 9;
+
+  // Map of CustomInputFieldValue mapped to the label name
+  map<string, experience_reliability_service.workflow_platform_api.CustomInputFieldValue> custom_input_field_values = 10;
+
+  // optional
+  string workflow_version_number = 11;
+  //optional
+  string workflow_status = 12;
+
+  // things we want to pass regarding this execution, acts as another metadata but more concise of what data we are sending.
+  ExecutionPayload execution_payload = 13;
+
+  // node_id of the node to execute
+  string node_id = 14;
+}
+
+message ExecutionPayload {
+  // identifies if the execution is in test mode
+  google.protobuf.BoolValue is_test = 1;
+
+  // the expected output when in test_mode; clients can then choose to just return this output, i.e. bypassing their real logic.
+  // Useful for automations that don't have a way to get satisfied using test parameters.
+  AutomationOutput expected_output = 2;
+}
+
+// response for executing automation
+message ExecuteAutomationResponse {
+  // workflow where this node belongs
+  int32 workflow_id = 1;
+
+  // name or library_name of the automation
+  string automation_name = 2;
+
+  // kept as string to be backwards compatible
+  string automation_type = 3; // system_decision, consequence, copy_value
+
+  // only system_decision and copy_value can have output.
+  AutomationOutput output = 4;
+
+  // session data that's passed between node executions. Useful for tracking purposes (e.g. request_id)
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowSessionData session_data = 6;
+
+  // services are free to add contexts but should not modify existing ones.
+  repeated experience_reliability_service.workflow_platform_api.WorkflowContextV2 contexts = 8;
+
+  // services are free to add the various information related to the step like error , output etc
+  repeated experience_reliability_service.workflow_platform_api.WorkflowStepExecutionMetadata workflow_step_execution_metadata = 9;
+}
+
+// output of the automation. This is the edge you see in the configuration.
+message AutomationOutput {
+  // any string value that is configured for the automation
+  // should match Automation.<node>.outputs if it's system_decision
+  // OR the value of executed copy_value
+  google.protobuf.StringValue value = 1;
+}
+
+// request for validating automation
+message ValidateAutomationRequest {
+  // workflow where this node belongs
+  int32 workflow_id = 1;
+
+  // node to execute
+  experience_reliability_service.workflow_platform_api.SupportWorkflowNode node = 2;
+
+  // the current path taken so far. Useful when node has dependency from other nodes.
+  repeated experience_reliability_service.workflow_platform_api.SupportWorkflowNode current_path = 3;
+
+  // audience that this workflow is targeting (CONSUMER, DASHER, etc)
+  string workflow_audience = 4;
+}
+
+// response for validating automation
+message ValidateAutomationResponse {
+  // specify if we should treat the entire response as valid. If set to false, this means there's validation messages of type ERROR or WARNING
+  bool is_valid = 1;
+
+  // list of validation messages if available
+  repeated experience_reliability_service.workflow_platform_api.WorkflowValidationMessage validation_messages = 2;
+}
+
+message ExecuteManualDecisionAutomationRequest {
+  // workflow where this manual decision node belongs
+  int32 workflow_id = 1;
+
+  // name of the node being executed
+  string node_name = 2;
+
+  // list of node outputs belonging to the manual decision node
+  repeated experience_reliability_service.workflow_platform_api.NodeOutput outputs = 3;
+
+  // session data belonging to the manual decision node
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowSessionData session_data = 4;
+
+  // list of contexts belonging to the manual decision node
+  repeated experience_reliability_service.workflow_platform_api.WorkflowContextV2 contexts = 5;
+
+  // list of tags belonging to the manual decision node
+  repeated experience_reliability_service.workflow_platform_api.Tag tags = 6;
+
+  // metadata from the client
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowRequestMetadata metadata = 7;
+}
+
+message ExecuteManualDecisionAutomationResponse {
+  // list of node outputs to used to replace node outputs configured on the manual decision node
+  repeated experience_reliability_service.workflow_platform_api.NodeOutput outputs = 1;
+
+  // session data that's passed between node executions
+  experience_reliability_service.workflow_platform_api.ExecuteWorkflowSessionData session_data = 2;
+
+  // services are free to add contexts but should not modify existing ones.
+  repeated experience_reliability_service.workflow_platform_api.WorkflowContextV2 contexts = 3;
+}

@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package argo_search.broker.v1;
+
+import "argo-search/common/client.proto";
+import "argo-search/common/consumer.proto";
+import "argo-search/common/context.proto";
+import "argo-search/common/pagination.proto";
+import "argo-search/common/query.proto";
+import "argo-search/common/search_results.proto";
+import "argo-search/common/types.proto";
+import "tree-metrics/tree_metrics.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.argo_search.rpc.broker";
+
+// Broker Request
+message BrokerRequest {
+  // Search Query from a client, to perform the Search.
+  // WARNING Broker will return an error if both search_query and search_template are set.
+  argo_search.common.v1.SearchQuery search_query = 1;
+  // Consumer context
+  argo_search.common.v1.ConsumerContext consumer_context = 2;
+  // logging_query, it is used to join logged computed fields with consumer behavioral data
+  // WARNING do not use this field for anything other than logging, as it will be removed when we
+  // introduce a proper identifier to join computed fields logs with consumer behavioral data
+  string logging_query = 3;
+  // Argo client context.
+  argo_search.common.v1.ClientContext client_context = 4;
+  // field was deprecated.
+  reserved 5;
+  // Pagination. No pagination is applied if not provided.
+  argo_search.common.v1.Pagination pagination = 6;
+  // Search context, including consumer_context and client_context
+  argo_search.common.v1.SearchContext search_context = 7;
+  // Search Results format
+  argo_search.common.v1.SearchResultsFormat search_results_format = 8;
+  // Query routing parameters.
+  Routing routing = 50;
+  // Query pruning parameters.
+  Pruning pruning = 51;
+  // If true the response will contain the query trace.
+  bool trace = 100;
+  // Trace verbosity of the collected attributes.
+  tree_metrics.v1.TreeMetricVerbosity trace_verbosity = 101;
+}
+
+// Broker Response
+message BrokerResponse {
+  // Search Results to be sent back to client
+  argo_search.common.v1.SearchResults search_results = 1;
+  // Search Results metadata
+  argo_search.common.v1.SearchResultsMetadata metadata = 2;
+  // Widgets to be sent back to client
+  repeated argo_search.common.v1.Widget widgets = 3;
+
+  // Flattened and normalized search results
+  argo_search.common.v1.DocumentCollection search_results_flat_normalized = 4;
+
+  // Flattened normalized and compressed search results
+  argo_search.common.v1.CompressedDocumentCollection search_results_flat_normalized_compressed = 5;
+
+  // Faceting results are returned at the top level when response format is FLAT_NORMALIZED or FLAT_NORMALIZED_COMPRESSED
+  argo_search.common.v1.Facets facets = 6;
+
+  // Query Understanding bundle values
+  repeated argo_search.common.v1.QUBundleValue qu_bundle_values = 7;
+
+  // Multi Faceting results are returned at the top level when response format is FLAT_NORMALIZED or FLAT_NORMALIZED_COMPRESSED
+  argo_search.common.v1.FacetingResultsV2 facets_v2 = 8;
+
+  // Query debugging/profiling trace info.
+  tree_metrics.v1.FrameMessage trace = 100;
+}
+
+// Broker service Interface
+service BrokerService {
+  // Takes in BrokerRequest and returns BrokerResponse
+  rpc Broker(BrokerRequest) returns (BrokerResponse);
+}
+
+// Query routing parameters.
+message Routing {
+  // Shard routing parameters.
+  oneof shard_routing {
+    // Compute shard id based on the given key and route the query to the shard.
+    RouteByKey route_by_key = 1;
+    // Route query to the exact shard id.
+    RouteByShardId route_by_shard_id = 2;
+  }
+}
+
+// Route the query by key.
+message RouteByKey {
+  // Key to compute find the micorshard it belongs to.
+  string key = 1;
+}
+
+// Route the query by shard id.
+message RouteByShardId {
+  // Shard to route the query.
+  int32 shard_id = 1;
+}
+
+// Query pruning parameters.
+message Pruning {
+  // Early termination parameters
+  EarlyTermination early_termination = 1;
+  // Searchers total response size
+  int32 searchers_response_size = 2;
+}
+
+// Early termization parameters
+message EarlyTermination {
+  // Maximum number of matched documents
+  int32 max_matched_documents = 1;
+  // Time budget for search in milliseconds
+  int32 time_budget_ms = 2;
+}
+
+// Broker Logged Response used in testing tools
+message LoggedBrokerResponse {
+  // success/failure status
+  bool success = 1;
+  // response body
+  argo_search.broker.v1.BrokerResponse response = 2;
+  // observed latency
+  double latency_ms = 3;
+}
+
+// Broker responses logged by Query Replayer
+message QueryReplayerLogEntry {
+  // index of the request in the Query Replayer input file
+  int64 request_index = 1;
+  // proto definition of the replayed request
+  argo_search.broker.v1.BrokerRequest request = 2;
+  // responses from broker endpoints in the order specified by the Query Replayer's parameters
+  repeated argo_search.broker.v1.LoggedBrokerResponse responses = 3;
+}

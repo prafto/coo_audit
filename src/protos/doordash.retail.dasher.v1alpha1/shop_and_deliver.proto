@@ -1,0 +1,364 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+import "common/money.proto";
+
+option java_generic_services = true;
+package doordash.retail.dasher.v1alpha1;
+
+// Pick/pack service for dashers
+service ShopAndDeliverService {
+  /*
+   * Get Pick Items
+   *
+   * Retrieve the list of items to be picked and packed for this delivery. This call requires a delivery uuid to be
+   * specified.
+   *
+   * In case of errors it can return:
+   *
+   * * 403 for delivery assigned to another dasher
+   * * 404 for delivery not found
+   * * 500 for any internal server errors
+   */
+  rpc GetPickItems(GetPickItemsRequest) returns (GetPickItemsResponse) {
+    option (google.api.http) = {
+      get: "/v1/shop-and-deliver/{delivery_uuid}/get-pick-items"
+    };
+  };
+  /*
+   * Finish Pick
+   *
+   * Submit the results of the picking to the backend service all at once. This call requires a delivery uuid to be
+   * specified.
+   *
+   * In case of errors it can return:
+   *
+   * * 403 for delivery assigned to another dasher
+   * * 404 for delivery not found
+   * * 500 for any internal server errors
+   */
+  rpc FinishPick(FinishPickRequest) returns (FinishPickResponse) {
+    option (google.api.http) = {
+      post: "/v1/shop-and-deliver/{delivery_uuid}/finish-pick"
+      body: "*"
+    };
+  };
+
+  /*
+   * Log Pick Events
+   *
+   * Batch log pick events to the backend.
+   *
+   * In case of errors it can return:
+   *
+   * * 404 for delivery not found
+   * * 500 for any internal server errors
+   */
+  rpc LogPickEvents(LogPickEventsRequest) returns (LogPickEventsResponse) {
+    option (google.api.http) = {
+      post: "/v1/shop-and-deliver/log-pick-events"
+      body: "*"
+    };
+  };
+
+  /*
+   * Get Item By Barcode
+   *
+   * Retrieves an item matching the barcode that was passed in.
+   *
+   * In case of errors it can return:
+   *
+   * * 403 for item associated with the barcode not found
+   * * 404 for delivery not found
+   * * 500 for any internal server errors
+   */
+  rpc GetItemByBarcode(GetItemByBarcodeRequest) returns (GetItemByBarcodeResponse) {
+    option (google.api.http) = {
+      get: "/v1/shop-and-deliver/{delivery_uuid}/get-item-by-barcode/{barcode}"
+    };
+  };
+
+  // API used for internal testing purpose only
+  rpc GetItemByBarcodeFromMDS(GetItemByBarcodeFromMDSRequest) returns (GetItemByBarcodeFromMDSResponse);
+
+  // 3. Upload receipt
+  // StartImageUpload
+  // FinishImageUpload..
+
+  /*
+   * Get Checkout Barcode
+   *
+   * Retrieves checkout barcode for the given delivery uuid.
+   *
+   * In case of errors it can return:
+   *
+   * 404 for delivery not found
+   * 500 for any internal server errors
+   */
+  rpc GetCheckoutBarcode(GetCheckoutBarcodeRequest) returns (GetCheckoutBarcodeResponse) {
+    option (google.api.http) = {
+      get: "/v1/shop-and-deliver/{delivery_uuid}/get-checkout-barcode"
+    };
+  }
+}
+
+// Request payload for Get Pick Items API
+message GetPickItemsRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // Shift id for the current dasher
+  int64 shift_id = 2;
+}
+
+// A group of order items
+message OrderItemGroup {
+  // Unique UUID to identify the group
+  string group_uuid = 1;
+  // Name of group
+  string name = 2;
+  // Sort ordering of the group to display on the client. Sort in ascending order.
+  int32 sort_order = 3;
+}
+
+// Response payload for Get Pick Items API
+message GetPickItemsResponse {
+  // Specific instructions to be displayed to the dasher on arrival
+  repeated string instructions = 1;
+  // List of items to be picked, along with the substitution preferences
+  repeated OrderItemWithClassification pick_items = 2;
+  // A barcode to be displayed during the checkout. If blank or missing, do not show.
+  string barcode_url = 3;
+  // Additional checkout instructions. If missing, do not show.
+  CheckoutInstructions checkout_instructions = 4;
+  // List of item groups. If empty, group by category.
+  repeated OrderItemGroup item_groups = 5;
+}
+
+// Request payload for Finish Pick API
+message FinishPickRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // Shift id for the current dasher
+  int64 shift_id = 2;
+  /*
+   * List of items that were actually picked with their pick result (picked, refunded, substituted etc). All items in
+   * the original pick work order must be present and accounted for in this request.
+   *
+   * In the case of substituted item the item UUID must be populated and a new PickResult added corresponding to the
+   * actually picked item.
+   */
+  repeated PickResult pick_results = 3;
+}
+
+// Response payload for Finish Pick API
+message FinishPickResponse {
+  // Indicates to the dasher client if an order is about to be cancelled.
+  bool should_cancel = 1;
+}
+
+// Request payload for Log Pick Events API
+message LogPickEventsRequest {
+  // Shift id for the current dasher
+  int64 shift_id = 1;
+  // A list of events to inform the backend during the picking process.
+  repeated PickEvent events = 2;
+}
+
+// Response payload from Log Pick Events API
+message LogPickEventsResponse {}
+
+// Request payload for the GetItemByBarcodeFromMDSRequest API
+message GetItemByBarcodeFromMDSRequest {
+  // store id string
+  string store_id = 1;
+  // Barcode String
+  string barcode = 2;
+}
+
+// Request payload for Checkout Barcode API
+message GetCheckoutBarcodeRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // The preferred width in pixels (optional)
+  int32 width = 2;
+  // The preferred height in pixels (optional)
+  int32 height = 3;
+}
+
+// Media type - https://en.wikipedia.org/wiki/Media_type
+enum MediaType {
+  // unknown
+  MEDIA_TYPE_UNSPECIFIED = 0;
+  // image/png
+  MEDIA_TYPE_IMAGE_PNG = 1;
+}
+
+// Response payload for Checkout Barcode API
+message GetCheckoutBarcodeResponse {
+  // Barcode image
+  bytes checkout_barcode_image = 1;
+  // Media type of the image
+  MediaType media_type = 2;
+}
+
+// Request payload for the Get Item By Barcode API
+message GetItemByBarcodeRequest {
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // Shift id for the current dasher
+  int64 shift_id = 2;
+  // Barcode String
+  string barcode = 3;
+  // The original item being substituted UUID
+  string original_item_uuid = 4;
+  // Type of the barcode
+  string barcode_type = 5;
+}
+
+// Response payload for the Get Item by Barcode API
+message GetItemByBarcodeResponse {
+  // Store Item that matched the barcode. eligible_substitutions and sort_order are empty.
+  OrderItemWithClassification scanned_item = 1;
+  // Check whether the scanned item is the same as the passed-in original item or not
+  bool is_same_item = 2;
+}
+
+// Response payload for the GetItemByBarcodeFromMDSRequest API
+message GetItemByBarcodeFromMDSResponse {
+  // Store Item that matched the barcode. eligible_substitutions and sort_order are empty.
+  OrderItemWithClassification scanned_item = 1;
+}
+
+/*
+ * PickResult stores the pick state for each item in the pick list.
+ */
+message PickResult {
+  // Item UUID that was picked
+  string item_uuid = 1;
+
+  // Possible states of this pick result
+  // TODO(amrik): rename enums below, and migrate dasher-mobile-bff to prevent breaking change
+  enum State {
+    // Unspecified and/or invalid
+    STATE_UNSPECIFIED = 0;
+    // Item was picked
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    PICKED = 1;
+    // Item was refunded
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    REFUNDED = 2;
+    // Item was substituted with a known in-catalog item
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    SUBSTITUTED = 3;
+  }
+  // The current state of this pick result, ie. whether picked, refunded or substituted
+  State state = 2;
+
+  // Quantity of this item that was actually picked
+  double quantity_picked = 3;
+
+  // Substituted order item id, only to be populated if the state is SUBSTITUTED. Blank otherwise.
+  string substituted_order_item_uuid = 4;
+}
+
+// Pick Events are breadcrumbs that the client may record to track events during in-store picking.
+message PickEvent {
+  // Timestamp of this event
+  google.protobuf.Timestamp timestamp = 1;
+
+  // The item for context purposes
+  string item_uuid = 2;
+
+  // The action that was taken
+  string action = 3;
+
+  // The step in the flow eg. picking, scanning
+  string step = 4;
+
+  // The substituted item uuid, if the action was a substitution
+  string substituted_item_uuid = 5;
+}
+
+// Represents an item in a customer's order, along with it's category and possible substitutions
+message OrderItemWithClassification {
+  // Unique identifier for this item. This is NOT an item id, it is unique to retail-service.
+  string uuid = 1;
+
+  // Name to be displayed for this particular item
+  string name = 2;
+
+  // Quantity requested by the consumer
+  double quantity_requested = 3;
+
+  // L1 category for grouping
+  string category = 4;
+
+  // Image url for this order item
+  string image_url = 5;
+
+  // List of eligible substitutions for this particular cx and order item
+  repeated OrderItemEligibleSubstitution eligible_substitutions = 6;
+
+  // Price for this item, must be specified for freehand substitutions
+  money.MonetaryFields price = 7;
+
+  // Sort ordering to display in the client within each group. Sort in ascending order.
+  int32 sort_order = 8;
+
+  // Status for what kind of substitution option the consumer selected.
+  enum SubstitutionStatus {
+    // Unspecified Substitution Status
+    SUBSTITUTION_STATUS_UNSPECIFIED = 0;
+    // Consumer requested to be contacted
+    SUBSTITUTION_STATUS_CONTACT_CUSTOMER = 1;
+    // Consumer requested to be refunded
+    SUBSTITUTION_STATUS_REFUND_CUSTOMER = 2;
+    // Consumer requested to substitute with a known in-catalog item
+    SUBSTITUTION_STATUS_SELECT_SUBSTITUTION = 3;
+  }
+
+  // Substitution preference selected for the given item.
+  SubstitutionStatus substitution_status = 9;
+
+  // Group of item
+  string group_uuid = 10;
+
+  // Enable pick accuracy flow for this item
+  bool enable_pick_accuracy = 11;
+}
+
+// A possible substitution for a given order item
+message OrderItemEligibleSubstitution {
+  // Unique identifier for this item. This is NOT an item id, it is unique to retail-service.
+  string uuid = 1;
+
+  // Item name to display
+  string name = 2;
+
+  // Image url for this substitution
+  string image_url = 3;
+
+  // Price for this particular substitution
+  money.MonetaryFields price = 4;
+
+  // Quantity requested by the consumer
+  double quantity_requested = 5;
+}
+
+// Additional checkout instructions
+message CheckoutInstructions {
+  // Variants of checkout instructions
+  enum Variant {
+    // Unspecified variant
+    VARIANT_UNSPECIFIED = 0;
+    // Use loyalty number and ask cashier to remove taxes
+    VARIANT_LOYALTY_NUMBER_AND_TAX_EXEMPTION = 1;
+  }
+
+  // Variant of checkout instructions
+  Variant variant = 1;
+  // The loyalty number to display
+  string loyalty_number = 2;
+}

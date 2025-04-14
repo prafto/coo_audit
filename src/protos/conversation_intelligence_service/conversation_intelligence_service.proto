@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package conversation_intelligence_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lattice_runner/session.proto";
+import "lattice_runner/tool.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/conversation_intelligence_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.conversation_intelligence_service.rpc.api";
+
+// Service to serve conversation related intelligence features.
+// RFC - https://docs.google.com/document/d/1peGDevJIpJgTkpQYZz0nWAh05ltqxRdp5ONTpx-2efg/edit#heading=h.8jlzy09dyxly.
+service ConversationIntelligenceService {
+  // Large default timeout. Due to multiple LLM calls involved. Default timeout is 5 min.
+  option (service_client.client_config).response_attempt_timeout_millis = 300000;
+  // No retries. Retrying the message is not needed as typically we can just escalate.
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Generate messages responding an income query.
+  rpc GenerateMessage(GenerateMessageRequest) returns (GenerateMessageResponse);
+}
+
+// Request for generating LLM powered messages regarding a user query.
+message GenerateMessageRequest {
+  // User query.
+  InputMessage user_query = 1;
+
+  // A unique id of session, for example, UUID.
+  google.protobuf.StringValue session_id = 2;
+
+  // Additional content to be passed to session for this request. These are added to
+  // the session context for all the subsequent calls.
+  lattice_runner.v1.Context initial_request_context = 3;
+}
+
+// The response reacting on a user query. There might be multiple messages generated for a single query.
+message GenerateMessageResponse {
+  reserved 3;
+  reserved "context_update_operation";
+
+  // The messages generated to respond the query.
+  repeated OutputMessage generated_messages = 1;
+  // Conversation status.
+  ChatbotConversationStatus conversation_status = 2;
+  // The session context to be updated.
+  repeated lattice_runner.v1.ContextOperation context_update_operations = 4;
+}
+
+// Conversation Status
+enum ChatbotConversationStatus {
+  // Status undefined
+  CHATBOT_CONVERSATION_STATUS_UNSPECIFIED = 0;
+  // Ongoing conversation
+  CHATBOT_CONVERSATION_STATUS_ONGOING = 1;
+  // Completed status
+  CHATBOT_CONVERSATION_STATUS_COMPLETED = 2;
+  // Escalated to human agent
+  CHATBOT_CONVERSATION_STATUS_ESCALATED = 3;
+  // Out of scope
+  CHATBOT_CONVERSATION_STATUS_OUT_OF_SCOPE = 4;
+}
+
+// Enum to represent the type of attachment
+enum AttachmentType {
+  // Unspecified attachment type
+  ATTACHMENT_TYPE_UNSPECIFIED = 0;
+  // Image attachment
+  ATTACHMENT_TYPE_IMAGE = 1;
+  // Video attachment
+  ATTACHMENT_TYPE_VIDEO = 2;
+  // Document attachment
+  ATTACHMENT_TYPE_DOCUMENT = 3;
+  // Audio attachment
+  ATTACHMENT_TYPE_AUDIO = 4;
+  // JSON data attachment
+  ATTACHMENT_TYPE_JSON = 5;
+}
+
+// Message representing an attachment
+message Attachment {
+  // URL of the attachment
+  google.protobuf.StringValue url = 1;
+  // Type of the attachment
+  AttachmentType type = 2;
+  // File name of the attachment file
+  google.protobuf.StringValue filename = 3;
+  // Optional MIME type
+  google.protobuf.StringValue mime_type = 4;
+  // Raw JSON data string when type is ATTACHMENT_TYPE_JSON
+  google.protobuf.StringValue json_data = 5;
+}
+
+// Message representing metadata about the input message
+message InputMessageMetadata {
+  // Unique identifier for the message
+  google.protobuf.StringValue message_id = 1;
+  // Timestamp of the message
+  google.protobuf.Timestamp timestamp = 2;
+  // ID of the sender
+  google.protobuf.StringValue sender_id = 3;
+}
+
+// Main message structure for the conversation input
+message InputMessage {
+  // Message content of input
+  lattice_runner.v1.Message message = 1;
+  // List of attachments
+  repeated Attachment attachments = 2;
+  // Metadata associated with the message
+  InputMessageMetadata metadata = 3;
+}
+
+// Message representing metadata about the output message.
+// Separate with InputMessageMetadata for future extensibility.
+message OutputMessageMetadata {
+  // Unique identifier for the response message
+  google.protobuf.StringValue message_id = 1;
+  // Timestamp of the response message
+  google.protobuf.Timestamp timestamp = 2;
+  // The ontology step that generated the message.
+  google.protobuf.StringValue generated_by = 3;
+}
+
+// Main output message structure for the conversation response
+message OutputMessage {
+  // Message content of single output
+  lattice_runner.v1.Message message = 1;
+  // List of attachments to display in the response
+  repeated Attachment attachments = 2;
+  // Metadata associated with the output message
+  OutputMessageMetadata metadata = 3;
+  // Sendbird channel metadata action received from graph execution.
+  ChannelMetadataAction channel_metadata_action = 4;
+}
+
+// Represents Sendbird channel metadata action.
+message ChannelMetadataAction {
+  // Represents the type of actions.
+  enum Action {
+    // Unspecified action
+    ACTION_UNSPECIFIED = 0;
+    // Action to upsert a given metadata in the channel
+    ACTION_PUT = 1;
+    // Action to delete a given metadata
+    ACTION_DELETE = 2;
+  }
+  // Action to perform for the given metadata.
+  // This is a required field.
+  Action action = 1;
+  // Metadata key. This is a required field.
+  google.protobuf.StringValue metadata_key = 2;
+  // Metadata value. This is optional field for delete and required field for put.
+  google.protobuf.StringValue metadata_value = 3;
+}

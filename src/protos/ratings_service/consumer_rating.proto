@@ -1,0 +1,2013 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package ratings_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+import "ratings_service/common.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ratings";
+
+// consumer rating service
+service ConsumerRatingService {
+  option (doordash.api.service) = {
+    name: "ratings-service-web"
+    port: 50051
+    name_spaces: ["ratings"]
+    owner: {
+      id: "social-proof"
+      name: "consumer-ratings-service"
+      slack_channel: "#eng-order-platform"
+      email_alias: "order-platform@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).service_name = "ratings-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).response_attempt_timeout_millis = 500;
+  // creates consumer rating in ratings db
+  rpc CreateConsumerRating(CreateConsumerRatingRequest) returns (CreateConsumerRatingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  // returns the data necessary to power consumer rating submission form
+  rpc GetConsumerRatingForm(GetConsumerRatingFormRequest) returns (GetConsumerRatingFormResponse) {
+    option (google.api.http) = {
+      post: "/ratings/v1/consumer_ratings_form"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+  }
+  // get consumer review preview for target
+  rpc GetConsumerReviewPreviewForTarget(GetConsumerReviewPreviewForTargetRequest) returns (GetConsumerReviewPreviewForTargetResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+  // get consumer review details including item details for associated orders
+  rpc GetConsumerReviewDetails(GetConsumerReviewDetailsRequest) returns (GetConsumerReviewDetailsResponse) {
+    option (google.api.http) = {get: "/ratings/v1/details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER
+      ]
+    };
+  }
+  // get ratings and reviews page
+  rpc GetRatingsReviewsPage(GetRatingsReviewsPageRequest) returns (GetRatingsReviewsPageResponse);
+  // moderate consumer reviews
+  rpc ModerateConsumerReviews(ModerateConsumerReviewsRequest) returns (ModerateConsumerReviewsResponse);
+  // returns the consumer rating submission form for an order
+  rpc GetConsumerOrderRatingForm(GetConsumerOrderRatingFormRequest) returns (GetConsumerOrderRatingFormResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+  // returns consumer ratings for a list of orders
+  rpc GetConsumerRatingsByOrders(GetConsumerRatingsByOrdersRequest) returns (GetConsumerRatingsByOrdersResponse);
+  // returns consumer ratings for a list of deliveries
+  rpc GetConsumerRatingsByDeliveries(GetConsumerRatingsByDeliveriesRequest) returns (GetConsumerRatingsByDeliveriesResponse);
+  // returns most recent orders for consumer, filtered by specified order attributes
+  rpc GetMostRecentOrdersForConsumer(GetMostRecentOrdersForConsumerRequest) returns (GetMostRecentOrdersForConsumerResponse) {
+    option (google.api.http) = {get: "/ratings/v1/most_recent_orders"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+  }
+  // update comment flagged
+  rpc UpdateCommentFlagged(UpdateCommentFlaggedRequest) returns (UpdateCommentFlaggedResponse);
+  // get aggregate target ratings
+  rpc GetAggregateTargetRatings(GetAggregateTargetRatingsRequest) returns (GetAggregateTargetRatingsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+  // get aggregate target ratings for multiple stores and items
+  rpc GetAggregateTargetRatingsV2(GetAggregateTargetRatingsV2Request) returns (GetAggregateTargetRatingsV2Response);
+  // custom Dx endpoint: get compliments for target
+  rpc GetComplimentsForTarget(GetComplimentsForTargetRequest) returns (GetComplimentsForTargetResponse);
+  // custom Dx endpoint: get rating detail for target
+  rpc GetReviewDetailForTarget(GetReviewDetailForTargetRequest) returns (GetReviewDetailForTargetResponse);
+  // bulk waive reviews by consumer review uuid
+  rpc BulkWaiveReviews(BulkWaiveReviewsRequest) returns (BulkWaiveReviewsResponse);
+  // get consumer reviews for an item
+  rpc GetConsumerReviewsForItem(GetConsumerReviewsForItemRequest) returns (GetConsumerReviewsForItemResponse);
+  // process consumer review interaction (e.g. helpful)
+  rpc ProcessConsumerReviewInteraction(ProcessConsumerReviewInteractionRequest) returns (ProcessConsumerReviewInteractionResponse);
+  // Api to fetch the UGC Content Submission within a time range given a list of consumer ids.
+  rpc GetUGCContentSubmissionsByConsumerIds(GetUGCContentSubmissionsByConsumerIdsRequest) returns (GetUGCContentSubmissionsByConsumerIdsResponse);
+  // Fetches most liked items for a given store ID
+  rpc GetMostLikedItemsForStore(GetMostLikedItemsForStoreRequest) returns (GetMostLikedItemsForStoreResponse);
+  // Fetches most liked items for multiple stores
+  rpc GetMostLikedItemsForStores(GetMostLikedItemsForStoresRequest) returns (GetMostLikedItemsForStoresResponse);
+  // Fetches social proof callouts for each item in a Store
+  rpc GetItemSpfCalloutsForStore(GetItemSpfCalloutsForStoreRequest) returns (GetItemSpfCalloutsForStoreResponse);
+  // batch endpoint to get consumer reviews by targets
+  rpc BatchGetConsumerReviewsForTargets(BatchGetConsumerReviewsForTargetsRequest) returns (BatchGetConsumerReviewsForTargetsResponse);
+
+  /*
+     SCRIPT / TESTING ENDPOINTS
+  */
+  // for testing sending an email when a review is submitted, approved or rejected
+  rpc TestIterableEmailForReviewEvent(TestIterableEmailForReviewEventRequest) returns (TestIterableEmailForReviewEventResponse);
+  // bulk approval of cx reviews
+  rpc ApproveConsumerReviews(ApproveConsumerReviewsRequest) returns (ApproveConsumerReviewsResponse);
+  // bulk rejection of cx reviews
+  rpc RejectConsumerReviews(RejectConsumerReviewsRequest) returns (RejectConsumerReviewsResponse);
+  // update quality rating
+  rpc UpdateQualityRating(UpdateQualityRatingRequest) returns (UpdateQualityRatingResponse);
+  // update moderated_at time
+  rpc UpdateModerationTimes(UpdateModerationTimesRequest) returns (UpdateModerationTimesResponse);
+  // for testing integrations
+  rpc TestGrpcEndpoint(TestGrpcEndpointRequest) returns (TestGrpcEndpointResponse);
+  // 3/11/2022 update target_type and display_status for web post order flow bug
+  rpc BatchUpdateWebReviews(BatchUpdateWebReviewsRequest) returns (BatchUpdateWebReviewsResponse);
+  // trigger the review post order workflow
+  rpc TriggerReviewPostOrderWorkflow(TriggerReviewPostOrderWorkflowRequest) returns (TriggerReviewPostOrderWorkflowResponse);
+  // trigger the review post order workflow
+  rpc DeleteConsumerReviews(DeleteConsumerReviewsRequest) returns (DeleteConsumerReviewsResponse);
+  // backfill item rating stat metadata
+  rpc BackfillItemStatMetadata(BackfillItemStatMetadataRequest) returns (BackfillItemStatMetadataResponse);
+  //backfill partial scores for existing consumer reviews
+  rpc BackfillPartialScores(BackfillPartialScoresRequest) returns (BackfillPartialScoresResponse);
+  // create expert reviews and reviewers
+  rpc CreateExpertReviews(CreateExpertReviewsRequest) returns (CreateExpertReviewsResponse);
+  // detect consumer review language manually
+  rpc DetectConsumerReviewLanguage(DetectConsumerReviewLanguageRequest) returns (DetectConsumerReviewLanguageResponse);
+  // get detected language for debugging purpose
+  rpc GetConsumerReviewDetectedLanguage(GetConsumerReviewDetectedLanguageRequest) returns (GetConsumerReviewDetectedLanguageResponse);
+  // backfill tagged item reviews
+  rpc CreateTaggedItemReviews(CreateTaggedItemReviewsRequest) returns (CreateTaggedItemReviewsResponse);
+  // delete tagged item reviews
+  rpc DeleteTaggedItemReviews(DeleteTaggedItemReviewsRequest) returns (DeleteTaggedItemReviewsResponse);
+  // toggle review display status
+  rpc ToggleReviewDisplayStatus(ToggleReviewDisplayStatusRequest) returns (ToggleReviewDisplayStatusResponse);
+  // backfills consumer review theme mentions
+  rpc CreateConsumerReviewThemeMentions(CreateConsumerReviewThemeMentionsRequest) returns (CreateConsumerReviewThemeMentionsResponse);
+  // batch backfill consumer review theme mentions
+  rpc BackfillReviewThemeMentions(BackfillReviewThemeMentionsRequest) returns (BackfillReviewThemeMentionsResponse);
+  // get top rated stores leaderboard
+  rpc GetStoreLeaderboard(GetStoreLeaderboardRequest) returns (GetStoreLeaderboardResponse) {
+    option (google.api.http) = {get: "/ratings/v1/leaderboard"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+  }
+  // Retry failed gpt moderated reviews
+  rpc RetryGptModeratedReviews(RetryGptModeratedReviewsRequest) returns (RetryGptModeratedReviewsResponse);
+  // hide ratings and reviews from creator profile
+  rpc HideRatingsReviewsFromCreatorProfile(HideRatingsReviewsFromCreatorProfileRequest) returns (HideRatingsReviewsFromCreatorProfileResponse) {
+    option (google.api.http) = {
+      post: "/ratings/v1/hide_ratings_reviews_from_creator_profile"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+  }
+
+  // endpoint to get Yelp ratings based on doordashStoreId
+  rpc GetYelpBusinessRatingsByStoreIds(GetYelpBusinessRatingsByStoreIdsRequest) returns (GetYelpBusinessRatingsByStoreIdsResponse);
+}
+
+// request to batch get consumer reviews by target
+message BatchGetConsumerReviewsForTargetsRequest {
+  // targets, currently only store and item are supported, eventually we’d like to support business as well
+  repeated Target targets = 1;
+  // offset, default to 0
+  google.protobuf.Int32Value offset = 2;
+  // the number of reviews to fetch per target
+  google.protobuf.Int32Value limit = 3;
+  // the use case for fetching consumer reviews
+  BatchGetConsumerReviewsUseCase use_case = 4;
+  // requester consumer id
+  google.protobuf.StringValue consumer_id = 5;
+}
+
+enum BatchGetConsumerReviewsUseCase {
+  // unspecified
+  BATCH_GET_CONSUMER_REVIEWS_USE_CASE_UNSPECIFIED = 0;
+  // get consumer reviews for reels
+  BATCH_GET_CONSUMER_REVIEWS_USE_CASE_REELS = 1;
+  // get consumer reviews for leaderboard
+  BATCH_GET_CONSUMER_REVIEWS_USE_CASE_LEADERBOARD = 2;
+}
+
+// Response for fetching consumer reviews by target
+message BatchGetConsumerReviewsForTargetsResponse {
+  // results
+  oneof result {
+    // List of consumer reviews by targets
+    ConsumerReviewsList data = 1;
+    // Error details
+    ConsumerRatingError error = 2;
+  }
+
+  // List of consumer reviews by targets
+  message ConsumerReviewsList {
+    // List of consumer reviews by target
+    repeated ConsumerReviewByTarget reviews_by_target = 1;
+  }
+
+  // Consumer reviews by target
+  message ConsumerReviewByTarget {
+    // Target
+    Target target = 1;
+    // List of consumer reviews associated with the target
+    repeated ConsumerReview reviews = 2;
+  }
+}
+
+// request to get Yelp Ratings by storeIds
+message GetYelpBusinessRatingsByStoreIdsRequest {
+  // doordash store ids in string
+  repeated string doordash_store_ids = 1;
+}
+
+// response to get Yelp Ratings by storeIds
+message GetYelpBusinessRatingsByStoreIdsResponse {
+  // each response will be storeId and yelpRating
+  message YelpRatingByStoreId {
+    // Avg Rating for this Mx on yelp on a scale of 1.0 to 5.0
+    google.protobuf.DoubleValue yelp_avg_rating = 1;
+    // doordash_store_id
+    google.protobuf.StringValue doordash_store_id = 2;
+  }
+
+  // response in a list of (storeId, yelpRating)
+  repeated YelpRatingByStoreId yelp_ratings_by_store_ids = 1;
+}
+
+// business logic error codes for consumer rating
+enum ConsumerRatingErrorCode {
+  // unspecified error
+  CONSUMER_RATING_ERROR_CODE_UNSPECIFIED = 0;
+  // invalid parameter (possibly null) error
+  CONSUMER_RATING_ERROR_CODE_INVALID_PARAMETER = 1;
+  // internal error
+  CONSUMER_RATING_ERROR_CODE_INTERNAL_ERROR = 2;
+}
+
+// display codes for review display status
+enum ReviewDisplayStatus {
+  // unspecified
+  REVIEW_DISPLAY_STATUS_UNSPECIFIED = 0;
+  // public (show to Cx, Mx, and Dx)
+  REVIEW_DISPLAY_STATUS_PUBLIC = 1;
+  // private (show to Mx and Dx only)
+  REVIEW_DISPLAY_STATUS_PRIVATE = 2;
+}
+
+// moderate status for consumer reviews
+enum ModerationStatus {
+  // unspecified
+  MODERATION_STATUS_UNSPECIFIED = 0;
+  // approved
+  MODERATION_STATUS_APPROVED = 1;
+  // rejected
+  MODERATION_STATUS_REJECTED = 2;
+  // waived
+  MODERATION_STATUS_WAIVED = 3;
+  // escalated
+  MODERATION_STATUS_ESCALATED = 4;
+  // pending
+  MODERATION_STATUS_PENDING = 5;
+  // error
+  MODERATION_STATUS_ERROR = 6;
+}
+
+// error details
+message ConsumerRatingError {
+  // error code
+  ConsumerRatingErrorCode error_code = 1;
+  // error message
+  google.protobuf.StringValue error_message = 2;
+}
+
+// create consumer rating request
+message CreateConsumerRatingRequest {
+  // consumer id
+  int64 consumer_id = 1;
+  // order id, if the rating is associated with an order
+  google.protobuf.StringValue order_uuid = 2;
+  // array of consumer ratings, ie one for store, one for delivery
+  repeated ConsumerRating consumer_rating = 3;
+  // metadata for the request
+  message Metadata {
+    // delivery uuid
+    google.protobuf.StringValue delivery_uuid = 1;
+    // part of order process the rating was created from
+    UGCEntryPoint entry_point = 2;
+  }
+  // the metadata
+  Metadata metadata = 4;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 5;
+  // if the test flow is active or not
+  google.protobuf.BoolValue testing = 6;
+  // store id
+  google.protobuf.StringValue store_id = 7;
+  //ugc photos
+  repeated UGCPhoto ugc_photos = 8;
+  //People per order
+  PeoplePerOrder people_per_order = 9;
+
+  // ugc content (videos, images, etc); should replace ugc_photos
+  repeated UGCContent ugc_content = 10;
+  // flag to disable/enable Cx notification/email while creating a new Cx Rating.
+  // In existing behavior, all new Cx Ratings trigger a Cx notification.
+  bool disable_customer_notification = 11;
+}
+
+// review chaining for orders without reviews
+message ReviewChainingOrders {
+  // list of orders without reviews
+  repeated Order orders = 1;
+}
+
+// create consumer rating response
+message CreateConsumerRatingResponse {
+  // response status
+  bool success = 1;
+  // response error
+  ConsumerRatingError error = 2;
+  // list of orders without reviews
+  ReviewChainingOrders review_chaining_orders = 3;
+}
+
+// consumer rating data
+message ConsumerRating {
+  // target of the rating
+  Target target = 1;
+  // star rating
+  google.protobuf.Int32Value star_rating = 2;
+  // free form review
+  google.protobuf.StringValue review_text = 3;
+  // rating tags
+  repeated Tag tags = 4;
+  // review display status
+  ReviewDisplayStatus display_status = 5;
+  // star rating or thumbs rating and its value
+  RatingInfo rating_info = 6;
+  // review text with marked up items
+  google.protobuf.StringValue marked_up_review_text = 7;
+  // rating metadata
+  message Metadata {
+    // freeform JSON for enhancements (e.g. auto tagging & completion)
+    google.protobuf.Struct review_metadata = 1;
+  }
+  // the rating metadata
+  Metadata metadata = 8;
+}
+
+// Rating Type and Value
+message RatingInfo {
+  // these are deleted fields, do not reuse
+  reserved 3;
+  reserved "rating_display_string";
+  // rating type (star or thumbs/vote)
+  RatingType rating_type = 1;
+  // the values that the rating can have
+  RatingValue rating_value = 2;
+}
+
+// Rating Type for ConsumerRating
+enum RatingType {
+  // rating type unspecified
+  RATING_TYPE_UNSPECIFIED = 0;
+  // thumbs/vote up or down
+  RATING_TYPE_VOTE_RATING = 1;
+  // star rating out of 5
+  RATING_TYPE_STAR_RATING = 2;
+}
+
+// Rating Value for ConsumerRating
+enum RatingValue {
+  // rating type unspecified
+  RATING_VALUE_UNSPECIFIED = 0;
+  // one star out of five
+  RATING_VALUE_ONE = 1;
+  // two star out of five
+  RATING_VALUE_TWO = 2;
+  // three star out of five
+  RATING_VALUE_THREE = 3;
+  // four star out of five
+  RATING_VALUE_FOUR = 4;
+  // five star out of five
+  RATING_VALUE_FIVE = 5;
+  // upvote / thumbs up
+  RATING_VALUE_UPVOTE = 6;
+  // downvote / thumbs down
+  RATING_VALUE_DOWNVOTE = 7;
+}
+
+//UGCPhoto message
+message UGCPhoto {
+  //photo image file
+  bytes photo_image_file = 1;
+  //file name
+  google.protobuf.StringValue file_name = 2;
+  //tagged item ids
+  repeated google.protobuf.StringValue item_ids = 3;
+  //photo metadata
+  message Metadata {
+    //part of device photo sourced from
+    PhotoSource source = 1;
+    //whether photo auto enhancements used
+    google.protobuf.BoolValue is_enhanced = 2;
+    //freeform metadata for enhancements etc.
+    google.protobuf.Struct photo_metadata = 3;
+  }
+  //the photo metadata
+  Metadata metadata = 4;
+}
+
+enum PhotoSource {
+  // unspecified
+  PHOTO_SOURCE_UNSPECIFIED = 0;
+  // consumer camera
+  PHOTO_SOURCE_CAMERA = 1;
+  // consumer photo library
+  PHOTO_SOURCE_LIBRARY = 2;
+}
+
+enum UGCEntryPoint {
+  // unspecified
+  UGC_ENTRY_POINT_UNSPECIFIED = 0;
+  // from reminder notification
+  UGC_ENTRY_POINT_NOTIFICATION = 1;
+  // after order completion
+  UGC_ENTRY_POINT_POST_ORDER = 2;
+  // before order on store page
+  UGC_ENTRY_POINT_PRE_ORDER = 3;
+}
+
+// UGC Content
+message UGCContent {
+  // content file
+  bytes file = 1;
+  // file name
+  google.protobuf.StringValue file_name = 2;
+}
+
+//People Per Order enum
+enum PeoplePerOrder {
+  // unspecified
+  PEOPLE_PER_ORDER_UNSPECIFIED = 0;
+  // 1 value
+  PEOPLE_PER_ORDER_ONE = 1;
+  // 2 value
+  PEOPLE_PER_ORDER_TWO = 2;
+  // 3 value
+  PEOPLE_PER_ORDER_THREE = 3;
+  // 4+ value
+  PEOPLE_PER_ORDER_FOUR_PLUS = 20;
+}
+
+// get consumer rating form request
+message GetConsumerRatingFormRequest {
+  // consumer id
+  int64 consumer_id = 1;
+  // target of rating
+  repeated Target target = 2;
+  // metadata for the request
+  message Metadata {
+    // store name
+    google.protobuf.StringValue store_name = 1;
+  }
+  // the metadata
+  Metadata metadata = 3;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 4 [(doordash.api.inject_id) = CX_ID];
+}
+
+// get consumer rating form response
+message GetConsumerRatingFormResponse {
+  // title of the entire form
+  string title = 1;
+  // subtitle
+  google.protobuf.StringValue subtitle = 2;
+  // tooltip structure
+  message Tooltip {
+    // tooltip title
+    string title = 1;
+    // tooltip text
+    string text = 2;
+  }
+  // the tooltip
+  Tooltip tooltip = 3;
+  // optional; associate the rating if an order exists
+  Order order = 4;
+  // array of rating sections, one for each target
+  repeated TargetRatingSection target_rating_section = 5;
+  // whether public reviews are enabled
+  google.protobuf.BoolValue public_reviews_enabled = 6;
+  // store image
+  Image store_image = 7;
+  // store name
+  google.protobuf.StringValue store_name = 8;
+  //Preferred layout
+  PreferredLayout preferred_layout = 9;
+  // Banner message
+  repeated BannerMessage banner_messages = 10;
+  // whether photo submission is enabled
+  google.protobuf.BoolValue photo_submission_enabled = 11;
+}
+
+// target rating section
+message TargetRatingSection {
+  // target of rating
+  Target target = 1;
+  // title of the section
+  string title = 2;
+  // star rating (optional)
+  StarRating star_rating = 3;
+  // free text review (optional)
+  FreeText free_text = 4;
+  // button rating (optional)
+  ButtonRating button_rating = 5;
+}
+
+// star rating
+message StarRating {
+  // optional title for star rating section
+  google.protobuf.StringValue title = 1;
+  // max number of stars for the rating
+  int32 max_num_stars = 2;
+  // array of star rating to tags association (optional)
+  repeated StarToTags star_to_tags = 3;
+}
+
+// star to tags association
+message StarToTags {
+  // title for star selection
+  string title = 1;
+  // star rating
+  int32 star_rating = 2;
+  // array of tags to display for that particular star rating
+  repeated Tag tag = 3;
+  // title for tags selection
+  google.protobuf.StringValue tags_title = 4;
+  // is feedback required for this star, will be empty for not required stars
+  RequiredFeedback required_feedback = 5;
+  // Details of the banner to be shown when this rating is selected
+  StarRatingBannerDetails banner_details = 6;
+  // Details of the support tooltip to be shown when this rating is selected
+  StarRatingTooltipDetails support_tooltip_details = 7;
+}
+
+// button rating
+message ButtonRating {
+  // optional title for button rating section
+  google.protobuf.StringValue title = 1;
+  // array of button rating to tags association (optional)
+  repeated ButtonToTags button_to_tags = 2;
+}
+
+// button to tags association
+message ButtonToTags {
+  // title for button selection
+  string title = 1;
+  // star rating
+  int32 star_rating = 2;
+  // icon name
+  google.protobuf.StringValue icon_name = 3;
+  // free text review
+  FreeText free_text = 4;
+  // is feedback required for this button, will be empty for not required button
+  RequiredFeedback required_feedback = 5;
+}
+
+enum StarRatingBannerDetailsBannerType {
+  STAR_RATING_BANNER_TYPE_UNKNOWN = 0;
+  STAR_RATING_BANNER_TYPE_TOP_HIGHLIGHT = 1;
+}
+
+enum StarRatingTooltipType {
+  STAR_RATING_TOOLTIP_TYPE_UNKNOWN = 0;
+  STAR_RATING_TOOLTIP_TYPE_DASHPASS = 1;
+}
+
+// Star Rating Banner Details
+message StarRatingBannerDetails {
+  // title
+  google.protobuf.StringValue title = 1;
+  // Banner icon
+  google.protobuf.StringValue icon_token = 2;
+  // Banner color
+  // Please refer here for accepted values: https://github.com/doordash/services-protobuf/blob/master/protos/component-catalog.common/prism/tokens/color.proto
+  google.protobuf.StringValue color_token = 3;
+  // Banner type
+  StarRatingBannerDetailsBannerType type = 4;
+}
+
+// Star Rating Tooltip Details
+message StarRatingTooltipDetails {
+  // title
+  google.protobuf.StringValue title = 1;
+  // Tooltip icon
+  google.protobuf.StringValue icon_token = 2;
+  // Tooltip type
+  StarRatingTooltipType type = 3;
+}
+
+// Captures the title and description text to highlight feedback required
+message RequiredFeedback {
+  // title for the feedback required section
+  google.protobuf.StringValue title = 1;
+  // description for the feedback required section
+  google.protobuf.StringValue description = 2;
+}
+
+// free text
+message FreeText {
+  // title for free text section
+  string title = 1;
+  // example text review
+  google.protobuf.StringValue example_text = 2;
+}
+
+enum ThemeSentiment {
+  THEME_SENTIMENT_UNSPECIFIED = 0;
+  THEME_SENTIMENT_POSITIVE = 1;
+  THEME_SENTIMENT_NEGATIVE = 2;
+}
+
+enum ThemeLabel {
+  THEME_LABEL_UNSPECIFIED = 0;
+  THEME_LABEL_PRICE = 1;
+  THEME_LABEL_TASTE = 2;
+  THEME_LABEL_PORTIONS = 3;
+  THEME_LABEL_MISSING_ITEMS = 4;
+  THEME_LABEL_PACKAGING = 5;
+}
+
+// aggregated count & sentiment towards a theme in the reviews
+message ThemeMentions {
+  // the theme label
+  ThemeLabel theme_label = 1;
+  // theme label display string to be displayed by clients
+  google.protobuf.StringValue theme_label_display_string = 2;
+  // number of reviews that mention the given theme
+  google.protobuf.UInt64Value theme_mention_count = 3;
+  // aggregated sentiment towards the theme (positive/negative)
+  ThemeSentiment theme_sentiment = 4;
+}
+
+// fields to filter ratings reviews page response
+message RatingsReviewsPageFilter {
+  // theme labels to filter
+  repeated ThemeLabel theme_labels = 1;
+}
+
+// consumer review
+message ConsumerReview {
+  // consumer rating id
+  string consumer_review_uuid = 1;
+  // reviewer localized display name (to be deprecated)
+  google.protobuf.StringValue reviewer_display_name = 2;
+  // number of stars
+  google.protobuf.Int32Value num_stars = 3;
+  // review text
+  google.protobuf.StringValue review_text = 4;
+  // reviewed at
+  google.protobuf.Timestamp reviewed_at = 5;
+  // is verified
+  google.protobuf.BoolValue is_verified = 6;
+  // Do not use, deprecating soon
+  common.Experience experience_deprecated = 7;
+  // item details if review has associated orders
+  repeated Item items = 8;
+  // experience
+  Experience experience = 9;
+  // review source from google or doordash, etc
+  ReviewSource review_source = 10;
+  // count of helpful interactions
+  google.protobuf.Int64Value helpful_count = 11;
+  // if Cx has marked review as helpful
+  google.protobuf.BoolValue marked_helpful = 12;
+  // reviewer data
+  ReviewerData reviewer_data = 13;
+  // consumer review source
+  ConsumerReviewSource consumer_review_source = 14;
+  // store id
+  google.protobuf.StringValue store_id = 15;
+  // marked up review text with tagged items
+  google.protobuf.StringValue marked_up_review_text = 16;
+  // tagged item details
+  repeated Item tagged_items = 17;
+  // url to the full review on the third party page
+  google.protobuf.StringValue full_review_url = 18;
+  // sorted list of review photo details
+  repeated ReviewPhotoDetails review_photo_details = 19;
+  // number of photos attached to this review
+  google.protobuf.StringValue photo_count_display_string = 20;
+  // order uuid
+  google.protobuf.StringValue order_uuid = 21;
+  // moderation status
+  ModerationStatus moderation_status = 22;
+  // quality rating
+  google.protobuf.Int64Value quality_rating = 23;
+  // quality rating v2
+  google.protobuf.DoubleValue quality_rating_v2 = 24;
+
+  // review source (to be deprecated)
+  enum ReviewSource {
+    UNKNOWN = 0;
+    DOORDASH = 1;
+    GOOGLE = 2;
+    THIRD_PARTY = 3;
+    YELP = 4;
+  }
+
+  // A menu item entity
+  message Item {
+    // Item id
+    google.protobuf.StringValue id = 1;
+    // Item name
+    google.protobuf.StringValue name = 2;
+    // Item price
+    money.MonetaryFields price = 3;
+    // Item image
+    Image image = 4;
+    // Item rating info
+    RatingInfo rating_info = 5;
+    // Orderability info
+    menu.OrderabilityInfo orderability_info = 6;
+    // Ratings % string to the right of price
+    google.protobuf.StringValue rating_display_string = 7;
+  }
+
+  // reviewer data
+  message ReviewerData {
+    // reviewer localized display name
+    google.protobuf.StringValue display_name = 1;
+    // Repurpose existing description string to show Local Expert status + number of contributions
+    google.protobuf.StringValue description = 2;
+    // profile image
+    Image profile_image = 3;
+    // if reviewer is verified
+    google.protobuf.BoolValue is_verified = 4;
+    // category highlight tag
+    google.protobuf.StringValue category_highlight_tag = 5;
+    // reviewer id
+    google.protobuf.StringValue id = 6;
+    // string to map to prism name for creator profile status icon
+    google.protobuf.StringValue creator_profile_status_icon = 7;
+    // Upon tapping on creator name, client will call uri to load profile
+    google.protobuf.StringValue creator_profile_uri = 8;
+  }
+}
+
+// get consumer review preview request
+message GetConsumerReviewPreviewForTargetRequest {
+  // target
+  Target target = 1;
+  // quantity of reviews
+  int32 quantity = 2;
+  // Feature flag / experiment for google reviews
+  google.protobuf.Int64Value consumer_id = 3;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 4;
+}
+
+// get consumer review preview result
+message GetConsumerReviewPreviewForTargetResult {
+  // array of consumer reviews
+  repeated ConsumerReview reviews = 1;
+  // number of consumer reviews. reviews have texts associated
+  google.protobuf.UInt64Value num_reviews = 2;
+  // number of consumer reviews displayed as for clients
+  google.protobuf.StringValue num_reviews_display_string = 3;
+
+  // Google review metadata for the Mx
+  message GoogleReviewData {
+    // Avg Rating for this Mx on google on a scale of 1.0 to 5.0
+    google.protobuf.DoubleValue avg_rating = 1;
+    // total number of reviews for the Mx on google. Reviews may or may not have text associated.
+    google.protobuf.UInt64Value num_ratings = 2;
+    // number of consumer reviews displayed as for clients
+    google.protobuf.StringValue num_ratings_display_string = 3;
+  }
+  // Google review metadata for the Mx
+  GoogleReviewData google_review_data = 4;
+
+  // list of themes mentioned in the reviews
+  repeated ThemeMentions theme_mentions = 5;
+
+  // Yelp review metadata for the Mx
+  YelpReviewData yelp_review_data = 6;
+}
+
+// Yelp review metadata for the Mx
+message YelpReviewData {
+  // Avg Rating for this Mx on yelp on a scale of 1.0 to 5.0
+  google.protobuf.DoubleValue avg_rating = 1;
+  // total number of reviews for the Mx on yelp. Reviews may or may not have text associated.
+  google.protobuf.UInt64Value num_ratings = 2;
+  // number of consumer reviews displayed as for clients
+  google.protobuf.StringValue num_ratings_display_string = 3;
+}
+
+// get consumer review preview response
+message GetConsumerReviewPreviewForTargetResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerReviewPreviewForTargetResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get consumer review detail request
+message GetConsumerReviewDetailsRequest {
+  // consumer_review_uuid primary key
+  repeated string consumer_review_uuids = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // review source from google, doordash, or a third party, etc
+  ConsumerReviewSource consumer_review_source = 3;
+}
+
+// get consumer review detail result
+message GetConsumerReviewDetailsResult {
+  // array of consumer reviews with order details data if exists
+  repeated ConsumerReview reviews = 1;
+}
+
+// get consumer review detail response
+message GetConsumerReviewDetailsResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerReviewDetailsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get ratings and reviews page request
+message GetRatingsReviewsPageRequest {
+  // target
+  Target target = 1;
+  // Feature flag / experiment for google reviews
+  google.protobuf.Int64Value consumer_id = 2;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 3;
+  // limit
+  google.protobuf.Int32Value limit = 4;
+  // offset
+  google.protobuf.StringValue offset = 5;
+  // filter
+  RatingsReviewsPageFilter filter = 6;
+}
+
+// get ratings and reviews page result
+message GetRatingsReviewsPageResult {
+  // title of the page
+  google.protobuf.StringValue title = 1;
+  // display string for total number of reviews
+  google.protobuf.StringValue num_reviews_display_string = 2;
+  // array of consumer reviews with order details data if exists
+  repeated ConsumerReview reviews = 3;
+  // limit
+  google.protobuf.Int32Value limit = 4;
+  // offset
+  google.protobuf.StringValue offset = 5;
+  // total
+  google.protobuf.StringValue total_reviews = 6;
+  // sorted list of review photo details
+  repeated ReviewPhotoDetails review_photo_details = 7;
+  // list of themes mentioned in the reviews
+  repeated ThemeMentions theme_mentions = 8;
+}
+
+// get ratings and reviews page response
+message GetRatingsReviewsPageResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetRatingsReviewsPageResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// moderate consumer reviews request
+message ModerateConsumerReviewsRequest {
+  // encrypted signature
+  google.protobuf.StringValue encrypted_signature = 1;
+  // payload
+  google.protobuf.StringValue payload = 2;
+  // data we need to moderate a consumer review
+  message Data {
+    // consumer_review_uuid
+    google.protobuf.StringValue consumer_review_uuid = 1;
+    // moderation status
+    ModerationStatus moderation_status = 2;
+    // finalized state
+    google.protobuf.BoolValue finalized = 3;
+    // quality rating
+    google.protobuf.Int64Value quality_rating = 4;
+  }
+  // list of consumer reviews to moderate
+  repeated Data data = 3;
+  // moderate consumer reviews type
+  ModerateConsumerReviewsType moderate_consumer_reviews_type = 4;
+}
+
+// moderate consumer reviews result
+message ModerateConsumerReviewsResult {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// moderate consumer reviews response
+message ModerateConsumerReviewsResponse {
+  // return result or error
+  oneof value {
+    // result
+    ModerateConsumerReviewsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// bulk approval for cx reviews request
+message ApproveConsumerReviewsRequest {
+  // consumer_review_uuid primary key
+  repeated string consumer_review_uuids = 1;
+}
+
+// bulk approval for cx reviews response
+message ApproveConsumerReviewsResponse {
+  // consumer_review_uuid primary key
+  repeated string succeeded_consumer_review_uuids = 1;
+  // consumer_review_uuid primary key
+  repeated string failed_consumer_review_uuids = 2;
+}
+
+// bulk rejection for cx reviews request
+message RejectConsumerReviewsRequest {
+  // consumer_review_uuid primary key
+  repeated string consumer_review_uuids = 1;
+}
+
+// bulk rejection for cx reviews response
+message RejectConsumerReviewsResponse {
+  // consumer_review_uuid primary key
+  repeated string succeeded_consumer_review_uuids = 1;
+  // consumer_review_uuid primary key
+  repeated string failed_consumer_review_uuids = 2;
+}
+
+// Get store Info request
+message TestIterableEmailForReviewEventRequest {
+  // review event (submitted, approved, rejected)
+  string review_event = 1;
+  // consumer_review_uuids to send email for the state
+  repeated string consumer_review_uuids = 2;
+}
+
+// Get store Info response
+message TestIterableEmailForReviewEventResponse {
+  // consumer_review_uuids which succeeded (email was sent)
+  repeated string success = 1;
+  // consumer_review_uuids which failed (no email was sent)
+  repeated string failed = 2;
+}
+
+// test grpc endpoint request
+message TestGrpcEndpointRequest {
+  // params
+  map<string, string> params = 1;
+}
+
+// test grpc endpoint result
+message TestGrpcEndpointResult {
+  // body
+  map<string, string> body = 1;
+}
+
+// test grpc endpoint response
+message TestGrpcEndpointResponse {
+  // return result or error
+  oneof value {
+    // result
+    TestGrpcEndpointResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get consumer order rating form request
+message GetConsumerOrderRatingFormRequest {
+  // order_uuid
+  google.protobuf.StringValue order_uuid = 1;
+  // consumer_id
+  google.protobuf.Int64Value consumer_id = 2;
+  // submarket_id
+  google.protobuf.Int64Value submarket_id = 3;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 4;
+  // submarket_id
+  google.protobuf.StringValue submarket_id_str = 5;
+  // store_id
+  google.protobuf.StringValue store_id_str = 6 [deprecated = true];
+  // store_id updated
+  google.protobuf.StringValue store_id = 7;
+}
+
+// get consumer order rating form response
+message GetConsumerOrderRatingFormResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerRatingFormResponse result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// consumer rating for an order
+message ConsumerOrderRating {
+  // consumer rating id
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // order_uuid
+  google.protobuf.StringValue order_uuid = 2;
+  // if the order has an associated rating
+  google.protobuf.BoolValue has_rating = 3;
+  // number of stars
+  google.protobuf.Int32Value num_stars = 4;
+  // reviewed at
+  google.protobuf.Timestamp reviewed_at = 5;
+  // review text
+  google.protobuf.StringValue review_text = 6;
+  // moderation status
+  ModerationStatus moderation_status = 7;
+  // moderation reason
+  google.protobuf.StringValue moderation_reason = 8;
+  // moderated at
+  google.protobuf.Timestamp moderated_at = 9;
+  // if the order has a dasher rating associated
+  google.protobuf.BoolValue has_dasher_rating = 10;
+}
+
+// get consumer ratings by order request
+message GetConsumerRatingsByOrdersRequest {
+  // order_uuid
+  repeated google.protobuf.StringValue order_uuids = 1;
+  // consumer_id
+  google.protobuf.Int64Value consumer_id = 2;
+  // consumer_id as string
+  google.protobuf.StringValue consumer_id_str = 3;
+  // optional target, defaults to TARGET_TYPE_STORE
+  Target target = 4;
+}
+
+// get consumer ratings by order response
+message GetConsumerRatingsByOrdersResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerRatingsByOrdersResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get consumer ratings by order result
+message GetConsumerRatingsByOrdersResult {
+  // list of consumer ratings
+  repeated ConsumerOrderRating consumer_ratings = 1;
+}
+
+// get consumer ratings by delivery request
+message GetConsumerRatingsByDeliveriesRequest {
+  // delivery_uuid
+  repeated google.protobuf.StringValue delivery_uuids = 1;
+  // optional target, defaults to TARGET_TYPE_STORE
+  Target target = 2;
+}
+
+// get consumer ratings by delivery response
+message GetConsumerRatingsByDeliveriesResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerRatingsByDeliveriesResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get consumer ratings by delivery result
+message GetConsumerRatingsByDeliveriesResult {
+  // list of consumer ratings
+  repeated ConsumerDeliveryRating consumer_ratings = 1;
+}
+
+// consumer rating for a delivery
+message ConsumerDeliveryRating {
+  // consumer rating id
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // delivery_uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+  // if the order has an associated rating
+  google.protobuf.BoolValue has_rating = 3;
+  // number of stars
+  google.protobuf.Int32Value num_stars = 4;
+  // reviewed at
+  google.protobuf.Timestamp reviewed_at = 5;
+  // rating tags
+  repeated Tag tags = 6;
+}
+
+// returns most recent orders for a given consumer, with params to specify order attributes
+message GetMostRecentOrdersForConsumerRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // if orders have been rated or not
+  google.protobuf.BoolValue rated = 2;
+  // if the test flow is active or not
+  google.protobuf.BoolValue testing = 3;
+}
+
+// returns most recent orders for a given consumer, filtered for specified order attributes
+message GetMostRecentOrdersForConsumerResponse {
+  // list of order uuids
+  repeated google.protobuf.StringValue order_uuids = 1;
+  // list of orders
+  repeated Order orders = 2;
+}
+
+// update comment flagged request
+message UpdateCommentFlaggedRequest {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // boolean value to update comment_flagged
+  google.protobuf.BoolValue comment_flagged = 2;
+  // used to validate against the target on the consumer review to be updated
+  Target target_check = 3;
+}
+
+// update comment flagged response
+message UpdateCommentFlaggedResponse {
+  // return result or error
+  oneof value {
+    // result
+    UpdateCommentFlaggedResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// update comment flagged result
+message UpdateCommentFlaggedResult {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// consumer item rating
+message ConsumerItemRating {
+  // rating info
+  RatingInfo rating = 1;
+  // display string for "You liked this"
+  google.protobuf.StringValue rating_display_string = 2;
+}
+
+// aggregate target ratings data
+message AggregateTargetRatingsData {
+  // target
+  Target target = 1;
+  // rating display string (rating calculation and count)
+  google.protobuf.StringValue rating_display_string = 2;
+  // callout display string
+  google.protobuf.StringValue callout_display_string = 3;
+  // rating percentage
+  google.protobuf.FloatValue rating_percentage = 4;
+  // rating count
+  google.protobuf.StringValue rating_count = 5;
+  // consumer item rating
+  ConsumerItemRating consumer_rating = 6;
+  // number of store reviews associated with the item
+  google.protobuf.StringValue review_count = 7;
+  // item review ranking count
+  google.protobuf.Int32Value item_review_ranking_count = 8;
+}
+
+// get aggregate ratings by target request
+message GetAggregateTargetRatingsRequest {
+  // list of targets
+  repeated Target targets = 1;
+  // consumer id (optional)
+  google.protobuf.StringValue consumer_id = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+}
+
+// get aggregate ratings by target result
+message GetAggregateTargetRatingsResult {
+  // list of aggregate ratings for target
+  repeated AggregateTargetRatingsData aggregate_target_ratings = 1;
+}
+
+// get aggregate ratings by target response
+message GetAggregateTargetRatingsResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetAggregateTargetRatingsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get aggregate ratings by target request
+message GetAggregateTargetRatingsV2Request {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // items to get aggregate ratings for each store
+  repeated TargetInfo targets = 2;
+}
+
+// get aggregate ratings data v2
+message GetAggregateTargetRatingsDataV2 {
+  // list of aggregate ratings for target
+  repeated AggregateTargetRatingsData aggregate_target_ratings = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+}
+
+// get aggregate ratings by target result
+message GetAggregateTargetRatingsResultV2 {
+  // list of aggregate ratings data for targets
+  repeated GetAggregateTargetRatingsDataV2 results = 1;
+}
+
+// get aggregate ratings by target response
+message GetAggregateTargetRatingsV2Response {
+  // return result or error
+  oneof value {
+    // result
+    GetAggregateTargetRatingsResultV2 results = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get compliments for target request
+message GetComplimentsForTargetRequest {
+  // target
+  Target target = 1;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int32Value limit = 2;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int64Value offset = 3;
+}
+
+// get compliments for target response
+message GetComplimentsForTargetResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetComplimentsForTargetResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get compliments for target result
+message GetComplimentsForTargetResult {
+  // array of consumer reviews
+  repeated BasicConsumerReview unwaived_consumer_reviews = 1;
+}
+
+// consumer review, only containing data from the database (as opposed to ConsumerReview, which also contains
+// data hydrated from external grpc calls)
+message BasicConsumerReview {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // created at
+  google.protobuf.Timestamp created_at = 2;
+  // number of stars
+  google.protobuf.Int32Value num_stars = 3;
+  // review text
+  google.protobuf.StringValue review_text = 4;
+  // comment flagged
+  google.protobuf.BoolValue comment_flagged = 5;
+  // order uuid
+  google.protobuf.StringValue order_uuid = 6;
+}
+
+// get rating detail for target request
+message GetReviewDetailForTargetRequest {
+  // the target
+  Target target = 1;
+  // limit the number of reviews returned, semantically the same as SQL LIMIT keyword
+  google.protobuf.Int32Value limit = 2;
+}
+
+// get aggregate ratings by target response
+message GetReviewDetailForTargetResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetReviewDetailForTargetResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get rating detail for target result
+message GetReviewDetailForTargetResult {
+  // unwaived consumer reviews
+  repeated BasicConsumerReview unwaived_consumer_reviews = 1;
+  // count of waived reviews over the same time period
+  google.protobuf.Int64Value waived_review_count = 2;
+  // map of (tag_id, count)
+  map<int64, google.protobuf.Int64Value> tag_counts = 3;
+}
+
+// bulk waive reviews by consumer review uuid request
+message BulkWaiveReviewsRequest {
+  // order uuids
+  repeated google.protobuf.StringValue consumer_review_uuids = 1;
+}
+
+// bulk waive reviews by consumer review uuid response
+message BulkWaiveReviewsResponse {
+  // return result or error
+  oneof value {
+    // result
+    BulkWaiveReviewsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// bulk waive reviews by consumer review uuid result
+message BulkWaiveReviewsResult {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// get item reviews request
+message GetConsumerReviewsForItemRequest {
+  // item id
+  google.protobuf.StringValue item_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int32Value limit = 3;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int64Value offset = 4;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 5;
+}
+
+// get item reviews response
+message GetConsumerReviewsForItemResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerReviewsForItemResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get item reviews result
+message GetConsumerReviewsForItemResult {
+  // success
+  repeated ConsumerReview consumer_reviews = 1;
+}
+
+// update quality rating request
+message UpdateQualityRatingRequest {
+  // list of quality ratings
+  repeated QualityRatingData data = 1;
+}
+
+// update quality rating
+message QualityRatingData {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // quality rating
+  google.protobuf.Int64Value quality_rating = 2;
+}
+
+// update quality rating response
+message UpdateQualityRatingResponse {
+  // UpdateQualityRating response
+  repeated UpdateQualityRatingResponseData response = 1 [deprecated = true];
+  // return result or error
+  oneof value {
+    // result
+    UpdateQualityRatingResult result = 2;
+    // error
+    ConsumerRatingError error = 3;
+  }
+}
+
+// update quality rating response data
+message UpdateQualityRatingResponseData {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // return result or error
+  oneof value {
+    // result
+    UpdateQualityRatingResult result = 2;
+    // error
+    ConsumerRatingError error = 3;
+  }
+}
+
+// update quality rating result
+message UpdateQualityRatingResult {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// update moderated_at times request
+message UpdateModerationTimesRequest {
+  // the object to hold each review's moderated_time info
+  repeated UpdateModerationTimesData data = 1;
+}
+
+// update moderated_at time for each single review
+message UpdateModerationTimesData {
+  // consumer_review_uuid field
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // the review's moderated_at time
+  google.protobuf.StringValue moderated_at = 2;
+}
+
+// the response for updating moderated_at time
+message UpdateModerationTimesResponse {
+  //returns success or error
+  oneof value {
+    // success
+    google.protobuf.BoolValue success = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// batch update web reviews request
+message BatchUpdateWebReviewsRequest {
+  reserved 1;
+  reserved "data";
+  // order_uuids to soft delete
+  repeated string order_uuids = 2;
+}
+
+// batch update web reviews response
+message BatchUpdateWebReviewsResponse {
+  reserved "succeeded_consumer_review_uuids";
+  // failed consumer review uuids
+  repeated string failed_consumer_review_uuids = 1;
+}
+
+// trigger the review post order workflow request
+message TriggerReviewPostOrderWorkflowRequest {
+  // delivery id
+  int64 delivery_id = 1;
+  // delivery uuid
+  string delivery_uuid = 2;
+}
+
+// trigger the review post order workflow response
+message TriggerReviewPostOrderWorkflowResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+//delete reviews request
+message DeleteConsumerReviewsRequest {
+  // consumer review uuid
+  repeated google.protobuf.StringValue consumer_review_uuid = 1;
+}
+
+//delete reviews response
+message DeleteConsumerReviewsResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+  // response error
+  ConsumerRatingError error = 2;
+}
+
+// backfill item stat metadata request
+message BackfillItemStatMetadataRequest {
+  // store ids
+  repeated string store_ids = 1;
+}
+
+// backfill item stat metadata response
+message BackfillItemStatMetadataResponse {}
+
+//backfill partial scores request
+message BackfillPartialScoresRequest {
+  //list of consumer review uuids we need to backfill the partial score with
+  repeated string consumer_review_uuids = 1;
+}
+
+//backfill partial scores response
+message BackfillPartialScoresResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+  // response error
+  ConsumerRatingError error = 2;
+}
+
+// consumer review interaction
+enum ConsumerReviewInteraction {
+  UNSPECIFIED = 0;
+  HELPFUL_VOTE = 1;
+  HELPFUL_UNVOTE = 2;
+}
+
+// process consumer review interaction request
+message ProcessConsumerReviewInteractionRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 2;
+  // interactions
+  repeated ConsumerReviewInteraction interactions = 3;
+}
+
+// process consumer review interaction result
+message ProcessConsumerReviewInteractionResult {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // count of helpful interactions
+  google.protobuf.Int64Value helpful_count = 2;
+}
+
+// process consumer review interaction response
+message ProcessConsumerReviewInteractionResponse {
+  // return result or error
+  oneof value {
+    // result
+    ProcessConsumerReviewInteractionResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// create expert reviews request
+message CreateExpertReviewsRequest {
+  // reviews
+  repeated ExpertReview reviews = 1;
+  // reviewer data (optional)
+  ConsumerReview.ReviewerData reviewer = 2;
+}
+
+// expert review
+message ExpertReview {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // reviewer id
+  google.protobuf.StringValue reviewer_id = 2;
+  // star rating
+  google.protobuf.Int32Value num_stars = 3;
+  // rating type
+  RatingType rating_type = 4;
+  // rating value
+  RatingValue rating_value = 5;
+  // review text
+  google.protobuf.StringValue review_text = 6;
+  // created at
+  google.protobuf.Timestamp created_at = 7;
+  // url to the full review on the third party page
+  google.protobuf.StringValue full_review_url = 8;
+}
+
+// create expert reviews result
+message CreateExpertReviewsResult {
+  // consumer review uuid
+  google.protobuf.BoolValue success = 1;
+}
+
+// create expert reviews response
+message CreateExpertReviewsResponse {
+  // return result or error
+  oneof value {
+    // result
+    CreateExpertReviewsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// detected language for consumer review
+message ConsumerReviewDetectedLanguage {
+  // primary consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // langauge detection status
+  LanguageDetectionStatus status = 2;
+  // BCP-47 language code
+  google.protobuf.StringValue language_code = 3;
+}
+
+// language detection status
+enum LanguageDetectionStatus {
+  // confidence is high enough
+  CONFIDENT = 0;
+  // confidence is not high
+  UNCONFIDENT = 1;
+  // no language was detected
+  NO_LANGUAGE_DETECTED = 2;
+  // language detection service is temporarily unavailable
+  TEMPORARILY_UNAVAILABLE = 3;
+}
+
+// detect consumer review language request
+message DetectConsumerReviewLanguageRequest {
+  // consumer review uuids to detect languages
+  repeated google.protobuf.StringValue consumer_review_uuids = 1;
+}
+
+// detect consumer review language response
+message DetectConsumerReviewLanguageResponse {
+  // return result or error
+  oneof value {
+    // result
+    DetectConsumerReviewLanguageResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// detect consumer review language result
+message DetectConsumerReviewLanguageResult {
+  // detection results
+  repeated ConsumerReviewDetectedLanguage consumer_review_detected_languages = 1;
+}
+
+// get consumer review detected language request
+message GetConsumerReviewDetectedLanguageRequest {
+  // consumer review uuids to get data
+  repeated google.protobuf.StringValue consumer_review_uuids = 1;
+}
+
+// get consumer review detected language response
+message GetConsumerReviewDetectedLanguageResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerReviewDetectedLanguageResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get consumer review detected language result
+message GetConsumerReviewDetectedLanguageResult {
+  // detected languages stored in db
+  repeated ConsumerReviewDetectedLanguage consumer_review_detected_languages = 1;
+}
+
+// tagged item review
+message TaggedItemReview {
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // raw review text
+  google.protobuf.StringValue review_text = 3;
+  // review text with marked up items
+  google.protobuf.StringValue marked_up_review_text = 4;
+}
+
+// create tagged item reviews request
+message CreateTaggedItemReviewsRequest {
+  // reviews
+  repeated TaggedItemReview reviews = 1;
+}
+
+// create tagged item reviews result
+message CreateTaggedItemReviewsResult {
+  // succeeded review uuids
+  repeated google.protobuf.StringValue succeeded_consumer_review_uuids = 1;
+  // failed review uuids
+  repeated google.protobuf.StringValue failed_consumer_review_uuids = 2;
+}
+
+// create tagged item reviews response
+message CreateTaggedItemReviewsResponse {
+  // return result or error
+  oneof value {
+    // result
+    CreateTaggedItemReviewsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// delete tagged item reviews request
+message DeleteTaggedItemReviewsRequest {
+  // consumer review uuid
+  repeated google.protobuf.StringValue consumer_review_uuid = 1;
+}
+
+// delete tagged item reviews response
+message DeleteTaggedItemReviewsResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+  // response error
+  ConsumerRatingError error = 2;
+}
+
+//  toggle review display status request
+message ToggleReviewDisplayStatusRequest {
+  // consumer review uuid
+  repeated google.protobuf.StringValue consumer_review_uuid = 1;
+  // review display status
+  ReviewDisplayStatus display_status = 2;
+}
+
+// toggle review display status result
+message ToggleReviewDisplayStatusResult {
+  // succeeded review uuids
+  repeated google.protobuf.StringValue succeeded_consumer_review_uuids = 1;
+  // failed review uuids
+  repeated google.protobuf.StringValue failed_consumer_review_uuids = 2;
+}
+
+// toggle review display status response
+message ToggleReviewDisplayStatusResponse {
+  // return result or error
+  oneof value {
+    // result
+    CreateTaggedItemReviewsResult result = 1 [deprecated = true];
+    // error
+    ConsumerRatingError error = 2;
+    // result
+    ToggleReviewDisplayStatusResult toggle_review_display_status_result = 3;
+  }
+}
+
+// theme mentions for backfilling
+message ConsumerReviewThemeMention {
+  // target
+  Target target = 1;
+  // consumer review uuid
+  google.protobuf.StringValue consumer_review_uuid = 2;
+  // theme label
+  ThemeLabel theme_label = 3;
+  // theme sentiment
+  ThemeSentiment theme_sentiment = 4;
+}
+
+// set consumer review theme mentions request
+message CreateConsumerReviewThemeMentionsRequest {
+  // list of theme mentions to set
+  repeated ConsumerReviewThemeMention theme_mentions = 1;
+}
+
+// set consumer review theme mentions result
+message CreateConsumerReviewThemeMentionsResult {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// set consumer review theme mentions response
+message CreateConsumerReviewThemeMentionsResponse {
+  // return result or error
+  oneof value {
+    // result
+    CreateConsumerReviewThemeMentionsResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// backfill review theme mentions request
+message BackfillReviewThemeMentionsRequest {
+  // store ids
+  repeated string store_ids = 1;
+
+  // submarket ids
+  repeated string submarket_ids = 2;
+
+  // backfill mode for review
+  Mode backfill_mode = 3;
+
+  // timestamp for REPLACE_STALE mode. Replace only if sentiment.created_at < use_created_time
+  google.protobuf.Timestamp use_created_time = 4;
+
+  // Insert Mode
+  enum Mode {
+    // drop all sentiments for the review first, then replace
+    REPLACE_ALL = 0;
+    // drop all sentiments that are older than use_created_time, then replace
+    REPLACE_STALE = 1;
+    // drop all sentiments for review
+    DROP_ALL = 2;
+  }
+}
+
+// backfill review theme mentions response
+message BackfillReviewThemeMentionsResponse {}
+
+// review photo details
+message ReviewPhotoDetails {
+  // photo url
+  google.protobuf.StringValue photo_url = 1;
+  // photo uuid in photo-service
+  google.protobuf.StringValue photo_uuid = 2;
+  // title ex: “Whole Chicken”
+  google.protobuf.StringValue title = 3;
+  // reviewer data
+  ConsumerReview.ReviewerData reviewer_data = 4;
+  // submission time ex: "3 days ago"
+  google.protobuf.StringValue submission_time = 5;
+  // list of tagged items for the photo
+  repeated OrderedItem photo_tagged_items = 6;
+  // subtitle ex: "By Brian H"
+  google.protobuf.StringValue subtitle = 7;
+  // created at
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// Request for fetching the UGC Content Submissions given a Cx id.
+message GetUGCContentSubmissionsByConsumerIdsRequest {
+  // consumer_ids
+  repeated google.protobuf.StringValue consumer_ids = 1;
+  // start_timestamp
+  google.protobuf.Timestamp start_timestamp = 2;
+  // end_timestamp
+  google.protobuf.Timestamp end_timestamp = 3;
+}
+
+// Response for fetching the UGC Content submissions given a Cx id.
+message GetUGCContentSubmissionsByConsumerIdsResponse {
+  // data included in the response.
+  repeated UGCContentSubmissionsByConsumerId content_submissions = 1;
+}
+
+// Content submissions by Consumer id within a time range.
+message UGCContentSubmissionsByConsumerId {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // submissions
+  repeated UGCContentSubmission content_submissions = 2;
+}
+
+// Ugc content submission
+message UGCContentSubmission {
+  // store_id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// Request for fetching most liked items for a store
+message GetMostLikedItemsForStoreRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// Response for fetching most liked items for a store
+message GetMostLikedItemsForStoreResponse {
+  // most liked items
+  repeated MostLikedItem most_liked_items = 1;
+}
+
+// Request for fetching most liked items for multiple stores
+message GetMostLikedItemsForStoresRequest {
+  // store id
+  repeated google.protobuf.StringValue store_ids = 1;
+}
+
+// Response for fetching most liked items for multiple stores
+message GetMostLikedItemsForStoresResponse {
+  // most liked items for store
+  message MostLikedItemsForStore {
+    // store id
+    google.protobuf.StringValue store_id = 1;
+    // most liked items
+    repeated MostLikedItem most_liked_items = 2;
+  }
+  // most liked items for store
+  repeated MostLikedItemsForStore most_liked_items_for_stores = 1;
+}
+
+// Most liked item
+message MostLikedItem {
+  // item id
+  google.protobuf.StringValue item_id = 1;
+  // rank
+  google.protobuf.Int32Value rank = 2;
+}
+
+// Request for fetching spf callouts for each item in a store
+message GetItemSpfCalloutsForStoreRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// Response for fetching spf callouts for each item in a store
+message GetItemSpfCalloutsForStoreResponse {
+  // item id -> keyphrase pair
+  repeated ItemSpfCalloutsData item_spf_callouts_data = 1;
+}
+
+// Spf callout with item_id to keyphrase
+message ItemSpfCalloutsData {
+  // item id
+  google.protobuf.StringValue item_id = 1;
+  // actual callout string generated
+  google.protobuf.StringValue keyphrase = 2;
+}
+
+// GetStoreLeaderboardRequest
+message GetStoreLeaderboardRequest {
+  // cx_id of the user
+  google.protobuf.Int64Value consumer_id = 1;
+  // lat of the user geo
+  google.protobuf.DoubleValue lat = 2;
+  // lng of the user geo
+  google.protobuf.DoubleValue lng = 3;
+  // submarket id
+  google.protobuf.Int64Value submarket_id = 4;
+}
+
+// Store in the leaderboard response
+message LeaderboardStore {
+  // Store ID
+  google.protobuf.Int64Value store_id = 1;
+  // Avg Rating for this Mx
+  google.protobuf.DoubleValue avg_rating = 2;
+  // total number of reviews for the Mx
+  google.protobuf.UInt64Value num_ratings = 3;
+  // Store business name
+  google.protobuf.StringValue name = 4;
+  // Cover image url
+  google.protobuf.StringValue cover_image_url = 5;
+  // Subtitle
+  google.protobuf.StringValue subtitle = 6;
+  // rank of average rating
+  google.protobuf.UInt64Value rank = 7;
+}
+
+// GetStoreLeaderboardResponse
+message GetStoreLeaderboardResponse {
+  // list of stores from leaderboard
+  repeated LeaderboardStore stores = 1;
+}
+
+// Retry failed gpt moderated reviews request
+message RetryGptModeratedReviewsRequest {}
+
+// Retry failed gpt moderated reviews response
+message RetryGptModeratedReviewsResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+}
+
+// hide ratings and reviews from creator profile request
+message HideRatingsReviewsFromCreatorProfileRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+}
+
+// hide ratings and reviews from creator profile response
+message HideRatingsReviewsFromCreatorProfileResponse {
+  // success
+  google.protobuf.BoolValue success = 1;
+  // response error
+  ConsumerRatingError error = 2;
+}
+
+// moderate consumer reviews type
+enum ModerateConsumerReviewsType {
+  // unspecified
+  MODERATE_CONSUMER_REVIEWS_TYPE_UNSPECIFIED = 0;
+  // manual override
+  MODERATE_CONSUMER_REVIEWS_TYPE_MANUAL_OVERRIDE = 1;
+  // gpt
+  MODERATE_CONSUMER_REVIEWS_TYPE_GPT = 2;
+}

@@ -1,0 +1,313 @@
+syntax = "proto3";
+
+package menuingestiongateway;
+
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menuingestiongateway/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menuingestiongateway.grpc";
+
+service IngestionGateway {
+  rpc UpsertStoreMenu(UpsertStoreMenuRequest) returns (UpsertStoreMenuResponse);
+  rpc UpsertMenus(UpsertMenusRequest) returns (UpsertMenusResponse);
+  rpc GetEntityIdGraph(GetEntityIdGraphRequest) returns (GetEntityIdGraphResponse);
+  rpc PatchMenus(PatchMenusRequest) returns (PatchMenusResponse);
+  rpc GenerateMenuEntityIds(GenerateMenuEntityIdsRequest) returns (GenerateMenuEntityIdsResponse);
+  rpc MapMenu(MapMenuRequest) returns (MapMenuResponse);
+
+  /**
+   * GRPC endpoint for write the final processed serving store menu payload to the serving storage.
+   */
+  rpc PutServingStoreMenu(PutServingStoreMenuRequest) returns (PutServingStoreMenuResponse);
+}
+
+/**
+ * Request to map incoming menu to existing menu data, and populate the request with Ids.
+ */
+message MapMenuRequest {
+  InputMenuEntity menu_to_match = 1;
+  MappingContext mapping_context = 2;
+}
+
+/**
+ * Response containing mapped menu entities populated with IDs.
+ */
+message MapMenuResponse {
+  MappedMenuEntity mapped_menu = 1;
+  MappingContext mapping_context = 2;
+}
+
+/**
+ * Describes MapMenu request usage from caller
+ */
+enum MappingMode {
+  // unknown
+  MAPPING_MODE_UNSPECIFIED = 0;
+  // shadow
+  MAPPING_MODE_SHADOW = 1;
+  // live
+  MAPPING_MODE_LIVE = 2;
+}
+
+/**
+ * Mapping context that contains relevant fields to the incoming request.
+ */
+message MappingContext {
+  google.protobuf.StringValue store_menu_id = 1;
+  google.protobuf.StringValue experience = 2;
+  google.protobuf.StringValue business_id = 3;
+  google.protobuf.StringValue menu_id = 4;
+  // can act as a trace/correlation id
+  google.protobuf.StringValue ingestion_id = 5;
+  MappingMode mapping_mode = 6;
+  bool provider_type_changed = 7;
+  bool location_id_changed = 8;
+}
+
+/**
+ * Attributes that can be used for entity mapping.
+ * subtitle maps to subtitle for incoming menus and categories. It maps to description for incoming items, options, and & extras.
+ */
+message EntityMappingAttributes {
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  google.protobuf.StringValue title = 2;
+  google.protobuf.StringValue subtitle = 3;
+  google.protobuf.Int32Value price = 4;
+}
+
+/**
+ * Attributes needed to match a menu entity, as well as child categories.
+ */
+message InputMenuEntity {
+  repeated InputCategoryEntity categories = 1;
+  EntityMappingAttributes mapping_attributes = 2;
+}
+
+/**
+ * Mapped menu entity, with id.
+ */
+message MappedMenuEntity {
+  google.protobuf.StringValue menu_id = 1;
+  repeated MappedCategoryEntity categories = 2;
+  EntityMappingAttributes mapping_attributes = 3;
+  bool is_new_id = 4;
+}
+
+/**
+ * Attributes needed to match a category entity, as well as child items.
+ */
+message InputCategoryEntity {
+  repeated InputItemEntity items = 1;
+  EntityMappingAttributes mapping_attributes = 2;
+}
+
+/**
+ * Mapped category entity, with id.
+ */
+message MappedCategoryEntity {
+  google.protobuf.StringValue category_id = 1;
+  repeated MappedItemEntity mapped_items = 2;
+  EntityMappingAttributes mapping_attributes = 3;
+  bool is_new_id = 4;
+}
+
+/**
+ * Attributes needed to match an item entity, as well as child extras.
+ */
+message InputItemEntity {
+  repeated InputExtraEntity extras = 1;
+  EntityMappingAttributes mapping_attributes = 2;
+}
+
+/**
+ * Mapped item entity, with id.
+ */
+message MappedItemEntity {
+  google.protobuf.StringValue item_id = 1;
+  repeated MappedExtraEntity mapped_extras = 2;
+  EntityMappingAttributes mapping_attributes = 3;
+  bool is_new_id = 4;
+}
+
+/**
+ * Attributes needed to match an extra entity, as well as child options.
+ */
+message InputExtraEntity {
+  repeated InputOptionEntity options = 1;
+  EntityMappingAttributes mapping_attributes = 2;
+}
+
+/**
+ * Mapped extra entity, with id.
+ */
+message MappedExtraEntity {
+  google.protobuf.StringValue extra_id = 1;
+  repeated MappedOptionEntity mapped_options = 2;
+  EntityMappingAttributes mapping_attributes = 3;
+  bool is_new_id = 4;
+}
+
+/**
+ * Attributes needed to match an option entity, as well as child extras.
+ */
+message InputOptionEntity {
+  repeated InputExtraEntity extras = 1;
+  EntityMappingAttributes mapping_attributes = 2;
+}
+
+/**
+ * Mapped option entity, with id.
+ */
+message MappedOptionEntity {
+  google.protobuf.StringValue option_id = 1;
+  repeated MappedExtraEntity mapped_extras = 2;
+  EntityMappingAttributes mapping_attributes = 3;
+  bool is_new_id = 4;
+}
+
+/**
+ * Request to patch menus and entities
+ * store_menu_id: store menu id to patch
+ * menus: menus to patch
+ * read_time: read time lock
+ */
+message PatchMenusRequest {
+  string store_menu_id = 1;
+  menu.StoreMenu menus = 2;
+  int64 read_time = 3;
+}
+
+/**
+ * Response of patch menus
+ */
+message PatchMenusResponse {}
+
+/**
+ * Request to upsert the complete store menu
+ * store_menu: the complete un-rendered store menu
+ */
+message UpsertStoreMenuRequest {
+  string store_menu_id = 1;
+  menu.StoreMenu store_menu = 2;
+}
+
+/**
+ * Return of uperting store menu
+ */
+message UpsertStoreMenuResponse {}
+
+/**
+ * Request to upsert partial menus
+ * store_menu_id: store menu id
+ * menus: menus to update
+ * menu_ids_to_delete: menu ids to delete
+ * read_time: read time lock
+ */
+message UpsertMenusRequest {
+  string store_menu_id = 1;
+  menu.StoreMenu menus = 2;
+  repeated string menu_ids_to_delete = 3;
+  int64 read_time = 4;
+  google.protobuf.StringValue provider_type = 5;
+  // The field added for channel-based menus, it is used to present
+  // the overrides in the channel-based menu compared with the value in menus (union-menu)
+  repeated menu.MenuEntityOverrides overrides = 6;
+  bool enable_shared_entities = 7;
+}
+
+/**
+ * Return of uperting partial menus
+ */
+message UpsertMenusResponse {}
+
+/**
+ * request to get entity id graph
+ */
+message GetEntityIdGraphRequest {
+  // list of entity id graph id
+  repeated menu.EntityIdGraphId ids = 1;
+  // if true, return all categories' entityIdGraph under the menuId / storeId specified in ids field
+  bool should_return_all_category_entity_id_graphs = 2;
+}
+
+/**
+ * response to get entity id graph
+ */
+message GetEntityIdGraphResponse {
+  // entity id graphs
+  repeated menu.EntityIdGraph entity_id_graphs = 1;
+}
+
+// types of menu entities when generating ids
+enum MenuEntityType {
+  // unknown
+  MENU_ENTITY_TYPE_UNSPECIFIED = 0;
+  // entity type menu
+  MENU_ENTITY_TYPE_MENU = 1;
+  // entity type category
+  MENU_ENTITY_TYPE_CATEGORY = 2;
+  // entity type item
+  MENU_ENTITY_TYPE_ITEM = 3;
+  // entity type extra
+  MENU_ENTITY_TYPE_EXTRA = 4;
+  // entity type option
+  MENU_ENTITY_TYPE_OPTION = 5;
+  // entity type testing
+  // this is a testing enum used to test the change of consistency level from serial to local serial
+  // for ID generator
+  MENU_ENTITY_TYPE_TESTING = 6;
+}
+
+/**
+ * menu entity type with number of ids to be generated
+ */
+message MenuEntityTypeWithNumber {
+  MenuEntityType menu_entity_type = 1;
+  google.protobuf.Int32Value entity_number = 2;
+}
+
+/**
+ * menu entity type with list of entity ids generated
+ */
+message MenuEntityTypeWithIdList {
+  MenuEntityType menu_entity_type = 1;
+  repeated google.protobuf.Int64Value entity_id_list = 3;
+}
+
+/**
+ * request to get menu entity id
+ */
+message GenerateMenuEntityIdsRequest {
+  repeated MenuEntityTypeWithNumber menu_entity_type_with_number = 1;
+}
+
+/**
+ * response to get menu entity id
+ */
+message GenerateMenuEntityIdsResponse {
+  repeated MenuEntityTypeWithIdList menu_entity_type_with_id_list = 1;
+}
+
+/**
+ * Request to put the final processed store menu payload into serving storage.
+ * store_menu_id: store menu id
+ * menu_structure: menu structure including store_menu, menus, categories
+ * menu_meta: menu meta
+ * entities: a full list of entities in this store.
+ * read_time: menu last update time, which is used to handle read write race condition.
+ */
+message PutServingStoreMenuRequest {
+  string store_menu_id = 1;
+  menu.MenuStructure menu_structure = 2;
+  menu.MenuMeta menu_meta = 3;
+  menu.EntityMaps entities = 4;
+  int64 read_time = 5;
+}
+
+/**
+   Response for PutServingStoreMenu grpc endpoint.
+*/
+message PutServingStoreMenuResponse {}

@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package market_intelligence_case_service.v1;
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.market_intelligence_case_service.proto";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "common/service_client_config.proto";
+import "market_intelligence_case_service/audit_detail.proto";
+
+// This is a service for processing "cases" for the Market Intelligence team
+service MarketIntelligenceCaseService {
+    option (service_client.client_config).service_name = "market-intelligence-case-service";
+    option (service_client.client_config).service_app = "web";
+    // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+    // Timeout after 700 milliseconds.
+    option (service_client.client_config).response_attempt_timeout_millis = 700;
+    // Make a total 4 attempts (initial + three retries).
+    option (service_client.client_config).retry_config.max_attempts = 4;
+    // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+    option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+    // Break the circuit if the error rate exceeds 80%.
+    option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+    // Ignore NOT_FOUND from circuit breaker error rate calculation.
+    option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+    // WARNING: Currently unimplemented
+    rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    }
+
+    // WARNING: Currently unimplemented
+    rpc GetCases(GetCasesRequest) returns (GetCasesResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    }
+
+    // WARNING: Currently unimplemented
+    rpc GetCaseById(GetCaseByIdRequest) returns (GetCaseByIdResponse) {
+        option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    }
+
+    // WARNING: Currently unimplemented
+    rpc UpdateCaseById(UpdateCaseByIdRequest) returns (UpdateCaseByIdResponse) {
+      option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    }
+}
+
+
+// Generic case type for prototyping or experimentation
+message GenericCase {
+  // blob of stringified json data that can extend the object by domain specific usage
+  // for example geometry, dasher_capacities
+  google.protobuf.StringValue metadata = 1;
+}
+
+// Weather case type
+message WeatherCase {
+  // Structured enum for possible action types. Future values may be PAD_ETAS etc.
+  enum ActionType {
+    // Default value if not set - Do not explicitly use
+    ACTION_TYPE_UNSPECIFIED = 0;
+    // For generic actions - Avoid using if possible, update enum and use new value instead.
+    ACTION_TYPE_UNKNOWN = 1;
+    // For when a service disruption shape is created.
+    ACTION_TYPE_CREATE_SERVICE_DISRUPTION = 2;
+  }
+
+  // To show a record of actions taken on the case and realtionshipt to action entities.
+  message Actions {
+    // Ties the action with an entity, eg - Service Disruption shape ID
+    google.protobuf.StringValue relation_id = 1;
+    ActionType action_type = 2;
+  }
+  google.protobuf.StringValue message_type = 1;
+  google.protobuf.StringValue severity = 2;
+  // Description of the affected area eg, "Todd County, South Dakota, US"
+  google.protobuf.StringValue area = 3;
+  // Geometry is GeoJSON, could be polygon or point
+  google.protobuf.StringValue geometry = 4;
+  google.protobuf.Timestamp event_begin_time_utc = 5;
+  google.protobuf.Timestamp event_end_time_utc = 6;
+  google.protobuf.StringValue event_time_zone = 7;
+  google.protobuf.Timestamp alert_issue_time_utc = 8;
+  google.protobuf.Timestamp alert_expire_time_utc = 9;
+  google.protobuf.StringValue alert_time_zone = 10;
+  repeated Actions actions = 11;
+}
+
+
+message Case {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_OPEN = 1;
+    STATUS_CLOSED = 2;
+  }
+
+  message Source {
+    // Name of the service name where the case's data came from. Eg, Weather Service
+    google.protobuf.StringValue service_name = 1;
+    // Unique ID for the Case's data at the originating source. Can be used to look up or de-dupe.
+    google.protobuf.StringValue relation_id = 2;
+  }
+
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.StringValue title = 3;
+  google.protobuf.StringValue description = 4;
+  Status status = 5;
+  // The outcome of how the case was handled
+  google.protobuf.StringValue resolution = 6;
+  // Where the case's data came from
+  Source source = 7;
+  // Identifier of the user or system who resolved the case
+  google.protobuf.StringValue resolved_by = 8;
+  // severity of the case (0 being most severe)
+  google.protobuf.Int32Value severity = 9;
+
+  // Message and corresponding fields depending on the type of case
+  oneof case_type {
+    // Generic case type for prototyping or experimentation
+    GenericCase generic = 10;
+    // Weather case type created by weather service(s)
+    WeatherCase weather = 11;
+  }
+}
+
+message CaseSortOption {
+  enum SortByType {
+    SORT_BY_TYPE_UNSPECIFIED = 0;
+    SORT_BY_TYPE_OLDEST_FIRST = 1;
+    SORT_BY_TYPE_NEWEST_FIRST = 2;
+    SORT_BY_TYPE_SEVERITY_HIGHEST_FIRST = 3;
+    SORT_BY_TYPE_SEVERITY_LOWEST_FIRST = 4;
+  }
+
+  SortByType sort_by_type = 1; // optional
+}
+
+message CaseFilterOption {
+  enum FilterType {
+    FILTER_TYPE_UNSPECIFIED = 0;
+    FILTER_TYPE_STATUS_OPEN = 1;
+    FILTER_TYPE_STATUS_CLOSED = 2;
+    FILTER_TYPE_RESOLUTION = 3;
+    FILTER_TYPE_SERVICE_NAME = 4;
+    FILTER_TYPE_RELATION_ID = 5;
+  }
+
+  google.protobuf.StringValue filter_value = 1; // optional: the value you want to filter with (i.e 'supply-demand-service')
+  FilterType filter_type = 2; // the field you want to filter upon (i.e FILTER_TYPE_SERVICE_NAME)
+}
+
+
+message GetCaseByIdRequest {
+  google.protobuf.StringValue id = 1;
+}
+
+message GetCaseByIdResponse {
+  Case case = 1;
+}
+
+message CreateCaseRequest {
+  Case case = 1;
+  AuditDetail audit_detail = 2;
+}
+
+message CreateCaseResponse {
+  Case case = 1;
+}
+
+message GetCasesRequest {
+  /**
+  * Pagination params, offset is where to begin the fetch,
+  * limit is how many to fetch.
+  * Both are optional parameters but have default values.
+  */
+  google.protobuf.Int32Value offset = 1;
+  google.protobuf.Int32Value limit = 2;
+  CaseSortOption.SortByType sort_option = 3;
+  repeated CaseFilterOption filter_options = 4;
+}
+
+message GetCasesResponse {
+  repeated Case cases = 1;
+}
+
+message UpdateCaseByIdRequest {
+  Case updated_case = 1;
+  google.protobuf.FieldMask field_mask = 2;
+  AuditDetail audit_detail = 3;
+}
+
+message UpdateCaseByIdResponse {
+  Case case = 1;
+}

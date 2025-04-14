@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package chronicle.v1;
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.chronicle";
+option go_package = "github.com/doordash/services-protobuf/generated/chronicle";
+
+import "google/protobuf/timestamp.proto";
+
+// Chronicle-defined endpoints for querying Observability's volatile event
+// store. Currently this is Clickhouse.
+service QueryService {
+  // ExecuteQuery runs a pre-defined, read-only query with the provided
+  // parameters. The response is a string in the request-provided format.
+  rpc ExecuteQuery(ExecuteQueryRequest) returns (ExecuteQueryResponse);
+}
+
+// ExecuteQueryRequest tells QueryService which pre-defined query to execute and
+// provides any needed parameters.
+message ExecuteQueryRequest {
+  // id is a unique id mapping to a particular SQL query as defined in
+  // Chronicle's Query Service.
+  string id = 1;
+
+  // parameters provides the required input data for the selected query.
+  repeated InputParameter parameters = 2;
+
+  // output_format selects the desired format of the result string.
+  OutputFormat output_format = 3 [ deprecated = true ];
+}
+
+// ExecuteQueryResponse returns the result of the executed query as a string. It
+// should be parsed by the client based on the provided OutputFormat.
+message ExecuteQueryResponse {
+  // result is the query's output in the specified format.
+  string result = 1 [ deprecated = true ];
+
+  // format is the format chosen by QueryRequest. It is never UNSPECIFIED. If
+  // the request's output_format was UNSPECIFIED, it will be JSON_COLUMNS.
+  OutputFormat format = 2 [ deprecated = true ];
+
+  // columns is the resulting data.
+  repeated Column columns = 3;
+}
+
+// Column returns the name of a column of data and a list of data.
+message Column {
+  // name is the name of the column as described in the original query.
+  string name = 1;
+
+  // values is the list of results.
+  repeated Value values = 2;
+}
+
+// Value represents a dynamically typed value which can be either
+// a number, a string, a boolean, or timestamp.  Wraps the results.
+message Value {
+  // value is wrapper of typed values.
+  oneof value {
+    // string_value is a string value.
+    string string_value = 1;
+    // float_value is an float value.
+    float float_value = 2;
+    // int_value is an int64 value.
+    int64 int_value = 3;
+    // bool_value is a boolean value.
+    bool bool_value = 4;
+    // timestamp_value is a timestamp value in UTC.
+    google.protobuf.Timestamp timestamp_value = 5;
+  }
+}
+
+// InputParameter is a name-value pair to be used while creating the fully
+// prepard query in the QueryService.
+message InputParameter {
+  // name is the name of the parameter to replace with value.
+  string name = 1;
+
+  // value is the value associated with name during query building.
+  oneof value {
+    // string_value is a string value.
+    string string_value = 2;
+    // float_value is an float value.
+    float float_value = 3;
+    // int_value is an int64 value.
+    int64 int_value = 4;
+    // bool_value is a boolean value.
+    bool bool_value = 5;
+    // timestamp_value is a timestamp value in UTC.
+    google.protobuf.Timestamp timestamp_value = 6;
+  }
+}
+
+// OutputFormat maps to formats defined by Clickhouse documentation at
+// https://clickhouse.com/docs/en/interfaces/formats
+// buf:lint:ignore ENUM_VALUE_PREFIX
+// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+enum OutputFormat {
+  // UNSPECIFIED leaves output format up to the service
+  UNSPECIFIED = 0;
+  // JSON_COLUMNS is the JSONColumns format,
+  // https://clickhouse.com/docs/en/interfaces/formats/#jsoncolumns
+  JSON_COLUMNS = 1;
+}

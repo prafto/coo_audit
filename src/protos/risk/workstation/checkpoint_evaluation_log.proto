@@ -1,0 +1,271 @@
+syntax = "proto3";
+// buf:lint:ignore PACKAGE_SAME_DIRECTORY
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package risk.workstation;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "risk/workstation/workstation_common.proto";
+
+option go_package = "workstationpb";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "CheckpointEvaluationLogProtos";
+option java_package = "com.doordash.risk.proto.workstation";
+
+//
+// GRPC service for fetching checkpoint evaluation logs.
+//
+service CheckpointEvaluationLogService {
+  // Retrieves a single evaluation given the evaluation_uuid.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetEvaluation(GetEvaluationRequest) returns (GetEvaluationResponse);
+
+  // Retrieves a paginated list of evaluations given filtering constraints.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc SearchEvaluations(SearchEvaluationsRequest) returns (SearchEvaluationsResponse);
+}
+
+// -------------------------------------------------------------------------
+// GetEvaluation                                                            |
+// -------------------------------------------------------------------------
+
+// GetEvaluationRequest
+message GetEvaluationRequest {
+  // evaluation_uuid
+  string evaluation_uuid = 1;
+}
+
+// GetEvaluationResponse
+message GetEvaluationResponse {
+  // Can be null to indicate no results.
+  CheckpointEvaluationLog log = 1;
+}
+
+// -------------------------------------------------------------------------
+// SearchEvaluations                                                        |
+// -------------------------------------------------------------------------
+
+// SearchEvaluationsRequest
+message SearchEvaluationsRequest {
+  // Interval
+  message Interval {
+    // from
+    int64 from = 1; // in epoch ms
+    // to
+    int64 to = 2;
+  }
+  // Return only logs within the given time interval [from, to). Does no filtering if null.
+  Interval time_filter = 1;
+
+  // A string of space-separated type:identifier pairs representing entity filters, for example
+  // "user:67031664 address:3983823". Return only logs matching all the given entity filters.
+  //
+  // This is mandatory. Blank inputs or identifiers will be rejected with InvalidArgument.
+  string entities_filter = 2;
+
+  // Return only logs whose checkpoint_id is in the list. If empty, all checkpoints are returned.
+  repeated string checkpoint_filters = 3;
+
+  // To get more pages after an initial request, pass back the `paging_marker` from the response.
+  //
+  // While the marker is structured, that is only meant to ease debugging. Clients should treat this
+  // as an opaque token that is only passed back and forth to the server for paging.
+  risk.workstation.PagingMarker paging_marker = 4;
+
+  // Max number of logs to return (defaults to 100).
+  int32 limit = 5;
+}
+
+// SearchEvaluationsResponse
+message SearchEvaluationsResponse {
+  // Number of results.
+  int32 num_results = 1;
+
+  // Resulting list of logs sorted by timestamp descending.
+  repeated CheckpointEvaluationLog results = 2;
+
+  // An opaque object to pass into the SearchEvaluationsRequest to continue paging.
+  // A null value means no more next entries.
+  risk.workstation.PagingMarker paging_marker = 3;
+}
+
+// -------------------------------------------------------------------------
+// Data messages                                                            |
+// -------------------------------------------------------------------------
+
+// Encapsulates all the details of a single checkpoint evaluation.
+message CheckpointEvaluationLog {
+  // UUID that unique identifies this checkpoint evaluation.
+  string evaluation_uuid = 1;
+
+  // ID of the checkpoint (e.g. "checkout_in").
+  string checkpoint_id = 2;
+
+  // Timestamp when the evaluation started.
+  google.protobuf.Timestamp timestamp = 3;
+
+  // Encapsulates an entity connected to this checkpoint evaluation.
+  message EntityId {
+    // Entity type and identifier. Type must only contain [A-Za-z0-9_] and identifier [A-Za-z0-9_.-]
+    // Example types: "user", "address", "cart".
+    string type = 1;
+    // identifier
+    string identifier = 2;
+
+    // Additional label on how the entity is connected to the evaluation.
+    //
+    // For example, an order could be connected to two addresses "address:123" and "address:456",
+    // with the first labeled "storeAddress" and the second "deliveryAddress".
+    string label = 3;
+  }
+  // List of all entities connected to this checkpoint evaluation.
+  //
+  // Order in the list matters; more important entities are first. There might be multiple items
+  // with the same `type`, but `(type, label)` should be unique.
+  repeated EntityId entity_ids = 4;
+
+  // Extra tracking properties, like "client_version", "platform", "user_agent".
+  map<string, google.protobuf.Value> tracking_props = 5;
+
+  // Version of risk-engine service running this evaluation.
+  // This is also the docker image tag, often a semver like "1.560.0" except for irregular deploys.
+  string engine_version = 6;
+
+  // Version of RuleEngineConfiguration used for this evaluation.
+  string config_version = 7;
+
+  // Encapsulates details of a rule output (i.e., exemption/label/action).
+  message RuleOutputDetails {
+    // Name of the output. For example, "RequestMFA".
+    string name = 1;
+
+    // Name of the RuleOutput subclass. This will be empty when there is no name override (i.e.,
+    // when the name is the class name).
+    string type = 5;
+
+    // Details of the output. For example: {"allowedChannels": ["SMS", "EMAIL"]}.
+    google.protobuf.Struct details = 2;
+
+    // RuleIds of the rules that produced this RuleOutput.
+    repeated string rules = 3;
+
+    // Only non-empty for `actions`; the labels that mapped to the current Action.
+    repeated string labels = 4;
+  }
+  // exemptions
+  repeated RuleOutputDetails exemptions = 8;
+  // labels
+  repeated RuleOutputDetails labels = 9;
+  // actions
+  repeated RuleOutputDetails actions = 10;
+
+  // Final action and details from the live-mode execution of the evaluation.
+  RuleOutputDetails final_action = 11;
+
+  // Exception name and details of any fatal error that failed the entire evaluation.
+  string error_name = 13;
+  // error_details
+  string error_details = 14;
+
+  // Encapsulates the result of a fact execution.
+  message FactResult {
+    // The fact's output. This can be null, which means the fact errored without fallback (and is
+    // different than NullValue, which means the fact returned null).
+    google.protobuf.Value output = 1;
+
+    // Any fatal error when executing the fact. This is empty if there are no errors.
+    //
+    // This can be non-empty even though `output` is not null. That means the fact errored and a
+    // fallback value was used as the output.
+    string error = 2;
+
+    // Arbitrary key-value map with more details on why the rule produced its output.
+    map<string, google.protobuf.Value> provenance = 3;
+
+    // Phase the fact executed in.
+    // Only live facts affect a checkpoint's actioning.
+    enum ExecutionPhase {
+      // PHASE_UNKNOWN
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+      PHASE_UNKNOWN = 0;
+      // SHADOW
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      SHADOW = 1;
+      // LIVE
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      LIVE = 2;
+    }
+    // phase
+    ExecutionPhase phase = 4;
+
+    // Timing
+    message Timing {
+      // Epoch millis when the fact started running.
+      int64 init_at_ms = 1;
+      // Number of nanoseconds it took to wait for dependency facts.
+      int64 dependency_nanos = 2;
+      // Number of nanoseconds for the rule's `runFn` to run.
+      int64 execution_nanos = 3;
+    }
+    // timing
+    Timing timing = 5;
+  }
+
+  // Encapsulates the result of a rule execution.
+  message RuleResult {
+    // Name of the rule's output. E.g. RequestMfa, PaymentAbuse
+    string output_name = 1;
+
+    // RuleStatus
+    enum RuleStatus {
+      // NORMAL
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+      NORMAL = 0;
+      // EXEMPTED
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      EXEMPTED = 1; // rule configured live, but was exempted and executed in shadow phase
+      // TIMEOUT
+      // buf:lint:ignore ENUM_VALUE_PREFIX
+      TIMEOUT = 2; // rule configured live, but took too long and was executed in shadow phase
+    }
+    // status
+    RuleStatus status = 2;
+
+    // A RuleResult is also a FactResult. This holds the common FactResult fields.
+    FactResult fact_result = 3;
+
+    // Type of the rule. E.g. action, labeling, exemption
+    string type = 4;
+  }
+
+  // Map from rule ID to rule result, for rules that executed in the LIVE/SHADOW phase.
+  // Every enabled rule is in either the live map or the shadow map, but not both.
+  map<string, RuleResult> rule_results_live = 15;
+  // rule_results_shadow
+  map<string, RuleResult> rule_results_shadow = 16;
+
+  // Map of all fact results, except rules and inputs (they are in separate fields). Key is FactId.
+  map<string, FactResult> fact_results = 17;
+
+  // Map of all inputs to this evaluation. Key is FactId.
+  map<string, google.protobuf.Value> inputs = 18;
+
+  // Number of rules in this checkpoint that are disabled for this evaluation.
+  int32 num_disabled_rules = 24;
+
+  // Timing stats for this evaluation.
+  int64 live_exec_ms = 25;
+  // shadow_exec_ms
+  int64 shadow_exec_ms = 26;
+  // total_exec_ms
+  int64 total_exec_ms = 27;
+
+  // builtin_fact_results
+  map<string, FactResult> builtin_fact_results = 28;
+
+  // Final action and details from the shadow-mode execution of the evaluation.
+  RuleOutputDetails final_action_shadow = 29;
+}

@@ -1,0 +1,363 @@
+syntax = "proto3";
+
+package case_management_service.queue.v1;
+
+import "case-management-service/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.casemanagement.queue";
+
+// Service for Case Management
+service QueueService {
+  option (doordash.api.service) = {
+    name: "case-management-service"
+    url: "case-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["case-management-service"]
+    api_key_name: "CASE_MANAGEMENT_SERVICE_API_KEY_FOR_UNIFIED_GATEWAY"
+    owner: {
+      id: "opex-platform-for-managing-cases"
+      name: "case-management-service"
+      slack_channel: "#ask-case-management-platform"
+      email_alias: "team-case-management@doordash.com"
+    }
+    target_products: [
+      INTERNAL,
+      DX,
+      CX,
+      MX
+    ]
+  };
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Creates a Queue
+  rpc CreateQueue(CreateQueueRequest) returns (CreateQueueResponse);
+  // Loads Queues
+  rpc GetQueues(GetQueuesRequest) returns (GetQueuesResponse);
+  // Updates a Queue
+  rpc UpdateQueue(UpdateQueueRequest) returns (UpdateQueueResponse);
+
+  // Loads Queue External Mapping
+  rpc GetExternalQueueMappings(GetExternalQueueMappingsRequest) returns (GetExternalQueueMappingsResponse);
+  // Updates Queue External Mapping
+  rpc UpdateExternalQueueMapping(UpdateExternalQueueMappingRequest) returns (UpdateExternalQueueMappingResponse);
+  // Removes Queue External Mapping
+  rpc RemoveExternalQueueMapping(RemoveExternalQueueMappingRequest) returns (RemoveExternalQueueMappingResponse);
+
+  // Adds Queue Members
+  rpc AddQueueMembers(AddQueueMembersRequest) returns (AddQueueMembersResponse);
+  // Removes Queue Members
+  rpc RemoveQueueMembers(RemoveQueueMembersRequest) returns (RemoveQueueMembersResponse);
+  // Get Refresh SQL Query History
+  rpc GetRefreshSqlQueryHistory(GetRefreshSqlQueryHistoryRequest) returns (GetRefreshSqlQueryHistoryResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/queue/sql-query-history"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_risk_workstation"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get Queues that the agent's incidents belong to, moved to message.proto
+  rpc GetIncidentQueuesForAgent(GetIncidentQueuesForAgentRequest) returns (GetIncidentQueuesForAgentResponse) {
+    option deprecated = true;
+  }
+}
+
+// Create Queue Request
+message CreateQueueRequest {
+  // The queue to create
+  Queue queue = 1;
+}
+
+// Create Queue Response
+message CreateQueueResponse {
+  // The created queue
+  Queue queue = 1;
+}
+
+// Get Queues Request
+message GetQueuesRequest {
+  // Can add filters here to the get request, for any necessary data access needs.
+  // Note: Also need to add endpoints for child queue related tables and operations.
+}
+
+// Get Queues Response
+message GetQueuesResponse {
+  // The queues
+  repeated Queue queues = 1;
+}
+
+// Update Queues Request
+message UpdateQueueRequest {
+  // The queue to update
+  Queue queue = 1;
+}
+
+// Update Queues Response
+message UpdateQueueResponse {
+  // The updated queue
+  Queue queue = 1;
+}
+
+// Get External Queue Mapping Request
+message GetExternalQueueMappingsRequest {
+  // Note this can be partially populated, to allow filtering.
+  ExternalQueueMapping mapping = 1;
+}
+
+// Get External Queue Mapping Response
+message GetExternalQueueMappingsResponse {
+  // Response
+  repeated ExternalQueueMapping mappings = 1;
+}
+
+// Update External Queue Mapping Request
+message UpdateExternalQueueMappingRequest {
+  // Mapping to update
+  ExternalQueueMapping mapping = 1;
+}
+
+// Update External Queue Mapping Response
+message UpdateExternalQueueMappingResponse {}
+
+// Remove External Queue Mapping Request
+message RemoveExternalQueueMappingRequest {
+  // Mapping to Remove
+  ExternalQueueMapping mapping = 1;
+}
+
+// Remove External Queue Mapping Response
+message RemoveExternalQueueMappingResponse {}
+
+// Represents types of External Queue
+enum ExternalQueueType {
+  // UNSPECIFIED
+  EXTERNAL_QUEUE_TYPE_UNSPECIFIED = 0;
+  // SALESFORCE
+  EXTERNAL_QUEUE_TYPE_SALESFORCE = 1;
+}
+
+// External Queue Mapping
+message ExternalQueueMapping {
+  // Queue ID
+  google.protobuf.StringValue queue_name = 1;
+  // External Queue ID
+  google.protobuf.StringValue external_queue_name = 2;
+  // External Queue Type
+  ExternalQueueType external_queue_type = 3;
+}
+
+// Queue Type
+enum QueueType {
+  // UNSPECIFIED
+  QUEUE_TYPE_UNSPECIFIED = 0;
+  // API
+  QUEUE_TYPE_API = 1;
+  // SQL
+  QUEUE_TYPE_SQL = 2;
+}
+
+// Queue State
+enum QueueState {
+  // UNSPECIFIED
+  QUEUE_STATE_UNSPECIFIED = 0;
+  // ACTIVE
+  QUEUE_STATE_ACTIVE = 1;
+  // ARCHIVED
+  QUEUE_STATE_ARCHIVED = 2;
+  // DELETED
+  QUEUE_STATE_DELETED = 3;
+}
+
+// Team
+enum CaseTeam {
+  // UNSPECIFIED_TEAM
+  CASE_TEAM_UNSPECIFIED = 0;
+  // SNO
+  CASE_TEAM_SNO = 1;
+  // FOS
+  CASE_TEAM_FOS = 2;
+  // VENDOR
+  CASE_TEAM_VENDOR = 3;
+  // FOS_AND_VENDOR
+  CASE_TEAM_FOS_AND_VENDOR = 4;
+}
+
+// Audience
+enum CaseAudience {
+  // UNSPECIFIED_AUDIENCE
+  CASE_AUDIENCE_UNSPECIFIED = 0;
+  // CX
+  CASE_AUDIENCE_CX = 1;
+  // DX
+  CASE_AUDIENCE_DX = 2;
+  // MX
+  CASE_AUDIENCE_MX = 3;
+  // INTERNAL
+  CASE_AUDIENCE_INTERNAL = 4;
+}
+
+// Represents a queue
+message Queue {
+  // Queue ID
+  google.protobuf.StringValue queue_name = 1;
+  // Display Name
+  google.protobuf.StringValue display_name = 2;
+  // Queue Type
+  QueueType queue_type = 3;
+  // Description
+  google.protobuf.StringValue description = 4;
+  // Created At
+  google.protobuf.Timestamp created_at = 5;
+  // Updated At
+  google.protobuf.Timestamp updated_at = 6;
+  // Active Version
+  google.protobuf.Int32Value active_version = 7;
+  // Queue State
+  QueueState queue_state = 8;
+  // Team
+  CaseTeam team = 9;
+  // Audience
+  CaseAudience audience = 10;
+  // Priority Level
+  google.protobuf.Int32Value priority = 11;
+  // Channel Type
+  google.protobuf.StringValue channel_type = 12;
+}
+
+// Message representing a Queue Member (agent and queue)
+message QueueMember {
+  // Agent ID (DoorDash ID)
+  google.protobuf.StringValue agent_id = 1;
+  // Queue ID (Internal)
+  google.protobuf.StringValue queue_name = 2;
+}
+
+// Request to add queue members
+message AddQueueMembersRequest {
+  // Queue Members
+  repeated QueueMember queue_members = 1;
+}
+
+// Response from add queue members
+message AddQueueMembersResponse {}
+
+// Request to remove queue members
+message RemoveQueueMembersRequest {
+  // Queue Members
+  repeated QueueMember queue_members = 1;
+}
+
+// Response to remove queue members
+message RemoveQueueMembersResponse {}
+
+// Request for  Refresh SQL Query History
+message GetRefreshSqlQueryHistoryRequest {
+  // used for deprecated field numbers
+  reserved 3;
+  // used for deprecated field names
+  reserved "pagination_options";
+  // review queue name
+  google.protobuf.StringValue review_queue_name = 1;
+  // filter for timestamp history
+  google.protobuf.Timestamp start_time = 2;
+  // offset pagination options (offset and limit)
+  case_management_service.v1.OffsetPaginationOptions offset_pagination_options = 4;
+}
+
+// Response for  Refresh SQL Query History
+message GetRefreshSqlQueryHistoryResponse {
+  // list of Refresh Sql Query log entry
+  repeated RefreshSqlQueryLogEntry refresh_sql_query_entries = 1;
+  // number of results
+  google.protobuf.Int64Value total_results = 2;
+}
+
+// message for Refresh Sql Query Log
+message RefreshSqlQueryLogEntry {
+  // review queue name
+  google.protobuf.StringValue review_queue_name = 1;
+  // number of new rows
+  google.protobuf.Int32Value num_new_rows = 2;
+  // number of total rows
+  google.protobuf.Int32Value num_total_rows = 3;
+  // status of this query
+  RefreshSqlQueryLogStatus status = 4;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 5;
+  // error message
+  google.protobuf.StringValue err_msg = 6;
+  // checksum
+  google.protobuf.StringValue query_checksum = 7;
+  // created by user id
+  google.protobuf.StringValue created_by = 8;
+  // created by email id
+  google.protobuf.StringValue created_by_email = 9;
+  // job instance uuid
+  google.protobuf.StringValue job_instance_uuid = 10;
+}
+
+// enum for Refresh Sql Query Status
+enum RefreshSqlQueryLogStatus {
+  // Unspecified
+  REFRESH_SQL_QUERY_LOG_STATUS_UNSPECIFIED = 0;
+  // Running
+  REFRESH_SQL_QUERY_LOG_STATUS_RUNNING = 1;
+  // Done
+  REFRESH_SQL_QUERY_LOG_STATUS_DONE = 2;
+  // Failed
+  REFRESH_SQL_QUERY_LOG_STATUS_FAILED = 3;
+  // Started
+  REFRESH_SQL_QUERY_LOG_STATUS_STARTED = 4;
+  // Timeout
+  REFRESH_SQL_QUERY_LOG_STATUS_TIMEOUT = 5;
+  // Dedupping
+  REFRESH_SQL_QUERY_LOG_STATUS_DEDUPPING = 6;
+  // Adding Cases
+  REFRESH_SQL_QUERY_LOG_STATUS_ADDING_CASES = 7;
+}
+
+// The request to get the queues that the agent's incidents belong to
+message GetIncidentQueuesForAgentRequest {
+  // deprecated, moved to message.proto
+  option deprecated = true;
+  // Agent ID (user id)
+  google.protobuf.StringValue agent_id = 1;
+  // Whether to include direct reports in the response
+  google.protobuf.BoolValue include_direct_reports = 2;
+}
+
+// The response of GetIncidentQueuesForAgentRequest
+message GetIncidentQueuesForAgentResponse {
+  // deprecated, moved to message.proto
+  option deprecated = true;
+  // The Queues that the agent's incidents belong to
+  repeated Queue queues = 1;
+}

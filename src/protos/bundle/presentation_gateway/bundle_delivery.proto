@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package doordash.bundle.pg;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.bundle.pg";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// This is a endpoint for Supporting Bundle in THQ tool, ported over to UG and PG to test the user experience.
+service BundleDelivery {
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    name: "doubledash"
+    port: 50051
+    name_spaces: ["doubledash"]
+    owner: {
+      id: "doubledash-alerts"
+      name: "doubledash"
+      slack_channel: "#ask-doubledash"
+      email_alias: "bundles-engineering@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // GetContext RPC call to get bundle context API data
+  rpc GetContext(GetContextRequest) returns (GetContextResponse) {
+    option (google.api.http) = {get: "/doubledash/v1/bundle_delivery/context/{order_uuid}"};
+    option (doordash.api.endpoint) = {
+      hostname: "doordash-bundle-pg-bundle-delivery-get-context.service.prod.ddsd"
+      port: 50051
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+      presentation_gateway_endpoint: true
+    };
+  }
+}
+
+// GetContextRequest represents the request for retrieving bundle delivery context information.
+message GetContextRequest {
+  // Order uuid unique identifier
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+// GetContextResponse represents the response for retrieving bundle delivery context information.
+message GetContextResponse {
+  // Delivery Context information
+  DeliveryContext delivery_context = 1;
+  // Delivery last update information
+  google.protobuf.Timestamp last_updated = 2;
+}
+
+// Response context for the Bundle Delivery
+message DeliveryContext {
+  // Merchant details of Delivery context
+  MerchantDetails merchant_details = 1;
+  // Delivery details of Delivery context
+  DeliveryDetails delivery_details = 2;
+
+  /** Contains all of the merchant details. */
+  message MerchantDetails {
+    // Merchant store id
+    google.protobuf.Int64Value store_id = 1;
+    // Merchant name
+    google.protobuf.StringValue business_name = 2;
+  }
+
+  /** Contains all of the delivery details. */
+  message DeliveryDetails {
+    // Delivery ID.
+    google.protobuf.Int64Value delivery_id = 1;
+    // Delivery UUID.
+    google.protobuf.StringValue delivery_uuid = 2;
+  }
+}

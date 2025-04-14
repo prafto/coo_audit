@@ -1,0 +1,1001 @@
+syntax = "proto3";
+package order;
+
+import "common/common.proto";
+import "common/legacy.proto";
+import "common/money.proto";
+import "common/mp_catering.proto";
+import "common/names.proto";
+import "common/order_config.proto";
+import "common/supply_chain_order_info.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/common";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.common";
+
+enum ConsumerOrderState {
+  UNKNOWN = 0;
+
+  PERSIST = 100;
+  ADD_PAYMENT_METHOD = 150;
+  CREDITS = 200;
+  FRAUD = 250;
+  PAYMENT = 300;
+  DELIVERY = 400;
+  ORDER_TRANSMISSION = 500;
+  FINAL_UPDATES = 600;
+
+  ORDER_TRANSMISSION_CANCEL = 4000;
+  DELIVERY_CANCEL = 4100;
+  REFUND_PAYMENT = 4200;
+  REFUND_CREDITS = 4300;
+  ORDER_CANCEL = 4400;
+
+  FAILED_ORDER_TRANSMISSION_CANCEL = 6000;
+  FAILED_DELIVERY_CANCEL = 6100;
+  FAILED_REFUND_PAYMENT = 6200;
+  FAILED_REFUND_CREDITS = 6300;
+  FAILED_ORDER_CANCEL = 6400;
+
+  PROCESSED_SUCCESS = 8000;
+  PROCESSED_FAILED_FINAL_UPDATE = 8100;
+  PROCESSED_ORDER_CANCEL = 8200;
+}
+
+enum OrderFilterOption {
+  // means no filter required
+  ORDER_FILTER_OPTION_UNSPECIFIED = 0;
+  // business order
+  ORDER_FILTER_OPTION_BUSINESS_ORDER = 1;
+  // personal order
+  ORDER_FILTER_OPTION_PERSONAL_ORDER = 2;
+}
+
+message OrderConsumerInfo {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue user_id = 2;
+}
+
+message OrderPricingInfo {
+  money.OrderQuoteV2 pricing_info = 1;
+}
+
+message GiftInfo {
+  enum RecipientDeliveryStatus {
+    // Gift delivery is scheduled by recipient
+    SCHEDULED = 0;
+
+    // Recipient has not yet scheduled delivery
+    UNSCHEDULED = 1;
+
+    // Default case - recipient cannot schedule
+    UNSCHEDULABLE = 2;
+  }
+
+  // Legacy name field without separation for last and first names
+  google.protobuf.StringValue recipient_name = 1;
+  google.protobuf.StringValue recipient_phone = 2;
+  google.protobuf.StringValue card_message = 3;
+  google.protobuf.StringValue recipient_email = 4;
+  google.protobuf.StringValue graphic_url = 5;
+  google.protobuf.StringValue masked_phone_number = 6;
+  google.protobuf.StringValue animation_asset_url = 7;
+  google.protobuf.StringValue card_uuid = 8;
+  google.protobuf.BoolValue should_notify_tracking_to_recipient_on_dasher_assign = 9;
+  google.protobuf.BoolValue should_notify_recipient_for_dasher_questions = 10;
+  google.protobuf.StringValue sender_name = 11;
+  google.protobuf.StringValue recipient_given_name = 12;
+  google.protobuf.StringValue recipient_family_name = 13;
+  google.protobuf.StringValue recipient_preferred_lang = 14;
+  RecipientDeliveryStatus recipient_delivery_status = 15;
+  names.LocalizedNames recipient_localized_names = 16;
+  google.protobuf.BoolValue should_recipient_schedule_gift = 17;
+  google.protobuf.Timestamp gift_schedule_expire_time = 18;
+  google.protobuf.BoolValue type_virtual_gift_card = 19;
+  google.protobuf.StringValue send_channel = 20;
+  // Used to display the actual value of the gift card since the amount reflected in UI accounts for promotions
+  money.MonetaryFields display_value = 21;
+  GiftRecipientEditableAddressFields recipient_editable_address_fields = 22;
+}
+
+message GiftRecipientEditableAddressFields {
+  google.protobuf.StringValue recipient_subpremise = 1;
+  google.protobuf.StringValue recipient_dropoff_preferences = 2;
+  google.protobuf.StringValue recipient_entry_code = 3;
+  google.protobuf.StringValue recipient_building_name = 4;
+}
+
+enum CancellationRefundState {
+  CANCELLATION_REFUND_STATE_UNKNOWN = 0;
+  CANCELLATION_REFUND_STATE_PENDING = 1;
+  CANCELLATION_REFUND_STATE_COMPLETED = 2;
+}
+
+enum PendingCancellationRefundSource {
+  PENDING_CANCELLATION_REFUND_SOURCE_UNKNOWN = 0;
+  PENDING_CANCELLATION_REFUND_SOURCE_USER_SELECTION = 1;
+  PENDING_CANCELLATION_REFUND_SOURCE_SELECTION_EXPIRED = 2;
+}
+
+// Contains information regarding cancelled orders that are going through the 2-step cancellation experience.
+message CancellationPendingRefundInfo {
+  CancellationRefundState state = 1;
+  // The amount of original payment that is pending/has been refunded.
+  money.MonetaryFields original_payment_amount = 2;
+  // The amount of credit that is pending/has been refunded.
+  money.MonetaryFields credit_amount = 3;
+  // The user is offered to select a refund option up to this timestamp.
+  google.protobuf.Timestamp selection_expires_at = 4;
+  // The source of resolution of this pending refund order.
+  PendingCancellationRefundSource pending_cancellation_source = 5;
+  // The amount of ebt payment that is pending/has been refunded.
+  money.MonetaryFields ebt_amount = 6;
+  // The amount of hsa/fsa payment that is pending/has been refunded.
+  money.MonetaryFields hsa_fsa_amount = 7;
+  // The amount of reward points that is pending/has been refunded.
+  money.MonetaryFields reward_points_amount = 8;
+  // The amount of loyalty reward that is pending/has been refunded.
+  money.MonetaryFields loyalty_reward_amount = 9;
+  // The amount of external gift card that is pending/has been refunded.
+  money.MonetaryFields external_gift_card_amount = 10;
+}
+
+// Contains information regarding DashCard reward points for rendering consumer receipts
+message OrderDashCardRewardPointsInfo {
+  // The amount of original that is applied
+  money.MonetaryFields original_applied_amount = 1;
+  // The current amount that is still applied after adjustment/cancellation
+  money.MonetaryFields current_applied_amount = 2;
+}
+
+message OrderPayments {
+  string order_uuid = 1;
+  money.PaymentDetailsList payment_charge_details = 2;
+}
+
+message ConsumerOrder {
+  message SupplementalPaymentInfo {
+    money.SupplementalPaymentType type = 1;
+    google.protobuf.Int32Value remaining_balance = 2;
+    money.MonetaryFields remaining_balance_monetary = 3;
+    money.MonetaryFields deduct_amount = 4;
+  }
+
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.StringValue order_cart_id = 2;
+
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp submitted_at = 4;
+  google.protobuf.Timestamp cancelled_at = 29;
+  // TODO more fields to be added here
+
+  OrderConsumerInfo consumer_info = 5;
+  legacy.LegacyOrderHierarchy legacy_order_hierarchy = 6;
+
+  // This pricing info only reflects the pricing info snapshot on order SUBMISSION
+  // and doesn't contain the following order operations such as order adjustment and order cancellation.
+  // This field also has a TTL of 90 days.
+  // Please DO NOT use this field if you are not sure your use case.
+  // Discuss your use case with #eng-order-platform if you want to use this field.
+
+  // Price information can be obtained from legacy_order_hierarchy field,
+  // which contains a list of MainDB order table records.
+  // Most of the monetary fields are in store_order_cart object.
+  // Promotions are in order_cart_discount_component,
+  // and credits are in order_cart_discount.
+  OrderPricingInfo pricing_info = 7;
+
+  GiftInfo gift_info = 8;
+  DashPassInfo dash_pass_info = 9;
+
+  PromotionInvoicingMetadata promotion_info = 10;
+  MarketingFeeComponentBreakdown marketing_fee_breakdown = 11;
+  CartInfo cart_info = 12;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only order-tracker should use this field.
+  google.protobuf.StringValue delivery_id = 13;
+
+  OrderShipmentInfo shipping_info = 14;
+
+  OrderSource order_source = 15;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only order-tracker should use this field.
+  OrderAgeRestrictedIdVerification age_restricted_id_verification = 16;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only order-tracker should use this field.
+  BundledOrderInfo bundled_order_info = 17;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only order-tracker should use this field.
+  google.protobuf.StringValue delivery_uuid = 18;
+
+  reserved 19;
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only order-tracker should use this field.
+  OrderSubstitutionType order_substitution_type = 20;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only for post-checkout showing catering info
+  common.catering.v1.CateringInfo catering_info = 21;
+
+  google.protobuf.BoolValue signature_required = 22;
+
+  // These two fields are components of red card refund. Their sum should be
+  // deducted from the total charged amount for it to have the correct value.
+  // This is only applicable to CnG for now.
+  google.protobuf.Int32Value red_card_consumer_refund = 23;
+  google.protobuf.Int32Value red_card_consumer_credits = 24;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  common.order_config.v1.OrderConfig order_config = 25;
+
+  ReorderInfo reorder_info = 26;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // Only for post-checkout showing Proof Of Delivery info
+  ProofOfDelivery proof_of_delivery = 27;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // This field is used to determine whether the loyalty program applied to the storefront order
+  // is funded by merchant or by corporate
+  google.protobuf.BoolValue is_sf_loyalty_program_corp_funded = 28;
+
+  // If set, this cancelled order is in the 2-phase seamless cancellation experience.
+  CancellationPendingRefundInfo cancellation_pending_refund_info = 30;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // This field is used to determine if an order is a meal plan order.
+  MealPlanInfo meal_plan_info = 31;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // This field is used for showing the quoted delivery time of an order.
+  google.protobuf.Timestamp scheduled_delivery_time = 32;
+
+  // This filed is read from cassandra table for supply chain order info.
+  // It contains specific metadata of an order to a supply chain store.
+  // Todo: deprecate SupplyChainInfo once migrate to SupplyChainOrderInfo
+  SupplyChainInfo supply_chain_info = 33;
+  common.supply_chain_order_info.v1.SupplyChainOrderInfo supply_chain_order_info = 34;
+  reserved 35;
+  reserved "overauth_config";
+  repeated SupplementalPaymentInfo supplemental_payment_info = 36;
+  legacy.OverauthConfig over_auth_config = 37;
+  reserved 38;
+  // this field is used to provide granular config on what to not display on Cx UI
+  common.PrivateRecipientInfo private_recipient_info = 39;
+
+  // This field is read from cassandra consumer order table
+  OrderDashCardRewardPointsInfo dash_card_reward_points_info = 40;
+  reserved 41;
+  reserved "experiment_setup";
+
+  CancellationReorderInfo cancellation_reorder_info = 42;
+  ExperimentConfiguration experiment_config = 43;
+
+  // This field is read from cassandra consumer order table.
+  // This field is used for storing stripe card information (will replace the call to payin client).
+  StripeCardInfo stripe_card_info = 44;
+
+  // This field is read from cassandra consumer order table
+  money.CommissionOrderType commission_order_type = 45;
+
+  // This field is read from cassandra consumer order table
+  // It is only present after a redcardRefund adjustment and is cleared with subsequent adjustments
+  money.PostRedCardSwipePricingDetails redcard_swipe_info = 46;
+
+  // This field is read from cassandra order table and is only available for 90 days.
+  // It is used to determine whether the CX-intiated switch payment method flow is enabled for the CX's order
+  google.protobuf.BoolValue is_switch_payment_method_eligible = 47;
+
+  // This field is for Super Order flow, it is used to determine the parent consumer domain order for the given order
+  google.protobuf.StringValue parent_consumer_order_uuid = 48;
+
+  // Payment information for this order
+  OrderPayments payments = 49;
+
+  // context for order creation
+  OrderCreationContext order_creation_context = 50;
+}
+
+// Add more experiments to show case whether they are enabled or not.
+message ExperimentConfiguration {
+  CxRatingsExperience nv_cx_feedback_experiment_setup = 1; // Post Checkout Cx Feedback Experiment Setup
+}
+
+// Rating Experience Metadata
+message CxRatingsExperience {
+  // Treatment
+  CxRatingsTreatment rating_treatment = 1;
+  // Workflow Id
+  google.protobuf.StringValue workflow_id = 2;
+  // Additional Metadata
+  map<string, string> metadata = 3;
+}
+
+// Post Checkout Cx Feedback Experiment
+enum CxRatingsTreatment {
+  // Unset
+  CX_RATINGS_TREATMENT_UNSET = 0;
+  // Default
+  CX_RATINGS_TREATMENT_DEFAULT = 1;
+  // Post Checkout Cx Feedback Experiment is enabled on FE
+  CX_RATINGS_TREATMENT_NV_CNG_FEEDBACK = 2;
+}
+
+message ReorderInfo {
+  google.protobuf.BoolValue is_reorderable = 1;
+}
+
+message OrderAgeRestrictedIdVerification {
+  string id_photo_url = 1;
+  common.AgeRestrictedIdVerificationVendor vendor = 2;
+  google.protobuf.Int32Value min_age_requirement = 3;
+  google.protobuf.BoolValue is_bouncer_case_enabled = 4;
+}
+
+// Deprecated, please use the MealTrainOrderDetails in order_config.proto
+message MealTrainInfo {
+  option deprecated = true;
+  // The name of the meal train this order is part of
+  google.protobuf.StringValue meal_train_name = 1;
+}
+
+enum OrderSource {
+  ORDER_SOURCE_UNSET = 0;
+  ORDER_SOURCE_MAINDB = 1;
+  ORDER_SOURCE_CASSANDRA_CONSUMER_ORDER = 2; // Order was persisted into both Cassandra and MainDB, and the MainDB one is returned.
+  ORDER_SOURCE_CASSANDRA_CONSUMER_ORDER_EXCLUSIVE = 3; // Order was only persited into Cassandra
+  ORDER_SOURCE_CASSANDRA_LEGACY_ORDER = 4; // A legacy order backfilled from MainDB into Cassandra
+  ORDER_SOURCE_CASSANDRA_ORDER_FALLBACK = 5; // use the C* order for fallback for cases reading order before persisting consumer order  & main db
+}
+
+message CartInfo {
+  google.protobuf.StringValue cart_uuid = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+message PromotionInvoicingMetadata {
+  google.protobuf.StringValue campaign_id = 1;
+  google.protobuf.BoolValue is_invoice = 2;
+  google.protobuf.StringValue netsuite_entity_id = 3;
+  google.protobuf.StringValue salesforce_opportunity = 4;
+  google.protobuf.StringValue salesforce_opportunity_line_item_id = 5;
+  google.protobuf.StringValue promo_code = 6;
+  google.protobuf.StringValue campaign_name = 7;
+  google.protobuf.Timestamp campaign_start = 8;
+  google.protobuf.Timestamp campaign_end = 9;
+}
+
+message MarketingFeeComponentBreakdown {
+  money.MonetaryFields food_discount = 1;
+  money.MonetaryFields delivery_fee_discount = 2;
+  money.MonetaryFields service_fee_discount = 3;
+  money.MonetaryFields small_order_discount = 4;
+  money.MonetaryFields platform_fee = 5;
+  money.MonetaryFields dashpass_fee = 6;
+  money.MonetaryFields dashpass_fee_tax = 7;
+  money.MonetaryFields marketing_fee_tax = 8;
+  money.MonetaryFields mx_funded_campaign_discount_subsidy = 9;
+}
+
+message DashPassInfo {
+  bool is_dash_pass_order = 1;
+}
+
+message MealPlanInfo {
+  bool is_lunch_pass = 1;
+}
+
+message SupplyChainInfo {
+  google.protobuf.Timestamp payment_due_date = 1;
+  google.protobuf.Timestamp paid_at = 2;
+  PaymentError scheduled_payment_error = 3;
+  message PaymentError {
+    google.protobuf.StringValue error_code = 1;
+    google.protobuf.StringValue error_message = 2;
+  }
+}
+
+enum OrderType {
+  ORDER_TYPE_UNKNOWN = 0;
+
+  MARKETPLACE = 1;
+  MEAL_GIFTING = 2;
+  INDIVIDUAL_ORDER = 3;
+
+  MARKETPLACE_GROUP_ORDER = 100;
+  CART_TOPPER_GROUP_ORDER = 101;
+}
+
+message ConsumerOrderIdentifier {
+  oneof id {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.StringValue order_cart_id = 2;
+    google.protobuf.StringValue url_code = 3;
+  }
+}
+
+message BundleItemPageIdentifier {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.StringValue item_id = 2;
+  // Optional cart uuid
+  google.protobuf.StringValue cart_uuid = 3;
+}
+
+message MealGiftOrderIdentifier {
+  oneof id {
+    google.protobuf.StringValue order_uuid = 1;
+  }
+}
+
+message BundleOpportunitiesCorrelationIdentifier {
+  oneof id {
+    // carnival cart uuid. Used in preview page to find the valid bundle stores given the current cart
+    google.protobuf.StringValue cart_uuid = 1;
+    // store id. Used in store page to to find the valid bundle stores given the current store
+    google.protobuf.StringValue store_id = 2;
+    // consumer order identifier
+    ConsumerOrderIdentifier consumer_order_identifier = 3;
+    // bundle item page identifier
+    BundleItemPageIdentifier bundle_item_page_identifier = 4;
+  }
+}
+
+// ShoppingProtocol enumerates the different ways in which orders can be picked and packed
+enum ShoppingProtocol {
+  // Unspecified, the default if the protocol is unknown
+  SHOPPING_PROTOCOL_UNSPECIFIED = 0;
+  // The merchant will pick and pack the order
+  SHOPPING_PROTOCOL_MERCHANT_PICK = 1;
+  // The dasher will pick the order and then deliver
+  SHOPPING_PROTOCOL_DASHER_PICK = 2;
+  // An employee will pick the order
+  SHOPPING_PROTOCOL_SHOPPER_PICK = 3;
+}
+
+// Retail order shopping state details
+message ShoppingStateInfo {
+  // shopping states for retail order
+  enum ShoppingState {
+    // unspecified
+    SHOPPING_STATE_UNSPECIFIED = 0;
+    // hides entrypoint: shopping not started / ended / not retail
+    SHOPPING_STATE_NONE = 1;
+    // shows entry point: shopping in progress
+    SHOPPING_STATE_SHOPPING_IN_PROGRESS = 2;
+    // shows entry point: review substitutions
+    SHOPPING_STATE_SUBSTITUTION_PENDING = 3;
+    // shows entry point: shopping finished but not delivered yet
+    SHOPPING_STATE_SHOPPING_FINISHED = 4;
+  }
+  // order shopping state
+  ShoppingState shopping_state = 1;
+  // if SHOPPING_STATE_SUBSTITUTION_PENDING, also include # of items for cx to review
+  // otherwise default to null
+  google.protobuf.Int32Value items_to_review = 2;
+}
+
+message CancellationReason {
+  enum CancellationReasonCategory {
+    UNKNOWN = 0;
+    GENERIC_STORE_CLOSED = 1;
+    GENERIC_STORE_OPEN_CANNOT_FULFILL = 2;
+    GENERIC_DASHER_CANNOT_FULFILL = 3;
+    GENERIC_CUSTOMER_REQUESTED = 4;
+    GENERIC_ORDER_PLACER = 5;
+    GENERIC_CANCEL_BY_MX = 6;
+    TEST_STORE_ORDER_CANCELLED_BY_TASK = 7;
+
+    // pos errors
+    GENERIC_POS_ERROR = 8;
+    STORE_UNAVAILABLE = 9;
+    TIMEOUT = 10;
+    TRANSMISSION_FAILURE = 11;
+    STORE_OUT_OF_HOURS = 12;
+    MENU_ITEM_UNAVAILABLE = 13;
+    POS_CONFIGURATION_ERROR = 14;
+    UNPARSED_POS_ERROR = 15;
+
+    // retail cancellation reasons
+    RETAIL_SHOPPER_ITEMS_OUT_OF_STOCK = 20;
+    RETAIL_DASHER_ITEMS_OUT_OF_STOCK = 21;
+    RETAIL_MERCHANT_ITEMS_OUT_OF_STOCK = 22;
+    RETAIL_CUSTOMER_PAYMENT_INSUFFICIENT_FUND = 23;
+
+    // Proactive Cancel
+    PROACTIVE_CANCEL = 30;
+    DISASTER_PROACTIVE_CANCEL = 31;
+
+    TECH_ISSUES = 32;
+    DUPLICATE_ORDER = 33;
+    ITEMS_UNAVAILABLE = 34;
+
+    // Bulk cancellation
+    LIMBO_ORDER_CLEAN_UP = 35;
+    OUTAGE_CLEAN_UP = 36;
+
+    // New ers based workflow cancellation reasons
+    NO_DASHERS_AVAILABLE = 37;
+    DID_NOT_RECEIVE_ORDER = 38;
+    TOO_BUSY = 39;
+    FRAUDULENT_ORDER = 40;
+    UNSCHEDULED_GIFT_ORDER_EXPIRED = 41;
+    ADDRESS_INCORRECT = 42;
+    DASHER_NOT_MAKING_PROGRESS = 43;
+    CONSUMER_WANTS_DELIVERY_NOT_PICKUP = 44;
+    CONSUMER_DOES_NOT_WANT_FOOD = 45;
+    TAKING_TOO_LONG = 46;
+    MERCHANT_DID_NOT_CONFIRM = 47;
+    INCORRECTLY_PICKED_UP_BY_ANOTHER_DASHER = 48;
+
+    // Drive specific
+    DRIVE_ORDER_PICKED_UP_BY_CUSTOMER = 49;
+
+    // Dasher reports store closed specific
+    STORE_CLOSED_DRSC_DASHER_REQUEST = 50;
+    STORE_CLOSED_DRSC_MASS_CANCEL = 51;
+    STORE_CLOSED_DRSC_OUTSIDE_HOURS_DASHER_REQUEST = 52;
+    STORE_CLOSED_DRSC_OUTSIDE_HOURS_MASS_CANCEL = 53;
+    STORE_CLOSED_DRSC_DRIVE_DASHER_REQUEST = 54;
+    STORE_CLOSED_DRSC_BLOCKLIST = 55;
+
+    CANCELLED_REDELIVERY = 56;
+
+    // Pending refund cancellation experience
+    EXECUTE_REFUND_FOR_CANCELLED_ORDER_WITH_PENDING_REFUND_ON_USER_SELECTION = 57;
+    EXECUTE_REFUND_FOR_CANCELLED_ORDER_WITH_PENDING_REFUND_ON_SELECTION_EXPIRED = 58;
+
+    // Lunchpass Cancellations
+    LUNCHPASS_CUSTOMER_REQUESTED = 59;
+    SAFETY_PROACTIVE_CANCEL = 60;
+
+    CANCELLED_RETURN_DELIVERY = 61;
+
+    // Drone failed to fulfill the order
+    GENERIC_DRONE_CANNOT_FULFILL = 62;
+    // Bundle order cancellation propagation
+    BUNDLE_CANCELLATION_PROPAGATION = 63;
+
+    // Parcels Specific
+    PARCEL_NEVER_RECEIVED = 64;
+    PARCEL_NEEDS_REDELIVERY = 65;
+    PARCEL_LOST_AT_FACILITY = 66;
+
+    DRIVE_AUTOMATIC_CANCELLATION = 67;
+    // Cancellation reason when order is cancelled for safety incident at the Cx drop-off location
+    DROP_OFF_SAFETY_PROACTIVE_CANCEL = 68;
+    // Cancellation reason when Cx sends extremely abusive chat messages to Dx
+    SAFECHAT_ABUSIVE_MESSAGES_CANCEL = 69;
+
+    // Order Processing Error
+    ASYNC_DELIVERY_CREATION_FAILURE = 70;
+
+    // Cancellation reason when Cx sends extremely abusive images to Dx
+    SAFECHAT_ABUSIVE_IMAGE_CANCEL_CX_OFFENDER = 71;
+    // Cancellation reason when Dx sends extremely abusive images to Cx
+    SAFECHAT_ABUSIVE_IMAGE_CANCEL_DX_OFFENDER = 72;
+
+    MERCHANT_TOO_BUSY = 73;
+    MERCHANT_DID_NOT_RECEIVE_ORDER = 74;
+    STORE_PERMANENTLY_CLOSED = 75;
+    ORDER_CANT_FIT_DASHER_VEHICLE = 76;
+    CUSTOMER_PAYMENT_FAILURE = 77;
+    MERCHANT_REFUSE_ORDER_HANDOFF = 78;
+    RETURN_DELIVERY_NOT_NEEDED = 79;
+    CUSTOMER_EXCESSIVE_RESCHEDULING = 80;
+    MERCHANT_EXCESSIVE_RESCHEDULING = 81;
+    DROPOFF_ADDRESS_INCORRECT = 82;
+    PICKUP_ADDRESS_INCORRECT = 83;
+    DASHER_EMERGENCY = 84;
+    DAMAGED_ITEMS = 85;
+    ALCOHOL_EMERGENCY_CANCEL = 86;
+    ABUSIVE_CHAT_FROM_CUSTOMER = 87;
+    DASHER_UNPROFESSIONAL = 88;
+    MERCHANT_DELIVERING_ORDER = 89;
+    RED_CARD_ERROR = 90;
+    CONSUMER_WANTS_PICKUP_NOT_DELIVERY = 91;
+    DELAYED_DASHER_ASSIGNMENT = 92;
+    // Cancellation reason when Dx sends extremely abusive chat messages to Cx
+    SAFECHAT_ABUSIVE_MESSAGE_CANCEL_DX_OFFENDER = 93;
+    // Cancellation reason when Dx chooses to trigger a worry-free unassignment (always-on Escape Hatch)
+    SAFETY_DX_ALWAYS_ON_ESCAPE_HATCH_CANCEL = 94;
+
+    // Parcels Specific
+    PARCEL_SET_RETURN_TO_MX = 95;
+
+    // Parent consumer order failed to process
+    PARENT_CONSUMER_ORDER_FAILED = 96;
+
+    // Parcel Specific
+    PARCEL_LOST_IN_DELIVERY = 97;
+
+    // Auto cancel stale orders in supervisor
+    STALE_ORDER = 98;
+    // Cancellation reason when Dx sends extremely abusive chat messages to Cx and they don't want an auto reorder
+    SAFECHAT_ABUSIVE_MESSAGE_CANCEL_DX_OFFENDER_NO_REORDER = 99;
+
+    // deprecated; see ORDER_FULFILLMENT_PLAN_ADJUSTED
+    PARENT_CONSUMER_ORDER_ADJUSTED = 100 [deprecated = true];
+
+    // Merchant-domain order cancellation for when consumer-domain order is adjusted
+    ORDER_FULFILLMENT_PLAN_ADJUSTED = 101;
+
+    // Parcel Specific
+    PARCEL_DISPOSED = 102;
+
+    // Parcel Specific
+    PARCEL_DAMAGED = 103;
+  }
+
+  CancellationReasonCategory cancellation_reason_category = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+enum OrderAdjustmentSource {
+  ORDER_ADJUSTMENT_SOURCE_UNKNOWN = 0;
+  ORDER_ADJUSTMENT_SOURCE_CUSTOMER_SUPPORT_ORDER_CART_ADJUSTMENT = 1;
+  ORDER_ADJUSTMENT_SOURCE_CONSUMER_EDIT_ORDER = 2;
+  ORDER_ADJUSTMENT_SOURCE_MERCHANT_TABLET = 3;
+  ORDER_ADJUSTMENT_ORDER_PLACER = 4;
+  ORDER_ADJUSTMENT_CONSUMER_SELF_SERVE_CANCELLATION = 5;
+  ORDER_ADJUSTMENT_SOURCE_RETAIL_DASHER = 6;
+  ORDER_ADJUSTMENT_SOURCE_RETAIL_SHOPPER = 7;
+  ORDER_ADJUSTMENT_SOURCE_MWS_MERCHANT = 8;
+  ORDER_ADJUSTMENT_SOURCE_MX_PORTAL = 9;
+  ORDER_ADJUSTMENT_SOURCE_DRIVE_MERCHANT = 10;
+  ORDER_ADJUSTMENT_SOURCE_SELF_SERVE_ADJUSTMENT = 11;
+  ORDER_ADJUSTMENT_SOURCE_COPS = 12;
+  ORDER_ADJUSTMENT_SOURCE_POS_MERCHANT = 13;
+  ORDER_ADJUSTMENT_SOURCE_CANCELLED_REDELIVERY = 14;
+  ORDER_ADJUSTMENT_SOURCE_RETAIL_FULFILLMENT_SERVICE = 15;
+  ORDER_ADJUSTMENT_SOURCE_MARKETPLACE_DASHER = 16;
+  ORDER_ADJUSTMENT_SOURCE_DASHER_APP = 17;
+  ORDER_ADJUSTMENT_SOURCE_AUTONOMOUS_DELIVERY_TIP_REFUND = 18;
+  ORDER_ADJUSTMENT_SOURCE_GIFT_RECIPIENT_UPDATE = 19;
+}
+
+/*
+   id: uuid
+*/
+message OrderSessionIdentifier {
+  google.protobuf.StringValue id = 1;
+}
+
+message OrderSession {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+
+  // Same format as CreateOrderFromCartRequest.dropoff_preferences
+  google.protobuf.StringValue dropoff_preferences = 3;
+}
+
+message OrderShipmentInfo {
+  enum ShipmentStatus {
+    // Default value for a shipping order data class object
+    UNSPECIFIED_STATUS = 0;
+
+    // When order is created/placed and before the label is generated
+    // AKA - PLACED
+    PENDING_LABEL = 1;
+
+    // Shipment label has been created
+    // AKA - CONFIRMED
+    // vendor mapping -
+    // ShipStation: on acknowledgement of tracking number
+    PRE_SHIPMENT = 2;
+
+    // Shipment has been packed by merchant or accepted by carrier
+    // vendor mapping -
+    // ShipEngine: AC
+    READY_TO_SHIP = 6;
+
+    // Shipping order has already been shipped and is on the way
+    // vendor mapping -
+    // ShipEngine: IT (subsequent IT event)
+    IN_TRANSIT = 3;
+
+    // Shipping order is arriving today
+    // vendor mapping -
+    // ShipEngine: IT (subsequent IT event) + delivery eta is today
+    OUT_FOR_DELIVERY = 9;
+
+    // Shipping order has been delivered
+    // vendor mapping -
+    // ShipEngine: DE
+    DELIVERED = 4;
+
+    // There was an failure/issue with the shipment
+    FAILED = 5;
+
+    // Shipping order has been shipped
+    // vendor mapping -
+    // ShipEngine: IT (subsequent IT event) + There is only 1 tracking event
+    SHIPPED = 7;
+  }
+
+  enum ShippingCourier {
+    UNSPECIFIED_COURIER = 0;
+    USPS = 1;
+    UPS = 2;
+    FEDEX = 3;
+    DHL = 4;
+    OTHER = 5;
+    ONTRAC = 6;
+    BETTER_TRUCKS = 7;
+  }
+
+  enum ShippingOrderCadenceWorkState {
+    UNKNOWN = 0;
+    PENDING_CONFIRMATION = 1;
+    CONFIRMED = 2;
+    THIRD_PARTY_ORDER_CREATED = 3;
+    LABEL_CREATED = 4;
+    TRACKING_STARTED = 5;
+    WORKFLOW_COMPLETE = 6;
+    WORKFLOW_ERROR = 7;
+    ORDER_CANCELLED = 8;
+  }
+
+  // Not used - we will calculate status from tracking events
+  ShipmentStatus shipment_status = 1;
+  ShippingCourier courier = 2;
+  google.protobuf.StringValue tracking_id = 3;
+  // Tracker URL can become stale and needs to be dynamic to user locale
+  google.protobuf.StringValue tracking_url = 4;
+  RecipientShippingDetails recipient_shipping_details = 5;
+  repeated ShippingTrackingEvent tracking_events = 6;
+
+  // Used by cadence ShippingOrderStateWorkflow
+  ShippingOrderCadenceWorkState shipping_order_cadence_work_state = 7;
+}
+
+enum ShippingLogisticsProvider {
+  UNSPECIFIED = 0;
+  SHIPSTATION = 1;
+}
+
+message ShippingTrackingEvent {
+  google.protobuf.Timestamp event_time = 1;
+  OrderShipmentInfo.ShipmentStatus shipment_status = 2;
+  ShippingLogisticsProvider logistics_provider = 3;
+  google.protobuf.StringValue logistics_provider_status_code = 4;
+  google.protobuf.StringValue carrier_status_code = 5;
+  // Metadata fields
+  google.protobuf.StringValue description = 6;
+  google.protobuf.DoubleValue latitude = 7;
+  google.protobuf.DoubleValue longitude = 8;
+  google.protobuf.Timestamp ship_date = 9;
+  google.protobuf.Timestamp estimated_delivery_date = 10;
+  google.protobuf.Timestamp actual_delivery_date = 11;
+  google.protobuf.StringValue exception_description = 12;
+  google.protobuf.StringValue resource_url = 13;
+  google.protobuf.StringValue carrier_detail_code = 14;
+}
+
+message BundledOrderInfo {
+  google.protobuf.StringValue primary_bundled_order_uuid = 1;
+  repeated string bundled_order_uuids = 2;
+}
+
+// Represents all possible statuses of an order.
+enum OrderStatus {
+  UNSPECIFIED_ORDER = 0;
+  SCHEDULED_DELIVERY_ORDER = 1;
+  SCHEDULED_PICKUP_ORDER = 2;
+  ENROUTE_TO_STORE_ORDER = 3;
+  ARRIVED_AT_STORE_ORDER = 4;
+  ENROUTE_TO_CONSUMER_ORDER = 5;
+  ARRIVED_AT_CONSUMER_ORDER = 6;
+  DELIVERED_ORDER = 7;
+  CONSUMER_PICKED_UP_ORDER = 8;
+  CANCELLED_ORDER = 9;
+  ABANDONED_ORDER = 10;
+  RETURN_INITIATED_ORDER = 11;
+  RETURNING_TO_STORE_ORDER = 12;
+  RETURNED_ORDER = 13;
+  // Can be typically used for use case:
+  // - Parcels
+  // Label has been created for the order
+  LABEL_CREATED_ORDER = 14;
+  // Merchant has shipped out the order (not to be confused by a DD Dasher picking up the order)
+  // e.g. for parcels, the Mx can ship the order to another facility
+  SHIPPED_BY_MX_ORDER = 15;
+  // Order is in the hands of the mid mile provider
+  ARRIVED_AT_MID_MILE_PROVIDER_ORDER = 16;
+  // Order is enroute to a doordash owned facility. There could be another stop at a non doordash facility
+  DEPARTED_FROM_MID_MILE_PROVIDER_ORDER = 17;
+  // Order has been received by a doordash facility
+  ARRIVED_AT_DOORDASH_FACILITY_ORDER = 18;
+  // Order is being returned to the merchant
+  RETURNED_TO_MERCHANT = 19;
+  // The Order has been marked as disposed
+  MARKED_DISPOSED = 20;
+  // The Order has been marked as damaged
+  MARKED_DAMAGED = 21;
+}
+
+// Grouping of details specific to the order status
+message OrderStatusDetails {
+  // order status enum e.g. OrderStatus.ARRIVED_AT_CONSUMER_ORDER
+  OrderStatus value = 1;
+  // localized and human readable order status e.g. "Arrived at Customer"
+  google.protobuf.StringValue display = 2;
+  // localized and human readable description of the current status
+  // e.g. "The dasher has arrived at the designated customer's dropoff address."
+  google.protobuf.StringValue description_display = 3;
+  // timestamp at which the status has happened at
+  // e.g. an order that is DELVERED can have eventTime = delivery's actualDeliveryTime
+  // e.g. an order that is in enroute to the customer can have eventTime = time dasher had confirmed they picked up the order and should now be on their way
+  google.protobuf.Timestamp event_time = 4;
+  // The location coordinate from where the order status was updated
+  common.Location event_location = 5;
+}
+
+message LiveOrderDetails {
+  // Status of an order and associated details e.g. what state the order is in right now
+  OrderStatusDetails status_details = 1;
+  // Dynamic timestamps for an order in progress e.g. driver's updated dropoff time to deliver
+  common.DynamicETATimestamps dynamic_etas = 2;
+  // Current dasher's location as the order is being delivered
+  common.Location dasher_location = 3;
+}
+
+// enum for retail order substitution type, used by clients to decide whether a
+// `edit substitution` button should be shown in post-checkout screen
+enum OrderSubstitutionType {
+  // unspecified type
+  ORDER_SUBSTITUTION_TYPE_UNSPECIFIED = 0;
+  // no subs (store does not support / dasher started shopping)
+  ORDER_SUBSTITUTION_TYPE_NO_SUBS = 1;
+  // edit (cx can edit subs)
+  ORDER_SUBSTITUTION_TYPE_SUBS_EDIT = 2;
+}
+
+message RecipientShippingDetails {
+  google.protobuf.StringValue recipient_given_name = 1;
+  google.protobuf.StringValue recipient_family_name = 2;
+}
+
+// enum for invoices, to distinguish the type of invoice
+enum InvoiceType {
+  // invoice for consumer, detailing doordash charges (e.g. fees) & their associated tax breakdown
+  CX_DD_INVOICE = 0;
+  // invoice for consumer, detailing merchant charges (e.g. order items) & their associated tax breakdown
+  CX_MX_INVOICE = 1;
+}
+
+message CancellationPricingPolicies {
+  repeated PricingPolicy pricing_policies = 1;
+  ApologyCredit apology_credit = 2;
+  google.protobuf.BoolValue do_not_return_credits = 3;
+}
+
+message PricingPolicy {
+  google.protobuf.StringValue target = 1;
+  google.protobuf.Int32Value refund_percentage = 2;
+}
+
+message ApologyCredit {
+  google.protobuf.BoolValue is_eligible = 1;
+  google.protobuf.Int32Value percentage = 2;
+  google.protobuf.Int32Value increment = 3;
+  google.protobuf.Int32Value override_amount = 4;
+}
+
+enum ProofOfDeliveryType {
+  NONE = 0;
+  SIGNATURE = 1;
+  PIN_CODE = 2;
+  SIGNATURE_OPTED_OUT = 3;
+  PIN_CODE_HITM_OPTIONAL = 4;
+  PIN_CODE_HITM_OPTIONAL_DEFAULT_OPT_IN = 5;
+}
+
+message ProofOfDelivery {
+  ProofOfDeliveryType type = 1;
+  google.protobuf.StringValue pin_code = 2;
+}
+
+message BadgeDetails {
+  google.protobuf.StringValue icon_url = 1;
+  google.protobuf.StringValue header = 2;
+  google.protobuf.StringValue header_color = 3;
+  google.protobuf.StringValue body = 4;
+  BadgeModal modal = 5;
+}
+
+message BadgeModal {
+  google.protobuf.StringValue icon_url = 1;
+  google.protobuf.StringValue background_color = 2;
+  google.protobuf.StringValue header = 3;
+  google.protobuf.StringValue header_color = 4;
+  google.protobuf.StringValue body = 5;
+}
+
+message DeliveryOptionAttributes {
+  google.protobuf.Timestamp window_start_time = 1;
+  google.protobuf.Timestamp window_end_time = 2;
+}
+
+enum MxOrderReminderEmailStatus {
+  MX_ORDER_REMINDER_EMAIL_SUCCESS_CALL_NOTIFICATION_SERVICE = 0;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_UNKNOWN = 1;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_ORDER_CANCELLED = 2;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_ORDER_INVALID = 3;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_NO_SUCH_ORDER = 4;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_CONNECT_NOTIFICATION_SERVICE = 5;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_TEMPLATE_MISSING = 6;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_EMAIL_ADDRESS_MISSING = 7;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_TEMPLATE_NOT_SUPPORTED = 8;
+  MX_ORDER_REMINDER_EMAIL_FAILURE_ORDER_FULFILLMENT_API_ERROR = 9;
+}
+
+enum OrderProtocol {
+  ORDER_PROTOCOL_UNKNOWN = 0; // default value if client does not set
+  ORDER_PROTOCOL_POINT_OF_SALE = 1;
+  ORDER_PROTOCOL_TABLET = 2;
+  ORDER_PROTOCOL_EMAIL = 3;
+  ORDER_PROTOCOL_FAX = 4;
+  ORDER_PROTOCOL_PHONE = 5;
+  ORDER_PROTOCOL_DASHER_PLACE = 6;
+  ORDER_PROTOCOL_ONLINE_ORDER = 7;
+  ORDER_PROTOCOL_DRIVE = 8;
+  ORDER_PROTOCOL_AI_PHONE = 9;
+  ORDER_PROTOCOL_RETAIL = 10;
+}
+
+message CancellationReorderInfo {
+  google.protobuf.StringValue parent_order_uuid = 1;
+  CancellationReorderType cancellation_reorder_type = 2;
+  google.protobuf.StringValue parent_delivery_uuid = 3;
+  google.protobuf.Int64Value parent_delivery_id = 4;
+}
+
+enum CancellationReorderType {
+  CANCELLATION_REORDER_TYPE_UNKNOWN = 0;
+  CANCELLATION_REORDER_TYPE_AUTOMATIC_SAME_ORDER_SAME_STORE = 1;
+  CANCELLATION_REORDER_TYPE_AUTOMATIC_SAME_ORDER_DIFFERENT_STORE = 2;
+  CANCELLATION_REORDER_TYPE_ONE_CLICK_SAME_ORDER_SAME_STORE = 3;
+  CANCELLATION_REORDER_TYPE_ONE_CLICK_SAME_ORDER_DIFFERENT_STORE = 4;
+}
+
+message StripeCardInfo {
+  map<int64, StripeCard> payment_id_to_stripe_card_map = 1;
+}
+
+message StripeCard {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.BoolValue active = 2;
+  google.protobuf.StringValue fingerprint = 3;
+  google.protobuf.StringValue tokenization_method = 4;
+  google.protobuf.StringValue dynamic_last4 = 5;
+  google.protobuf.StringValue stripe_id = 6;
+  google.protobuf.StringValue last4 = 7;
+  google.protobuf.StringValue exp_month = 8;
+  google.protobuf.StringValue exp_year = 9;
+  google.protobuf.BoolValue is_scanned = 10;
+  google.protobuf.StringValue zip_code = 11;
+  google.protobuf.StringValue type = 12;
+}
+
+message OrderCreationContext {
+  // context for merchant domain order creation
+  oneof context {
+    // Full order reorder initiated proactively
+    FullProactiveAutoReorder full_proactive_auto_reorder = 1;
+    // Full order reorder initiated reactively
+    FullReactiveAutoReorder full_reactive_auto_reorder = 2;
+    // Partial order reorder initiated for INF items
+    PartialAutoReorder partial_auto_reorder = 3;
+  }
+}
+
+message FullProactiveAutoReorder {}
+message FullReactiveAutoReorder {}
+message PartialAutoReorder {}

@@ -1,0 +1,1110 @@
+syntax = "proto3";
+
+import "common/personal_address_label.proto";
+import "common/service_client_config.proto";
+import "geo-intelligence/region.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "Address";
+option java_package = "geo.intelligence.address.proto";
+
+service GeoIntelligenceAddressService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+
+  // STOP! If you want to retrieve address information of a consumer (by consumer id), use GetAddressByEntity.
+  // This API will not return consumer supplied address data such as manual pin or subpremise.
+  rpc getAddressById(GetByIdRequest) returns (AddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+  rpc getOrCreateWithFormattedAddress(GetOrCreateWithFormattedAddress) returns (AddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc getOrCreateWithGooglePlaceId(GetOrCreateWithGooglePlaceId) returns (AddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+  rpc getOrCreateWithSourcePlaceId(GetOrCreateWithSourcePlaceIdRequest) returns (AddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+  rpc findByAddressIdIn(GetByIdsRequest) returns (AddressesResponses) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 800;
+  }
+  rpc findAddressWithinMetersOfPointWithIdsIn(FindAddressWithMetersOfPointWithIdsRequest) returns (AddressesResponses);
+  rpc findAddressesClosestToPointWithIdsIn(FindAddressesClosestToPointWithIdsRequest) returns (AddressesResponses);
+  rpc findDistrictForAddress(GetByIdRequest) returns (District) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+  }
+  rpc findDistrictForAddressV2(FindDistrictForAddressV2Request) returns (District) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+  }
+  rpc findStartingPointForAddress(GetByIdRequest) returns (StartingPoint) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  rpc findFirstNearbyAddressWithPlaceTags(FindFirstNearbyAddressWithPlaceTagsRequest) returns (AddressResponse);
+  rpc findFirstNearbyAddressWithPlaceTagsMatch(FindFirstNearbyAddressWithPlaceTagsMatchRequest) returns (AddressResponse);
+  rpc copyAddressById(CopyByIdRequest) returns (AddressResponse);
+  rpc resetAddressNameById(ResetAddressNameByIdRequest) returns (AddressResponse);
+
+  // WARNING! If you plan to use this API to allow consumers to search and create addresses by lat, lng, prefer using
+  // GetNearbyAndSavedConsumerAddresses by setting a lat, lng in the request and using the "nearby_address" field
+  // in the response. This API can return address suggestions which can get transformed into completely different addresses
+  // due to how Google works.
+  rpc FindAddressesClosestToPoint(FindAddressesClosestToPointRequest) returns (AddressesResponses) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+  }
+
+  // hack for drive, they depend on legacy DSJ getAddressByXX behaviour for a major aggregator
+  // only drive should ever use this
+  rpc getAddressByComponentsLegacy(GetAddressByFormattedAddressAndComponentsRequest) returns (AddressWithLegacyResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // Use this if you want an address for a consumer (by using the consumer id or consumer_address_link_id).
+  // This API returns consumer supplied data stored in consumer address link.
+  rpc GetAddressByEntity(GetAddressByEntityRequest) returns (GetAddressByEntityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Use this if you want to create an address for a consumer (by using the consumer id).
+  // This API returns consumer supplied data stored in consumer address link.
+  rpc CreateAddressByEntity(CreateAddressByEntityRequest) returns (CreateAddressByEntityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Use this if you want to deactivate an address for a consumer
+  rpc DeactivateConsumerAddressLink(DeactivateConsumerAddressLinkRequest) returns (DeactivateConsumerAddressLinkResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Use this if you want to update an address for a consumer (by using the consumer id).
+  rpc UpdateAddressByEntity(UpdateAddressByEntityRequest) returns (UpdateAddressByEntityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  rpc GetNearbyAndSavedConsumerAddresses(GetNearbyAndSavedConsumerAddressesRequest) returns (GetNearbyAndSavedConsumerAddressesResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  rpc GetRecentlyUsedConsumerAddresses(GetRecentlyUsedConsumerAddressesRequest) returns (GetRecentlyUsedConsumerAddressesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  rpc AutocompleteAddress(AutocompleteAddressRequest) returns (AddressesResponses) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 750;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Recommend consumer an address based on a coordinate
+  rpc RecommendAddress(RecommendAddressRequest) returns (RecommendAddressResponse) {
+    // this endpoint is used for v1/hyperlocal/recommend_address, which gets called on app start
+    // we want to minimize latency on app start, so setting an aggressive timeout here
+    // this RPC will base on COPS.ListConsumerAddressLinks, latency: 40ms@P99 and 15ms@P50
+    // so 200ms timeout here is generously enough
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+  // v2 will call two Google APIs in parallel (ReverseGeocoding to get nearby addresses and NearbySearch to get nearby places)
+  rpc GetNearbyAndSavedConsumerAddressesV2(GetNearbyAndSavedConsumerAddressesV2Request) returns (GetNearbyAndSavedConsumerAddressesV2Response) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  rpc GetPersonalAddressLabels(GetPersonalAddressLabelsRequest) returns (GetPersonalAddressLabelsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 10000;
+  }
+
+  // Use this for geocoding without implicitly saving the response; necessary for certain
+  // cases where we require feedback before saving. Use the candidate token to save the
+  // result using SaveGeocodedAddress.
+  rpc GeocodeAddress(GeocodeAddressRequest) returns (GeocodeAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  rpc GeocodeAndSaveAddress(GeocodeAndSaveAddressRequest) returns (GeocodeAndSaveAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // Use this for saving a geocoding candidate obtained from calling GeocodeAddress.
+  // Returns an AddressResponse.
+  rpc SaveGeocodedAddress(SaveGeocodedAddressRequest) returns (SaveGeocodedAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Add a new source address that we don't have. If an existing manually added address already exists,
+  // we will return the existing address. If an address from our vendor(s) already exists that matches
+  // the address provided in the request, we will throw an error. We will also throw an error if we are
+  // unable to find the existing generic part of the source address in our records. Validations can be
+  // overridden
+  rpc AddNewSourceAddress(AddNewSourceAddressRequest) returns (AddNewSourceAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // Add a new point of interest (POI) that we don't have. If an existing manually added POI already exists,
+  // we will return the existing POI. If a POI from our vendor(s) already exists that matches
+  // the POI provided in the request, we will throw an error.
+  rpc AddNewPointOfInterest(AddNewPointOfInterestRequest) returns (AddNewPointOfInterestResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // Deactivate an existing source address. This will make the address unavailable
+  // for any future lookups. This does not affect the existing addresses that might be linked to this
+  // source address. If address does not exist, we will return NOT_FOUND. If address is already deactivated,
+  // we will return successfully. If we fail to deactivate the address, we will throw an error
+  rpc DeactivateSourceAddress(DeactivateSourceAddressRequest) returns (DeactivateSourceAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc SetSelectedConsumerAddress(SetSelectedConsumerAddressRequest) returns (SetSelectedConsumerAddressResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 400;
+  }
+
+  // This API retrieves the unset and set default address labels along with any personal address labels a consumer may have
+  rpc ListAddressLabels(ListAddressLabelsRequest) returns (ListAddressLabelsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+}
+
+message FormattedAddressRequest {
+  // single string representation of address, e.g.
+  // "1234 Main Street, Sacramento CA"
+  string address_string = 1;
+}
+
+// Geocoding request that accepts either a single formatted string, or address components.
+message GeocodeAddressRequest {
+  // ISO 3166 Alpha-2 code of the country; e.g. "US"
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 1;
+  oneof address {
+    // Option to pass address components to the geocoder.
+    AddressComponentsRequest address_components = 2;
+    // Option to pass in a single address string to the geocoder, e.g.
+    // "1234 Main Street, Sacramento CA"
+    FormattedAddressRequest formatted_address = 3;
+  }
+  // Deprecated - server will decide the geocoder source based on client_context
+  repeated AddressDataSource preferred_data_sources = 4 [deprecated = true];
+  // Deprecated - supported_map_vendors is not used anymore
+  // Allows clients to specify which map vendors they support.
+  // []                      -> all vendors
+  // [GOOGLE]                -> google only
+  // [MAPBOX, GOOGLE]        -> specified vendors
+  repeated MapVendor supported_map_vendors = 5 [deprecated = true];
+
+  // Client context information, server will decide which geocoder to use based on this
+  ClientContext client_context = 6;
+
+  // Soft constraint on geocoding result,
+  // just for ranking, won't drop the result if it's not contained in the reference
+  oneof spatial_reference {
+    // Reference point
+    Coordinate point = 7;
+    // TODO: add support for other types of spatial reference
+    // 2. Reference point and radius
+    // 3. Bounding box
+    // 4. polygon
+    // 5. geoJSON
+    // 6. ip address
+  }
+}
+
+// Client context info
+message ClientContext {
+  // use case information [mandatory]
+  google.protobuf.StringValue use_case = 1;
+  // service name [mandatory]
+  google.protobuf.StringValue service = 2;
+  // app name [mandatory]
+  google.protobuf.StringValue app = 3;
+  // consumer id for tracking [optional]
+  google.protobuf.StringValue consumer_id = 4;
+  // store id for tracking [optional]
+  google.protobuf.StringValue store_id = 5;
+  // device id for tracking [optional]
+  google.protobuf.StringValue device_id = 6;
+  // unique ID for tracking requests
+  // can be any unique id clients can track
+  google.protobuf.StringValue request_correlation_id = 7;
+}
+
+// The response returned by the GeocodeAddress endpoint.
+message GeocodeAddressResponse {
+  AddressResponse address = 1;
+  // this token is required for the backend to persist the data with an address_id
+  google.protobuf.StringValue candidate_token = 2;
+  reserved 3;
+  reserved "map_vendor_for_address_display";
+}
+
+message GeocodeAndSaveAddressRequest {
+  GeocodeAddressRequest geocode_address_request = 1;
+}
+
+message GeocodeAndSaveAddressResponse {
+  AddressResponse address = 1;
+}
+
+//
+message AddressComponentsRequest {
+  // eg, 123 Main st.
+  google.protobuf.StringValue street_address = 1;
+  // Unit/building/apt/suite
+  google.protobuf.StringValue subpremise = 2;
+  // city name
+  google.protobuf.StringValue locality = 3;
+  // generally used to specify state/province
+  google.protobuf.StringValue admin_level_1 = 4;
+  // zip/postal code
+  google.protobuf.StringValue postal_code = 5;
+  // poi name, e.g. Fancy Plaza
+  google.protobuf.StringValue poi_name = 6;
+}
+
+message SaveGeocodedAddressRequest {
+  // this token is required for the backend to persist the data with an address_id
+  string candidate_token = 1;
+}
+
+// Response returned after saving a geocoding candidate.
+message SaveGeocodedAddressResponse {
+  AddressResponse address = 1;
+}
+
+// Request for adding a new source address to our registry
+message AddNewSourceAddressRequest {
+  // Address fields to associate with new address
+  SourceAddressCreationFields address_fields = 1;
+  // Reason for adding a new address
+  google.protobuf.StringValue request_reason = 2;
+  // Whether to skip validation checks. Defaults to false
+  google.protobuf.BoolValue skip_validation = 3;
+  // Search terms that can be used to find this address (other than what is already in address_fields input)
+  repeated string extra_search_terms = 4;
+  // Parent address of the address to be added. This is commonly used for subpremises that exist within a larger address (i.e. apartment, mall, etc.). Note that this address must be an address point (not POI) that already exists in our system
+  google.protobuf.StringValue parent_source_place_id = 5;
+}
+
+// Response for adding a new source address to our registry
+message AddNewSourceAddressResponse {
+  // The stable ID of the address. Can be used to look up address through our read APIs
+  string source_place_id = 1;
+}
+
+// Request for adding a new POI to our registry
+message AddNewPointOfInterestRequest {
+  // Source place ID of address point to associate with new address
+  string address_source_place_id = 1;
+  // Address fields to associate with new address
+  string name = 2;
+  // Reason for adding a new address
+  google.protobuf.StringValue request_reason = 3;
+  // Location associated with the address. Should only be specified if it differs from the location of the source address
+  Coordinate location_override = 4;
+  // Search terms that can be used to find this POI (other than the name input and source address)
+  repeated string extra_search_terms = 5;
+  // Overture category associated with POI. Optional
+  // Categories: https://github.com/OvertureMaps/schema/blob/main/docs/schema/concepts/by-theme/places/overture_categories.csv
+  google.protobuf.StringValue overture_category = 6;
+  reserved 7;
+  reserved "custom_display_address_street";
+  // The custom display address to use for this POI. Optional. If not provided, the display address will be generated from the source address
+  google.protobuf.StringValue custom_display_street_address = 8;
+}
+
+// Response for adding a new source address to our registry
+message AddNewPointOfInterestResponse {
+  // The stable ID of the address. Can be used to look up address through our read APIs
+  // Differs from the input "address_source_place_id" in that this uniquely identifies
+  // this specific POI
+  string source_place_id = 1;
+}
+
+// Request for deactivating an existing source address in our registry
+message DeactivateSourceAddressRequest {
+  // The stable ID of the address
+  string source_place_id = 1;
+  // Reason for adding a new address
+  google.protobuf.StringValue request_reason = 2;
+}
+
+// Response for deactivating an existing source address in our registry. No informatiion
+// provided. On success, the record was successfully deactivated. If not successful,
+// an error will be thrown
+message DeactivateSourceAddressResponse {}
+
+// Fields that can be specified for a new address
+message SourceAddressCreationFields {
+  oneof street {
+    // Street address that conforms to common number/name pattern. e.g. 123 Main St.
+    NumberedStreetInput numbered_street = 1;
+    // Free-form street address that might not adhere to typical number/name pattern. e.g. KM 2.8 Road 189
+    FreeFormStreetInput free_form_street = 2;
+  }
+  // city name
+  string locality = 3;
+  // generally used to specify state/province
+  string admin_level_1 = 4;
+  // zip/postal code
+  string postal_code = 5;
+  // ISO-3166 Alpha 2 Country Code e.g. US, CA, etc.
+  string iso_3166_alpha_2_country_code = 6;
+  // Optional subpremise
+  google.protobuf.StringValue subpremise = 7;
+  // Location associated with the address
+  Coordinate location = 8;
+  // Optional neighborhood associated with the address
+  google.protobuf.StringValue neighborhood = 9;
+}
+
+// Street address that conforms to common number/name pattern. e.g. 123 Main St.
+message NumberedStreetInput {
+  // Number of street. E.g. 123 Main St. -> "123". This is a string so we can accurately fail validation for things like "0023"
+  string street_number = 1;
+  // Name of street. E.g. 123 Main St. -> "Main St."
+  string street_name = 2;
+}
+
+// Free-form street address that might not adhere to typical number/name pattern. e.g. KM 2.8 Road 189
+message FreeFormStreetInput {
+  // Free-form street address
+  string street_address = 1;
+  // Optional: Street name. While we may not use it for display, it could still be useful for other search queries
+  google.protobuf.StringValue street_name = 2;
+  // Optional: Street number. While we may not use it for display, it could still be useful for other search queries
+  google.protobuf.StringValue street_number = 3;
+}
+
+message GetByIdRequest {
+  string id = 1;
+  google.protobuf.StringValue locale = 2;
+}
+
+message GetOrCreateWithFormattedAddress {
+  reserved 5;
+  string formatted_address = 1;
+  google.protobuf.StringValue address_name = 2 [deprecated = true]; // Never actually used
+  google.protobuf.StringValue locale = 3;
+  // optional field, should be provided when used during delivery flow (delivery creation, delivery status)
+  // NOT needed when used for store creation, customer address creation
+  google.protobuf.StringValue delivery_correlation_id = 4 [deprecated = true];
+  // OPTIONAL; ISO 3166 Alpha-2 code of the country;
+  // if not set, request will take a performance hit.
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 6;
+  // OPTIONAL; determines the data source used for this request.
+  // If not set, then the server will determine which data source to use
+  AddressDataSource data_source = 7;
+}
+
+message GetOrCreateWithGooglePlaceId {
+  option deprecated = true; // use GetOrCreateWithSourcePlaceId, which is not vendor-specific.
+  string google_place_id = 1;
+  google.protobuf.StringValue locale = 2;
+  // optional field, should be provided when used during delivery flow (delivery creation, delivery status)
+  // NOT needed when used for store creation, customer address creation
+  google.protobuf.StringValue delivery_correlation_id = 3;
+
+  // ISO 3166-1 alpha-2 country code of the country origin of the client call
+  // Precisely address lookup will require country_code
+  google.protobuf.StringValue country_code = 4;
+}
+
+message GetOrCreateWithSourcePlaceIdRequest {
+  // Source-specific original identifier of the address record.
+  // This can be taken from AddressResponse, e.g. from Autocomplete or GetOrCreateWithFormattedAddress responses.
+  string source_place_id = 1;
+  google.protobuf.StringValue locale = 2;
+}
+
+message GetByIdsRequest {
+  repeated string id = 1;
+  google.protobuf.StringValue locale = 2;
+}
+
+message GetByPointRequest {
+  double lat = 1;
+  double lng = 2;
+}
+
+message FindDistrictForAddressV2Request {
+  google.protobuf.StringValue id = 1;
+  reserved 2;
+  reserved "use_geohash";
+}
+
+message FindAddressWithMetersOfPointWithIdsRequest {
+  option deprecated = true;
+  GetByPointRequest point = 1;
+  double meters = 2;
+  GetByIdsRequest ids = 3;
+}
+
+message FindAddressesClosestToPointRequest {
+  GetByPointRequest point = 1;
+  google.protobuf.StringValue locale = 2;
+  // optional field, should be provided when used during delivery flow (delivery creation, delivery status)
+  // NOT needed when used for store creation, customer address creation
+  google.protobuf.StringValue delivery_correlation_id = 3 [deprecated = true];
+  // optional field, for selecting address by address_type
+  repeated AddressType select_address_type = 4 [deprecated = true]; // AddressType are google places, now unsupported.
+  // ISO 3166 Alpha-2 code of the country to search in; e.g. "US".
+  // If not set, will the server will determine which country(ies) to search in.
+  google.protobuf.StringValue iso_3166_alpha_2_country_code = 5;
+  // OPTIONAL; determines the data source used for this request.
+  // If not set, then the server will determine which data source to use
+  AddressDataSource data_source = 6;
+  // OPTIONAL; Maximum number of results to return.
+  google.protobuf.Int32Value max_results = 7;
+}
+
+message FindAddressesClosestToPointWithIdsRequest {
+  option deprecated = true;
+  GetByPointRequest point = 1;
+  GetByIdsRequest ids = 2;
+}
+
+// distance degrees is optional-- we will default to DEFAULT_DISTANCE_DEGREES = 0.0004
+message FindFirstNearbyAddressWithPlaceTagsRequest {
+  option deprecated = true;
+  GetByPointRequest point = 1;
+  google.protobuf.DoubleValue distance_degrees = 2;
+}
+
+message FindFirstNearbyAddressWithPlaceTagsMatchRequest {
+  option deprecated = true;
+  GetByPointRequest point = 1;
+  repeated google.protobuf.StringValue place_tags = 2;
+  google.protobuf.DoubleValue distance_degrees = 3;
+}
+
+message GetAddressByComponentsRequest {
+  google.protobuf.StringValue street = 1;
+  google.protobuf.StringValue zip_code = 2;
+  google.protobuf.StringValue subpremise = 3;
+}
+
+message GetAddressByFormattedAddressAndComponentsRequest {
+  option deprecated = true;
+  GetAddressByComponentsRequest get_by_components_request = 1;
+  GetOrCreateWithFormattedAddress get_by_formatted_address_request = 2;
+}
+
+message AddressResponse {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue street = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.StringValue zip_code = 4 [deprecated = true]; // use postal_code
+  google.protobuf.DoubleValue lat = 5;
+  google.protobuf.DoubleValue lng = 6;
+  google.protobuf.StringValue establishment = 7 [deprecated = true];
+  google.protobuf.StringValue subpremise = 8;
+  google.protobuf.StringValue neighborhood = 9;
+  google.protobuf.StringValue country = 10;
+  google.protobuf.StringValue formatted_address = 11;
+  google.protobuf.StringValue administrative_area_level1 = 12;
+  google.protobuf.StringValue administrative_area_level2 = 13;
+  google.protobuf.StringValue administrative_area_level3 = 14 [deprecated = true];
+  google.protobuf.StringValue administrative_area_level4 = 15 [deprecated = true];
+  google.protobuf.StringValue administrative_area_level5 = 16 [deprecated = true];
+  google.protobuf.StringValue locality = 17;
+  google.protobuf.StringValue sublocality = 18 [deprecated = true];
+  google.protobuf.StringValue country_shortname = 19;
+  // NOTE: google_place_id will be deprecated in favor of place_id
+  // For now, non-Google addresses will have populated this field; their ids will be prefixed with "<source name>_"
+  google.protobuf.StringValue google_place_id = 20 [deprecated = true]; // use source_place_id + source
+  reserved 21;
+  google.protobuf.BoolValue is_generic = 22;
+  // can be street name (e.g. 303 2nd St) or Point of Interest name (e.g. DoorDash)
+  google.protobuf.StringValue name = 23;
+  google.protobuf.StringValue city = 24 [deprecated = true]; // use locality
+  google.protobuf.StringValue sublocality_level_1 = 25 [deprecated = true];
+  google.protobuf.StringValue sublocality_level_2 = 26 [deprecated = true];
+  google.protobuf.StringValue sublocality_level_3 = 27 [deprecated = true];
+  google.protobuf.StringValue sublocality_level_4 = 28 [deprecated = true];
+  google.protobuf.StringValue sublocality_level_5 = 29 [deprecated = true];
+  google.protobuf.StringValue premise = 30 [deprecated = true];
+  google.protobuf.StringValue postal_code = 31;
+  google.protobuf.StringValue postal_code_prefix = 32 [deprecated = true]; // duplicate of postal_code
+  google.protobuf.StringValue postal_code_suffix = 33;
+  google.protobuf.StringValue postal_town = 34 [deprecated = true]; // not provided by Precisely;
+  google.protobuf.StringValue language_code = 35;
+  // db name of the timezone of this address location; will be empty until backfill is done.
+  // see: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+  google.protobuf.StringValue timezone = 36;
+
+  // best effort at generating a formatted address without subpremise
+  // this is so we can experiment with fixing addresses with conflicting subpremise
+  google.protobuf.StringValue formatted_address_no_subpremise = 37 [deprecated = true];
+  // will be short displayable address e.g for en-US "4672 Lorren Dr"
+  google.protobuf.StringValue formatted_address_short = 38;
+  // address will be segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  repeated google.protobuf.StringValue formatted_address_segmented = 39;
+  // address will be segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  // and will only contain fields that are fixed and not editable by the user (e.g. subpremise)
+  repeated google.protobuf.StringValue formatted_address_segmented_non_user_editable_fields = 40;
+  // address_types is an optional field which is a list of Google address types
+  // (e.g. [lodging, establishment, point_of_interest])
+  // https://developers.google.com/maps/documentation/places/web-service/supported_types
+  repeated google.protobuf.StringValue address_types = 41 [deprecated = true];
+
+  // the data source of this address; assume Google if this field is not set
+  AddressDataSource source = 42;
+  // the place id for this address; should be the same as google_place_id if source is Google
+  google.protobuf.StringValue source_place_id = 43;
+  // Also known as "House Number"; e.g. "1234"
+  google.protobuf.StringValue street_number = 44;
+  // Name of the street, e.g. "Main St."
+  google.protobuf.StringValue street_name = 45;
+  // Administrative regions of the record, often following street_address, e.g. "Sacramento, CA 95814"
+  google.protobuf.StringValue location_address = 46;
+  // Point of interest name, e.g. "DoorDash"
+  google.protobuf.StringValue poi_name = 49;
+  // One line formatted address including the POI name, e.g. "DoorDash, 303 2nd St, San Francisco, CA 94107"
+  google.protobuf.StringValue formatted_address_with_poi_name = 50;
+
+  reserved 47;
+  reserved 48;
+  reserved "navigation_lat";
+  reserved "navigation_lng";
+}
+
+enum AddressDataSource {
+  ADDRESS_SOURCE_UNSPECIFIED = 0;
+  ADDRESS_SOURCE_GOOGLE = 1;
+  ADDRESS_SOURCE_PRECISELY = 2;
+  ADDRESS_SOURCE_MANUAL_FORM = 3;
+}
+
+message AddressWithLegacyResponse {
+  option deprecated = true;
+  AddressResponse current_address = 1;
+  AddressResponse legacy_address = 2;
+}
+
+message AddressesResponses {
+  repeated AddressResponse addresses = 1;
+}
+
+message AddressMetaDataResponse {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue place_id = 2;
+}
+
+message CopyByIdRequest {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.DoubleValue lat = 2;
+  google.protobuf.DoubleValue lng = 3;
+  google.protobuf.StringValue name = 4;
+}
+
+message ResetAddressNameByIdRequest {
+  option deprecated = true;
+  google.protobuf.StringValue id = 1;
+}
+
+message SmartyStreetsAddress {
+  google.protobuf.StringValue address1 = 1;
+  google.protobuf.StringValue address2 = 2; // International address only
+  google.protobuf.StringValue address3 = 3; // International address only
+  google.protobuf.StringValue address4 = 4; // International address only
+  google.protobuf.StringValue administrative_area = 5;
+  google.protobuf.StringValue locality = 6;
+  google.protobuf.StringValue postal_code = 7;
+  google.protobuf.StringValue plus4_code = 8; // US address only
+  google.protobuf.StringValue verification_status = 9; // International address only
+  InternationalPrecision address_precision = 10; // International address only
+  google.protobuf.DoubleValue lat = 11;
+  google.protobuf.DoubleValue lng = 12;
+  InternationalPrecision geocode_precision = 13; // International address only
+  google.protobuf.StringValue country_shortname = 14;
+  SmartyStreetsRecordType record_type = 15; // US address only
+  SmartyStreetsRDI rdi = 16; // US address only
+  google.protobuf.BoolValue is_subpremise_missing = 17; // US address only
+  google.protobuf.BoolValue is_subpremise_invalid = 18; // US address only
+  google.protobuf.StringValue dpv_footnotes = 19;
+}
+
+enum InternationalPrecision {
+  PRECISION_UNSPECIFIED = 0; // Required as per proto3 rules
+  PRECISION_NONE = 1;
+  PRECISION_ADMINISTRATIVE_AREA = 2;
+  PRECISION_LOCALITY = 3;
+  PRECISION_THOROUGHFARE = 4;
+  PRECISION_PREMISE = 5;
+  PRECISION_DELIVERY_POINT = 6;
+}
+
+enum SmartyStreetsRecordType {
+  SMARTY_STREETS_RECORD_TYPE_UNSPECIFIED = 0;
+  SMARTY_STREETS_RECORD_TYPE_FIRM = 1;
+  SMARTY_STREETS_RECORD_TYPE_GENERAL_DELIVERY = 2;
+  SMARTY_STREETS_RECORD_TYPE_HIGH_RISE = 3;
+  SMARTY_STREETS_RECORD_TYPE_POST_OFFICE_BOX = 4;
+  SMARTY_STREETS_RECORD_TYPE_RURAL_ROUTE_HIGHWAY_CONTRACT = 5;
+  SMARTY_STREETS_RECORD_TYPE_STREET = 6;
+}
+
+enum SmartyStreetsRDI {
+  SMARTY_STREETS_RDI_UNSPECIFIED = 0;
+  SMARTY_STREETS_RDI_RESIDENTIAL = 1;
+  SMARTY_STREETS_RDI_COMMERCIAL = 2;
+}
+
+enum AddressType {
+  STREET_ADDRESS = 0;
+  ROUTE = 1;
+  INTERSECTION = 2;
+  POLITICAL = 3;
+  COUNTRY = 4;
+  ADMINISTRATIVE_AREA_LEVEL_1 = 5;
+  ADMINISTRATIVE_AREA_LEVEL_2 = 6;
+  ADMINISTRATIVE_AREA_LEVEL_3 = 7;
+  ADMINISTRATIVE_AREA_LEVEL_4 = 8;
+  ADMINISTRATIVE_AREA_LEVEL_5 = 9;
+  COLLOQUIAL_AREA = 10;
+  LOCALITY = 11;
+  SUBLOCALITY = 12;
+  NEIGHBORHOOD = 13;
+  PREMISE = 14;
+  SUBPREMISE = 15;
+  PLUS_CODE = 16;
+  POSTAL_CODE = 17;
+  NATURAL_FEATURE = 18;
+  AIRPORT = 19;
+  PARK = 20;
+  POINT_OF_INTEREST = 21;
+}
+
+enum MapVendor {
+  MAP_VENDOR_UNSPECIFIED = 0;
+  MAP_VENDOR_GOOGLE = 1;
+  MAP_VENDOR_MAPBOX = 2;
+}
+
+message GetAddressByEntityRequest {
+  google.protobuf.StringValue address_id = 1; // only needed if looking up by address_id + consumer_id
+  oneof entity_id {
+    google.protobuf.StringValue consumer_id = 2;
+    google.protobuf.StringValue consumer_address_link_id = 4;
+  }
+  google.protobuf.StringValue locale = 3;
+  google.protobuf.BoolValue need_detailed_address = 5;
+  google.protobuf.BoolValue need_personal_address_label = 6;
+}
+
+message GetAddressByEntityResponse {
+  AddressResponse address = 1;
+  google.protobuf.BoolValue is_location_overridden = 2;
+  oneof preferences {
+    ConsumerPreferences consumer_preferences = 3;
+    // oneOf for extensibility
+    // Will add store, dasher preference in the future
+  }
+}
+
+message ConsumerAddressLinkToCreate {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue subpremise = 3;
+  google.protobuf.StringValue entry_code = 4;
+  google.protobuf.StringValue parking_instructions = 5;
+  repeated ConsumerDropOffPreference dropoff_preference = 14;
+  AddressToCreate address_to_create = 7;
+  google.protobuf.BoolValue validate_address = 8;
+  google.protobuf.BoolValue set_default = 9; // default to True
+  google.protobuf.DoubleValue manual_lat = 10;
+  google.protobuf.DoubleValue manual_lng = 11;
+  google.protobuf.StringValue building_name = 12;
+  AddressLinkType address_link_type = 13;
+  reserved 6; // incorrect DropoffPreference field
+  reserved "dropoff_preferences";
+  // A label that the Cx can add to the addresses in their address book for personal references (e.g. Home, Work)
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 15;
+}
+
+message CreateAddressByEntityRequest {
+  oneof entity_to_create {
+    ConsumerAddressLinkToCreate consumer_address_link_to_create = 1;
+  }
+  google.protobuf.StringValue locale = 2;
+}
+
+message CreateAddressByEntityResponse {
+  AddressResponse address = 1;
+  google.protobuf.BoolValue is_location_overridden = 2;
+  oneof preferences {
+    ConsumerPreferences consumer_preferences = 3;
+    // oneOf for extensibility
+    // Will add store, dasher preference in the future
+  }
+}
+
+// needs either (consumer_address_link_id or consumer_id and address_id) for lookup
+message DeactivateConsumerAddressLinkRequest {
+  ConsumerAddressLinkIdentifier identifier = 1; // lookup method
+  google.protobuf.StringValue consumer_id = 2; // required by COPS for logging
+}
+
+message DeactivateConsumerAddressLinkResponse {}
+
+message UpdateAddressByEntityRequest {
+  oneof update {
+    UpdateConsumerAddressLink update_consumer_address_link = 1;
+  }
+  google.protobuf.StringValue locale = 2;
+}
+
+message UpdateConsumerAddressLink {
+  ConsumerAddressLinkIdentifier identifier = 1; // lookup method
+  google.protobuf.StringValue consumer_id = 2; // required by COPS
+  PatchableConsumerAddressLink consumer_address_link = 3; // new values
+  google.protobuf.FieldMask update_mask = 4; // sets which fields to update
+}
+
+message UpdateAddressByEntityResponse {}
+
+message SetSelectedConsumerAddressRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  ClientDeviceRequestContext request_ctx = 2;
+  AddressIdOrAddressLinkId selected_address_identifier = 3;
+  google.protobuf.BoolValue need_detailed_address = 4;
+}
+
+message SetSelectedConsumerAddressResponse {
+  GetAddressByEntityResponse selected_address_link = 1;
+}
+
+message ConsumerPreferences {
+  google.protobuf.Int64Value consumer_address_link_id = 1;
+  google.protobuf.StringValue consumer_address_link_string_id = 11;
+  google.protobuf.StringValue entry_code = 2;
+  google.protobuf.StringValue parking_instructions = 3;
+  google.protobuf.StringValue building_name = 4;
+  google.protobuf.BoolValue is_active = 5;
+  // A label that indicates whether the consumer address is a gift address or not;
+  // this is different from the personal_address_label below
+  // TODO: Geo team to rename ConsumerAddressLabel in order to further differentiate it from personal address labels
+  ConsumerAddressLabel consumer_address_label = 6;
+  repeated ConsumerDropOffPreference dropoff_preference = 7;
+  google.protobuf.BoolValue is_default = 8;
+  // A label that the Cx can add to the addresses in their address book for personal references (e.g. Home, Work)
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 9;
+  // Corresponds to ConsumerAddressLink.LocationPreference to describe Cx selected dropoff location preference
+  ConsumerDropoffLocationPreference dropoff_location_preference = 10;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 12;
+}
+
+message ConsumerDropOffPreference {
+  google.protobuf.StringValue instructions = 1;
+  ConsumerDropOffPreferenceOption option_id = 2;
+  google.protobuf.BoolValue is_default = 3;
+  google.protobuf.BoolValue retain_instructions = 4;
+}
+
+// ConsumerDropoffLocationPreference is the preference a Cx can select for where they would like their food delivered to
+// This corresponds the ConsumerAddressLink.LocationPreference
+enum ConsumerDropoffLocationPreference {
+  // Fallback value for when location preference is not provided
+  CONSUMER_DROPOFF_LOCATION_PREFERENCE_UNSPECIFIED = 0;
+  // When Cx specifies they want their food delivered to their hotel room
+  CONSUMER_DROPOFF_LOCATION_PREFERENCE_HOTEL_ROOM = 1;
+  // When Cx specifies they want their food delivered to the hotel lobby
+  CONSUMER_DROPOFF_LOCATION_PREFERENCE_HOTEL_LOBBY = 2;
+}
+
+enum ConsumerDropOffPreferenceOption {
+  CONSUMER_DROPOFF_PREFERENCE_UNKNOWN = 0;
+  CONSUMER_DROPOFF_PREFERENCE_HAND_OFF = 1;
+  CONSUMER_DROPOFF_PREFERENCE_DROP_OFF = 2;
+}
+
+enum ConsumerAddressLabel {
+  CONSUMER_ADDRESS_LABEL_UNSPECIFIED = 0;
+  CONSUMER_ADDRESS_LABEL_GIFT = 1;
+}
+
+message IOSDeviceDetails {
+  google.protobuf.StringValue ios_user_agent = 1;
+  google.protobuf.StringValue ios_device_idfv = 2;
+  google.protobuf.StringValue ios_device_idfa = 3;
+  google.protobuf.StringValue ios_device_dc_token = 4;
+}
+
+enum PlatformType {
+  PT_UNKNOWN = 0;
+  PT_ANDROID = 1;
+  PT_DESKTOP = 2;
+  PT_IOS = 3;
+  PT_MOBILE_WEB = 4;
+  PT_GOOGLE_AMP = 5;
+  PT_GOOGLE_NATIVE = 6;
+}
+
+message ClientDeviceRequestContext {
+  google.protobuf.StringValue ip_address = 1;
+  google.protobuf.StringValue dd_device_id = 2;
+  google.protobuf.StringValue dd_session_id = 3;
+  PlatformType submit_platform = 4;
+  google.protobuf.StringValue dd_login_id = 5;
+  google.protobuf.StringValue user_agent = 6;
+  IOSDeviceDetails ios_device_details = 7;
+}
+
+message AddressIdOrAddressLinkId {
+  oneof identifier {
+    string consumer_address_link_id = 1;
+    string address_id = 2;
+  }
+}
+
+message GetNearbyAndSavedConsumerAddressesRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.StringValue locale = 3;
+  // optional field, for selecting address by address_type
+  repeated AddressType nearby_address_type = 4 [deprecated = true]; // AddressType are google places, now unsupported.
+  google.protobuf.StringValue consumer_id = 5;
+}
+
+message GetNearbyAndSavedConsumerAddressesResponse {
+  repeated AddressResponse nearby_address = 1;
+  repeated GetAddressByEntityResponse saved_consumer_address = 2;
+}
+
+message GetNearbyAndSavedConsumerAddressesV2Request {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.StringValue locale = 3;
+  // nearby_address_type is an optional field for selecting addresses by address_type
+  // when calling the reverseGeocode API
+  repeated AddressType nearby_address_type = 4 [deprecated = true];
+  google.protobuf.StringValue consumer_id = 5;
+}
+
+message GetNearbyAndSavedConsumerAddressesV2Response {
+  repeated AddressResponse nearby_address = 1;
+  repeated GetAddressByEntityResponse saved_consumer_address = 2;
+}
+
+message GetRecentlyUsedConsumerAddressesRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue locale = 2;
+}
+
+message GetRecentlyUsedConsumerAddressesResponse {
+  repeated GetAddressByEntityResponse recently_used_address = 1;
+}
+
+enum AutocompleteType {
+  AUTOCOMPLETE_TYPE_UNSPECIFIED = 0;
+  AUTOCOMPLETE_TYPE_GEOCODE = 1;
+  AUTOCOMPLETE_TYPE_ADDRESS = 2;
+  AUTOCOMPLETE_TYPE_ESTABLISHMENT = 3;
+  AUTOCOMPLETE_TYPE_REGIONS = 4;
+  AUTOCOMPLETE_TYPE_CITIES = 5;
+}
+
+// Post-honeybee supported AutocompleteTypes
+enum AutocompleteTypeV2 {
+  // Unset; required to avoid ambiguity.
+  AUTOCOMPLETE_TYPE_V2_UNSPECIFIED = 0;
+  // Autocomplete returns only addresses which define a location, i.e. a fully-qualified street address.
+  AUTOCOMPLETE_TYPE_V2_ADDRESS = 1;
+  // Autocomplete returns only postal-code level responses.
+  AUTOCOMPLETE_TYPE_V2_POSTAL_CODE = 2;
+}
+
+message AutocompleteAddressRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.StringValue locale = 3;
+  google.protobuf.StringValue input_address = 4;
+  // optional field, should be provided when used during delivery flow (delivery creation, delivery status)
+  // NOT needed when used for store creation, customer address creation
+  google.protobuf.StringValue delivery_correlation_id = 5 [deprecated = true];
+  google.protobuf.DoubleValue radius = 6;
+  google.protobuf.Int32Value offset = 7 [deprecated = true];
+  AutocompleteType type = 8 [deprecated = true]; // AutocompleteType are Google-specific, now unsupported.
+
+  // Optional; ISO 3166-1 alpha-2 country code of the country origin of the client call
+  // NOTE: Not to be confused with country code restrictions, a separate parameter which filters results.
+  google.protobuf.StringValue country_code = 9;
+
+  // OPTIONAL; determines the data source used for this request.
+  // If not set, then the server will determine which data source to use
+  AddressDataSource data_source = 10;
+
+  // Optional; ISO 3166-1 alpha-2 country codes to restrict results to; e.g. ['US', 'CA']. Defaults to no restriction.
+  repeated google.protobuf.StringValue country_code_restrictions = 11;
+
+  // Optional; Type(s) of address to complete.  Default: Best Match.
+  repeated AutocompleteTypeV2 autocomplete_type = 12;
+
+  // Optional; If provided, limits results to this number of results.
+  google.protobuf.Int32Value max_results = 13;
+}
+
+message RecommendAddressRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.StringValue locale = 4;
+}
+
+message RecommendAddressResponse {
+  // consumer_default_address is Cx currently selected address
+  // for reference and in case needed
+  GetAddressByEntityResponse consumer_default_address = 1;
+  oneof recommended_address {
+    GetAddressByEntityResponse recommend_consumer_default_address = 2;
+    // recommend_consumer_saved_address is one of Cx saved addresses, but not their default address
+    GetAddressByEntityResponse recommend_consumer_saved_address = 3;
+    // recommend current location browsing
+    CurrentLocationBrowsing recommend_current_location_browsing = 4;
+  }
+}
+
+message CurrentLocationBrowsing {}
+
+message RecommendAddressEvent {
+  // This is the Cx's default address before it is automatically updated
+  google.protobuf.Int64Value previous_address_link_id = 1;
+  google.protobuf.StringValue previous_address_link_string_id = 12;
+  // This is the consumer address link of address that is automatically updated for the Cx
+  google.protobuf.Int64Value new_address_link_id = 2;
+  google.protobuf.StringValue new_address_link_string_id = 13;
+  google.protobuf.StringValue consumer_id = 3;
+  // This is the distance in meters between Cx's device location and the automatically updated address
+  google.protobuf.DoubleValue distance_between_device_new = 4;
+  // This is the distance in meters between the original default address and the automatically updated address
+  google.protobuf.DoubleValue distance_between_prev_new = 5;
+  // This is the distance in meters between Cx's device location and the original default address
+  google.protobuf.DoubleValue distance_between_device_prev = 6;
+  // This is the page that the Cx is on when this event takes place. For example, this field will have the value
+  // "splash" because recommendAddress happens during the splash page.
+  google.protobuf.StringValue page = 7;
+  google.protobuf.DoubleValue device_latitude = 8;
+  google.protobuf.DoubleValue device_longitude = 9;
+  // This Cx's DD device ID
+  google.protobuf.StringValue dd_device_id = 10;
+
+  // the type of the recommendation.
+  google.protobuf.StringValue recommendation_type = 11;
+}
+
+message AddressToCreate {
+  reserved 1; // to maintain backward compatibility with printable_address
+  reserved "printable_address";
+  oneof address {
+    string google_place_id = 2;
+    string formatted_address = 3;
+  }
+}
+
+/*
+ * ConsumerAddressLink Type
+ */
+enum AddressLinkType {
+  // start common order process as default while be selected
+  ADDRESS_LINK_TYPE_UNSPECIFIED = 0;
+  // will start gifting process as default while be selected
+  ADDRESS_LINK_TYPE_GIFT = 1;
+}
+
+message PatchableConsumerAddressLink {
+  google.protobuf.StringValue dasher_instructions = 1;
+  google.protobuf.StringValue subpremise = 2;
+  repeated ConsumerDropOffPreference dropoff_preferences = 3;
+  google.protobuf.DoubleValue manual_lat = 4;
+  google.protobuf.DoubleValue manual_lng = 5;
+  AddressLinkType address_link_type = 6;
+  google.protobuf.StringValue entry_code = 7;
+  google.protobuf.StringValue building_name = 8;
+  // A label that the Cx can add to the addresses in their address book for personal references (e.g. Home, Work)
+  personal_address_label.v1.PersonalAddressLabel personal_address_label = 9;
+}
+
+// either lookup by consumer_address_link_id or consumer_id + address_id
+message ConsumerAddressLinkIdentifier {
+  oneof identifier {
+    google.protobuf.StringValue consumer_address_link_id = 1; // lookup by id
+    google.protobuf.StringValue address_id = 2; // consumer_id already required regardless; consumer_id + address_id is another look up option
+  }
+}
+
+message GetPersonalAddressLabelsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue locale = 2;
+}
+
+message GetPersonalAddressLabelsResponse {
+  repeated LabeledAddressEntity labeled_address_entities = 1;
+}
+
+// Populates the labeled addresses section of the address picker
+message LabeledAddressEntity {
+  // This is the address associated with the label; if this field is null, then the label is unset
+  GetAddressByEntityResponse address = 1;
+  // This is the name of the unset or set label (e.g. Home, Work)
+  google.protobuf.StringValue label_name = 2;
+  // This is the icon of the unset or set label
+  personal_address_label.v1.PersonalAddressLabel.LabelIcon label_icon = 3;
+}
+
+message ListAddressLabelsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message ListAddressLabelsResponse {
+  repeated AddressLabelRecord address_label_records = 1;
+}
+
+message AddressLabelRecord {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue label_name = 2;
+  personal_address_label.v1.PersonalAddressLabel.LabelIcon label_icon = 3;
+  google.protobuf.StringValue consumer_id = 4;
+  // This field is the id field in the CAL table
+  google.protobuf.StringValue consumer_address_link_id = 5;
+  google.protobuf.StringValue address_id = 6;
+}

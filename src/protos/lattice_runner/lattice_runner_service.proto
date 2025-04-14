@@ -1,0 +1,289 @@
+syntax = "proto3";
+
+package lattice_runner.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "lattice_config_manager/context_value.proto";
+import "lattice_runner/session.proto";
+import "lattice_runner/tool.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/lattice_runner/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.lattice_runner.rpc.api";
+
+// Service to execute the graph for LLM based app composed of many AI agents.
+// RFC - https://docs.google.com/document/d/1PsF9F-AOGGvr0kLZ5PE15Yyb-gFNNJRIKPbFr-AWPmY.
+service LatticeRunnerService {
+  option (doordash.api.service) = {
+    name: "lattice-runner"
+    url: "lattice-runner-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["lattice-runner"]
+    api_key_name: "LATTICE_RUNNER_UG_API_KEY"
+    owner: {
+      id: "lattice-runner"
+      name: "lattice-runner"
+      slack_channel: "#ask-lattice-platform-eng"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  option (service_client.client_config).service_name = "lattice-runner";
+
+  // Large default timeout. Due to multiple LLM calls involved. Default timeout is 5 min.
+  option (service_client.client_config).response_attempt_timeout_millis = 300000;
+  // No retries. Retrying the message is not needed as typically we can just escalate.
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Creates a new session and execute the graph.
+  rpc CreateSessionAndExecute(CreateSessionAndExecuteRequest) returns (CreateSessionAndExecuteResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 120000;
+    option (google.api.http) = {
+      post: "/lattice-runner/v1/sessions/{session_id}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Creates a session and returns the session.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {
+      post: "/lattice-runner/v1/sessions"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Fetch session.
+  rpc GetSessionContext(GetSessionContextRequest) returns (GetSessionContextResponse) {
+    option (google.api.http) = {get: "/lattice-runner/v1/sessions/{session_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Update session. This is a restricted set of grpc that only specific API keys will
+  // be allowed to make.
+  rpc UpdateSessionContext(UpdateSessionContextRequest) returns (UpdateSessionContextResponse) {
+    option (google.api.http) = {
+      put: "/lattice-runner/v1/sessions/{session_id}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  // Execute one turn in the session of the graph
+  rpc ExecuteGraph(ExecuteGraphRequest) returns (ExecuteGraphResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 120000;
+    option (google.api.http) = {
+      post: "/lattice-runner/v1/sessions/{session_id}/execute"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+}
+
+// Request to retrieve serialized portion of session from store (CRDB).
+message GetSessionContextRequest {
+  // id of the session.
+  google.protobuf.StringValue session_id = 1;
+}
+
+// Returns the session context from the session. Note this is just the session context
+// request context and other fields in the session disappears after completing the request.
+message GetSessionContextResponse {
+  // Session Id.
+  google.protobuf.StringValue session_id = 1;
+
+  // Session context key values for the session. Note that once a request is returned the request_context
+  // is always empty so, we don't include it in the response.
+  lattice_runner.v1.Context session_context = 2;
+
+  // Messages accumulated in session.
+  repeated lattice_runner.v1.Message messages = 3;
+
+  // Active node id of the node that will get called by default (unless overridden by reentryNodeOverride).
+  google.protobuf.StringValue active_node_id = 4;
+
+  // If the return has a response for the user (via return direct call). If response is from an Agent this
+  // will be false.
+  google.protobuf.BoolValue has_responded = 5;
+}
+
+// Request to apply session update operations to a session.
+message UpdateSessionContextRequest {
+  // Session Id.
+  google.protobuf.StringValue session_id = 1;
+
+  // Context update operations to apply on the session context.
+  repeated lattice_runner.v1.ContextOperation session_update_operations = 2;
+}
+
+// Response from updating the session. The updates are merged. Any overlapping key gets modified.
+// Note that we don't store session versions. So, previous update will be lost and there is no rollback.
+message UpdateSessionContextResponse {
+  // Session Id that was updated.
+  google.protobuf.StringValue session_id = 1;
+  // Updated session context.
+  lattice_runner.v1.Context session_context = 2;
+}
+
+// Request for creating and executing the graph in single turn.
+// SessionId is not returned because no new request can be created for the
+// same session. (Session is not preserved)
+message CreateSessionAndExecuteRequest {
+  reserved 2;
+  reserved "tag"; // this was used to represent the graph's tag. Use graph_tag instead.
+
+  // Id of graph to execute.
+  google.protobuf.StringValue graph_id = 1;
+
+  // Initial context passed to the graph. This will be added to the
+  // RequestContext of the runner and can be referenced in the prompts.
+  lattice_runner.v1.Context initial_request_context = 3;
+
+  // Initial message to the graph.
+  repeated lattice_runner.v1.Message initial_messages = 4;
+
+  // A unique id of session, for example, UUID.
+  google.protobuf.StringValue session_id = 5;
+
+  // The id of the node to run from.
+  google.protobuf.StringValue initial_node_id = 6;
+
+  // Tag of the graph to execute.
+  google.protobuf.StringValue graph_tag = 7;
+
+  // Optional, will not run guardrails if set to true.
+  google.protobuf.BoolValue skip_guardrails = 8;
+}
+
+// The response from running the graph. This will come from some agent calling
+// ToolOutput.ReturnDirect or if the graph hits an error or other terminal node.
+// This maps to GraphOutput in lattice-core.
+message CreateSessionAndExecuteResponse {
+  reserved 1;
+  // Session contents. This is the value of the session at the end of
+  // graph execution.
+  lattice_runner.v1.Session session = 2;
+  // String messages returned (usually from ReturnDirect Node of ReturnMessage type).
+  repeated lattice_runner.v1.Message messages = 3;
+  // Additional structured data associated with the return (usually bound statically
+  // from the ReturnDirect node as tags). Key is tag type and value is any
+  // serialized data.
+  map<string, string> tags = 4;
+}
+
+// The request for just creating a session. This will create and persist the
+// session. To execute the graph on the session, there has to be a separate
+// call.
+message CreateSessionRequest {
+  // Id of graph to execute.
+  google.protobuf.StringValue graph_id = 1;
+
+  // Initial context passed to the graph's session. This will be added to the
+  // SessionContext of the runner and can be referenced in the prompts.
+  // SessionContext is available on every request in the session.
+  lattice_runner.v1.Context initial_session_context = 2;
+
+  // Any input to pass to the newly created session. This will be
+  // added to the requests on subsequent turns.
+  repeated lattice_runner.v1.Message initial_messages = 3;
+
+  // A unique id of session, for example, UUID.
+  google.protobuf.StringValue session_id = 4;
+
+  // The id of the node to run from.
+  google.protobuf.StringValue initial_node_id = 5;
+
+  // Tag of the graph to execute.
+  google.protobuf.StringValue graph_tag = 6;
+}
+
+// This will return the session id to the caller. Note that caller must manage
+// session id to make a call for this session.
+message CreateSessionResponse {
+  // Session id of the newly create session.
+  google.protobuf.StringValue session_id = 1;
+}
+
+// Executes one turn of the graph.
+message ExecuteGraphRequest {
+  // SessionId of the previous session to continue executing.
+  google.protobuf.StringValue session_id = 1;
+
+  // Initial context passed to the graph. This will be added to the
+  // RequestContext of the runner and can be referenced in the prompts.
+  lattice_runner.v1.Context initial_request_context = 2;
+
+  // Input message to the graph for this request.
+  repeated lattice_runner.v1.Message input_messages = 3;
+
+  // Override reentry node for this request.
+  // By default execution will start from the root node of the graph unless
+  // we specify a different node ID for the graph to start from.
+  // Note that this will also override if the previous ReturnDirect node
+  // have specified a reentry.
+  // This is similar to the |initial_node_id| in the single turn execution
+  // as this allow to override the entry node in the graph.
+  google.protobuf.StringValue entry_node_override = 4;
+
+  // Optional, an id send from caller of lattice-runner service.
+  // It will be logged to Iguazu events for tracking purpose.
+  google.protobuf.StringValue caller_span_id = 5;
+
+  // Optional, id of another graph to begin executing.
+  google.protobuf.StringValue graph_id = 6;
+
+  // Optional, tag of another graph to execute.
+  google.protobuf.StringValue graph_tag = 7;
+
+  // Optional, will not run guardrails if set to true.
+  google.protobuf.BoolValue skip_guardrails = 8;
+}
+
+// The response from running the graph. This will come from some agent calling
+// ToolOutput.ReturnDirect or if the graph hits an error or other terminal node.
+message ExecuteGraphResponse {
+  reserved 1;
+  // Session contents. This is the value of the session at the end of
+  // graph execution.
+  lattice_runner.v1.Session session = 2;
+  // String messages returned (usually from ReturnDirect Node of ReturnMessage type).
+  repeated lattice_runner.v1.Message messages = 3;
+  // Additional structured data associated with the return (usually bound statically
+  // from the ReturnDirect node as tags). Key is tag type and value is any
+  // serialized data.
+  map<string, string> tags = 4;
+}

@@ -1,0 +1,427 @@
+syntax = "proto3";
+
+package dasher_handoffs_service.telemetry.v1;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dasher_handoffs_service/telemetry/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_handoffs_service.telemetry";
+
+// DasherTelemetryService using Asgard server library in a Guice environment.
+service DasherTelemetryService {
+  option (doordash.api.service) = {
+    name: "dasher-handoffs-service-ug-web"
+    url: "dasher-handoffs-service-ug-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["telemetry"]
+    api_key_name: "DASHER_HANDOFFS_SERVICE_API_KEY"
+    owner: {
+      id: "dx-handoffs-alerts"
+      name: "dx-handoffs"
+      slack_channel: "#team-dx-handoff-oncall"
+      email_alias: "dx-handoffs@doordash.com"
+    }
+    target_products: [DX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "dd-market-id"}]
+  };
+
+  // gRPC endpoint fronted by Unified Gateway for collecting Dx Telemetry
+  rpc ReportDasherTelemetry(ReportDasherTelemetryRequest) returns (ReportDasherTelemetryResponse) {
+    option (google.api.http) = {
+      post: "/dx/telemetry/v1/{event_category}/{event_type}"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 2000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+      authorization: [DX_USER]
+    };
+  }
+
+  // gRPC endpoint fronted by Unified Gateway for collecting Dx Telemetry
+  rpc ReportMinimalDasherTelemetry(ReportMinimalDasherTelemetryRequest) returns (ReportMinimalDasherTelemetryResponse) {
+    option (google.api.http) = {
+      post: "/dx/telemetry/v1/location"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 2000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+      authorization: [DX_USER]
+    };
+  }
+
+  // gRPC endpoint to collect order telemetry to track Mx fulfilled orders
+  rpc ReportOrderTelemetry(ReportOrderTelemetryRequest) returns (ReportOrderTelemetryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+// Request to report dasher telemetry
+message ReportDasherTelemetryRequest {
+  // Dasher ID of the dasher who generated this telemetry
+  string dasher_id = 1 [(doordash.api.inject_id) = DX_ID];
+
+  // Category of the telemetry event
+  string event_category = 2;
+
+  // Type of the telemetry event
+  string event_type = 3;
+
+  // Metadata related to the telemetry event
+  TelemetryMetadata telemetry_metadata = 4;
+
+  // locations sorted from earliest location to latest
+  repeated DasherLocation locations = 5;
+}
+
+// Request to report dasher telemetry
+message ReportMinimalDasherTelemetryRequest {
+  // locations sorted from earliest location to latest
+  repeated MinimalDasherLocation locations = 1;
+
+  // Dasher ID of the dasher who generated this telemetry
+  google.protobuf.StringValue dasher_id = 2 [(doordash.api.inject_id) = DX_ID];
+}
+
+// Metadata related to the telemetry event
+message TelemetryMetadata {
+  // If true, indicates this message is being used for tracing/debugging purposes
+  bool trace = 1;
+
+  // If true, indicates that this message should not be fully processed by the server
+  bool ignore = 2;
+}
+
+// Dasher location data collected from the device
+message DasherLocation {
+  // latitude value, Between -90° and 90°
+  double lat = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // longitude value, Between -180° and 180°
+  double lng = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // the UNIX timestamp of this location
+  google.protobuf.Timestamp timestamp = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The magnitude of Dx speed, in m/s; -1 indicates unavailable
+  double speed = 4;
+
+  // The direction of movement, in degrees, compared to true North. Between 0° and 359.9°; -1 indicates unavailable
+  double course = 5;
+
+  // Altitude compared to sea level, in m.
+  // Positive if above sea level, negative if below it. Reported as 0 if unavailable (along with -1 for vertical_accuracy)
+  double altitude = 6;
+
+  // Accuracy of lateral position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getAccuracy()
+  double horizontal_accuracy = 7;
+
+  // Accuracy of vertical position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getVerticalAccuracyMeters()
+  double vertical_accuracy = 8;
+
+  // The Dx device type that generated this location
+  // values:
+  //  ios
+  //  android
+  string device_type = 9;
+
+  // Type of motion
+  // Possible values:
+  //  on_foot (walking or running)
+  //  automotive
+  //  cycling
+  //  unknown
+  //  stationary*
+  //  <new state for robot>
+  // https://developers.google.com/android/reference/com/google/android/gms/location/DetectedActivity
+  string motion_type = 10;
+
+  // Score of 0-100 that indicates the confidence of the motion type prediction
+  string motion_type_confidence = 11;
+
+  // Optional vehicle Id. This is a field to be used by DD lands with its fleet robot and third party driverless vehicles.
+  string vehicle_id = 12;
+
+  // What type of vehicle is the dasher using. This is a Doordash controlled id.
+  string vehicle_category_id = 13;
+
+  // The Shift ID of the Dx while generating this location.
+  string shift_id = 14;
+
+  // The current state of the Dx while generating this location.
+  // values:
+  //  unassigned
+  //  picking_up
+  //  waiting_at_pickup
+  //  dropping_off
+  string current_status = 15;
+
+  // The UUID of the delivery that is being serviced by the Dx while generating this location.
+  string delivery_uuid = 16;
+
+  // The id of the device that generated this location.
+  string device_id = 17;
+
+  // NTP timestamp of the event.
+  google.protobuf.Timestamp ntp_timestamp = 18;
+
+  // id of the dasher that generated this location.
+  string dasher_id = 19;
+
+  // If the location is mocked
+  bool is_mocked_location = 20;
+
+  // GPS provider for the location
+  // https://developer.android.com/reference/android/location/Location.html#getProvider()
+  string provider = 21;
+}
+
+// Dasher location data collected from the device
+message MinimalDasherLocation {
+  // latitude value, Between -90° and 90°
+  double lat = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // longitude value, Between -180° and 180°
+  double lng = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // the UNIX timestamp of this location
+  google.protobuf.Timestamp timestamp = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Accuracy of lateral position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getAccuracy()
+  double horizontal_accuracy = 4;
+
+  // The Dx device type that generated this location
+  // values:
+  //  ios
+  //  android
+  string device_type = 5;
+
+  // The Shift ID of the Dx while generating this location.
+  google.protobuf.StringValue shift_id = 6 [(doordash.api.client.optional) = true];
+
+  // The current state of the Dx while generating this location.
+  // values:
+  //  unassigned
+  //  picking_up
+  //  waiting_at_pickup
+  //  dropping_off
+  google.protobuf.StringValue current_status = 7 [(doordash.api.client.optional) = true];
+
+  // The UUID of the delivery that is being serviced by the Dx while generating this location.
+  google.protobuf.StringValue delivery_uuid = 8 [(doordash.api.client.optional) = true];
+
+  // The id of the device that generated this location.
+  string device_id = 9;
+}
+
+// Request to report order telemetry for tracking Mx fulfilled orders
+message ReportOrderTelemetryRequest {
+  // The UUID of the delivery
+  string delivery_uuid = 1;
+
+  // Category of the telemetry event
+  string event_category = 2;
+
+  // Type of the telemetry event
+  string event_type = 3;
+
+  // Metadata related to the telemetry event
+  TelemetryMetadata telemetry_metadata = 4;
+
+  // Order locations sorted from earliest location to latest
+  repeated OrderLocation locations = 5;
+}
+
+// Order location data sent by Mx for self delivery
+message OrderLocation {
+  // latitude value, Between -90° and 90°
+  double lat = 1;
+
+  // longitude value, Between -180° and 180°
+  double lng = 2;
+
+  // the UNIX timestamp of this location
+  google.protobuf.Timestamp timestamp = 3;
+
+  // The UUID of the delivery
+  string delivery_uuid = 4;
+
+  // The ID of the delivery
+  int64 delivery_id = 5;
+}
+
+// Empty response
+message ReportDasherTelemetryResponse {}
+
+// Empty response
+message ReportMinimalDasherTelemetryResponse {}
+
+// Empty response
+message ReportOrderTelemetryResponse {}
+
+// NOTE: IF YOU ARE ADDING FIELDS/COLUMNS WITH USER PERSONALLY IDENTIFIABLE INFORMATION, PLEASE FOLLOW THIS
+// DOCUMENTATION IN ORDER TO ENSURE CCPA COMPLIANCE:
+// https://doordash.atlassian.net/wiki/spaces/Eng/pages/3160834089/Making+Datalake+Table+CCPA+Compliant
+message DasherLocationParityEvent {
+  option (common.dataframe_transformations) = "pii_obfuscation";
+  reserved 3;
+  reserved "location";
+  // source to tell where the event is coming from ex. consumer / producer / flink
+  google.protobuf.StringValue source = 1;
+
+  // Uniquely generated id that will be sent to join the prod and test events
+  // This is composed of timestamp, device_id, and shift_id
+  google.protobuf.StringValue id = 2;
+
+  // latitude value, Between -90° and 90°
+  google.protobuf.FloatValue lat = 4;
+
+  // longitude value, Between -180° and 180°
+  google.protobuf.FloatValue lng = 5;
+
+  // the UNIX timestamp of this location
+  google.protobuf.Timestamp timestamp = 6 [(common.timestamp_granularity) = "TIMESTAMP_PROTOBUF"];
+
+  // The magnitude of Dx speed, in m/s; -1 indicates unavailable
+  google.protobuf.FloatValue speed = 7;
+
+  // The direction of movement, in degrees, compared to true North. Between 0° and 359.9°; -1 indicates unavailable
+  google.protobuf.FloatValue course = 8;
+
+  // Altitude compared to sea level, in m.
+  // Positive if above sea level, negative if below it. Reported as 0 if unavailable (along with -1 for vertical_accuracy)
+  google.protobuf.FloatValue altitude = 9;
+
+  // Accuracy of lateral position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getAccuracy()
+  google.protobuf.FloatValue horizontal_accuracy = 10;
+
+  // Accuracy of vertical position, expressed as meters radius of 68% confidence.
+  // https://developer.android.com/reference/android/location/Location#getVerticalAccuracyMeters()
+  google.protobuf.FloatValue vertical_accuracy = 11;
+
+  // The Dx device type that generated this location
+  // values:
+  //  ios
+  //  android
+  google.protobuf.StringValue device_type = 12;
+
+  // Type of motion
+  // Possible values:
+  //  on_foot (walking or running)
+  //  automotive
+  //  cycling
+  //  unknown
+  //  stationary*
+  //  <new state for robot>
+  // https://developers.google.com/android/reference/com/google/android/gms/location/DetectedActivity
+  google.protobuf.StringValue motion_type = 13;
+
+  // Score of 0-100 that indicates the confidence of the motion type prediction
+  google.protobuf.StringValue motion_type_confidence = 14;
+
+  // Optional vehicle Id. This is a field to be used by DD lands with its fleet robot and third party driverless vehicles.
+  google.protobuf.StringValue vehicle_id = 15;
+
+  // What type of vehicle is the dasher using. This is a Doordash controlled id.
+  google.protobuf.StringValue vehicle_category_id = 16;
+
+  // The Shift ID of the Dx while generating this location.
+  google.protobuf.StringValue shift_id = 17;
+
+  // The current state of the Dx while generating this location.
+  // values:
+  //  unassigned
+  //  picking_up
+  //  waiting_at_pickup
+  //  dropping_off
+  google.protobuf.StringValue current_status = 18;
+
+  // The UUID of the delivery that is being serviced by the Dx while generating this location.
+  google.protobuf.StringValue delivery_uuid = 19;
+
+  // The id of the device that generated this location.
+  google.protobuf.StringValue device_id = 20 [(common.pii_type) = "DEVICE_ID"];
+
+  // the UNIX ntp timestamp of this location
+  google.protobuf.Timestamp ntp_timestamp = 21 [(common.timestamp_granularity) = "TIMESTAMP_PROTOBUF"];
+
+  // id of the dasher that generated this location.
+  google.protobuf.StringValue dasher_id = 22;
+
+  // If the location is mocked
+  google.protobuf.BoolValue is_mocked_location = 23;
+
+  // The UUID of the batch
+  google.protobuf.StringValue batch_uuid = 24;
+
+  // the UNIX timestamp the batch was received
+  google.protobuf.Timestamp batch_processing_timestamp = 25 [(common.timestamp_granularity) = "TIMESTAMP_PROTOBUF"];
+
+  // The LAT/LNG geohash
+  google.protobuf.StringValue geohash = 26;
+}
+
+// Payload to send to dasher_location topic
+message LocationRecord {
+  // Timestamp from the server when the event is published to Kafka.
+  google.protobuf.Timestamp producer_timestamp = 1;
+
+  // one-of the allowed location payloads
+  oneof location_data {
+    // DxLocation
+    DasherLocationBatch dasher_location_batch = 2;
+    // OrderLocation
+    OrderLocationBatch order_location_batch = 3;
+  }
+}
+
+// Batch of DasherLocation to be sent to Kafka
+message DasherLocationBatch {
+  // locations sorted from earliest location to latest
+  repeated DasherLocation dasher_location = 1;
+
+  // The UUID of the batch
+  string batch_uuid = 2;
+}
+
+// Batch of Order location to be sent to Kafka
+message OrderLocationBatch {
+  // Order locations sorted from earliest location to latest
+  repeated OrderLocation order_location = 1;
+}

@@ -1,0 +1,353 @@
+syntax = "proto3";
+package marketplace_intelligence.v1;
+
+import "cart/cart_service.proto";
+import "common/date.proto";
+import "delivery_service/delivery_core.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/merchant_order.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.marketplace_intelligence";
+
+// Store status service
+service StoreStatusService {
+  // unassign dasher, put order in manual assign, temporarily block dasher from re-assignment to store
+  rpc PerformDrscReassignmentActions(PerformDrscReassignmentActionsRequest) returns (PerformDrscReassignmentActionsResponse);
+  // get all of the possible orders with the same items at nearby stores in the same business
+  rpc GetMappedOrdersForNearbyStoreSubstitutes(GetMappedOrdersForNearbyStoreSubstitutesRequest) returns (GetMappedOrdersForNearbyStoreSubstitutesResponse);
+  // get store closure probability for different use case including DRSC and SCU
+  rpc GetStoreClosureProbability(GetStoreClosureProbabilityRequest) returns (GetStoreClosureProbabilityResponse);
+  // try creating a cart at a new store with all the same items as the initial order
+  rpc CreateStoreSubstitutionCart(CreateStoreSubstitutionCartRequest) returns (CreateStoreSubstitutionCartResponse);
+  // try getting a ConsumerCart at a new store with all the same items as the initial order
+  rpc GetSubstituteStoreConsumerCart(GetSubstituteStoreConsumerCartRequest) returns (GetSubstituteStoreConsumerCartResponse);
+  // try getting multiple ConsumerCarts at a new store with all the same items as the initial order
+  rpc GetSubstituteStoreConsumerCarts(GetSubstituteStoreConsumerCartsRequest) returns (GetSubstituteStoreConsumerCartsResponse);
+  // get inaccurate reports during a certain time
+  rpc GetInaccurateReportsByDasherId(GetInaccurateReportsByDasherIdRequest) returns (GetInaccurateReportsByDasherIdResponse);
+  // get store pickup instructions (note that this only fetch store closure related instructions now)
+  rpc GetStorePickupInstructions(GetStorePickupInstructionsRequest) returns (GetStorePickupInstructionsResponse);
+  // handle the drsc report submission: 1. process the dasher pay. 2. publish DRSC attempt event.
+  rpc HandleDrscReportSubmission(HandleDrscReportSubmissionRequest) returns (HandleDrscReportSubmissionResponse);
+}
+
+// Request to execute re-assignment actions for DRSCs
+message PerformDrscReassignmentActionsRequest {
+  // UUID of drsc attempt
+  google.protobuf.StringValue drsc_attempt_uuid = 1;
+  // Dasher to be unassigned
+  google.protobuf.Int64Value dasher_id = 2;
+  // Delivery to unassign
+  repeated google.protobuf.Int64Value delivery_ids = 3;
+  // Store id that this delivery is for
+  google.protobuf.Int64Value store_id = 4;
+  // Time the DRSC was attempted
+  google.protobuf.Timestamp time_of_drsc = 5;
+  // User ID of dasher
+  google.protobuf.Int64Value dasher_user_id = 6;
+}
+
+// Deliveries that the dasher was successfully unassigned from
+message PerformDrscReassignmentActionsResponse {
+  // All delivery ids that were unassigned successfully
+  repeated google.protobuf.Int64Value successfully_unassigned_delivery_ids = 1;
+}
+
+// Request to map this order to nearby stores in the same business
+message GetMappedOrdersForNearbyStoreSubstitutesRequest {
+  // delivery to have its store switched
+  oneof id {
+    // delivery id
+    google.protobuf.Int64Value delivery_id = 1;
+    // delivery uuid
+    google.protobuf.StringValue delivery_uuid = 2;
+    // order cart id
+    google.protobuf.Int64Value order_cart_id = 3;
+  }
+}
+
+// Response with all the possible alternate orders
+message GetMappedOrdersForNearbyStoreSubstitutesResponse {
+  // Every possible mapped order
+  repeated MappedSubstituteOrder order = 1;
+
+  // All the info needed to place a new order
+  message MappedSubstituteOrder {
+    // Reuses order-service's proto for simplicity and to make placing a new order easier - omits order_id
+    repeated order_service.OrderDetail.Order orders = 1;
+    // Store that this order is for
+    google.protobuf.Int64Value store_id = 2;
+    // Distance this store is from the dropoff location in meters
+    google.protobuf.Int64Value distance_from_dropoff_location_in_meters = 3;
+  }
+}
+
+// Request to get store closure probability
+message GetStoreClosureProbabilityRequest {
+  // UUID for this store closure prediction
+  google.protobuf.StringValue uuid = 1;
+  // store Id for assembling store features
+  google.protobuf.Int64Value store_id = 2;
+  // override model Id used in prediction
+  google.protobuf.StringValue override_model_id = 3;
+  // inputs used for assembling features for different use case
+  oneof input {
+    // inputs of DRSC use case
+    DrscInput drsc_input = 4;
+    // inputs of SCU use case
+    ScuInput scu_input = 5;
+  }
+}
+
+// Response with store closure probability
+message GetStoreClosureProbabilityResponse {
+  // probability of the store is closed
+  google.protobuf.FloatValue store_closure_probability = 1;
+}
+
+// DRSC use case inputs to get store closure probability
+message DrscInput {
+  // dasher Id for assembling dasher features
+  google.protobuf.Int64Value dasher_id = 1;
+  // delivery id of the store assigned to the dasher
+  google.protobuf.Int64Value delivery_id = 2;
+  // batch id if one exists
+  google.protobuf.Int64Value batch_id = 3;
+  // Timestamp of when the DRSC happened
+  google.protobuf.Timestamp drsc_timestamp = 4;
+  // The offered pay to the dasher
+  google.protobuf.Int64Value pay_amount = 5;
+  // DSML image verification confidence
+  google.protobuf.FloatValue image_confidence = 6;
+}
+
+// SCU use case inputs to get store closure probability
+message ScuInput {
+  // dasher Id for assembling dasher features
+  google.protobuf.Int64Value dasher_id = 1;
+  // delivery id of the store assigned to the dasher
+  google.protobuf.Int64Value delivery_id = 2;
+  // batch id if one exists
+  google.protobuf.Int64Value batch_id = 3;
+  // Timestamp of when the unassign happened
+  google.protobuf.Timestamp dx_unassign_timestamp = 4;
+  // Timestamp of when the Dx confirmed the assignment
+  google.protobuf.Timestamp dx_confirmed_timestamp = 5;
+  // Timestamp of when the Dx arriving at store
+  google.protobuf.Timestamp dx_arriving_at_store_timestamp = 6;
+  // Timestamp of when the Dx confirmed at store
+  google.protobuf.Timestamp dx_confirmed_at_store_timestamp = 7;
+  // The offered pay to the dasher
+  google.protobuf.Int64Value pay_amount = 8;
+}
+
+// Request to duplicate this delivery's original cart at an alternate viable store
+message CreateStoreSubstitutionCartRequest {
+  // delivery id of the original order
+  google.protobuf.Int64Value delivery_id = 1;
+}
+
+// Response with information about the cart creation outcome
+message CreateStoreSubstitutionCartResponse {
+  // outcome of cart creation
+  oneof cart_creation_outcome {
+    // Metadata of the store substitution resolution
+    CartSuccessInfo cart_success_info = 1;
+    // Reason store substitution was not possible
+    NoSubstitutionReason store_substitution_not_possible_reason = 2;
+  }
+}
+
+// Request to get a duplicate ConsumerCart for this delivery but at a different store
+message GetSubstituteStoreConsumerCartRequest {
+  // delivery id of the original order
+  google.protobuf.Int64Value delivery_id = 1;
+  // use case for getting an alternate cart
+  SubstitutionUseCase use_case = 2;
+}
+
+// Response with either a viable substitute cart or a reason that one doesn't exist
+message GetSubstituteStoreConsumerCartResponse {
+  // outcome of cart creation
+  oneof consumer_cart_outcome {
+    // Viable alternate cart
+    cart_service.v1.ConsumerCart cart = 1;
+    // Reason store substitution was not possible
+    NoSubstitutionReason store_substitution_not_possible_reason = 2;
+  }
+  // This is a string with a very granular reason as to why store substitution did or did not happen
+  google.protobuf.StringValue outcome_description = 3;
+}
+
+// Request to get duplicate ConsumerCarts for this delivery but at different stores
+message GetSubstituteStoreConsumerCartsRequest {
+  // delivery id of the original order
+  google.protobuf.Int64Value delivery_id = 1;
+  // use case for getting an alternate cart
+  SubstitutionUseCase use_case = 2;
+}
+
+// Response with either viable substitute carts or a reason why they don't exist
+message GetSubstituteStoreConsumerCartsResponse {
+  // List of viable alternate carts
+  repeated cart_service.v1.ConsumerCart carts = 1;
+  // Reason store substitution was not possible
+  NoSubstitutionReason store_substitution_not_possible_reason = 2;
+  // This is a string with a very granular reason as to why store substitution did or did not happen
+  google.protobuf.StringValue outcome_description = 3;
+}
+
+// Metadata of the store substitution resolution
+message CartSuccessInfo {
+  // Id of the newly created cart
+  google.protobuf.StringValue new_order_cart_id = 1;
+  // Id of the new store
+  google.protobuf.Int64Value store_id = 2;
+  // Id of the consumer
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+// The reason that the caller needs an alternate cart
+enum SubstitutionUseCase {
+  // no use case specified
+  SUBSTITUTION_USE_CASE_UNSPECIFIED = 0;
+  // cart is for one-click reorder
+  SUBSTITUTION_USE_CASE_ONE_CLICK_REORDER = 1;
+  // cart is for automatic reorder
+  SUBSTITUTION_USE_CASE_AUTOMATIC_REORDER = 2;
+}
+
+// Reasons why a store substitution was not possible
+enum NoSubstitutionReason {
+  // no substitution type unspecified
+  NO_SUBSTITUTION_REASON_UNSPECIFIED = 0;
+  // some code path didn't work, for instance, a critical dependency failed
+  NO_SUBSTITUTION_REASON_INTERNAL_ERROR = 1;
+  // the order metadata prohibits store sub, for instance, the store of the original order is not a large business
+  NO_SUBSTITUTION_REASON_ORDER_CONTEXT_NOT_SUBSTITUTABLE = 2;
+  // no alternate stores are close enough to dropoff and currently able to fulfill this order
+  NO_SUBSTITUTION_REASON_NO_ALTERNATE_STORES_NEARBY = 3;
+}
+
+// Request to get inaccurate reports during a certain time
+message GetInaccurateReportsByDasherIdRequest {
+  // dasher id of the inaccurate reports
+  google.protobuf.Int64Value dasher_id = 1;
+  // start date of inaccurate reports window (inclusive)
+  date.Date start_date = 2;
+  // end date of inaccurate reports window (inclusive)
+  date.Date end_date = 3;
+  // inaccurate report type
+  InaccurateReportType type = 4;
+  // inaccurate report subtypes
+  repeated InaccurateReportSubtype subtypes = 5;
+  // use cache or directly query database, cache only has L28d data
+  google.protobuf.BoolValue use_cache = 6;
+}
+
+// Response with inaccurate reports during a certain time
+message GetInaccurateReportsByDasherIdResponse {
+  // number of inaccurate reports in window
+  google.protobuf.Int32Value inaccurate_reports_count = 1;
+  // List of inaccurate report detail
+  repeated InaccurateReportDetail inaccurate_reports_details = 2;
+}
+
+// Details of Inaccurate report
+message InaccurateReportDetail {
+  // delivery id of the report
+  google.protobuf.Int64Value delivery_id = 1;
+  // dasher id of dasher who had inaccurate report
+  google.protobuf.Int64Value dasher_id = 2;
+  // store id of store that is inaccurately reported
+  google.protobuf.Int64Value store_id = 3;
+  // type of inaccurate report
+  InaccurateReportType type = 4;
+  // subtype of inaccurate report
+  InaccurateReportSubtype subtype = 5;
+  // timezone of the inaccurate report
+  google.protobuf.StringValue timezone = 6;
+  // timestamp of the inaccurate report
+  google.protobuf.Timestamp reported_at = 7;
+  // store name e.g. Popeyes (13006)
+  google.protobuf.StringValue store_name = 8;
+  // URL of proof image if exists
+  google.protobuf.StringValue image_url = 9;
+  // Reasons of the DRSC report
+  google.protobuf.StringValue reasons = 10;
+  // Description of the DRSC report
+  google.protobuf.StringValue description = 11;
+}
+
+// Inaccurate report type
+enum InaccurateReportType {
+  // Unspecified inaccurate report type
+  INACCURATE_REPORT_TYPE_UNSPECIFIED = 0;
+  // DRSC inaccurate report type
+  INACCURATE_REPORT_TYPE_DRSC = 1;
+}
+
+// Inaccurate report subtype
+enum InaccurateReportSubtype {
+  // Unspecified inaccurate report subtype
+  INACCURATE_REPORT_SUBTYPE_UNSPECIFIED = 0;
+  // Order has DRSC reported but delivered by second dasher
+  INACCURATE_REPORT_SUBTYPE_DRSC_SAME_ORDER_DELIVERED = 1;
+  // Order was canceled by DRSC but other orders in the same store got picked up within one hour
+  INACCURATE_REPORT_SUBTYPE_DRSC_CXL_OTHER_ORDERS_DELIVERED = 2;
+}
+
+// Request to get store pickup instructions
+message GetStorePickupInstructionsRequest {
+  // store id of the store
+  google.protobuf.Int64Value store_id = 1;
+  // address id of the store
+  google.protobuf.Int64Value address_id = 2;
+}
+
+// Response with a list of store pickup instructions
+message GetStorePickupInstructionsResponse {
+  // store pickup instructions
+  repeated delivery_service.core.DynamicInstruction dynamic_dx_pickup_instructions = 1;
+}
+
+// Request to handle the drsc report submission
+message HandleDrscReportSubmissionRequest {
+  // delivery uuid of the drsc report
+  google.protobuf.StringValue delivery_uuid = 1;
+  // dasher id of the drsc report
+  google.protobuf.Int64Value dasher_id = 2;
+  // image verification result of the drsc report
+  google.protobuf.StringValue image_verification_result = 3;
+  // image object path of the drsc report
+  google.protobuf.StringValue image_object_path = 4;
+  // image confidence of the drsc report
+  google.protobuf.FloatValue image_confidence = 5;
+  // dasher's reasons of the drsc report
+  google.protobuf.StringValue reasons = 6;
+  // dasher's description of the drsc report
+  google.protobuf.StringValue description = 7;
+}
+
+// Response with the drsc dasher pay details
+message HandleDrscReportSubmissionResponse {
+  // drsc dasher pay details
+  DrscDasherPayDetails drsc_dasher_pay_details = 1;
+}
+
+// Drsc dasher pay details
+message DrscDasherPayDetails {
+  // is dasher shift in time mode, this will decide how we show the dasher pay
+  google.protobuf.BoolValue is_time_mode = 1;
+  //  dasher pay currency
+  google.protobuf.StringValue currency = 2;
+  // dasher pay decimal places
+  google.protobuf.Int32Value decimal_places = 3;
+  // dasher pay display string
+  google.protobuf.StringValue display_string = 4;
+  // dasher pay unit amount
+  google.protobuf.Int32Value unit_amount = 5;
+}

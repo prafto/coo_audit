@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package carnot_service.v1;
+
+import "carnot_service/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/carnot_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.carnot_service.rpc.api";
+
+// Service to interact with the cost highlighting UI.
+service CarnotPresentationService {
+  // Get Month To Date Costs By Vendor and Domain
+  rpc GetMonthToDateCostOverview(GetMonthToDateCostOverviewRequest) returns (GetMonthToDateCostOverviewResponse);
+
+  // Fetches the Month-To-Date costs by domain, often referred to as vertical.
+  rpc GetDomainMtd(GetDomainMtdRequest) returns (GetDomainMtdResponse);
+
+  // Fetches the Month-To-Date costs by group, often referred to as team.
+  rpc GetGroupMtd(GetGroupMtdRequest) returns (GetGroupMtdResponse);
+}
+
+// Vendor from which the cost data is sourced
+enum CarnotVendor {
+  // Unspecified
+  CARNOT_VENDOR_UNSPECIFIED = 0;
+  // AWS
+  CARNOT_VENDOR_AWS = 1;
+  // Snowflake
+  CARNOT_VENDOR_SNOWFLAKE = 2;
+  // Databricks
+  CARNOT_VENDOR_DATABRICKS = 3;
+}
+
+// Request for GetMonthToDateCostOverview
+// Empty for first iteration
+message GetMonthToDateCostOverviewRequest {}
+
+// Response for GetMonthToDateCostOverview
+message GetMonthToDateCostOverviewResponse {
+  // Aggregated costs across all vendors and domains
+  MonthToDateCostValue cost = 1;
+
+  // Aggregated cost by vendor
+  repeated VendorCost vendor_costs = 2;
+
+  // Aggregated cost by domain
+  repeated DomainCost domain_costs = 3;
+}
+
+// Cost for a vendor
+message VendorCost {
+  // Vendor
+  CarnotVendor vendor = 1;
+
+  // Cost value of this vendor
+  MonthToDateCostValue cost = 2;
+}
+
+// Cost for a domain
+message DomainCost {
+  // The domain DDRN as specified by a domain in asset-service.
+  string domain_ddrn = 1;
+
+  // The DRI for this cost
+  string dri = 2;
+
+  // Total cost value of this domain
+  MonthToDateCostValue cost = 3;
+
+  // Cost value of this domain split by vendor
+  repeated VendorCost vendor_costs = 4;
+}
+
+// Month-To-Date cost value
+message MonthToDateCostValue {
+  // Cost Value
+  google.protobuf.DoubleValue cost = 1;
+
+  // Budget for this specific cost
+  google.protobuf.DoubleValue budget = 2;
+
+  // Budget deviation is the difference between the budget and the projected spend
+  google.protobuf.DoubleValue budget_deviation = 3;
+
+  // Interpolated cost for the entire month
+  google.protobuf.DoubleValue projected_spend = 4;
+
+  // Difference between the current cost and the previous month
+  // Positive value means greater than previous month, negative means less
+  CostDelta one_month_delta = 5;
+}
+
+// Difference in cost
+message CostDelta {
+  // Difference by value
+  google.protobuf.DoubleValue delta_value = 1;
+
+  // Difference between percentage
+  google.protobuf.DoubleValue delta_percentage = 2;
+}
+
+// Budget overage will be calculated by taking the difference of the
+//   Month-To-Date spend with the number of days accounted for in MTD multipled
+//   by the average daily budget
+message BudgetOverageByMonth {
+  // 1 = January, ..., 12 = December
+  int32 month_of_year = 1;
+  // ie. 2024
+  int32 year = 2;
+  // Positive means budget overage (red and bad)
+  double budget_overage = 3;
+}
+
+// Month To Date response info
+message MtdInfo {
+  // Vendor is a fairly high level aggregation of costs. Example vendors include AWS, Snowfalke, and Databricks.
+  string vendor = 1;
+  // Positive is over budget (red and bad)
+  double budget_overage = 2;
+  // Budget is the amount of expected spend to stay within.
+  //   Group budgets will initially be determined by previous month spend.
+  //   Domain budgets will be set manually as they currently are.
+  double budget = 3;
+  // The current spend month-to-date starting from the 1st of the Month.
+  double mtd_spend = 4;
+  // Using month-to-date spend, we can calculate daily average spend and use the number of days
+  //   remaining in the month to derive the projected_spend at the end of the month.
+  double projected_spend = 5;
+  // Free-form string.  Can be set via ToBeDetermined write API
+  string annotations = 6;
+  // Includes current month as the first value, sorted by reverse chronological order.
+  //   Intended to provide a high level view
+  repeated BudgetOverageByMonth overage_history = 7;
+}
+
+// https://github.com/doordash/services-protobuf/blob/483a81d664d6778f8dcb9afed39841bf3f661148/protos/assets_service.v3/software_asset.proto#L31C11-L31C17
+message GetDomainMtdRequest {
+  // (Preferred) The list of domain DDRNs requested.
+  repeated string domain_ddrns = 1;
+  // Convenience field to look up domains by owner. domain_ddrns must be empty
+  //   for this field to have an effect. Prefer using domain_ddrns directly.
+  repeated string domain_owner_ddrns = 2;
+}
+
+// Domain Month-To-Date Info. This is a domain metadata wrapper around
+//   Month-To-Date Info.
+message DomainMtd {
+  // The domain DDRN as specified by a domain in asset-service.
+  string domain_ddrn = 1;
+  // The domain alias, examples include developer-platform, growth, money, sre,
+  //   and security.
+  string domain_alias = 2;
+  // The ddrn of the domain owner, also known as DRI (a doordash employee)
+  string domain_owner_ddrn = 3;
+  // The alias of the domain owner, likely an okta identifier that looks like
+  //   the username of a doordash employee email address.
+  string domain_owner_alias = 4;
+  // The Month-To-Date info
+  MtdInfo mtd_info = 5;
+}
+
+// Response for GetDomainMtdRequest
+message GetDomainMtdResponse {
+  // Aggregations of the data returned
+  MtdInfo summary = 1;
+  // Start time of this Month-To-Date response. Typically should be the 1st of the month.
+  google.protobuf.Timestamp start = 2;
+  // End time of this Month To Date response. There may be a 3 to 4 day lag
+  //   before results are reported.
+  google.protobuf.Timestamp end = 3;
+  // Breakdown of the spend by domains that were specified in the GetDomainMtdRequest
+  repeated DomainMtd domains_mtd = 4;
+  // Convenience field that is derived from entire set of domains_mtd.
+  int32 num_domains_over_budget = 5;
+}
+
+// https://github.com/doordash/services-protobuf/blob/483a81d664d6778f8dcb9afed39841bf3f661148/protos/assets_service.v3/software_asset.proto#L33
+message GetGroupMtdRequest {
+  // (Preferred) The list of group DDRNs requested.
+  repeated string group_ddrns = 1;
+  // Convenience field to look up groups by owner. group_ddrns must be empty
+  //   for this field to have an effect. Prefer using group_ddrns directly.
+  repeated string group_owner_ddrns = 2;
+}
+
+// Group Month-To_Date Info. This is a group metadata wrapper around
+//   Month-To-Date Inof.
+message GroupMtd {
+  // The group DDRN as specified by a group in asset-service
+  string group_ddrn = 1;
+  // The group alias, which are also referred to as team names. An example
+  //   includes the performance-platform team
+  string group_alias = 2;
+  // The DDRN of the manager of the team.
+  string group_owner_ddrn = 3;
+  // The alias of the team manager, likely an okta identifier that looks like
+  //   the username of a doordash employee email address.
+  string group_owner_alias = 4;
+  // The Month-To-Date info
+  MtdInfo mtd_info = 5;
+}
+
+// Response for GetGroupMtdRequest
+message GetGroupMtdResponse {
+  // Aggregations of the data returned
+  MtdInfo summary = 1;
+  // Start range of the response, should be beginning of month
+  google.protobuf.Timestamp start = 2;
+  // End range of the response
+  google.protobuf.Timestamp end = 3;
+  // Breakdown of the spend by groups that were specified in the
+  //   GetGroupMtdRequest
+  repeated GroupMtd groups_mtd = 4;
+  // Convenience field that is derived from entire set of groups_mtd.
+  int32 num_groups_over_budget = 5;
+}

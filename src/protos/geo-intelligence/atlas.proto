@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package geo_intelligence.v2;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "Atlas";
+option java_package = "geo.intelligence.atlas.proto";
+
+// Backend service for Atlas Explorer - the Geo-Intelligence team application for exploring Addresses and related data.
+service AtlasService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+  option (doordash.api.service) = {
+    name: "geo-intelligence-atlas-service"
+    url: "geo-intelligence-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "geo-intelligence",
+      "address",
+      "atlas"
+    ]
+    api_key_name: "DOORDASH_GEO_SERVICE_KEY"
+    owner: {
+      name: "geo-intelligence"
+      id: "geo-team-default-bucket"
+      slack_channel: "#ask-geo-intel"
+      email_alias: "geo@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Search for an address.
+  rpc AtlasSearch(AtlasSearchRequest) returns (AtlasSearchResponse) {
+    option (google.api.http) = {get: "/geo-intelligence/v2/atlas/search"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+  }
+}
+
+// General text search, i.e. "single box search"; may be used for coordinate search, text search, ID search, etc.
+message AtlasSearchRequest {
+  // Text to search for; this can be a fully-formatted address, lat/lng, address ID, source place ID, etc.
+  string text = 1;
+  // Type of search to perform; if not specified, the service will attempt to determine the type of search based on the input.
+  repeated AtlasSearchMode search_mode = 2;
+}
+
+// Enum that defines the different search modes that can be used to search for an address.
+enum AtlasSearchMode {
+  // Search type is not specified; best fit will be used.
+  ATLAS_SEARCH_MODE_UNSPECIFIED = 0;
+  // Search by address ID.
+  ATLAS_SEARCH_MODE_ADDRESS_ID = 1;
+  // Search by source place ID.
+  ATLAS_SEARCH_MODE_SOURCE_PLACE_ID = 2;
+  // Search by lat/lng.
+  ATLAS_SEARCH_MODE_LAT_LNG = 3;
+  // Search by formatted address.
+  ATLAS_SEARCH_MODE_FORMATTED_ADDRESS = 4;
+}
+
+// Response object that contains the results of a search query.
+message AtlasSearchResponse {
+  // List of features that match the search query.
+  repeated AtlasFeature features = 1;
+  // OPTIONAL. Lat/Lng interpreted from search text and used for search; will only be present for coordinate lookup.
+  UserSubmittedPoint user_submitted_point = 2;
+}
+
+// AtlasFeature object that describes an entity that may be displayed on Atlas.
+message AtlasFeature {
+  // Atlas may return various types of features, such as addresses, address submissions, etc..
+  oneof feature {
+    // Address object, i.e. from the address table, or Nectar.
+    AtlasAddress address = 1;
+    // Address Submission, i.e. an address that has not been verified.
+    AtlasAddressSubmission address_submission = 2;
+  }
+  // Search Type used to find this feature.
+  AtlasSearchMode search_mode = 3;
+  // Display labels; typically segmented into two strings e.g for en-US ["4672 Lorren Dr", "City CA 94536"]
+  repeated google.protobuf.StringValue display_labels = 5;
+}
+
+// Address object which defines the structure of an address.
+message AtlasAddress {
+  // Geo Address Id
+  google.protobuf.StringValue id = 1;
+  // Source Place Id
+  google.protobuf.StringValue source_place_id = 2;
+  // Latitude
+  google.protobuf.DoubleValue lat = 3;
+  // Longitude
+  google.protobuf.DoubleValue lng = 4;
+  // Formatted Address; e.g. 123 Main St, City, State, Zip
+  google.protobuf.StringValue formatted_address = 5;
+  // Street Number and Name; 1234 Main St
+  google.protobuf.StringValue street_address = 6;
+  // Locality; e.g. city, town, etc.
+  google.protobuf.StringValue locality = 7;
+  // Neighborhood
+  google.protobuf.StringValue neighborhood = 8;
+  // Administrative Area Level 1; e.g. State, Province, etc.
+  google.protobuf.StringValue administrative_area_level_1 = 9;
+  // Postal Code; e.g. ZIP code
+  google.protobuf.StringValue postal_code = 10;
+  // Country; e.g. USA, Canada, etc.
+  google.protobuf.StringValue country = 11;
+  // Subpremise; e.g. Apt 123
+  google.protobuf.StringValue subpremise = 12;
+  // Coverage metadata, e.g. starting point, submarket, etc.
+  AtlasCoverage coverage = 13;
+  // If the address represents a deliverable, real-world location, is_generic=False, else, True.
+  // Examples of is_generic=False: a front door, a building centroid, an interpolated street address, etc.
+  // Examples of is_generic=True: a postal-code centroid, a city centroid, a street centroid, etc.
+  google.protobuf.BoolValue is_generic = 14;
+}
+
+// Coverage object which defines attributes not specific to the address, but to the area the address is located in.
+message AtlasCoverage {
+  // Starting Point ID
+  google.protobuf.StringValue starting_point_id = 1;
+  // Starting Point Name
+  google.protobuf.StringValue starting_point_name = 2;
+  // Starting Point Active
+  google.protobuf.BoolValue starting_point_is_active = 3;
+  // Submarket ID
+  google.protobuf.StringValue submarket_id = 4;
+  // Submarket Name
+  google.protobuf.StringValue submarket_name = 5;
+  // Submarket Active
+  google.protobuf.BoolValue submarket_is_active = 6;
+}
+
+// Denotes coordinates provided by a user for a search query; differentiated from coordinates returned by Atlas.
+message UserSubmittedPoint {
+  // Latitude of user-submitted point
+  google.protobuf.DoubleValue lat = 3;
+  // Longitude of user-submitted point
+  google.protobuf.DoubleValue lng = 4;
+}
+
+// Address Submission object, encapsulates an address that has been suggested to be added to the address dataset.
+message AtlasAddressSubmission {
+  // Latitude
+  google.protobuf.DoubleValue lat = 1;
+  // Longitude
+  google.protobuf.DoubleValue lng = 2;
+}

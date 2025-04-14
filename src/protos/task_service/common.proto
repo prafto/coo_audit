@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package task_service.v2;
+
+import "delivery_service/delivery_metadata.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.task_service";
+//
+//extend google.protobuf.FieldOptions {
+//  string map_to_field = 50101;
+//  string map_to_function = 50102;
+//  string map_to_message = 50103;
+//  string map_to_repeated = 50104;
+//}
+
+extend google.protobuf.FieldOptions {
+  string map_to_exact_message = 50101;
+  string map_to_repeated_exact_message = 50102; // map to only a message no recursion
+  string map_to_repeated = 50103; // map to filed or message
+  bool map_to_nested_message = 50104;
+  string map_to_exact_enum = 50105;
+  string map_to_function = 50106;
+  string map_to_field = 50107;
+  bool no_map = 50108;
+  bool map_to_repeated_diff_message = 50109;
+}
+
+message Error {
+  enum ErrorCode {
+    // base error code, unmapped
+    ERROR_CODE_UNSPECIFIED = 0;
+    // entity not found
+    ERROR_CODE_NOT_FOUND = 1;
+    // failed validation
+    ERROR_CODE_INVALID_REQUEST = 2;
+  }
+
+  // enum error encountered
+  ErrorCode error_code = 1;
+  // human readable message
+  google.protobuf.StringValue error_details = 2;
+}
+
+// Represents a location and domain-specific data about the nature of the location (e.g. a store or a residence).
+message TaskLocation {
+  reserved 2, 3;
+  reserved "location_info", "google_place_id";
+
+  // The unique identifier for the location as defined by the geointel service
+  google.protobuf.Int64Value address_id = 1;
+
+  // The lat/lng of the location.  This will dictate the location of the pin on the map for in-app nav.
+  // TODO: does this govern the pin location for third party nav apps?
+  LocationCoordinates location = 4;
+
+  // The printable address of the location.  This is the address that will be displayed to the dasher.  It can be
+  // useful to include all available information from the user here to allow dasher to determine the location on
+  // their own in case there is an issue with the LocationCoordinates or other geocoding issue.
+  google.protobuf.StringValue printable_address = 5;
+
+  // TODO: it's unfortunate that we didn't internationalize this -- think about whether we still can
+  google.protobuf.StringValue subpremise = 6;
+  google.protobuf.StringValue street = 7;
+  google.protobuf.StringValue city = 8;
+  google.protobuf.StringValue state = 9;
+  google.protobuf.StringValue country_code = 10;
+  google.protobuf.StringValue timezone = 11;
+  google.protobuf.StringValue zip_code = 16;
+
+  // An opaque identifier of the physical location as provided by the underlying geocoder from geointel.  Will either
+  // be the google_place_id or precisely pbkey.
+  google.protobuf.StringValue source_id = 12;
+
+  // Domain-specific data about the nature of the location.
+  // to be deprecated in favor of the one in TaskData
+  oneof location_entity {
+    StoreInfo store_entity = 13;
+  }
+}
+
+message LocationCoordinates {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+}
+
+// deprecated -- use LocationCoordinates instead
+message Location {
+  double lat = 1;
+  double lng = 2;
+}
+
+message FulfillmentTime {
+  oneof fulfillment_time_type {
+    google.protobuf.Timestamp complete_by = 1;
+    Schedule schedule = 2;
+  }
+  google.protobuf.Timestamp fulfilled_at = 3;
+}
+
+message Schedule {
+  oneof schedule_type {
+    google.protobuf.Timestamp schedule_time = 1;
+    Window window = 2;
+  }
+}
+
+message Window {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+}
+
+message ActionResponse {
+  oneof result {
+    bool success = 1;
+    Error error = 2;
+  }
+}
+
+message StoreInfo {
+  reserved 3, 7, 8, 9;
+  reserved "store_timezone", "country_code", "state", "district_id";
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.StringValue store_name = 2;
+  google.protobuf.Int64Value business_id = 4;
+  google.protobuf.StringValue business_name = 5;
+  google.protobuf.Int64Value business_vertical_id = 6;
+  repeated StoreHours store_hours = 10;
+}
+
+message StoreEntity {
+  // Refers to the store_id of the store table in merchant data service
+  google.protobuf.Int64Value store_id = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.store_id,DeliveryTaskGroup.delivery_audience_info.store_id"];
+
+  // This is used by the goToStore screen in the Dasher App to show storeName.
+  // https://github.com/doordash/dasher-fulfillment/blob/4ff9f97669f79b0d9ffcfe0ea83a5bc034088b7f/src/main/kotlin/com/doordash/dasherfulfillment/manifest/builder/screens/task/goToLocation/TaskGoToLocationScreenManifestBuilder.kt#L208
+  google.protobuf.StringValue store_name = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_name"];
+
+  // The business_id of the store as defined in merchant data service.
+  google.protobuf.Int64Value business_id = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.business_id"];
+
+  // Not currently used in the Dasher App.
+  google.protobuf.StringValue business_name = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.business_name"];
+
+  // TODO: remove this -- it's not specific to a store and should be in UpstreamContext
+  google.protobuf.Int64Value business_vertical_id = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_assignment_constraint.business_vertical_id"];
+
+  // Store hours is used by ETA Service for predictions, by DeepRed to check before assigning, and in the Collect Store Hours task
+  repeated StoreHours store_hours = 6 [(no_map) = true];
+
+  google.protobuf.StringValue store_cover_img_url = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_cover_img_url"];
+  google.protobuf.StringValue store_business_cover_img_url = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_business_cover_img_url"];
+  google.protobuf.Int32Value store_special_instructions_max_length = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_special_instructions_max_length"];
+  google.protobuf.StringValue store_business_description = 10 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_business_description"];
+  google.protobuf.StringValue store_address_country = 11 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_address_country"];
+  google.protobuf.BoolValue store_is_active = 12 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_is_active"];
+  google.protobuf.BoolValue should_show_store_logo = 13 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.should_show_store_logo"];
+  google.protobuf.StringValue store_timezone = 14 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.store_timezone"];
+
+  // Optional metadata for parcels deliveries to indicate the sortation facility where the package is located.
+  SortationFacility sortation_facility = 15 [(no_map) = true];
+}
+
+// Represents the hours of operation for a store on a given day.
+message StoreHours {
+  // Unused
+  repeated bool days_bit_array = 1 [deprecated = true];
+
+  // The time the store opens and closes on the given day in 24 hour format.  Midnight is 0 and 11pm at night is 23. TODO: is this right?
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// A facility for sorting and picking up packages in a Parcels delivery.
+message SortationFacility {
+  // The primary key of the facility in parcels service.
+  google.protobuf.Int64Value facility_id = 1;
+
+  // The sort code of the facility.  Example "QNS-1"
+  google.protobuf.StringValue facility_code = 2;
+}
+
+message ConsumerEntity {
+  // Renaming from "creator_id" which never made sense
+  google.protobuf.Int64Value user_id = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.recipient_user_id,DeliveryTaskGroup.delivery_data.creator_id"];
+  google.protobuf.Int64Value consumer_id = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.recipient_consumer_id"];
+  string phone_number = 3 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.recipient_phone_number"];
+  string first_name = 4 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.recipient_first_name"];
+  string last_name = 5 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.recipient_last_name"];
+  string email = 6 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.recipient_email"];
+  bool receives_text_notification = 7 [(map_to_field) = "DeliveryTaskGroup.delivery_audience_info.recipient_receives_text_notification"];
+  google.protobuf.Timestamp customer_unavailable_escalated_at = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_fulfillment.customer_unavailable_escalated_at"];
+}
+
+message DasherShift {
+  // The shift_id of the dasher currently assigned to the TaskGroup.  Can change and be unset.
+  google.protobuf.Int64Value shift_id = 1 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_data.shift_id"];
+  google.protobuf.StringValue vehicle_type_name = 2 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_type_name"];
+  google.protobuf.Int64Value vehicle_id = 3 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_id"];
+  google.protobuf.StringValue vehicle_make = 4 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_make"];
+  google.protobuf.StringValue vehicle_model = 5 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_model"];
+  google.protobuf.StringValue vehicle_year = 6 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_year"];
+  google.protobuf.StringValue vehicle_color = 7 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.vehicle_color"];
+  google.protobuf.StringValue vehicle_license_plate = 13 [(map_to_exact_message) = "DeliveryTaskGroup.additional_fields.vehicle_license_plate"];
+  google.protobuf.Int64Value dasher_id = 8 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_id"];
+  google.protobuf.StringValue dasher_first_name = 9 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_first_name"];
+  google.protobuf.StringValue dasher_last_name = 10 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_last_name"];
+  google.protobuf.StringValue dasher_phone_number = 11 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_phone_number"];
+  google.protobuf.Int64Value dasher_user_id = 12 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_user_id"];
+  google.protobuf.StringValue dasher_preferred_name = 14 [(map_to_exact_message) = "DeliveryTaskGroup.delivery_audience_info.dasher_preferred_name"];
+}
+
+// This is the dynamic instruction text that is shown to the dasher on the GoToLocation screen, and is passed from
+// upstream (via bulk-tool) while executing workflow. Note, localization is not currently supported.
+message TaskInstruction {
+  // Generic header, less than 30 characters.  E.g. something generic like "Task Instruction" can be used.
+  google.protobuf.StringValue header = 1;
+
+  // A longer description of the text.  E.g. "Go to your assigned aisles in the store and take clear photos that include
+  // all of the items and shelf tags."
+  google.protobuf.StringValue body = 2;
+
+  // A relative path to the Prism icon library.
+  google.protobuf.StringValue icon = 3;
+
+  // Currently unused
+  google.protobuf.StringValue type = 4;
+}
+
+enum TenantId {
+  TENANT_ID_DEFAULT = 0;
+  TENANT_ID_DOORTEST = 1;
+}
+
+message TaskGroupIds {
+  repeated google.protobuf.StringValue task_group_ids = 1;
+}
+
+message OfferIds {
+  repeated google.protobuf.StringValue offer_ids = 1;
+}
+
+message DeliveryPackageIds {
+  repeated google.protobuf.Int64Value delivery_package_ids = 1;
+}
+
+message AssignmentIds {
+  repeated google.protobuf.Int64Value assignment_ids = 1;
+}
+
+message DeliveryUuids {
+  repeated google.protobuf.StringValue delivery_uuids = 2;
+}
+
+message DeliveryIds {
+  repeated google.protobuf.Int64Value delivery_ids = 3;
+}
+
+message ShiftIds {
+  repeated google.protobuf.Int64Value shift_ids = 1;
+}
+
+// Phone OS
+enum PhoneOS {
+  // Unspecified
+  PHONE_OS_UNSPECIFIED = 0;
+  // Android
+  PHONE_OS_ANDROID = 1;
+  // iOS
+  PHONE_OS_IOS = 2;
+}
+
+// Travel Pay Type
+enum TravelPayType {
+  // Unknown
+  TRAVEL_PAY_TYPE_UNKNOWN = 0;
+  // Full Pay
+  TRAVEL_PAY_TYPE_ACTIVE = 1;
+  // Zero Pay
+  TRAVEL_PAY_TYPE_INACTIVE = 2;
+}
+
+enum ReattemptReturnState {
+  // Non-terminal states
+  TO_BE_REATTEMPTED = 0; // Dasher marked as "reattempt later".
+  TO_BE_RETURNED = 1; // Dasher marked as "return later".
+  REATTEMPT_IN_PROGRESS = 2; // When Dx jumps to a reattempt delivery
+  // Terminal states
+  REATTEMPT_SUCCESS = 3; // Dropped off on second attempt
+  RETURN_CREATED = 4; // A return has been created.
+}
+
+message ReattemptReturnStateInfo {
+  ReattemptReturnState state = 1;
+  google.protobuf.Timestamp state_transitioned_at = 2;
+  // Undeliverable order metadata
+  delivery_service.delivery_metadata.v1.UndeliverableOrderMetadata undeliverable_order_metadata = 3;
+}

@@ -1,0 +1,2638 @@
+syntax = "proto3";
+package doordash.retail.dasher.v3;
+
+import "action-catalog/dx/action.proto";
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/prism/components/text.proto";
+import "component-catalog.dx/common/icon.proto";
+import "component-catalog.dx/nv/common/primitives/buttons.proto";
+import "component-catalog.dx/nv/common/prism_text.proto";
+import "component-catalog.dx/nv/common/take_photo_v2.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "doordash.retail.catalog.v1/fulfillment.proto";
+import "doordash.retail.common.v1/common.proto";
+import "doordash.retail.dasher.v3/dasher_metrics_hub_v1.proto";
+import "doordash.retail.dasher.v3/quantity_info.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "doordash.retail.dasher.v3";
+
+// V3 pick/pack service to support frictionless comms requirements
+service DasherShopDeliverV3Service {
+  option (doordash.api.service) = {
+    name: "retail-fulfillment-service-dasher"
+    url: "retail-fulfillment-service-dasher.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["dasher-shop-deliver"]
+    owner: {
+      name: "nve_eng_ef"
+      id: "eng-fulfillment-efficiency"
+      slack_channel: "#eng_nv_efficiency_pod"
+      email_alias: "new-verticals-fulfillment-efficiency@doordash.com"
+    }
+    target_products: [DX]
+  };
+  /*
+   * Get PickPack Order
+   *
+   * Retrieve instructions associated with a DSD (pickpack) order
+   *
+   */
+  rpc GetPickPackOrder(GetPickPackOrderRequest) returns (GetPickPackOrderResponse);
+  /*
+   * Get PickPack Orders
+   *
+   * Retrieve shopping instructions along with Order details.
+   */
+  rpc GetBatchPickPackOrders(GetBatchPickPackOrdersRequest) returns (GetBatchPickPackOrdersResponse);
+  /*
+   * Update Order Item Pick Status
+   *
+   * Updates the pick status on an order item
+   *
+   */
+  rpc UpdateItemPickStatus(UpdateItemPickStatusRequest) returns (UpdateItemPickStatusResponse);
+  /*
+   * Finish Pick Order
+   *
+   * Finishes picking order and move to checkout
+   *
+   */
+  rpc FinishPickOrder(FinishPickOrderRequest) returns (FinishPickOrderResponse);
+  /*
+   * Finish Pick Batch Orders
+   *
+   * Finishes picking batch orders and move to checkout
+   *
+   */
+  rpc FinishPickBatchOrders(FinishPickBatchOrdersRequest) returns (FinishPickBatchOrdersResponse);
+  /*
+   * Get Item By Barcode
+   *
+   * Get item details and item match status based on barcode
+   *
+   */
+  rpc GetItemByBarcode(GetItemByBarcodeRequest) returns (GetItemByBarcodeResponse);
+  /*
+   * Get Item By Barcode after dx scans an item to add it to shopping list
+   *
+   * Get item details also
+   */
+  rpc GetItemByBarcodeForNewItemAddition(GetItemByBarcodeForNewItemAdditionRequest) returns (GetItemByBarcodeForNewItemAdditionResponse) {
+    option (google.api.http) = {get: "/dasher-shop-deliver/v3/{delivery_uuid}/get-item-by-barcode-for-new-item-addition/{barcode}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  /*
+   * Get Item By Plu(price lookup code)
+   *
+   * Get item details and item match status based on plu
+   *
+   */
+  rpc GetItemByPlu(GetItemByPluRequest) returns (GetItemByPluResponse);
+  /*
+   * Get Checkout Barcode
+   *
+   * Retrieves checkout barcode for the given delivery uuid.
+   *
+   * In case of errors it can return:
+   *
+   * 404 for delivery not found
+   * 500 for any internal server errors
+   *
+   * Migrated from doordash.retail.dasher.v1alpha1/shop_and_deliver.proto
+   */
+  rpc GetCheckoutBarcode(GetCheckoutBarcodeRequest) returns (GetCheckoutBarcodeResponse);
+  /*
+   * Dasher Search Substitutions
+   *
+   * Dasher substitution search item by name
+   *
+   */
+  rpc SearchSubstitution(SearchSubstitutionRequest) returns (SearchSubstitutionResponse);
+  /*
+   * Get DSD Shopping Time
+   *
+   * Get expected shopping time, actual shopping time,  average shopping time per item
+   *
+   */
+  rpc GetShoppingTime(GetShoppingTimeRequest) returns (GetShoppingTimeResponse);
+  /*
+   * Get Fulfilled Order Item status (for Drive)
+   *
+   * (Drive) Get final status of order items picked to send to 3P merchant via webhook
+   */
+  rpc GetFulfilledOrderItems(GetFulfilledOrderItemsRequest) returns (GetFulfilledOrderItemsResponse);
+  /*
+   * Complete Staging (for Drive DSS)
+   *
+   * (Drive DSS) Finish staging the DSS order
+   */
+  rpc CompleteStaging(CompleteStagingRequest) returns (CompleteStagingResponse);
+  /*
+   * Get Staged Containers (for Drive DSS)
+   *
+   * (Drive DSS) Get the staged containers information to send to 3P merchant via webhook
+   */
+  rpc GetStagedContainers(GetStagedContainersRequest) returns (GetStagedContainersResponse);
+  /*
+   * Managed Substitutions Entry point
+   *
+   * get the list of items pending Dx Subs
+   */
+  rpc GetPendingSubsItems(GetPendingSubsItemsRequest) returns (GetPendingSubsItemsResponse);
+  /*
+   * Get Checkout Details.
+   *
+   * API for checkout details of delivery
+   */
+  rpc GetCheckoutDetails(GetCheckoutDetailsRequest) returns (GetCheckoutDetailsResponse);
+  /*
+   * Get Order Details.
+   *
+   * API for getting details about order.
+   */
+  rpc GetBatchOrderDetails(GetBatchOrderDetailsRequest) returns (GetBatchOrderDetailsResponse);
+  /*
+   * Get order instructions.
+   *
+   * API for getting instructions for dsd orders.
+   */
+  rpc GetDsdOrderInstructions(GetDsdOrderInstructionsRequest) returns (GetDsdOrderInstructionsResponse);
+  /*
+   * Get Generic Checkout Flow
+   *
+   * API for getting Checkout Flow for DSD and/or Drive orders.
+   */
+  rpc GetCheckoutFlow(GetCheckoutFlowRequest) returns (GetCheckoutFlowResponse);
+  /*
+   * DYF window close API
+   *
+   * API to close DYF window for a batch of delivery uuids
+   */
+  rpc CloseDyfWindow(CloseDyfWindowRequest) returns (CloseDyfWindowResponse);
+  /*
+   * Get Order Updates
+   *
+   * API for getting order updates(order items, etc) associated with a DSD (pickpack) order
+   */
+  rpc GetOrderUpdates(GetOrderUpdatesRequest) returns (GetOrderUpdatesResponse);
+  /*
+   * Get Barcodes by deliveryuuid
+   *
+   * API for getting item barcodes associated by msid
+   */
+  rpc GetItemBarcodeByDeliveryUuid(GetItemBarcodeByDeliveryUuidRequest) returns (GetItemBarcodeByDeliveryUuidResponse);
+  /*
+   * Get GroceryPro Info
+   *
+   * API for getting GroceryPro info
+   */
+  rpc GetGroceryProInfo(GetGroceryProInfoRequest) returns (GetGroceryProInfoResponse);
+  /*
+   * Store item scan OCR data
+   *
+   * API storing item scan OCR data
+   */
+  rpc StoreItemScanOcrData(StoreItemScanOcrDataRequest) returns (StoreItemScanOcrDataResponse);
+  /*
+   * Create Allowance for red card
+   *
+   * API for creating red card allowance
+   */
+  rpc CreateRedcardAllowance(CreateRedcardAllowanceRequest) returns (CreateRedcardAllowanceResponse);
+  /*
+   * Upload Fulfillment Image
+   *
+   * API to upload a scanned photo to S3 storage
+   */
+  rpc UploadFulfillmentImage(UploadFulfillmentImageRequest) returns (UploadFulfillmentImageResponse) {
+    option deprecated = true;
+  }
+  /*
+   * Adjust Pick Pack Order
+   *
+   * API to adjust the pick pack order (add/remove items)
+   */
+  rpc AdjustPickPackOrder(AdjustPickPackOrderRequest) returns (AdjustPickPackOrderResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+
+    option (google.api.http) = {
+      post: "/dasher-shop-deliver/v3/{delivery_uuid}/adjust-pick-pack-order"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 7
+      }
+    };
+  }
+  /*
+   * Search Eligible Items
+   *
+   * API to search for items with the given query
+   */
+  rpc SearchEligibleItems(SearchEligibleItemsRequest) returns (SearchEligibleItemsResponse) {
+    option (google.api.http) = {get: "/dasher-shop-deliver/v3/{delivery_uuid}/search"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  /*
+   * Get Items by Merchant Supplied Id
+   *
+   * API to fetch item with the given merchant supplied id
+   */
+  rpc GetItemByMerchantSuppliedId(GetItemByMerchantSuppliedIdRequest) returns (GetItemByMerchantSuppliedIdResponse) {
+    option (google.api.http) = {get: "/dasher-shop-deliver/v3/get-item-by-msid/delivery_uuid/{delivery_uuid}/msid/{merchant_supplied_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  /*
+   * retrieve shopper profile (topShopper, rating, etc.) by shopperId and locale
+   */
+  rpc GetShopperProfile(GetShopperProfileRequest) returns (GetShopperProfileResponse) {
+    option (google.api.http) = {get: "/dasher-shop-deliver/v3/get-shopper-profile/dasher-id/{dasher_id}/locale/{locale}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+}
+
+// Request payload for Search Substitutions
+message SearchSubstitutionRequest {
+  // delivery uuid of order
+  google.protobuf.StringValue delivery_uuid = 1;
+  // out of stock item uuid
+  google.protobuf.StringValue oos_item_uuid = 2;
+  // search query
+  google.protobuf.StringValue search_query = 3;
+  // Dx sub searching use case
+  UseCase use_case = 4;
+  // use case to identify flow in which Dx is searching for subs
+  enum UseCase {
+    //UNSPECIFIED
+    USE_CASE_UNSPECIFIED = 0;
+    // Manual Substitution Search
+    USE_CASE_MANUAL_SUB_SEARCH = 1;
+    //  Core Item Scanning Workflow
+    USE_CASE_GENERIC_CATEGORY_ANY_ITEM_SEARCH = 2;
+  }
+}
+
+// Response for Search Substitutions
+message SearchSubstitutionResponse {
+  // eligible substitutions from search
+  repeated OrderItemEligibleSubstitution eligible_substitutions = 1;
+}
+
+// Request payload for Get PickPack Order API
+message GetPickPackOrderRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+}
+
+// Response to Get PickPack Order API
+message GetPickPackOrderResponse {
+  // [DEPRECATED] use mosaic_shopping_instructions instead
+  // specific instructions to be displayed to dasher on arrival
+  repeated string shopping_instructions = 1;
+  // checkout instructions to be displayed to dasher on checkout
+  repeated CheckoutInstruction checkout_instructions = 2;
+  // List of item groups. If empty, group by category.
+  repeated OrderItemGroup item_groups = 3;
+  // List of items to be picked, along with the substitution preferences
+  repeated ItemRequested items_requested = 4;
+  // List of workflows
+  repeated Workflow workflow = 5;
+  // Shopping Timer - Expected Shopping Time
+  int64 expected_shopping_time = 6;
+  // instructions title for DSD/DSS
+  string instructions_title = 7;
+  // instructions image for DSD/DSS
+  string instructions_image = 8;
+  // boolean to identify if it is a DSS order
+  google.protobuf.BoolValue is_shop_and_stage = 9;
+  // boolean to identify if red card is required
+  google.protobuf.BoolValue is_red_card_required = 10;
+  // Pay For Performance details
+  PayForPerformance pay_for_performance = 11;
+  // delivery uuid
+  string delivery_uuid = 12;
+  // Order Initials to be displayed on Shopping UX
+  string order_initials = 13;
+  // Color value to be used for Order Initial.
+  string order_initials_color = 14;
+  // [DEPRECATED] returns true if processing of this order failed.
+  bool is_failed = 15;
+  // Error Status for getPickPackOrder API.
+  enum PickPackOrderErrorStatus {
+    // Unspecified.
+    PICK_PACK_ORDER_ERROR_STATUS_UNSPECIFIED = 0;
+    // Order is completed.
+    PICK_PACK_ORDER_ERROR_STATUS_ORDER_PICKING_COMPLETED = 1;
+    // Order is cancelled.
+    PICK_PACK_ORDER_ERROR_STATUS_ORDER_CANCELLED = 2;
+    // Other error.
+    PICK_PACK_ORDER_ERROR_STATUS_OTHER_ERROR = 3;
+    // No Error.
+    PICK_PACK_ORDER_ERROR_STATUS_NO_ERROR = 4;
+  }
+  // Error status for the failure of the API.
+  PickPackOrderErrorStatus pick_pack_order_error_status = 16;
+  // Batch id for the order, it could be same store batch, mixed batch with Rx etc.
+  google.protobuf.StringValue batch_id = 17;
+  // StringValue to identify dasher's checkout payment method
+  google.protobuf.StringValue checkout_payment_method = 18;
+  // [DEPRECATED] Shopping Timer modal details
+  ShoppingTimerModalInfo shopping_timer_modal_info = 19;
+  // Whether to use the new Generic Checkout flow
+  google.protobuf.BoolValue use_generic_checkout = 20;
+  // Order version ID
+  common.v1.Identifier order_version = 21;
+  // Cancellation flow
+  CancellationFlowConfig cancellation_flow_config = 22;
+  // [DEPRECATED] the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse item_details_page_lego_response = 23;
+  // item details pages
+  ItemDetailsPages item_details_pages = 24;
+  // are subs enabled for this store
+  bool is_subs_enabled_for_store = 25;
+  // metadata
+  Metadata metadata = 26;
+  // [DEPRECATED] perfect order shopping instructions, use mosaic_shopping_instructions instead
+  repeated InstructionsV3 instructions_v3 = 27;
+  // Can dx make adjustments to the pick pack order
+  OrderAdjustmentOptions dx_order_adjustment_options = 28;
+  // set of boolean flags to enable/disable specific features on the FE
+  // https://docs.google.com/document/d/1YTKvpxA8Wc8yaqtJ_9Slwme_mI_f7ZZByOm2CzNQscA/edit
+  FulfillmentFlowsUiConfig fulfillment_flows_ui_config = 29;
+  // mosaic shopping instructions(multiple pages supported)
+  repeated lego.response.v1.LegoPageResponse mosaic_shopping_instructions = 30;
+  // Details regarding in store navigation such as map, item sequencing etc,
+  InStoreNavigationDetails in_store_navigation_details = 31;
+  // Lego page response for static metadata
+  lego.response.v1.LegoPageResponse lego_static_metadata = 32;
+  // tasks requested (for GetBatchPickPackOrders this will be empty, use same field in GetBatchPickPackOrdersResponse)
+  repeated TaskRequested tasks_requested = 33;
+}
+
+// boolean flags to enable/disable specific features on the FE
+message FulfillmentFlowsUiConfig {
+  // Boolean flag to disable repicking substitutions.
+  // Default is false that keeps the feature enabled.
+  google.protobuf.BoolValue disable_repicking_substitutions = 1;
+  // Boolean flag to enable manual subs scanning + search experience
+  google.protobuf.BoolValue enable_unified_manual_subs_experience = 2;
+}
+
+// perfect order shopping instruction
+message InstructionsV3 {
+  // leading icon
+  message LeadingIcon {
+    // icon name
+    google.protobuf.StringValue name = 1;
+    // icon size
+    int64 size = 2;
+    // icon color
+    google.protobuf.StringValue color = 3;
+  }
+  // title
+  google.protobuf.StringValue title = 1;
+  // body
+  google.protobuf.StringValue body = 2;
+  // leading icon
+  LeadingIcon leading_icon = 3;
+}
+
+// Metadata in GetPickPackOrderResponse
+message Metadata {
+  // [DEPRECATED] is grocery pro order
+  bool is_grocery_pro = 1;
+  // [DEPRECATED] dx intro message
+  google.protobuf.StringValue introduction_message_to_cx = 2;
+  // sticky headers
+  ShoppingListStickyHeaders shopping_list_sticky_headers = 3;
+  // [DEPRECATED] dx intro message bottom sheet title
+  google.protobuf.StringValue introduction_message_title = 4 [deprecated = true];
+  // IntroductionMessage send to Cx
+  IntroductionMessage introduction_message_to_cx_v2 = 5;
+  // Flag to indicate if this is a marketplace prescription delivery
+  google.protobuf.BoolValue is_prescription_delivery = 6;
+}
+
+// dx intro message sent to cx
+message IntroductionMessage {
+  // dx intro message title
+  google.protobuf.StringValue title = 1;
+  // dx intro message body
+  google.protobuf.StringValue body = 2;
+  // dx intro message positive button title
+  google.protobuf.StringValue positive_button_title = 3;
+  // dx intro message negative button title
+  google.protobuf.StringValue negative_button_title = 4;
+}
+
+// Shopping list sticky headers
+message ShoppingListStickyHeaders {
+  reserved 2;
+  // action
+  message Action {
+    // content
+    message Content {
+      // group name
+      google.protobuf.StringValue group_name = 1;
+    }
+    // action type
+    google.protobuf.StringValue action_type = 1;
+    // content
+    Content content = 2;
+  }
+  // sticky header
+  message StickyHeader {
+    reserved 5;
+    reserved "click_action";
+    // color
+    google.protobuf.StringValue background_color = 1;
+    // leading icon
+    Icon leading_icon = 2;
+    // display text
+    .common.StyledText display_text = 3;
+    // trailing icon
+    Icon trailing_icon = 4;
+    // action
+    Action action = 6;
+  }
+  // sticky headers
+  repeated StickyHeader sticky_headers = 1;
+  // the lego page response
+  lego.response.v1.LegoPageResponse lego_page_response = 3;
+}
+
+// Item details pages lego response in getPickPackOrderResponse
+message ItemDetailsPages {
+  // lego page response to be rendered by frontend
+  repeated ItemDetailsPage pages = 1;
+}
+
+// Item details page
+message ItemDetailsPage {
+  // version
+  string version = 1;
+  // delivery uuid
+  string delivery_uuid = 2;
+  // item uuid
+  string item_uuid = 3;
+  // lego page response
+  lego.response.v1.LegoPageResponse page = 4;
+}
+
+// Stores the cancellation flow config
+message CancellationFlowConfig {
+  // Modal title
+  string modal_title = 1;
+  // Modal description
+  string modal_description = 2;
+  // Modal bullet items
+  repeated string modal_bullet_items = 3;
+  // Page title
+  string page_title = 4;
+  // Cancellation section title
+  string cancellation_title = 5;
+  // Cancellation section description
+  string cancellation_description = 6;
+  // Title of cancellation bullet items
+  string cancellation_bullet_items_title = 7;
+  // [DEPRECATED] Cancellation bullet items that describe what happened, replaced by 11
+  repeated string cancellation_bullet_items = 8;
+  // Hint in the additional details
+  string additional_details_hint = 9;
+  // [DEPRECATED] Modal Bullet item and type
+  message ModalBulletItemAndType {
+    // Type for bullet item
+    enum Type {
+      // Unspecified
+      TYPE_UNSPECIFIED = 0;
+      // The customer didn’t respond to calls or texts
+      TYPE_CUSTOMER_NOT_RESPOND = 1;
+      // The customer wants a refund
+      TYPE_CUSTOMER_WANTS_REFUND = 2;
+      // Dx didn’t contact the customer
+      TYPE_DX_NOT_CONTACT_CUSTOMER = 3;
+    }
+    // type associated with this item
+    Type type = 1;
+    // modal bullet item
+    string modal_bullet_items = 2;
+  }
+  // [DEPRECATED] Modal bullet items with types
+  repeated ModalBulletItemAndType modal_bullet_items_and_types = 10;
+  // Cancellation Bullet item and type
+  message CancellationBulletItemAndType {
+    // Type for bullet item
+    enum Type {
+      // Unspecified
+      TYPE_UNSPECIFIED = 0;
+      // The customer didn’t respond to calls or texts
+      TYPE_CUSTOMER_NOT_RESPOND = 1;
+      // The customer wants a refund
+      TYPE_CUSTOMER_WANTS_REFUND = 2;
+      // Dx didn’t contact the customer
+      TYPE_DX_NOT_CONTACT_CUSTOMER = 3;
+      // For prescription delivery: pharmacy is closed
+      TYPE_PRESCRIPTION_PHARMACY_CLOSED = 4;
+      // For prescription delivery: prescription is not ready
+      TYPE_PRESCRIPTION_UNABLE_TO_FILL = 5;
+      // For prescription delivery: patient verification is required
+      TYPE_PRESCRIPTION_PATIENT_VERIFICATION_REQUIRED = 6;
+      // For prescription delivery: prescription is at a different location
+      TYPE_PRESCRIPTION_DIFFERENT_LOCATION = 7;
+      // For prescription delivery: other
+      TYPE_PRESCRIPTION_OTHER = 8;
+    }
+    // type associated with this item
+    Type type = 1;
+    // cancellation bullet item
+    string cancellation_bullet_item = 2;
+  }
+  // Cancellation bullet items with types that describe what happened
+  repeated CancellationBulletItemAndType cancellation_bullet_items_and_types = 11;
+}
+
+// Request for Get Order Updates
+message GetOrderUpdatesRequest {
+  // list of delivery uuids
+  repeated string delivery_uuid = 1;
+}
+
+// Request for GetBarcodesByDeliveryUuid
+message GetItemBarcodeByDeliveryUuidRequest {
+  // delivery uuid
+  string delivery_uuid = 1;
+}
+
+// Response for GetBarcodesByDeliveryUuid
+message GetItemBarcodeByDeliveryUuidResponse {
+  // item barcode information
+  message ItemBarcodeInfo {
+    // merchant supplied id
+    string merchant_supplied_id = 1;
+    // list of barcodes for the item
+    repeated .doordash.retail.catalog.v1.Barcode barcodes = 2;
+    // List of Normalized UPCs.
+    repeated string gtin14_codes = 3;
+  }
+  // list of msid to barcode mapping
+  repeated ItemBarcodeInfo item_barcode_info = 1;
+}
+
+// Response to Get Order Updates
+message GetOrderUpdatesResponse {
+  // List of order updates info
+  repeated OrderUpdatesInfo order_item_info = 1;
+  // List of item groups combined all the items. If empty, group by category.
+  repeated OrderItemGroup item_groups = 2;
+  // Shopping Timer - Expected Shopping Time
+  int64 expected_shopping_time = 3;
+}
+
+// Stores the Order updates info
+message OrderUpdatesInfo {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // List of items to be picked, along with the substitution preferences
+  repeated ItemRequested items_requested = 2;
+  // Error status for the failure of the API.
+  GetPickPackOrderResponse.PickPackOrderErrorStatus error_status = 3;
+}
+
+// Request payload for GetBatchPickPackOrders API
+message GetBatchPickPackOrdersRequest {
+  // list of delivery uuids
+  repeated string delivery_uuid = 1;
+}
+
+// Data for batch instructions to be displayed at shopping for same store batching
+// Ref: https://www.figma.com/file/jCIJeLAxRCSKwgjkozaicW/DSD-22Q3-Batching?node-id=3879%3A38885
+message ShoppingInstructionsV2 {
+  // instructions title for DSD/DSS
+  string title = 1;
+  // instructions image key (not url) for DSD/DSS
+  string image = 2;
+}
+
+// Response to GetBatchPickPackOrders API
+message GetBatchPickPackOrdersResponse {
+  // [DEPRECATED] use mosaic_shopping_instructions instead
+  // specific instructions to be displayed to dasher on arrival
+  repeated string shopping_instructions = 1;
+  // instructions title for DSD/DSS
+  string instructions_title = 2;
+  // instructions image for DSD/DSS
+  string instructions_image = 3;
+  // Shopping Timer - Expected Shopping Time
+  int64 expected_shopping_time = 4;
+  // boolean to identify if red card is required for at least one order
+  google.protobuf.BoolValue is_red_card_required = 5;
+  // List of orders
+  repeated GetPickPackOrderResponse get_pick_pack_order_responses = 6;
+  // specific instructions to be displayed to dasher on arrival
+  repeated ShoppingInstructionsV2 shopping_instructions_v2 = 7;
+  // list of shopping tabs
+  repeated ShoppingTab shopping_tabs = 8;
+  // metadata
+  Metadata metadata = 9;
+  // Metadata in GetBatchPickPackOrderResponse
+  message Metadata {
+    // sticky headers
+    ShoppingListStickyHeaders shopping_list_sticky_headers = 3;
+  }
+  // [DEPRECATED] use mosaic_shopping_instructions instead
+  // perfect order shopping instruction
+  repeated InstructionsV3 instructions_v3 = 10;
+  // mosaic shopping instructions(multiple pages supported)
+  repeated lego.response.v1.LegoPageResponse mosaic_shopping_instructions = 11;
+  // tasks requested
+  repeated TaskRequested tasks_requested = 12;
+}
+
+// Shopping Tabs to be displayed on the shopping list page
+message ShoppingTab {
+  // Unique key to specify the shopping tab
+  string key = 1;
+  // Title for the shopping tab, e.g: To shop, Done
+  string title = 2;
+  // Pick statuses belong to the shopping tab
+  repeated ItemPicked.PickStatus pick_statuses = 3;
+}
+
+// Pay for Performance instructions to be displayed
+message PayForPerformance {
+  // All headers should be put in here
+  message Header {
+    // Title - Get an extra reward for high quality shopping
+    string title = 1;
+    // Subtitle - Meet the following criteria while shopping for this order to get an extra reward
+    string subtitle = 2;
+  }
+  // All body content should be put in here
+  message Body {
+    // Tip message sub text - for customized fonts (default bold)
+    message TipMessageSubText {
+      // customized font start index
+      int64 start_index = 1;
+      // customized fonts length
+      int64 length = 2;
+    }
+    // Instruction bullet points
+    repeated string bullet_points = 1;
+    // Tip message - Get an extra reward for high quality shopping
+    string tip_message = 2;
+    // Tip message sub text - for customized fonts (default bold)
+    repeated TipMessageSubText tip_message_sub_text = 3;
+  }
+  // All footer content should be put in here
+  message Footer {
+    // dismiss button text
+    string dismiss_message = 1;
+  }
+  // Header
+  Header header = 1;
+  // Body
+  Body body = 2;
+  // Body
+  Footer footer = 3;
+}
+
+// workflow metadata
+message Workflow {
+  // types of supported workflows
+  enum Type {
+    // unsupported
+    TYPE_UNSPECIFIED = 0;
+    // checkout workflow
+    TYPE_CHECKOUT = 1;
+  }
+  // workflow id
+  string id = 1;
+  // workflow type
+  Type type = 2;
+}
+
+// data for instructions to be displayed at checkout, copies baked in on client side
+message CheckoutInstruction {
+  // types of supported checkout instructions
+  enum InstructionType {
+    // unsupported
+    INSTRUCTION_TYPE_UNSPECIFIED = 0;
+    // checkout barcode type instruction
+    INSTRUCTION_TYPE_CHECKOUT_BARCODE = 1;
+    // loyalty number type instruction
+    INSTRUCTION_TYPE_LOYALTY_AND_TAX_EXEMPTION = 2;
+    // receipt action instruction
+    INSTRUCTION_TYPE_RECEIPT_BARCODE_SCAN = 3;
+    // group by temperature instruction
+    INSTRUCTION_TYPE_GROUP_BY_TEMPERATURE = 4;
+    // prevent self checkout instruction
+    INSTRUCTION_TYPE_PREVENT_SELF_CHECKOUT = 5;
+    // save the payment receipt instruction
+    INSTRUCTION_TYPE_KEEP_RECEIPT = 6;
+  }
+  // types of supported barcodes.
+  enum BarcodeType {
+    // unsupported
+    BARCODE_TYPE_UNSPECIFIED = 0;
+    // barcode type barcode
+    BARCODE_TYPE_BARCODE = 1;
+    // barcode type QR code
+    BARCODE_TYPE_QR_CODE = 2;
+  }
+  // possible receipt steps
+  enum ReceiptAction {
+    // unspecified
+    RECEIPT_ACTION_UNSPECIFIED = 0;
+    // scan barcode
+    RECEIPT_ACTION_BARCODE_SCAN = 1;
+    // capture images
+    RECEIPT_ACTION_IMAGE_CAPTURE = 2;
+  }
+  // type of the instruction
+  InstructionType instruction_type = 1;
+  // data field of the instruction
+  oneof code {
+    // barcode to scan at checkout
+    string checkout_barcode = 2;
+    // loyalty number to input for order
+    string loyalty_number = 3;
+  }
+  // list of allowed barcode formats for a paper receipt scan on post-checkout
+  repeated string allowed_receipt_barcode_formats = 4;
+  // the title to show on the screen
+  string title = 5;
+  // the description to show on the screen
+  string description = 6;
+  // the label of the primary action button
+  string primary_action_title = 7;
+  // type of the barcode
+  BarcodeType barcode_type = 8;
+  // Send description to be displayed below barcode (barcode text value)
+  google.protobuf.StringValue footer = 9;
+  // if checkout instruction type is INSTRUCTION_TYPE_RECEIPT_BARCODE_SCAN, then do specified receipt step
+  ReceiptAction receipt_action = 10;
+  // delivery uuid
+  string delivery_uuid = 11;
+}
+
+// Details for the modal that hides/shows the shopping timer
+message ShoppingTimerModalInfo {
+  // All header content should be put in here
+  message Header {
+    // Title of the modal
+    string title = 1;
+  }
+  // All body content should be put in here
+  message Body {
+    // Description text for the modal
+    string description = 1;
+    // Text for the hide/show toggle
+    string hide_show_toggle_text = 2;
+  }
+  // All footer content should be put in here
+  message Footer {
+    // Text of button to dismiss the modal
+    string dismiss_text = 1;
+    // Text to display when the timer is turned off
+    string timer_off_text = 2;
+  }
+  // Header
+  Header header = 1;
+  // Body
+  Body body = 2;
+  // Footer
+  Footer footer = 3;
+}
+
+// Request payload for UpdateItemPickStatus
+message UpdateItemPickStatusRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+  // pick result for item
+  ItemPicked item_picked = 2;
+}
+
+// Response to UpdateItemPickStatus
+message UpdateItemPickStatusResponse {}
+
+// Stores the pick result for each item in the pick list
+message ItemPicked {
+  // supported pick statuses
+  enum PickStatus {
+    //  not supported
+    PICK_STATUS_UNSPECIFIED = 0;
+    //  mark item as picked
+    //  required fields: delivery_uuid, order_item_uuid, picked_quantity
+    PICK_STATUS_PICKED = 1;
+    //  mark item as refunded
+    //  required fields: delivery_uuid, order_item_uuid
+    PICK_STATUS_REFUNDED = 2;
+    //  marks item as substituted.
+    //  required fields: delivery_uuid, order_item_uuid, substitute_menu_item_id, picked_quantity
+    PICK_STATUS_SUBSTITUTED = 3;
+    //  notifies the Cx to select a sub/refund
+    //  required fields: delivery_uuid, order_item_uuid
+    PICK_STATUS_REVIEW_SUBS = 4;
+    //  the Dx indicated the item was unavailable, but could still choose a substitute
+    PICK_STATUS_SUBS_PENDING = 5;
+    //  the Dx indicated the item was available, but has not yet submitted weight information
+    PICK_STATUS_WEIGHT_PENDING = 6;
+    //  the Cx has submitted subs and they are all unavailable, waiting for customer message
+    PICK_STATUS_SUBS_UNAVAILABLE = 7;
+    //  the Cx has selected a substitute via frictionless comms
+    PICK_STATUS_SUBS_SUBMITTED = 8;
+    //  the Dx indicated the item was unavailable, and is awaiting Cx input
+    PICK_STATUS_FRICTIONLESS_SUBS_PENDING = 9;
+    // Dx added a new item to shopping list, pending for picking the item
+    PICK_STATUS_DX_ADDED_PENDING = 10;
+    // Dx picked the new item added by Dx
+    PICK_STATUS_DX_ADDED_PICKED = 11;
+    //  notifies the Cx to review the picture of the shelf and chat with Dx
+    //  required fields: delivery_uuid, order_item_uuid
+    PICK_STATUS_REVIEW_SUBS_PICTURE = 12;
+  }
+  // retail db order item uuid
+  string order_item_uuid = 1;
+  // store item uuid of substitution item
+  string substituted_item_uuid = 2;
+  // picked quantity info of original/substitute item
+  QuantityInfoV2 picked_quantity = 3;
+  // item pick status
+  PickStatus pick_status = 4;
+  // merchant supplied id of substitution item
+  common.v1.Identifier substitution_item_msid = 5;
+  // substitution type of picked sub
+  SubstitutionType substitution_type = 6;
+  // merchant supplied id of original item
+  common.v1.Identifier original_item_msid = 7;
+  // Information about the number of items in the order and their status
+  OrderPickCountInfo order_pick_count_info = 8;
+}
+
+// Information about the number of items in the order and their status
+message OrderPickCountInfo {
+  // Number of items in the order (if the order is batched, this is the number of items in one of the orders)
+  google.protobuf.Int32Value item_count = 1;
+  // Number of items that the Dx has not yet tried to pick
+  google.protobuf.Int32Value items_pending_pick_count = 2;
+  // Number of items that have a pending sub including this item
+  google.protobuf.Int32Value pending_subs_count = 3;
+}
+
+// substitution type
+enum SubstitutionType {
+  // substitution type unspecified
+  SUBSTITUTION_TYPE_UNSPECIFIED = 0;
+  // substitution type cx approved
+  SUBSTITUTION_TYPE_CX_APPROVED = 1;
+  // substitution type doordash choice
+  SUBSTITUTION_TYPE_DOORDASH_CHOICE = 2;
+  // substitution type for a specific sub item under generic category
+  SUBSTITUTION_TYPE_GENERIC_CATEGORY_SUB_ITEM = 3;
+  // substitution type for any item under generic category
+  SUBSTITUTION_TYPE_GENERIC_CATEGORY_ANY = 4;
+  // substitution type for item searched & selected for substituting
+  SUBSTITUTION_TYPE_MANUAL_SUB_SEARCH = 5;
+  // substitution type for item manually scanned & selected for substituting
+  SUBSTITUTION_TYPE_MANUAL_SUB_SCAN = 6;
+  // substitution type when dx adds this item after barcode scanning failure
+  // and choosing "I have the right item" option
+  SUBSTITUTION_TYPE_MANUAL_SUB_WRONG_ITEM_SCAN = 7;
+  // substitution type for a substitution item that came as a recommendation from the merchant
+  SUBSTITUTION_TYPE_MX_RECOMMENDED = 8;
+}
+
+// indicates which label should be set on the sub
+enum SubstitutionLabel {
+  // not supported or no label
+  SUBSTITUTION_LABEL_UNSPECIFIED = 0;
+  // marks if the sub needs to show doordash choice tag
+  SUBSTITUTION_LABEL_DOORDASH_CHOICE = 1;
+}
+
+// Request for FinishPickOrder
+message FinishPickOrderRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+  // List of items that were actually picked with their pick result, this will override UpdateItemPickStatusRequest
+  repeated ItemPicked items_picked = 2;
+  // idempotency key
+  string idempotency_key = 3;
+  // Shopping Timer - Actual Shopping Time
+  int64 actual_shopping_time = 4;
+  // Flag if dasher contacted customer or not
+  bool has_contacted_customer = 5;
+}
+
+// Response for FinishPickOrder
+message FinishPickOrderResponse {
+  // if order should be cancelled
+  bool should_cancel = 1;
+  // Pay For Performance details
+  PayForPerformance pay_for_performance = 2;
+  // lego page response for high risk order cancellation
+  lego.response.v1.LegoPageResponse lego_page_response = 3;
+}
+
+// Request payload for FinishPickBatchOrders API
+message FinishPickBatchOrdersRequest {
+  // list of delivery uuids
+  repeated FinishPickOrderRequest batches = 1;
+}
+
+// Response for FinishPickBatchOrders API
+message FinishPickBatchOrdersResponse {
+  // list of delivery uuids
+  repeated FinishPickOrderResponse batches = 1;
+}
+
+// A group of order items
+message OrderItemGroup {
+  // Unique UUID to identify the group
+  string group_uuid = 1;
+  // Name of group
+  string name = 2;
+  // Sort ordering of the group to display on the client. Sort in ascending order.
+  int32 sort_order = 3;
+  // Subtitle displayed on header for the special requests group on the shopping list page
+  google.protobuf.StringValue subtitle = 4;
+  // Info button icon for Dx education bottom modal about special requests and prohibited items
+  InfoButton info_button = 5;
+}
+
+// Info button icon
+message InfoButton {
+  // Mosaic response for page
+  lego.response.v1.LegoPageResponse lego_page_response = 1;
+  // Action used when button is clicked
+  action_catalog.dx.v1.DxAction lego_action = 2;
+  // Attributes of the icon
+  component_catalog.dx.common.v1.PrismIcon button_icon = 3;
+}
+
+// Represents an item in a customer's order, along with it's category and possible substitutions
+message ItemRequested {
+  // OrderItemUuid from retail DB order_items table
+  string uuid = 1;
+  // Name to be displayed for this particular item
+  string name = 2;
+  // L1 category for grouping
+  string category = 3;
+  // Image url for this order item
+  string image_url = 4;
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 5;
+  // Quantity requested by the consumer
+  QuantityInfoV2 quantity_requested = 6;
+  // Unit for purchased item
+  FulfillmentUnit unit_requested = 7;
+  // Unit for fulfilled item
+  FulfillmentUnit unit_fulfilled = 8;
+  // Price for this item
+  money.MonetaryFields price_fulfilled = 9;
+  // approximate fulfillment quantity
+  double approximate_fulfill_quantity = 10;
+  // List of eligible substitutions for this particular cx and order item
+  repeated OrderItemEligibleSubstitution eligible_substitutions = 11;
+  // Sort ordering to display in the client within each group. Sort in ascending order.
+  int32 sort_order = 12;
+  // Substitution preference selected for the given item.
+  SubstitutionStatus substitution_status = 13;
+  // Group of item
+  string group_uuid = 14;
+  // Minimum fulfill quantity
+  double min_fulfillment_quantity = 15;
+  // Maximum fulfill quantity
+  double max_fulfillment_quantity = 16;
+  // Enable pick accuracy flow for this item
+  bool enable_barcode_verification = 17;
+
+  // Status for what kind of substitution option the consumer selected.
+  enum SubstitutionStatus {
+    // Unspecified Substitution Status
+    SUBSTITUTION_STATUS_UNSPECIFIED = 0;
+    // Consumer requested to be contacted
+    SUBSTITUTION_STATUS_CONTACT_CUSTOMER = 1;
+    // Consumer requested to be refunded
+    SUBSTITUTION_STATUS_REFUND_CUSTOMER = 2;
+    // Consumer requested to substitute with a known in-catalog item
+    SUBSTITUTION_STATUS_SELECT_SUBSTITUTION = 3;
+    // Substitution Status for Frictionless Comms
+    SUBSTITUTION_STATUS_FRICTIONLESS_COMMS = 4;
+    // if substitutions are doordash recommended
+    SUBSTITUTION_STATUS_DOORDASH_CHOICE = 5;
+    // if substitutions are doordash recommended
+    SUBSTITUTION_STATUS_GENERIC_CATEGORY = 6;
+    // if substitutions are merchant recommended
+    SUBSTITUTION_STATUS_MX_RECOMMENDED = 7;
+  }
+
+  // Location information of this order item
+  LocationInfo location_info = 18;
+
+  // Business merchant supplied id
+  string merchant_supplied_id = 19;
+
+  // List of item attributes used for item-level dasher instructions
+  repeated ItemAttribute item_attributes = 20;
+
+  // item store location, with info like aisle, l1, etc
+  string item_store_location = 21;
+
+  // item level instructions from customer - currently Drive orders only
+  google.protobuf.StringValue special_instructions = 22;
+
+  // Order version ID, for DYF items expected to be higher than the original items
+  common.v1.Identifier order_version = 23;
+
+  // flag for asking dx to send photo of picked item
+  bool is_photo_requested = 24;
+
+  // short description of the item: $12/lbs PLU # 123
+  google.protobuf.StringValue description_label = 25;
+
+  // item note from customer or other sources
+  ItemNote item_note = 26;
+
+  // Surface item addition details - source, show_source_tag
+  OrderItemDyfAdditionDetails dyf_addition_details = 27;
+
+  // Contains info necessary to build the item scanner
+  ScanningConfig scanning_config = 28;
+
+  // [DEPRECATED] Education photo prompt metaData
+  EducationPhotoPromptMetaData education_photo_prompt_meta_data = 29;
+
+  // Item level metadata like 'plu_codes'
+  repeated ItemMetadata item_metadata = 30;
+
+  // Scan Prompt
+  ScanPrompt scan_prompt = 31;
+
+  // Picking Flow
+  PickingFlow picking_flow = 32;
+
+  // Field used to indicate that an item is a special request
+  google.protobuf.BoolValue is_special_request = 33;
+}
+
+// Item metadata related to the item
+message ItemMetadata {
+  // item metadata key, e.g. "plu_codes"
+  google.protobuf.StringValue key = 1;
+
+  // item metadata value, e.g. "1234,5678,9645"
+  google.protobuf.StringValue value = 2;
+}
+
+// Config to contain info for item scanning
+message ScanningConfig {
+  // Type of item being scanned
+  enum ScanType {
+    // Fallback value
+    SCAN_TYPE_UNSPECIFIED = 0;
+    // Meat & Fish
+    SCAN_TYPE_MEAT_AND_FISH = 1;
+    // Produce Items
+    SCAN_TYPE_PRODUCE = 2;
+    // Consumer Packaged Goods
+    SCAN_TYPE_CPG = 3;
+  }
+
+  // config values to be sent for over for client
+  message ConfigValues {
+    // used for expiration date OCR scanning
+    google.protobuf.BoolValue expiration_date_should_use_ocr = 1;
+  }
+
+  // ScanType
+  ScanType scan_type = 1;
+  // Config info
+  ConfigValues config_values = 2;
+}
+
+// Note about the item from customer or other sources
+message ItemNote {
+  // Text of the note
+  component_catalog.dx.nv.common.v1.PrismText text = 1;
+  // Leading icon of the note
+  Icon icon = 2;
+}
+
+// icon to display on the button
+message Icon {
+  // the name of the icon
+  google.protobuf.StringValue name = 1;
+  // the color of the icon
+  google.protobuf.StringValue color = 2;
+  // the size of the icon
+  google.protobuf.Int32Value size = 3;
+}
+
+// Represents an item attribute used for item-level dasher instructions
+message ItemAttribute {
+  // item attribute name, e.g. "brand"
+  google.protobuf.StringValue attribute_name = 1;
+
+  // item attribute value, e.g. "Dior"
+  google.protobuf.StringValue attribute_value = 2;
+}
+
+// A possible substitution for a given order item
+message OrderItemEligibleSubstitution {
+  // StoreItemUuid from retail DB store_items table
+  string uuid = 1;
+  // Item name to display
+  string name = 2;
+  // Image url for this substitution
+  string image_url = 3;
+  // Price for this particular substitution
+  money.MonetaryFields price = 4;
+  // continuous Unit of item
+  FulfillmentUnit unit = 5;
+  // quantity info for fulfilled item
+  QuantityInfoV2 quantity_requested = 6;
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 7;
+  // discrete Unit of item
+  FulfillmentUnit unit_requested = 8;
+  // Enable pick accuracy/item scanning flow for this item
+  bool enable_barcode_verification = 9;
+  // type of substitution
+  SubstitutionType substitution_type = 10;
+  // merchant supplied id of substitution
+  google.protobuf.StringValue merchant_supplied_id = 11;
+  // label to show on the substitution
+  SubstitutionLabel substitution_label = 12;
+  // Error modal if this searched item is selected by Dx
+  ErrorModal error_modal = 13;
+  // Contains info necessary to build the item scanner for substitutions
+  ScanningConfig scanning_config = 14;
+  // List of item attributes used for item-level dasher instructions
+  repeated ItemAttribute item_attributes = 15;
+  // Item level metadata like 'plu_codes'
+  repeated ItemMetadata item_metadata = 16;
+  // Picking Flow
+  PickingFlow picking_flow = 17;
+}
+
+// Fulfillment Unit to determine pick type
+enum FulfillmentUnit {
+  // UNSPECIFIED
+  FULFILLMENT_UNIT_FIXED_PACKAGE_UNSPECIFIED = 0;
+  // each
+  FULFILLMENT_UNIT_FIXED_PACKAGE_EACH = 1;
+  // package
+  FULFILLMENT_UNIT_FIXED_PACKAGE_PACKAGE = 2;
+  // loose package Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_LBS = 10;
+  // loose package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_OZ = 11;
+  // loose package Measurement by KG (kg)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_KG = 12;
+  // loose package Measurement by Gram (g)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_GRAM = 13;
+  // pre packaged Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_LBS = 20;
+  // pre package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_OZ = 21;
+  // pre package Measurement by KG (kg)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_KG = 22;
+  // pre package Measurement by Gram (g)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_GRAM = 23;
+}
+
+// Request payload for the Get Item By Barcode API
+message GetItemByBarcodeRequest {
+  reserved 7;
+  //Use case to differentiate request type
+  enum UseCase {
+    //UNSPECIFIED
+    USE_CASE_UNSPECIFIED = 0;
+    //  Manual Substitution Scanning Workflow
+    USE_CASE_SUBSTITUTION_ITEM_SCANNING = 1;
+    //  Core Item Scanning Workflow
+    USE_CASE_ORIGINAL_ITEM_SCANNING = 2;
+    //  Cx Pre-approved Substitution Workflow
+    USE_CASE_PRE_APPROVED_SUBSTITUTION_ITEM_SCANNING = 3;
+    //  Manual Substitution - Search Substitution Scanning Workflow
+    USE_CASE_DX_SEARCH_SUBS_ITEM_SCANNING = 4;
+    //  When Cx selects "Any similar whole milk" and Dx scans a recommended specific SKU
+    USE_CASE_GENERIC_SUBS_SKU_SCANNING = 5;
+    //  When Cx selects "Any similar whole milk" and Dx scans an unknown item
+    USE_CASE_GENERIC_SUBS_ANY_ITEM_SCANNING = 6;
+    reserved 7;
+    reserved "USE_CASE_DX_DYF_ITEM_ADDITION_SCANNING";
+  }
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // Barcode String
+  string barcode = 2;
+  // Original item's orderItemUuid from retail DB order_items table
+  string original_item_uuid = 3;
+  // Type of the barcode
+  string barcode_type = 4;
+  // Use case of request originator
+  UseCase use_case = 5;
+  // pre-approved substitution's StoreItemUuid from retail DB store_items table
+  google.protobuf.StringValue sub_store_item_uuid = 6;
+  // pre-approved substitution's item msid
+  google.protobuf.StringValue sub_item_msid = 8;
+  // OCR item expiry date
+  google.protobuf.StringValue ocr_item_expiry_date = 9;
+}
+
+// Response payload for the Get Item by Barcode API
+message GetItemByBarcodeResponse {
+  // Scanned store item that matched the barcode.
+  ScannedItem scanned_item = 1;
+  // Check whether the scanned item is the same as the passed-in original item or not
+  bool is_same_item = 2;
+  // Original item msid
+  google.protobuf.StringValue original_item_msid = 3;
+  // Lego page response (stores lego for barcode scanning fail/success UIs)
+  lego.response.v1.LegoPageResponse lego_page = 4;
+  // Error status
+  GetItemByBarcodeErrorCase error_case = 5;
+  // Error modal response
+  ErrorModal error_modal = 6;
+
+  // Error statuses for GetItemByBarcode
+  enum GetItemByBarcodeErrorCase {
+    // Unspecified
+    GET_ITEM_BY_BARCODE_ERROR_CASE_UNSPECIFIED = 0;
+    // Scanned sub item is too expensive
+    GET_ITEM_BY_BARCODE_ERROR_CASE_SUB_ITEM_EXPENSIVE = 1;
+    // Scanned sub item category does not match what was requested by customer
+    GET_ITEM_BY_BARCODE_ERROR_CASE_SUB_ITEM_CATEGORY_MISMATCH = 2;
+  }
+}
+
+// Request payload for the Get Item By Barcode API
+message GetItemByBarcodeForNewItemAdditionRequest {
+  reserved "original_searched_item_msid";
+  reserved 7;
+  //Use case to differentiate request type
+  enum UseCase {
+    //UNSPECIFIED
+    USE_CASE_UNSPECIFIED = 0;
+    // In DYF feature, when Dx scans an item to add a net new item to shopping list after Cx requests for it
+    USE_CASE_DX_DYF_ITEM_ADDITION_SCANNING = 1;
+    // This usecase is special scenario used for meat pack (multi-scan) type for which individual packs are scanned and dx is asked to enter exact weight for each individual pack.
+    // The usecase is supposed to be used in subsequent request after initial scan (DX_DYF_ITEM_ADDITION_SCANNING) from Dx. The initial scan response will ask Dx to input quantity requested (unit count)
+    // Basically this is like a replay of scan item barcode request (no actual scan involved) but with discrete_quantity in request in order to get lego page group to scan meat packs and input weight one-by-one
+    USE_CASE_DX_DYF_ITEM_ADDITION_SCAN_WITH_QUANTITY = 2;
+    // This is used to check whether the  reference item msid matches with scanned item or not
+    // With this usecase, reference_item_msid is required
+    USE_CASE_DX_DYF_SAME_ITEM_CHECK_SCAN = 3;
+    // In RaS (Request a SKU) feature, when Dx scan a special Cx requested SKU to fulfill it regardless if it is in store catalog or not
+    USE_CASE_DX_RAS_ITEM_SCAN = 4;
+  }
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // Barcode String
+  string barcode = 2;
+  // Type of the barcode
+  string barcode_type = 3;
+  // Use case of request originator
+  UseCase use_case = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // OCR item expiry date
+  google.protobuf.StringValue ocr_item_expiry_date = 5;
+  // Discrete quantity / units requested by Cx
+  google.protobuf.Int32Value discrete_quantity = 6;
+  // Merchant supplied ID of an item which will be compared against the scanned item for same item check
+  google.protobuf.StringValue reference_item_msid = 8;
+}
+
+// Response payload for the Get Item by Barcode API for dx item addition
+message GetItemByBarcodeForNewItemAdditionResponse {
+  // Scanned store item that matched the barcode.
+  ScannedNewItemForAddition scanned_item = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Lego page response (stores lego for barcode scanning fail/success UIs)
+  lego.response.v1.LegoPageResponse lego_page = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // error modal
+  ErrorModalV2 error_modal_v2 = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Check whether the scanned item is the same as the passed-in original item or not
+  google.protobuf.BoolValue is_same_item = 4;
+}
+
+// Request payload for the Get Item By Plu API
+message GetItemByPluRequest {
+  // Use case to differentiate request type
+  enum UseCase {
+    //UNSPECIFIED
+    USE_CASE_UNSPECIFIED = 0;
+    //  Manual Substitution Scanning Workflow
+    USE_CASE_SUBSTITUTION_ITEM_SCANNING = 1;
+    //  Core Item Scanning Workflow
+    USE_CASE_ORIGINAL_ITEM_SCANNING = 2;
+    //  Cx Pre-approved Substitution Workflow
+    USE_CASE_PRE_APPROVED_SUBSTITUTION_ITEM_SCANNING = 3;
+    //  Manual Substitution - Search Substitution Scanning Workflow
+    USE_CASE_DX_SEARCH_SUBS_ITEM_SCANNING = 4;
+    // Manual PLU Entry Workflow
+    USE_CASE_MANUAL_PLU_ENTRY = 5;
+    //  When Cx selects "Any similar whole milk" and Dx scans a recommended specific SKU
+    USE_CASE_GENERIC_SUBS_SKU_SCANNING = 6;
+    //  When Cx selects "Any similar whole milk" and Dx scans an unknown item
+    USE_CASE_GENERIC_SUBS_ANY_ITEM_SCANNING = 7;
+  }
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // PLU String
+  string price_lookup_code = 2;
+  // Original item's orderItemUuid from retail DB order_items table
+  string original_item_uuid = 3;
+  // Use case of request originator
+  UseCase use_case = 4;
+  // pre-approved substitution's item msid
+  google.protobuf.StringValue sub_item_msid = 5;
+}
+
+// Response payload for the Get Item by Plu API
+message GetItemByPluResponse {
+  // Store item that matched the plu entered.
+  ScannedItem requested_item = 1;
+  // Check whether the item is same as the passed-in original item or not
+  bool is_same_item = 2;
+  // Original item msid
+  google.protobuf.StringValue original_item_msid = 3;
+  // Lego page response (stores lego for plu entry fail/success UIs)
+  lego.response.v1.LegoPageResponse lego_page = 4;
+}
+
+// Represents an item in a customer's order, along with it's category and possible substitutions
+message ScannedItem {
+  // External merchant supplied id
+  string merchant_supplied_id = 1;
+
+  // Name to be displayed for this particular item
+  string name = 2;
+
+  // Quantity requested by the consumer
+  QuantityInfoV2 quantity_requested = 3;
+
+  // L1 category for grouping
+  string category = 4;
+
+  // Image url for this order item
+  string image_url = 5;
+
+  // Price for this item, must be specified for freehand substitutions
+  money.MonetaryFields price = 6;
+
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 7;
+
+  // Unit for purchased item
+  FulfillmentUnit unit = 8;
+
+  // Unit for fulfilled item
+  FulfillmentUnit unit_fulfilled = 9;
+
+  // fulfill price of item
+  money.MonetaryFields price_fulfilled = 10;
+
+  // approximate fulfillment quantity
+  double approximate_unit_weight = 11;
+
+  // StoreItemUuid from retail DB store_items table
+  google.protobuf.StringValue uuid = 12;
+
+  // estimated weight based on the barcode embedded price and per unit price for a WI
+  google.protobuf.DoubleValue estimated_weight = 13;
+
+  // when scanning use case is original item scanning and scanning fails,
+  // substitution type if the item will be picked as a substitution by Dx
+  SubstitutionType substitution_type = 14;
+
+  // scanning config for native ui
+  ScanningConfig scanning_config = 15;
+}
+
+// Represents an item which was scanned by Dx in order to add it to the shopping list
+message ScannedNewItemForAddition {
+  // External merchant supplied id
+  string merchant_supplied_id = 1;
+
+  // Name to be displayed for this particular item
+  string name = 2;
+
+  // Quantity info that instructs min and max of quantity that Dx can fulfill
+  QuantityInfoV2 fulfillable_quantity = 3;
+
+  // L1 category
+  string category = 4;
+
+  // Image url for this order item
+  string image_url = 5;
+
+  // Price for this item
+  money.MonetaryFields price = 6;
+
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 7;
+
+  // estimated weight based on the barcode embedded price and per unit price for a WI
+  google.protobuf.DoubleValue estimated_weight = 8;
+
+  // Unit for scanned item
+  FulfillmentUnit unit = 9;
+}
+
+// Represents location information of an item
+message LocationInfo {
+  // X coordinate of the location
+  double location_x = 1;
+  // Y coordinate of the location
+  double location_y = 2;
+}
+
+// Request payload for Get Shopping Time API
+message GetShoppingTimeRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+}
+
+// Response to Get Shopping Time API
+message GetShoppingTimeResponse {
+  // Expected Shopping Time
+  int64 expected_shopping_time = 1;
+  // Actual Shopping Time
+  int64 actual_shopping_time = 2;
+  // Average Shopping Time Per Item
+  int64 average_shopping_time_per_item = 3;
+  // Flag for CnG order
+  bool is_dsd_order = 4;
+}
+
+// Gets fulfilled order items for Drive
+message GetFulfilledOrderItemsRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+}
+
+// Response for GetFulfilledOrderItems
+message GetFulfilledOrderItemsResponse {
+  // list of fulfilled order items
+  repeated FulfilledOrderItem fulfilled_order_items = 1;
+}
+
+// Fulfilled Order Item (with picked quantity, etc)
+message FulfilledOrderItem {
+  // Name to be displayed
+  string name = 1;
+  // picked quantity info
+  QuantityInfoV2 picked_quantity = 2;
+  // unit for weighted items (e.g lbs, kg, oz, g)
+  ContinuousQuantityUnit weight_unit = 3;
+  // current item merchant supplied id (can be original item or substituted item)
+  string merchant_supplied_id = 4;
+  // original item merchant supplied id (non-null when fulfilled item is a substituted item)
+  google.protobuf.StringValue original_merchant_supplied_id = 5;
+  // Used for segmented pick - instance_id is 1-1 with original item
+  oneof instance_id {
+    // instance_id of original item for when fulfilled item is original item
+    google.protobuf.StringValue merchant_supplied_instance_id = 6;
+    // instance_id of original item for when fulfilled item is a substituted item
+    google.protobuf.StringValue original_merchant_supplied_instance_id = 7;
+  }
+  // substitution source for a substitution, null if no substitution
+  SubstitutionSource substitution_source = 8;
+  // scanned_code, null if dasher failed to scan
+  .doordash.retail.catalog.v1.Barcode scanned_barcode = 9;
+  // final price for item (Best effort from OCA Preview), return 0 on OCA Preview failure
+  money.MonetaryFields final_price = 10;
+  // Indicates the source of the new item added after order is checked out
+  AdditionSource addition_source = 11;
+  // unique order item id from order service to distinguish items with the same msid
+  google.protobuf.Int64Value dd_order_item_id = 12;
+  // pick status of the item
+  ItemPicked.PickStatus pick_status = 13;
+
+  // source of substitutions
+  enum SubstitutionSource {
+    // Substitution was not chosen by customer directly
+    SUBSTITUTION_SOURCE_UNSPECIFIED = 0;
+    // Substitution was chosen by customer specifically as part of CreatePickPack
+    SUBSTITUTION_SOURCE_CUSTOMER = 1;
+    // No Substitution for this item
+    SUBSTITUTION_SOURCE_NO_SUB = 2;
+    // Substitution was recommended by the merchant as part of CreatePickPack
+    SUBSTITUTION_SOURCE_MERCHANT = 3;
+  }
+
+  // source of item addition (DYF)
+  enum AdditionSource {
+    // Used for items which were not added in post-checkout
+    ADDITION_SOURCE_UNSPECIFIED = 0;
+    // Cx added the item
+    ADDITION_SOURCE_CUSTOMER = 1;
+    // Dasher addded the item
+    ADDITION_SOURCE_DASHER = 2;
+  }
+}
+
+// Request for GetStagedContainers
+message GetStagedContainersRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+}
+
+// Request for GetPendingSubs
+message GetPendingSubsItemsRequest {
+  // delivery uuid of order
+  string delivery_uuid = 1;
+}
+
+// Response for GetPendingSubs
+message GetPendingSubsItemsResponse {
+  // list of pending subs items
+  repeated ItemPendingSubs items_pending_subs = 1;
+}
+
+// Represents an item in a customer's order, along with it's category and possible substitutions
+message ItemPendingSubs {
+  // OrderItemUuid from retail DB order_items table
+  string uuid = 1;
+  // Name to be displayed for this particular item
+  string name = 2;
+  // Image url for this order item
+  string image_url = 3;
+  // Quantity requested by the consumer
+  QuantityInfoV2 quantity_requested = 4;
+  // Unit for purchased item
+  FulfillmentUnit unit_requested = 5;
+}
+
+// Response for GetStagedContainers
+message GetStagedContainersResponse {
+  // Delivery identifier
+  string delivery_id = 1;
+  // Delivery identifier UUID
+  string delivery_uuid = 2;
+  // staged container entries
+  repeated StagedContainer containers = 3;
+}
+
+// Staged Container details
+message StagedContainer {
+  // OrderNumber+BagCode found on the barcode of each container
+  google.protobuf.StringValue external_id = 1;
+  // Shelf Id the dasher selected when placing the container
+  google.protobuf.StringValue external_location_id = 2;
+  // The temperature zone corresponding to the shelf id
+  google.protobuf.StringValue external_zone_id = 3;
+}
+
+// Complete staging request
+message CompleteStagingRequest {
+  // Delivery identifier
+  string delivery_uuid = 1;
+  // staged container entries
+  repeated StagedContainer containers = 2;
+}
+
+// Complete Staging Response
+message CompleteStagingResponse {}
+
+// Request for GetCheckoutDetails
+message GetCheckoutDetailsRequest {
+  // delivery uuid
+  repeated string delivery_uuid = 1;
+}
+
+// Response for GetCheckoutDetails
+message GetCheckoutDetailsResponse {
+  // List of checkout instructions for orders.
+  repeated OrderCheckoutDetails order_checkout_details = 2;
+}
+
+// Order Checkout Details.
+message OrderCheckoutDetails {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // List of checkout instructions for the delivery
+  repeated CheckoutInstruction checkout_instructions = 2;
+}
+
+// Request for GetCheckoutFlow
+message GetCheckoutFlowRequest {
+  // a version to potentially change to other presentation methods
+  string version = 1;
+  // delivery uuid
+  repeated string delivery_uuid = 2;
+}
+
+// Response for GetCheckoutFlow
+message GetCheckoutFlowResponse {
+  // List of Generic Checkout Flows
+  repeated CheckoutFlow checkout_flows = 1;
+  // optional batch home screen, present if more than 1 delivery (batched orders)
+  BatchHomeScreen batch_home_screen = 2;
+
+  // Batched Order Home Screen
+  message BatchHomeScreen {
+    // order count
+    int32 order_count = 1;
+    // lego page response for the batch home screen
+    lego.response.v1.LegoPageResponse lego_page_response = 2;
+  }
+}
+
+// Generic Checkout Flow
+message CheckoutFlow {
+  // a version to potentially change to other presentation methods
+  // also for FE to validate correct version
+  string version = 1;
+  // delivery uuid associated with this Checkout Flow
+  string delivery_uuid = 2;
+  // the lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse lego_page_response = 3;
+}
+
+// Request for Get Order Details
+message GetBatchOrderDetailsRequest {
+  // [DEPRECATED] Delivery uuid.
+  string delivery_uuid = 1;
+
+  // Delivery UUIDs
+  repeated string delivery_uuids = 2;
+}
+
+// Response for Get Order Details
+message GetBatchOrderDetailsResponse {
+  // order details list
+  repeated OrderDetails order_details = 1;
+}
+
+// Request for get dsd order instructions
+message GetDsdOrderInstructionsRequest {
+  // dasher id
+  int64 dasher_id = 1;
+  // delivery id or delivery uuid
+  common.v1.Identifier delivery_identifier = 2;
+}
+
+// Response for get dsd order instructions
+message GetDsdOrderInstructionsResponse {
+  // is first dsd order for dasher
+  bool is_first_dsd_order = 1;
+  // instruction strings
+  Instructions first_time_dasher_instructions = 2;
+}
+
+// instructions for first time Dx
+message Instructions {
+  // item not found instructions
+  ItemNotFoundInstruction item_not_found_instruction = 1;
+  // add substitution instructions
+  AddSubstitutionInstruction add_substitution_instruction = 2;
+  // taking item shelf photo instructions
+  ItemShelfPhotoInstruction item_shelf_photo_instruction = 3;
+  // wait for consumer response instructions
+  WaitForResponseInstruction wait_for_response_instruction = 4;
+  // choose replacement instructions
+  ChooseReplacementInstruction choose_replacement_instruction = 5;
+  // pending substitutions when shopping is complete instructions
+  ContactCustomerPendingSubstitutionInstruction contact_customer_pending_substitution_instruction = 6;
+  // pending items refunded instructions
+  PendingSubstitutionRefundedInstruction pending_substitution_refunded_instruction = 7;
+}
+
+// item not found instructions
+message ItemNotFoundInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+  // step 1
+  google.protobuf.StringValue step_one = 3;
+  // step 2
+  google.protobuf.StringValue step_two = 4;
+  // step 3
+  google.protobuf.StringValue step_three = 5;
+}
+
+// add substitution instructions
+message AddSubstitutionInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+}
+
+// taking item shelf photo instructions
+message ItemShelfPhotoInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+}
+
+// wait for consumer response instructions
+message WaitForResponseInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+}
+
+// choose replacement instructions
+message ChooseReplacementInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+}
+
+// pending substitutions when shopping is complete instructions
+message ContactCustomerPendingSubstitutionInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+}
+
+// pending items refunded instructions
+message PendingSubstitutionRefundedInstruction {
+  // title
+  google.protobuf.StringValue title = 1;
+  // details
+  google.protobuf.StringValue details = 2;
+}
+
+// Order Details
+message OrderDetails {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // list of order items
+  repeated OrderItem order_items = 2;
+  // string or character assigned to each delivery to aid the dasher
+  // identify an order
+  string order_initials = 3;
+  // color assigned to each batched order to aid the dasher identify an
+  // order.
+  string order_initials_color = 4;
+}
+
+// Order Item
+message OrderItem {
+  // OrderItemUuid from retail DB order_items table
+  string uuid = 1;
+  // Name to be displayed for this particular item
+  string name = 2;
+  // L1 category for grouping
+  string category = 3;
+  // Image url for this order item
+  string image_url = 4;
+  // quantity of the order item, e.g: 1x, 2x
+  string quantity = 5;
+  // weight info for the order item, e.g: Weight: 2.21 lb
+  string weight = 6;
+}
+
+// Request payload for Checkout Barcode API
+message GetCheckoutBarcodeRequest {
+  // Purpose of a checkout barcode
+  enum CheckoutBarcodePurpose {
+    // Unspecified
+    CHECKOUT_BARCODE_PURPOSE_UNSPECIFIED = 0;
+    // Applies loyalty pricing or benefits
+    CHECKOUT_BARCODE_PURPOSE_LOYALTY = 1;
+    // Applies tax exemption
+    CHECKOUT_BARCODE_PURPOSE_TAX_EXEMPTION = 2;
+    // Help Mx to identify this is a DD transaction
+    CHECKOUT_BARCODE_PURPOSE_TRANSACTION_IDENTIFIER = 3;
+  }
+  // Delivery UUID associated with this request
+  string delivery_uuid = 1;
+  // The preferred width in pixels (optional)
+  int32 width = 2;
+  // The preferred height in pixels (optional)
+  int32 height = 3;
+  // Use case of this barcode (optional)
+  CheckoutBarcodePurpose purpose = 4;
+}
+
+// Media type - https://en.wikipedia.org/wiki/Media_type
+enum MediaType {
+  // unknown
+  MEDIA_TYPE_UNSPECIFIED = 0;
+  // image/png
+  MEDIA_TYPE_IMAGE_PNG = 1;
+}
+
+// Response payload for Checkout Barcode API
+message GetCheckoutBarcodeResponse {
+  // Barcode image
+  bytes checkout_barcode_image = 1;
+  // Media type of the image
+  MediaType media_type = 2;
+}
+
+// OCR data
+message OcrData {
+  // Metadata from client side logic
+  message Metadata {
+    // Ocr item expiry date
+    string item_expiry_date = 1;
+    // Ocr item image url
+    string image_file_url = 2;
+  }
+  // OCR text
+  repeated OcrText ocr_text = 1;
+  // Barcode String
+  string barcode = 2;
+  // Original item's orderItemUuid from retail DB order_items table
+  string original_item_uuid = 3;
+  // Type of the barcode
+  string barcode_type = 4;
+  // Delivery id
+  string delivery_id = 5;
+  // Delivery uuid
+  string delivery_uuid = 6;
+  // Additional metadata from client side logic
+  Metadata client_metadata = 7;
+}
+
+// OCR text
+message OcrText {
+  // Text
+  string text = 1;
+  // Bounding box area
+  double bounding_box_area = 2;
+  // Confidence
+  double confidence = 3;
+}
+
+// Request for storing item scan OCR data
+message StoreItemScanOcrDataRequest {
+  // OCR data from item scanner
+  OcrData ocr_data = 1;
+}
+
+// Response for storing item scan OCR data
+message StoreItemScanOcrDataResponse {}
+
+// Close DYF window request
+message CloseDyfWindowRequest {
+  reserved 2;
+  // batch of delivery uuids for which to close DYF window
+  repeated string delivery_uuids = 1;
+}
+
+// Empty response
+message CloseDyfWindowResponse {}
+
+// Proto for json dyf_attributes column in orders table
+message OrderDyfAttributes {
+  // Whether order has dyf items
+  google.protobuf.BoolValue has_dyf_items = 1;
+  // whether dyf window is closed
+  google.protobuf.BoolValue dyf_window_closed = 2;
+  // last processed order version
+  google.protobuf.StringValue order_version = 3;
+  // whether DYF item quantity reduction window has closed (DYF v2 window)
+  google.protobuf.BoolValue dyf_v2_window_closed = 4;
+}
+
+// Proto for json dyf_attributes column in order_items table
+message OrderItemDyfAttributes {
+  // order version id
+  google.protobuf.StringValue order_version = 1;
+}
+
+// Proto for surfacing item addition details
+message OrderItemDyfAdditionDetails {
+  // Indicates the source of item addition into the order
+  .order.OrderAdjustmentSource source = 1;
+  // Flag to decide whether to show source tag on dx app or not
+  google.protobuf.BoolValue show_source_tag = 2;
+}
+
+// Different options that give the ability to Dx or other actors to make order updates
+message OrderAdjustmentOptions {
+  // Is item addition allowed
+  google.protobuf.BoolValue is_item_addition_allowed = 1;
+}
+
+// Proto for in store map navigation details
+message InStoreNavigationDetails {
+  // Delivery UUID
+  string delivery_uuid = 1;
+  // Sequence number to Item location details
+  map<string, ItemLocationDetails> item_location_metadata = 2;
+  // Optimal Path as a list of x,y coordinates
+  repeated LocationCoordinates optimal_path = 3;
+  // In-Store Map Image Details
+  InStoreMapDetails in_store_map_details = 4;
+}
+
+// Dimensions of the image
+message ImageDimensions {
+  // height of the image
+  google.protobuf.StringValue height = 1;
+  // width of the image
+  google.protobuf.StringValue width = 2;
+}
+
+// Defines the x and y location coordinates
+message LocationCoordinates {
+  // x coordinate of a location
+  google.protobuf.StringValue x_coordinate = 1;
+  // y coordinate of a location
+  google.protobuf.StringValue y_coordinate = 2;
+}
+
+// Defines the Item Location Details
+message ItemLocationDetails {
+  // Merchant Supplied Id of the item
+  string merchant_supplied_id = 1;
+  // Location coordinates of the item
+  LocationCoordinates item_location = 2;
+  // Is the order of the item returned successfully from Mx
+  google.protobuf.BoolValue is_success = 3;
+  // Is the item location approximate
+  google.protobuf.BoolValue is_approximate = 4;
+}
+
+// Defines the In-Store Map Details
+message InStoreMapDetails {
+  // Url of the in-store map image
+  google.protobuf.StringValue map_url = 1;
+  // In-Store Map image format
+  MapImageFormat map_format = 2;
+  // Dimensions of the original image
+  ImageDimensions original_image_dimensions = 3;
+  // Position of the origin (0,0) coordinate
+  OriginPosition origin_position = 4;
+}
+
+// Origin position
+enum OriginPosition {
+  // UNSPECIFIED
+  ORIGIN_POSITION_UNSPECIFIED = 0;
+  // top-left
+  ORIGIN_POSITION_TOP_LEFT = 1;
+  // bottom-left
+  ORIGIN_POSITION_BOTTOM_LEFT = 2;
+  // top-right
+  ORIGIN_POSITION_TOP_RIGHT = 3;
+  // bottom-right
+  ORIGIN_POSITION_BOTTOM_RIGHT = 4;
+  // center
+  ORIGIN_POSITION_CENTER = 5;
+}
+
+// Format of the Image URL
+enum MapImageFormat {
+  // UNSPECIFIED
+  MAP_IMAGE_FORMAT_UNSPECIFIED = 0;
+  // svg image format
+  MAP_IMAGE_FORMAT_SVG = 1;
+  // png image format
+  MAP_IMAGE_FORMAT_PNG = 2;
+}
+
+// Generic non-lego error modal config to be used for returning a configuration
+// to display error modal with title, sub_title and actions
+// Prefer using lego response instead of this if your API supports it.
+message ErrorModal {
+  // error key for frontend to identify what type of error it is.
+  // This value can be same as string enum value of error code specific to the API
+  google.protobuf.StringValue error_key = 1;
+  // Localized error title
+  google.protobuf.StringValue title = 2;
+  // Localized error sub title
+  google.protobuf.StringValue sub_title = 3;
+  // Primary action to be shown on error modal
+  ErrorAction primary_action = 4;
+  // Secondary action to be shown on error modal
+  ErrorAction secondary_action = 5;
+
+  // Error modal action configuration
+  message ErrorAction {
+    // key for frontend to configure different behavior for different actions
+    google.protobuf.StringValue action_key = 1;
+    // Localized action button title
+    google.protobuf.StringValue action_title = 2;
+    // action metadata of <key, value>
+    map<string, google.protobuf.Value> action_metadata = 3;
+  }
+}
+
+// Same as ErrorModal but with Struct as metadata for action, to be used in Unified Gateway
+message ErrorModalV2 {
+  // error key for frontend to identify what type of error it is.
+  // This value can be same as string enum value of error code specific to the API
+  google.protobuf.StringValue error_key = 1;
+  // Localized error title
+  google.protobuf.StringValue title = 2;
+  // Localized error sub title
+  google.protobuf.StringValue sub_title = 3;
+  // Primary action to be shown on error modal
+  ErrorAction primary_action = 4;
+  // Secondary action to be shown on error modal
+  ErrorAction secondary_action = 5;
+
+  // Error modal action configuration
+  message ErrorAction {
+    // key for frontend to configure different behavior for different actions
+    google.protobuf.StringValue action_key = 1;
+    // Localized action button title
+    google.protobuf.StringValue action_title = 2;
+    // action metadata
+    google.protobuf.Struct action_metadata = 3;
+  }
+}
+
+// Request For Getting Grocery Pro Info
+message GetGroceryProInfoRequest {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // dasher id
+  google.protobuf.StringValue dasher_id = 2;
+}
+
+// Response For Getting Grocery Pro Info
+message GetGroceryProInfoResponse {
+  // is GroceryPro order (DeliveryOption = GroceryPro)
+  bool is_grocery_pro_order = 1;
+}
+
+// Request for creating red card allowance
+message CreateRedcardAllowanceRequest {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // delivery id
+  string delivery_id = 2;
+}
+
+// Response for creating red card allowance
+message CreateRedcardAllowanceResponse {
+  // whether allowance creation was successful
+  bool allowance_creation_success = 1;
+  // lego actions
+  repeated action_catalog.dx.v1.DxAction actions = 2;
+  // add actions as proto value
+  repeated google.protobuf.Value action = 3;
+}
+
+// Request for uploading fulfillment image
+message UploadFulfillmentImageRequest {
+  // we now reserve barcode_string
+  reserved 5;
+  reserved "barcode_string";
+
+  option deprecated = true;
+  // image source
+  string source = 1;
+  // image raw data
+  string image_raw_data = 2;
+  // delivery uuid
+  string delivery_uuid = 3;
+  // filename with extension, e.g. "abc.png", optional
+  google.protobuf.StringValue filename_with_extension = 4;
+}
+
+// Response for uploading fulfillment image
+message UploadFulfillmentImageResponse {
+  option deprecated = true;
+}
+
+// Request for adjust pick pack order
+message AdjustPickPackOrderRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // items to adjust
+  repeated AdjustItem items = 2;
+}
+
+// items to adjust
+message AdjustItem {
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  // quantity info
+  repeated .common.QuantityInfo fulfill_quantity = 2;
+  // item adjustment type
+  ItemAdjustmentType item_adjustment_type = 3;
+  // Pending order item status
+  ItemPicked.PickStatus pick_status = 4;
+}
+
+// item adjustment type
+enum ItemAdjustmentType {
+  // UNSPECIFIED
+  ITEM_ADJUSTMENT_TYPE_UNSPECIFIED = 0;
+  // add item
+  ITEM_ADJUSTMENT_TYPE_ADD = 1;
+  // remove item
+  ITEM_ADJUSTMENT_TYPE_REMOVE = 2;
+}
+
+// Response for Item adjustment
+message AdjustPickPackOrderResponse {
+  reserved 1;
+  reserved "error_modal";
+  // error modal
+  ErrorModalV2 error_modal_v2 = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Request for searching eligible items
+message SearchEligibleItemsRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // search query
+  google.protobuf.StringValue search_query = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for searching eligible items
+message SearchEligibleItemsResponse {
+  // list of eligible items
+  repeated EligibleItem eligible_items = 1;
+}
+
+// eligible item
+message EligibleItem {
+  // item name
+  google.protobuf.StringValue name = 1;
+  // item image url
+  google.protobuf.StringValue image_url = 2;
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 3;
+}
+
+// Request for getting item by merchant supplied id
+message GetItemByMerchantSuppliedIdRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 2;
+}
+
+// Response for getting item by merchant supplied id
+message GetItemByMerchantSuppliedIdResponse {
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // item name
+  google.protobuf.StringValue name = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // L1 category for grouping
+  google.protobuf.StringValue category = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Image url
+  google.protobuf.StringValue image_url = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // unit
+  FulfillmentUnit unit = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Lego page response for item details page and post scan weight/qty input screens
+  lego.response.v1.LegoPageResponse lego_page = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Error modal response
+  ErrorModalV2 error_modal = 8 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Quantity info that instructs min and max of quantity that Dx can add
+  QuantityInfoV2 fulfillable_quantity = 9 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Request to GetShopperProfile
+message GetShopperProfileRequest {
+  // id of dasher
+  int64 dasher_id = 1;
+  // locale
+  string locale = 2;
+}
+
+// Response to GetShopperProfile
+message GetShopperProfileResponse {
+  // Top Shopper profile
+  ShopperProfile profile = 1;
+}
+
+// Shopper profile
+message ShopperProfile {
+  // Top Shopper title. Example: "Top Rated"
+  google.protobuf.StringValue top_shopper = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Shopper rating
+  google.protobuf.DoubleValue rating = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Description of Dx achievements. Example: "153 deliveries"
+  google.protobuf.StringValue achievements = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Photo url
+  google.protobuf.StringValue photo_url = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// [DEPRECATED] Education photo prompt metadata
+message EducationPhotoPromptMetaData {
+  // Title text
+  string title = 1;
+  // Body text
+  string body = 2;
+  // Primary button text
+  string primary_button_text = 3;
+  // Education photo type
+  EducationPhotoType education_photo_type = 4;
+}
+
+// [DEPRECATED] Education photo type
+enum EducationPhotoType {
+  // UNSPECIFIED
+  EDUCATION_PHOTO_TYPE_UNSPECIFIED = 0;
+  // Shelf education photo
+  EDUCATION_PHOTO_TYPE_SHELF = 1;
+}
+
+// Scan prompt
+message ScanPrompt {
+  // Scan prompt type
+  ScanPromptType scan_prompt_type = 1;
+  // Scan prompt metadata
+  repeated ItemMetadata scan_prompt_metadata = 2;
+}
+
+// Scan prompt type
+enum ScanPromptType {
+  // UNSPECIFIED
+  SCAN_PROMPT_TYPE_UNSPECIFIED = 0;
+  // Shelf photo education scan prompt
+  SCAN_PROMPT_TYPE_EDUCATION_SHELF_PHOTO = 1;
+  // Item location scan prompt
+  SCAN_PROMPT_TYPE_ITEM_LOCATION = 2;
+}
+
+// model for an interlaced task
+message TaskRequested {
+  reserved 2;
+  reserved "task_group_id";
+  // group uuid (for shopping list)
+  google.protobuf.StringValue shopping_list_group_uuid = 1;
+  // task name
+  google.protobuf.StringValue name = 3;
+  // task description
+  google.protobuf.StringValue description = 4;
+  // is optional
+  google.protobuf.BoolValue is_optional = 5;
+  // is dismissible
+  google.protobuf.BoolValue is_dismissible = 6;
+  // task execution data
+  TaskExecutionData task_execution_data = 7;
+  // unique id for shopping list rendering
+  google.protobuf.StringValue id = 8;
+  // task type
+  InStoreTaskType task_type = 9;
+  // positive button text (on shopping list)
+  google.protobuf.StringValue positive_button_text = 10;
+  // negative button text (on shopping list)
+  google.protobuf.StringValue negative_button_text = 11;
+  // task tag
+  TaskTag tag = 12;
+}
+
+// data needed for the FE to orchestrate task execution
+message TaskExecutionData {
+  reserved 1, 2;
+  reserved "lego_page_response", "task_metadata";
+
+  // task execution data type
+  TaskExecutionDataType task_execution_data_type = 3;
+
+  // task execution data type
+  enum TaskExecutionDataType {
+    // UNSPECIFIED
+    TASK_EXECUTION_DATA_TYPE_UNSPECIFIED = 0;
+    // Area photo task metadata
+    TASK_EXECUTION_DATA_TYPE_AREA_PHOTO = 1;
+  }
+
+  // task execution metadata
+  TaskExecutionMetadata task_execution_metadata = 4;
+
+  // task execution metadata
+  message TaskExecutionMetadata {
+    // metadata
+    oneof metadata {
+      // area photo task
+      AreaPhotoTaskMetadata area_photo_task_metadata = 1;
+    }
+  }
+}
+
+// metadata for area photo tasks
+message AreaPhotoTaskMetadata {
+  // title
+  google.protobuf.StringValue title = 1;
+  // body
+  google.protobuf.StringValue body = 2;
+  // positive button text
+  google.protobuf.StringValue positive_button_text = 3;
+  // negative button text
+  google.protobuf.StringValue negative_button_text = 4;
+  // task group id
+  google.protobuf.StringValue task_group_id = 5;
+  // positive image caption
+  google.protobuf.StringValue positive_image_caption = 6;
+  // negative image caption
+  google.protobuf.StringValue negative_image_caption = 7;
+}
+
+// Represents the type of in-store task
+enum InStoreTaskType {
+  // unspecified
+  IN_STORE_TASK_TYPE_UNSPECIFIED = 0;
+  // area photo tasks
+  IN_STORE_TASK_TYPE_AREA_PHOTO = 1;
+}
+
+// tag to appear right above task on shopping list (e.g. "Earn $2 extra")
+message TaskTag {}
+
+// [DEPRECATED] metadata for the interlaced task
+message TaskMetadata {}
+
+// Picking Flow
+message PickingFlow {
+  // BE drives the content of the components
+  repeated Component components = 1;
+  // Action buttons
+  ActionButtons action_buttons = 2;
+}
+
+// Action buttons on Picker page
+message ActionButtons {
+  // Is docked (fixed at end of page)
+  bool is_docked = 1;
+
+  // a list of buttons
+  repeated ActionButton buttons = 2;
+}
+
+// Action buttons
+message ActionButton {
+  // Button text: "Add to Cart", "Check with Customer"
+  string label = 1;
+  // Button type
+  ButtonType type = 2;
+  // Button style
+  component_catalog.dx.nv.common.primitives.v1.StyledTextButton.ButtonStyle style = 3;
+  // TakePhoto
+  component_catalog.dx.nv.common.v1.TakePhotoV2 take_photo_config = 4;
+
+  // Enum for button types
+  enum ButtonType {
+    // Default (unspecified type)
+    BUTTON_TYPE_UNSPECIFIED = 0;
+    // Add to cart
+    BUTTON_TYPE_ADD_TO_CART = 1;
+    // Contact Cx
+    BUTTON_TYPE_CONTACT_CX = 2;
+    // Item not found
+    BUTTON_TYPE_ITEM_NOT_FOUND = 3;
+    // Enter weight later
+    BUTTON_TYPE_ENTER_WEIGHT_LATER = 4;
+    // Remove item
+    BUTTON_TYPE_REMOVE_ITEM = 5;
+  }
+}
+
+// Component
+message Component {
+  reserved 99, 100;
+  reserved "banner", "freshness_check_carousel";
+
+  // Explicit component type
+  ComponentType type = 1;
+
+  // Enum for component types
+  enum ComponentType {
+    // Default (unspecified type)
+    COMPONENT_TYPE_UNSPECIFIED = 0;
+    // Banner component
+    COMPONENT_TYPE_BANNER = 1;
+    // Carousel component
+    COMPONENT_TYPE_FRESHNESS_CHECK_CAROUSEL = 2;
+    // Measurement toggle component
+    COMPONENT_TYPE_MEASUREMENT_TOGGLE = 3;
+    // Item card
+    COMPONENT_TYPE_ITEM_CARD = 4;
+  }
+
+  // Content of the component, based on the type
+  Content content = 2;
+
+  // Content: Banner, Carousel
+  message Content {
+    // Component data for the content
+    oneof data {
+      // Banner
+      Banner banner = 1;
+      // Carousel
+      FreshnessCheckCarousel freshness_check_carousel = 2;
+      // Measurement toggle
+      MeasurementToggle measurement_toggle = 3;
+      // Item card
+      ItemCard item_card = 4;
+    }
+  }
+}
+
+// Banner
+message Banner {
+  reserved 1;
+  reserved "text";
+
+  // Leading icon of the banner
+  Icon leading_icon = 2;
+  // Prism text
+  component_catalog.common.prism.components.v1.Text text_v2 = 3;
+}
+
+// Carousel
+message FreshnessCheckCarousel {
+  reserved 1;
+  reserved "title";
+
+  // media
+  repeated Media media = 2;
+  // collapsed
+  bool collapsed = 3;
+  // Prism text title "Picking the freshest blueberries"
+  component_catalog.common.prism.components.v1.Text title_v2 = 4;
+}
+
+// Measurement toggle
+message MeasurementToggle {
+  reserved 1;
+  reserved "unit_measurement_title";
+  reserved 2;
+  reserved "weight_measurement_title";
+  reserved 3;
+  reserved "description";
+  // unit selection labels: "each" or "per lb"
+  repeated string unit_selection_labels = 4;
+  // quantity picker
+  QuantityPicker quantity_picker = 5;
+  // currency
+  money.CurrencySymbol currency = 6;
+  // Prism text - unit measurement title "What's the price?"
+  component_catalog.common.prism.components.v1.Text unit_measurement_title_text = 7;
+  // Prism text - weight measurement title "What's the price per pound?"
+  component_catalog.common.prism.components.v1.Text weight_measurement_title_text = 8;
+  // Prism text - description "Customers are charged the price you enter"
+  component_catalog.common.prism.components.v1.Text description_text = 9;
+}
+
+// Quantity picker
+message QuantityPicker {
+  reserved 1;
+  reserved "quantity_title";
+  reserved 2;
+  reserved "weight_title";
+  reserved 3;
+  reserved "weight_description";
+  reserved 7;
+  reserved "estimated_price_warning";
+  // minimum picking threshold
+  double min_pick_threshold = 4;
+  // maximum picking threshold
+  double max_pick_threshold = 5;
+  // weight unit, e.g. lbs
+  google.protobuf.StringValue weight_unit = 6;
+  // estimated price
+  money.MonetaryFields estimated_price = 8;
+  // Prism text - quantity title "How many did you pick up?"
+  component_catalog.common.prism.components.v1.Text quantity_title_text = 9;
+  // Prism text - quantity title "What's the total weight of the items?"
+  component_catalog.common.prism.components.v1.Text weight_title_text = 10;
+  // Prism text - weight description "Customers are charged by the weight you enter"
+  component_catalog.common.prism.components.v1.Text weight_description_text = 11;
+  // Prism text - estimated price warning "Price should be about $40.00"
+  component_catalog.common.prism.components.v1.Text estimated_price_warning_text = 12;
+}
+
+// Item Card
+message ItemCard {
+  reserved 2;
+  reserved "item_card_texts";
+  // image
+  Photo image = 1;
+  // a list of quantity pills
+  repeated int64 quantity_pills = 3;
+  // a list of Prism texts
+  repeated component_catalog.common.prism.components.v1.Text item_card_texts_v2 = 4;
+}
+
+// Media
+message Media {
+  reserved 2, 99, 100;
+  reserved "text", "photo", "video";
+
+  // Type: photo, video
+  MediaType type = 1;
+
+  // Media type
+  enum MediaType {
+    // unknown
+    MEDIA_TYPE_UNSPECIFIED = 0;
+    // photo
+    MEDIA_TYPE_PHOTO = 1;
+    // video
+    MEDIA_TYPE_VIDEO = 2;
+  }
+
+  // Content
+  Content content = 3;
+
+  // Content: Photo, Video
+  message Content {
+    reserved 1;
+    reserved "text";
+
+    // Leading icon of the tag
+    Icon leading_icon = 2;
+    // Prism text, shown below media
+    component_catalog.common.prism.components.v1.Text text_v2 = 3;
+    // photo, video, ...
+    oneof data {
+      // Photo
+      Photo photo = 99;
+      // Video
+      Video video = 100;
+    }
+  }
+}
+
+// Photo
+message Photo {
+  // URL
+  string url = 1;
+}
+
+// Video
+message Video {
+  // URL
+  string url = 1;
+}

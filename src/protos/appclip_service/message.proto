@@ -1,0 +1,467 @@
+// AppClipService
+syntax = "proto3";
+
+package appclip_service.v1;
+
+import "common/common.proto";
+import "common/inventory.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_injection.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.appclip";
+
+// service to serve app clip
+service AppClipService {
+  option (doordash.api.service) = {
+    name: "appclip-service-web"
+    name_spaces: ["appclip"]
+    port: 50051
+    owner: {
+      id: "consumer-growth-nux"
+      name: "nux"
+      slack_channel: "#ask-nux"
+      email_alias: "nux-pod@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "accept-language"},
+      {field: "dd-latitude"},
+      {field: "dd-longitude"},
+      {field: "x-enable-logs"},
+      {field: "dd-client-ip"}]
+  };
+
+  // returns gethomepagedata
+  rpc GetHomePageData(GetHomePageDataRequest) returns (GetHomePageDataResponse) {
+    option (google.api.http) = {get: "/appclip/v1/home"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+
+  // returns getstorepagedata
+  rpc GetStorePageData(GetStorePageDataRequest) returns (GetStorePageDataResponse) {
+    option (google.api.http) = {get: "/appclip/v1/store/{store_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+
+  // returns getlocationcontextresponse
+  rpc GetLocationContext(GetLocationContextRequest) returns (GetLocationContextResponse) {
+    option (google.api.http) = {
+      post: "/appclip/v1/location-context"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_GUEST,
+        CX_USER
+      ]
+    };
+  }
+
+  // returns checkStoreEligibilityResponse
+  rpc CheckStoreEligibility(CheckStoreEligibilityRequest) returns (CheckStoreEligibilityResponse) {
+    option (google.api.http) = {get: "/appclip/v1/store-eligibility/{store_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER
+      ]
+    };
+
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "referer"}]
+    };
+
+    option deprecated = true;
+  }
+}
+
+// request for CheckStoreEligibility
+message CheckStoreEligibilityRequest {
+  // store id.
+  google.protobuf.StringValue store_id = 1;
+
+  // device id.
+  google.protobuf.StringValue device_id = 2;
+
+  // store page url.
+  google.protobuf.StringValue store_page_url = 3;
+
+  // client user agent
+  google.protobuf.StringValue client_user_agent = 4;
+
+  // client referer
+  google.protobuf.StringValue client_referer = 5;
+}
+
+// response for CheckStoreEligibility
+message CheckStoreEligibilityResponse {
+  // whether the store is eligible for appclip card.
+  google.protobuf.BoolValue is_eligible = 1;
+}
+
+// request for getlocationcontext
+message GetLocationContextRequest {
+  // input Location
+  common.Location location = 1;
+}
+
+// response for getlocationcontext
+message GetLocationContextResponse {
+  // location context
+  LocationContext location_context = 1;
+}
+
+// location context
+message LocationContext {
+  // latitude
+  double lat = 1;
+  // longitude
+  double lng = 2;
+  // district id
+  google.protobuf.StringValue district_id = 3;
+  // sub market id
+  google.protobuf.StringValue submarket_id = 4;
+  // country short name
+  google.protobuf.StringValue country_short_name = 5;
+}
+
+// request for gethomepagedata
+message GetHomePageDataRequest {
+  // filtering criteria: delivery/pickup
+  common.FulfillmentType fulfillment_type = 1;
+  // input Location
+  common.Location location = 2;
+  // storeid
+  google.protobuf.StringValue store_id = 3;
+  // is guest
+  google.protobuf.BoolValue is_guest = 4 [deprecated = true];
+  // consumer-id
+  google.protobuf.StringValue consumer_id = 5 [(doordash.api.inject_id) = CX_ID];
+  // cuisine_filter_id
+  google.protobuf.StringValue cuisine_filter_id = 6;
+  // page_type, we need to create a new enum for this
+  PageType page_type = 7;
+  // vertical_filter_ids
+  repeated google.protobuf.StringValue vertical_filter_ids = 8;
+}
+
+// page type for GetHomePageDataRequest to specify the vertical
+enum PageType {
+  /* page type unspecified */
+  PAGE_TYPE_UNSPECIFIED = 0;
+  /* home page */
+  PAGE_TYPE_HOME = 1;
+  /* grocery page */
+  PAGE_TYPE_GROCERY = 2;
+  /* retail page */
+  PAGE_TYPE_RETAIL = 3;
+}
+
+// store
+message Store {
+  // store-id
+  string id = 1;
+  // store name
+  string name = 2;
+  // rating value
+  google.protobuf.DoubleValue rating_value = 3;
+  // ratings count
+  google.protobuf.Int64Value ratings_count = 4;
+  // eta
+  string eta = 5;
+  // distance
+  string distance = 6;
+  // store image url
+  string image_url = 7;
+  // delivery fee
+  google.protobuf.StringValue display_delivery_fee = 8;
+  //type
+  StoreType store_type = 9;
+}
+
+// cuisine filter
+message CuisineFilter {
+  // cuisine id
+  string id = 1;
+  // cuisine name
+  string name = 2;
+  // cuisine image url
+  string image_url = 3;
+  // vertical ids in NV filter
+  repeated google.protobuf.StringValue vertical_filter_ids = 4;
+}
+
+// banner
+message Banner {
+  // title
+  google.protobuf.StringValue title = 1;
+  // body
+  google.protobuf.StringValue body = 2;
+  // button
+  google.protobuf.StringValue button = 3;
+}
+
+// body
+message GetHomePageDataBody {
+  // title
+  google.protobuf.StringValue title = 1;
+  // stores
+  repeated Store stores = 2;
+  // cuisine filters
+  repeated CuisineFilter cuisine_filters = 3;
+  // info row
+  InfoRow info_row = 4;
+}
+
+// info row
+message InfoRow {
+  // title
+  string title = 1;
+  // bottom sheet
+  BottomSheet details = 2;
+}
+
+// bottom sheet
+message BottomSheet {
+  // title
+  string title = 1;
+  // body
+  string body = 2;
+  // dismiss text
+  string dismiss_text = 3;
+}
+
+// response for gethomepagedata
+message GetHomePageDataResponse {
+  // Banner
+  Banner banner = 1;
+  // body
+  GetHomePageDataBody body = 2;
+}
+
+// response for getstorepagedata
+message GetStorePageDataRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // input Location with lat and lon
+  common.Location location = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+  // store_type, enum for Rx and NV
+  StoreType store_type = 4;
+  // fulfillment_type, enum for delivery and pickup
+  common.FulfillmentType fulfillment_type = 5;
+}
+
+// store type
+enum StoreType {
+  reserved 2;
+  reserved "STORE_TYPE_NEW_VERTICAL";
+  // store type unspecified
+  STORE_TYPE_UNSPECIFIED = 0;
+  // restaurant
+  STORE_TYPE_RESTAURANT = 1;
+  // grocery
+  STORE_TYPE_GROCERY = 3;
+  // retail
+  STORE_TYPE_RETAIL = 4;
+  // grocery with RX UI
+  STORE_TYPE_GROCERY_RESTAURANT = 5;
+  // retail with RX UI
+  STORE_TYPE_RETAIL_RESTAURANT = 6;
+}
+
+// response for GetStorePageData
+message GetStorePageDataResponse {
+  // Header
+  StoreHeader store_header = 1;
+  // itemlist
+  repeated Itemlist item_lists = 2;
+  // disclaimers
+  repeated Disclaimer disclaimers = 3;
+}
+
+// store header
+message StoreHeader {
+  // store id
+  google.protobuf.StringValue id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // header image url
+  google.protobuf.StringValue header_image_url = 3;
+  // cover square image url
+  google.protobuf.StringValue cover_square_image_url = 4;
+  // store name
+  google.protobuf.StringValue name = 5;
+  // rating info
+  RatingInfo rating_info = 6;
+  // business tag
+  google.protobuf.StringValue business_tag = 7;
+  // distance from consumer
+  google.protobuf.StringValue distance_from_consumer = 8;
+  // offers pickup
+  google.protobuf.BoolValue offers_pickup = 9;
+  // offers delivery
+  google.protobuf.BoolValue offers_delivery = 10;
+  // delivery fee info
+  FeeInfo delivery_fee_info = 11;
+  // pickup fee info
+  FeeInfo pickup_fee_info = 12;
+  // operating status
+  OperatingStatus operating_status = 13;
+  // delivery fee tooltips
+  repeated DeliveryFeeTooltip delivery_fee_tooltips = 14;
+}
+
+// rating info
+message RatingInfo {
+  // average rating
+  google.protobuf.DoubleValue average_rating = 1;
+  // ratings count
+  google.protobuf.Int64Value num_ratings = 2;
+}
+
+// delivery fee tooltip
+message DeliveryFeeTooltip {
+  // title
+  google.protobuf.StringValue title = 1;
+  // description
+  google.protobuf.StringValue description = 2;
+  // bullet descriptions
+  repeated google.protobuf.StringValue bullet_descriptions = 3;
+}
+
+// fee info
+message FeeInfo {
+  // title
+  google.protobuf.StringValue title = 1;
+  // subtitle
+  google.protobuf.StringValue subtitle = 2;
+}
+
+// operating status
+message OperatingStatus {
+  // delivery asap minutes
+  google.protobuf.Int64Value asap_minutes = 1;
+  // pickup asap minutes
+  google.protobuf.Int64Value asap_pickup_minutes = 2;
+  // delivery availability status
+  AvailableStatus asap_status = 3;
+  // pick availability status
+  AvailableStatus asap_pickup_status = 4;
+}
+
+// available status
+message AvailableStatus {
+  // unavailable reason keys
+  repeated google.protobuf.StringValue unavailable_reason_keys = 1;
+  // is available
+  google.protobuf.BoolValue is_available = 2;
+  // unavailable status
+  google.protobuf.StringValue unavailable_status = 3;
+  // unavailable reason
+  google.protobuf.StringValue unavailable_reason = 4;
+  // unavailable summary
+  google.protobuf.StringValue unavailable_summary = 5;
+}
+
+// item list
+message Itemlist {
+  // display style
+  google.protobuf.StringValue display_style = 1;
+  // name
+  google.protobuf.StringValue name = 2;
+  // items
+  repeated StoreItem items = 3;
+}
+
+// store item
+message StoreItem {
+  // item id
+  google.protobuf.StringValue id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // item description
+  google.protobuf.StringValue description = 3;
+  // item image url
+  google.protobuf.StringValue image_url = 4;
+  // item name
+  google.protobuf.StringValue name = 5;
+  // rating
+  google.protobuf.StringValue rating = 6;
+  // item price
+  ItemPrice price = 7;
+  // item badges
+  repeated ItemBadge badges = 8;
+}
+
+// item price
+message ItemPrice {
+  // final price
+  google.protobuf.StringValue listed_price = 1;
+  // original price, can be empty
+  google.protobuf.StringValue strikethrough_price = 2;
+}
+
+// item badge
+message ItemBadge {
+  // badge type
+  google.protobuf.StringValue badge_type = 1;
+  // badge text
+  google.protobuf.StringValue badge_text = 2;
+}
+
+// disclaimer
+message Disclaimer {
+  // disclaimer title
+  google.protobuf.StringValue title = 1;
+  // disclaimer description
+  google.protobuf.StringValue description = 2;
+  // icon url
+  google.protobuf.StringValue icon_url = 3;
+}

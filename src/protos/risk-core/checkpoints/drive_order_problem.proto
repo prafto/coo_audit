@@ -1,0 +1,119 @@
+syntax = "proto3";
+package risk_core.v1.checkpoints.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "risk-core/account.proto";
+import "risk-core/checkpoint_response.proto";
+import "risk-core/common.proto";
+import "risk-core/services_common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "DriveOrderProblemProtos";
+option java_package = "com.doordash.rpc.risk_core.checkpoints";
+
+// Fraud checkpoint called by Drive when evaluating consumer's refund request
+service DriveOrderProblemService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 2000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  // No retires.
+  option (service_client.client_config).retry_config.max_attempts = 1;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Evaluate refund request
+  rpc Evaluate(DriveOrderProblemServiceEvaluateRequest) returns (DriveOrderProblemServiceEvaluateResponse);
+}
+
+// DriveOrderProblemServiceEvaluateRequest
+message DriveOrderProblemServiceEvaluateRequest {
+  // DriveOrderId - the unique identifier for the Drive order
+  google.protobuf.Int64Value drive_order_id = 1;
+  // PhoneNumber - the phone number of the user who placed the order
+  google.protobuf.StringValue phone_number = 2;
+  // Email - the email address of the user who placed the order
+  google.protobuf.StringValue email = 3;
+  // BusinessId - the business id of the store where the order was placed
+  google.protobuf.Int64Value business_id = 4;
+  // OrderContext - the context of the order which is being evaluated for refund
+  OrderContext order_context = 5;
+  // RefundRequestContext - the context of the refund request
+  RefundRequestContext refund_request_context = 6;
+
+  // OrderContext
+  message OrderContext {
+    // OrderedAt - the time at which the order was placed
+    google.protobuf.Timestamp ordered_at = 1;
+    // QuotedDeliveryTime - the time at which the order was quoted to be delivered
+    google.protobuf.Timestamp quoted_delivery_time = 2;
+    // CanceledAt - the time at which the order was canceled
+    google.protobuf.Timestamp canceled_at = 3;
+    // DeliveredAt - the time at which the order was delivered
+    google.protobuf.Timestamp delivered_at = 4;
+    // DeliveryReceiptUrl - the url of the delivery receipt
+    google.protobuf.StringValue delivery_receipt_url = 5;
+    // DeliveryId - delivery id of the drive order
+    google.protobuf.StringValue delivery_id = 6;
+    // IsReturnEligible - whether the order is eligible for return
+    google.protobuf.BoolValue is_return_eligible = 7;
+    // ReturnDeliveryId - delivery id of the drive order return. This is present only if the order is return eligible.
+    google.protobuf.StringValue return_delivery_id = 8;
+    // LineOfBusiness - the line of business (LOB) of the order
+    google.protobuf.StringValue line_of_business = 9;
+  }
+
+  // RefundRequestContext
+  message RefundRequestContext {
+    // PartyAtFault - the party at fault for the refund request. Examples: Doordash, Merchant
+    EntityType party_at_fault = 1;
+    // RefundRequestedBy - the entity who requested the refund. Examples: Merchant, Consumer
+    EntityType refund_requested_by = 2;
+    // RefundRequestReason - the reason code for the refund request
+    google.protobuf.StringValue reason_code = 3;
+    // RefundRuleID, the chosen matrix rule id in drive refund matrix for this refund, only used for logging
+    google.protobuf.StringValue refund_rule_id = 4;
+    // RefundToCustomerAmount - the amount to be refunded to the customer, only used for logging
+    MonetaryAmount refund_to_customer_amount = 5;
+    // RefundToMerchantAmount - the amount to be refunded to the merchant, only used for logging
+    MonetaryAmount refund_to_merchant_amount = 6;
+    // AgentUserID - the user id of the agent who is processing the refund request
+    UserId agent_user_id = 7;
+    // MxRefundPeriodDays - # of days after delivery date which Mx is permitted refunds
+    google.protobuf.Int64Value mx_refund_period_days = 8;
+    // MxRefundWindowEndsAt - the UNIX timestamp at which the Mx refund window ends
+    google.protobuf.Timestamp mx_refund_window_ends_at = 9;
+    // CxRefundWindowEndsAt - the UNIX timestamp at which the Cx refund window ends
+    google.protobuf.Timestamp cx_refund_window_ends_at = 10;
+    // Source - the source of the refund request
+    google.protobuf.StringValue source = 11;
+    // ReasonCommentsCode - the reason comment code for the refund request
+    google.protobuf.StringValue reason_comments_code = 12;
+  }
+
+  // EntityType
+  enum EntityType {
+    // Unspecified entity type
+    ENTITY_TYPE_UNSPECIFIED = 0;
+    // Doordash
+    ENTITY_TYPE_DOORDASH = 1;
+    // Merchant
+    ENTITY_TYPE_MERCHANT = 2;
+    // Consumer
+    ENTITY_TYPE_CONSUMER = 3;
+  }
+}
+
+// DriveOrderProblemServiceEvaluateResponse
+message DriveOrderProblemServiceEvaluateResponse {
+  // CheckpointResponse
+  CheckpointResponse checkpoint_response = 1;
+}

@@ -1,0 +1,1204 @@
+syntax = "proto3";
+package consumer_pricing;
+
+import "audience/tag.proto";
+import "cart/cart_service.proto";
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/menu_common.proto";
+import "common/money.proto";
+import "common/names.proto";
+import "common/order.proto";
+import "common/order_config.proto";
+import "common/payin.proto";
+import "common/restriction_rules.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+
+option go_package = "consumer_pricing_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_pricing";
+
+service ConsumerPricingService {
+  option (service_client.client_config).service_name = "consumer-pricing";
+  option (service_client.client_config).service_app = "web";
+
+  // Deprecated API - use GenerateOrderQuoteV2 instead
+  // Generate a price quote for an order preview request
+  rpc GenerateOrderQuote(GenerateOrderQuoteRequest) returns (GenerateOrderQuoteResponse);
+
+  // Finalize a price quote for an order submission request
+  rpc FinalizeOrderQuote(FinalizeOrderQuoteRequest) returns (FinalizeOrderQuoteResponse);
+
+  // Finalize tax details for a submitted order
+  rpc FinalizeOrderTax(FinalizeOrderTaxRequest) returns (FinalizeOrderTaxResponse);
+
+  // Generate batch of store quotes, for feed and search use case
+  rpc GenerateBatchStoreQuote(GenerateBatchStoreQuoteRequest) returns (GenerateBatchStoreQuoteResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // Lightweight batch endpoint that is mostly accurate but fast. Same spec as GenerateBatchStoreQuote
+  rpc GenerateBatchStoreQuoteForRanking(GenerateBatchStoreQuoteForRankingRequest) returns (GenerateBatchStoreQuoteForRankingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // V2 Api to support multiple payers - order submission
+  rpc FinalizeOrderQuoteV2(FinalizeOrderQuoteRequestV2) returns (FinalizeOrderQuoteResponseV2);
+
+  // Api to finalize a price quote for redelivery orders
+  rpc FinalizeRedeliveryQuote(FinalizeRedeliveryQuoteRequest) returns (FinalizeRedeliveryQuoteResponse);
+
+  // V2 Api to support multiple payers - preview order, checkout
+  rpc GenerateOrderQuoteV2(GenerateOrderQuoteRequestV2) returns (GenerateOrderQuoteResponseV2);
+
+  // Get prices for items in the cart given the cart and other meta info
+  rpc GetItemPriceDetails(GetItemPriceDetailsRequest) returns (GetItemPriceDetailsResponse);
+
+  // Get updated prices for order adjustments
+  rpc AdjustOrderQuote(AdjustOrderQuoteRequest) returns (AdjustOrderQuoteResponse);
+
+  // WIP used for cancellation flow
+  rpc CancelOrderQuote(CancelOrderQuoteRequest) returns (CancelOrderQuoteResponse);
+
+  // Get consumer fees for store
+  rpc GetStorefrontConsumerFeesForStore(GetStorefrontConsumerFeesForStoreRequest) returns (GetStorefrontConsumerFeesForStoreResponse);
+
+  // Api to fetch the promo message for the given cart
+  rpc GetPromoMessageForCart(GetPromoMessageForCartRequest) returns (GetPromoMessageForCartResponse);
+
+  // Api to finalize a price quote for return orders
+  rpc FinalizeReturnOrderQuote(FinalizeReturnOrderQuoteRequest) returns (FinalizeReturnOrderQuoteResponse);
+}
+
+message GetStorefrontConsumerFeesForStoreRequest {
+  string store_id = 1;
+  string country_shortname = 2;
+}
+
+message GetStorefrontConsumerFeesForStoreResponse {
+  string store_id = 1;
+  repeated ConsumerFee fees = 2;
+}
+
+message ConsumerFee {
+  string name = 1;
+  common.FulfillmentType fulfillment_type = 2;
+  google.protobuf.Int32Value fee_flat = 3;
+  money.BasisPoint fee_rate = 4;
+  google.protobuf.Int32Value applicable_min_subtotal = 5;
+  google.protobuf.Int32Value applicable_max_subtotal = 6;
+}
+
+// differentiate adjust order status
+enum AdjustOrderStatus {
+  // unspecified
+  ADJUST_ORDER_STATUS_UNSPECIFIED = 0;
+  // in preview adjustment status
+  ADJUST_ORDER_STATUS_PREVIEW_ADJUST = 1;
+  // in adjustment status
+  ADJUST_ORDER_STATUS_ADJUST = 2;
+}
+
+message AdjustOrderQuoteRequest {
+  FinalizeOrderQuoteRequestV2 original_finalize_order_quote_request = 1;
+  money.OrderQuoteV2 latest_finalized_order_quote = 2;
+  Cart cart = 3;
+  repeated money.TipDetails new_tips_details = 4;
+  // order.OrderAdjustmentSource adjustment_source = 5;
+  AdjustOrderStatus adjust_status = 6;
+  google.protobuf.StringValue cart_uuid = 7; // necessary for bundle sibling cart
+  google.protobuf.StringValue delivery_id = 8; //fetching refund info from ERS
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 9;
+  // latest adjusted cart if there was any
+  Cart latest_adjusted_cart = 10;
+  // redcard refund amount
+  money.MonetaryFields redcard_refund_amount = 11;
+  // check if red card MX disabled the tax charges
+  bool is_tax_charge_disabed_at_merchant = 12;
+  // check if age restricted item level return adjustment enabled
+  bool is_age_restricted_return_adjustment = 13;
+  // indicates the adjustment type of this request in str format
+  google.protobuf.StringValue adjustment_type = 14;
+  // delivery option type Cx choose to change to. Used for NV reschedule.
+  common.DeliveryOptionType new_delivery_option_type = 15;
+}
+
+message AdjustOrderQuoteResponse {
+  money.OrderQuoteV2 adjusted_order_quote = 1;
+
+  SystemMetadata system_metadata = 2;
+}
+
+message AdditionalStoreInfo {
+  // these are deleted fields, do not reuse
+  reserved 15;
+  string store_business_id = 1;
+  bool store_fulfill_own_delivery = 2;
+  bool is_merchant_tips_enabled = 3;
+  string store_name = 4;
+  string business_name = 5;
+  bool consumer_subscription_eligible = 6;
+  bool offers_delivery = 7;
+  bool offers_pickup = 8;
+  string order_protocol = 9;
+  bool is_dashmart_store = 10;
+  string store_business_vertical_id = 11;
+  google.protobuf.StringValue timezone = 12;
+  bool is_minimum_order_value_configured = 13;
+  google.protobuf.Int32Value payment_protocol_id = 14;
+  google.protobuf.Int32Value store_delivery_radius = 16;
+  order.ShoppingProtocol shopping_protocol = 17;
+}
+
+message AdditionalConsumerInfo {
+  common.CommonAddress consumer_address = 1;
+  google.protobuf.StringValue consumer_address_id = 2;
+  google.protobuf.Timestamp consumer_created_at = 3;
+  common.Experience consumer_experience = 4;
+}
+
+message CalculateAlternativeQuote {
+  common.ConsumerLocation device_location = 1;
+}
+
+message GenerateOrderQuoteRequest {
+  string consumer_id = 1;
+  Cart cart = 2;
+  common.ConsumerLocation consumer_location = 3;
+  common.StoreLocation store_location = 4;
+  string locale = 5;
+  string consumer_email = 6;
+  bool is_guest = 7;
+  common.CommonAddress store_address = 8;
+  google.protobuf.BoolValue is_card_payment = 9;
+  // A train is a set of scheduled, batched orders that get discount pricing
+  // PRD: https://docs.google.com/document/d/1sXeTNJocOSlyt_C0hcnqg-HMYZNKnIxRFFJa-hVersM/
+  google.protobuf.StringValue train_id = 10;
+  bool is_employee = 11;
+  common.ClientDeviceCtx request_ctx = 12;
+  PricingLockCtx pricing_lock_ctx = 13;
+  AdditionalStoreInfo additional_store_info = 14;
+
+  // denotes if an order is eligible for a bundling discount, which affects both
+  // small order and delivery fees
+  BundleDetails bundle_details = 15;
+
+  AdditionalConsumerInfo additional_consumer_info = 16;
+  common.PaymentMethod payment_method = 17;
+
+  bool include_delivery_option_quote = 18;
+  common.DeliveryOptionType delivery_option_type = 19;
+
+  // The loyalty program id for the business_group/business/store as stored in the loyalty db
+  // TDD: https://docs.google.com/document/d/1zFrRGxuu-2fKm_Cy3mTazIg8EqtLmCizvdjL3sxAMgg/edit#heading=h.rabrq9qs389g
+  google.protobuf.StringValue loyalty_program_id = 20;
+
+  money.UpsellOptions upsell_options = 21;
+
+  repeated google.protobuf.StringValue routine_reorder_item_ids = 22;
+
+  google.protobuf.Timestamp scheduled_delivery_time = 23;
+}
+
+message PricingLockCtx {
+  bool should_write_to_lock = 1;
+  bool should_read_from_lock = 2;
+}
+
+message GenerateOrderQuoteResponse {
+  money.OrderQuote order_quote = 1;
+  repeated money.ItemPriceDetails item_price_details = 2;
+}
+
+message TaxOptions {
+  // If the field is set to true, please provide the following fields, otherwise, the estimated tax will be calculated.
+  bool calculate_accurate_tax = 1;
+  google.protobuf.StringValue delivery_address_id = 2;
+  google.protobuf.StringValue store_order_cart_id = 3;
+  google.protobuf.BoolValue is_dry_run = 4;
+  common.CommonAddress address = 5;
+  common.Creator creator = 6;
+}
+
+message FinalizeOrderQuoteRequest {
+  // these are deleted fields, do not reuse
+  reserved 19, 30, 36;
+  reserved "payment_method_metadata";
+
+  string consumer_id = 1;
+  Cart cart = 2;
+  money.TipDetails tip_details = 3;
+  common.ConsumerLocation consumer_location = 4;
+  common.StoreLocation store_location = 5;
+  string locale = 6;
+  string consumer_email = 7;
+  bool is_guest = 8;
+  common.CommonAddress store_address = 9;
+  TaxOptions tax_options = 10;
+  bool is_employee = 11;
+  common.ClientDeviceCtx request_ctx = 12;
+
+  // A train is a set of scheduled, batched orders that get discount pricing
+  // PRD: https://docs.google.com/document/d/1sXeTNJocOSlyt_C0hcnqg-HMYZNKnIxRFFJa-hVersM/
+  google.protobuf.StringValue train_id = 13;
+  google.protobuf.Timestamp scheduled_delivery_time = 14;
+  PricingLockCtx pricing_lock_ctx = 15;
+  AdditionalStoreInfo additional_store_info = 16;
+
+  // denotes if an order is eligible for a bundling discount, which affects both
+  // small order and delivery fees
+  BundleDetails bundle_details = 17;
+
+  AdditionalConsumerInfo additional_consumer_info = 18;
+  repeated money.TipDetails tips_details = 20;
+  common.DeliveryOptionType delivery_option_type = 21;
+  google.protobuf.BoolValue is_card_payment = 22;
+
+  // The loyalty program id for the business_group/business/store as stored in the loyalty db
+  // TDD: https://docs.google.com/document/d/1zFrRGxuu-2fKm_Cy3mTazIg8EqtLmCizvdjL3sxAMgg/edit#heading=h.rabrq9qs389g
+  google.protobuf.StringValue loyalty_program_id = 23;
+  google.protobuf.StringValue external_order_reference = 24;
+
+  repeated google.protobuf.StringValue routine_reorder_item_ids = 25;
+
+  money.ExternalGiftCardDetails external_gift_card_details = 26;
+
+  // TDD: https://docs.google.com/document/d/1bAufS0hjkO7_lobpDkfMlYby1GYuywuJAePCwUeKiPg/edit#heading=h.pjumxqf7t2hj
+  repeated money.SupplementalPaymentAuthorizedAmount supplemental_payment_authorized_amount = 27;
+
+  // Pay with points
+  money.RewardBalanceInfo reward_balance_info = 28;
+
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 29;
+
+  order.DeliveryOptionAttributes delivery_option_attributes = 31;
+
+  // only set if this is a shadow request. this is the quote id of the original request so we can join shadow to primary
+  google.protobuf.StringValue original_quote_id = 32;
+  google.protobuf.BoolValue should_apply_credits = 33;
+
+  // DD POS Loyalty Configuration
+  DDPosLoyaltyConfig dd_pos_loyalty_config = 34;
+
+  // Contains details about the parent order used for computing the discount for an automatic reorder
+  AutomaticReorderDetails automatic_reorder_details = 35;
+
+  // Provides context about the payment method used for the order
+  // Use case includes validating payment method type for payment method promotions
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA/edit
+  payin.v1.PaymentContext payment_context = 37;
+}
+
+// DD POS Loyalty Configuration
+message DDPosLoyaltyConfig {
+  // Pathfinder POS Should apply discount for the order
+  google.protobuf.BoolValue should_apply_loyalty_discount = 1;
+}
+
+message FinalizeOrderQuoteResponse {
+  money.OrderQuote order_quote = 1;
+  repeated money.ItemPriceDetails item_price_details = 2;
+
+  SystemMetadata system_metadata = 3;
+
+  // For debug purpose only
+  bool accurate_tax_calculated = 1000;
+}
+
+message FinalizeOrderTaxRequest {
+  string consumer_id = 1;
+  string delivery_address_id = 2;
+  Cart cart = 3;
+  money.OrderQuote finalized_order_quote = 4;
+  string store_order_cart_id = 5;
+  string store_id = 6;
+}
+
+message FinalizeOrderTaxResponse {
+  money.TaxDetails tax_details = 1;
+  money.MonetaryFields total_to_collect = 2;
+}
+
+// group cart types
+enum GroupCartType {
+  // default
+  GROUP_CART_TYPE_UNSPECIFIED = 0;
+  // creator pays all
+  GROUP_CART_TYPE_CREATOR_PAYS_ALL = 1;
+  // split bill
+  GROUP_CART_TYPE_SPLIT_BILL = 2;
+}
+
+message Cart {
+  string id = 1;
+  google.protobuf.StringValue creator_id = 2; // Check the null rate before using this field
+  google.protobuf.StringValue group_creator = 3; // Check the null rate before using this field
+  google.protobuf.StringValue fulfillment_type = 4;
+  google.protobuf.BoolValue is_group = 5;
+  google.protobuf.Int32Value max_individual_cost = 6;
+  repeated google.protobuf.StringValue promotion_ids = 7;
+  repeated google.protobuf.StringValue removed_auto_redeemed_promotion_ids = 8;
+  repeated CartItem items = 9;
+  repeated Cart sub_carts = 10;
+  google.protobuf.StringValue store_name = 11;
+  google.protobuf.StringValue store_id = 12;
+  google.protobuf.StringValue menu_id = 13;
+  google.protobuf.Timestamp created_at = 14;
+  ConsumerIdentifier creator_identifier = 15; // Check the null rate before using this field
+  ConsumerIdentifier group_creator_identifier = 16; // Check the null rate before using this field
+  repeated BundleCart bundle_carts = 17;
+  CartDomain domain = 18;
+  money.MonetaryFields subtotal_tax_override = 100; // used for CnG order adjustment
+  money.MonetaryFields bag_fee_override = 101; // used for CnG order adjustment for bag fees
+  money.MonetaryFields bottle_fee_override = 102; // used for CnG order adjustment for bottle fees
+  google.protobuf.BoolValue contains_alcohol_item = 19;
+  // This field will contain the list of applied loyalty rewards
+  money.LoyaltyRewardDetails applied_loyalty_rewards = 20;
+  RecurringDeliveryDiscountDetails recurring_delivery_discount_details = 21;
+  money.ExternalGiftCardDetails external_gift_card_details = 22;
+  google.protobuf.BoolValue is_lunchpass = 23;
+  // group cart types
+  GroupCartType group_cart_type = 24;
+  google.protobuf.Int32Value number_of_bags = 25;
+  google.protobuf.BoolValue should_default_to_schedule = 26;
+  MembershipPurchaseDetails membership_purchase = 27;
+  repeated cart_service.v1.AttemptedPromotion attempted_promotions = 28;
+  // The payment profile type set on the cart; e.g. Business if Cx selected business payment
+  common.PaymentProfileType payment_profile_type = 29;
+  // Per-cart selected payment method which is effectively an override to default payment method
+  google.protobuf.StringValue selected_payment_method_id = 30;
+  /*
+     This field maps to the same values the mappings in this method:
+     com.doordash.rpc.order.common.utils.CommonCartMapperUtilKt#getCartExperience
+     this allows future flexibility to add more cart experiences.
+  */
+  google.protobuf.StringValue cart_experience = 31;
+}
+
+message MembershipPurchaseDetails {
+  // Membership program id that refers to merchant_loyalty.proto MerchantLoyaltyProgram
+  string program_id = 1;
+  // Membership fee
+  money.MonetaryFields membership_fee = 2;
+}
+
+message AutomaticReorderDetails {
+  google.protobuf.BoolValue is_quote_for_automatic_reorder = 1;
+  google.protobuf.StringValue parent_delivery_uuid = 2;
+  money.OrderQuote parent_order_quote = 3;
+}
+
+message CartDomain {
+  CartGiftOptions giftOptions = 1;
+}
+
+message CartGiftOptions {
+  google.protobuf.StringValue recipient_name = 1;
+  google.protobuf.StringValue recipient_phone = 2;
+  google.protobuf.StringValue card_message = 3;
+  google.protobuf.StringValue recipient_email = 4;
+  google.protobuf.StringValue graphic_url = 5;
+  google.protobuf.StringValue card_id = 6;
+  google.protobuf.BoolValue should_notify_tracking_to_recipient_on_dasher_assign = 7;
+  google.protobuf.BoolValue should_notify_recipient_for_dasher_questions = 8;
+  google.protobuf.StringValue sender_name = 9;
+  google.protobuf.BoolValue should_recipient_schedule_gift = 10;
+  names.LocalizedNames recipient_localized_names = 11;
+}
+
+message CartItem {
+  google.protobuf.StringValue store_id = 1;
+  string carnival_item_id = 2;
+  string menu_item_id = 3;
+  // migrating to quantities to support weighted items
+  google.protobuf.Int32Value quantity = 4;
+  repeated ItemExtraOption item_extra_options = 5;
+  MenuItem menu_item = 6;
+  google.protobuf.Int64Value additional_cost = 7;
+  money.AppliedDiscounts item_level_discount = 8;
+  google.protobuf.Int64Value override_subtotal = 9;
+  google.protobuf.StringValue merchant_supplied_id = 10;
+  repeated money.PricingQuantity quantities = 11;
+  common.marketplace_purchase.v1.PurchaseType purchase_type = 12;
+  google.protobuf.BoolValue is_recurring_delivery_eligible = 13;
+  menu_common.DynamicProperties menu_dynamic_properties = 14;
+  google.protobuf.StringValue dd_sic = 15;
+  google.protobuf.BoolValue is_meal_plan = 16;
+}
+
+message ItemExtraOption {
+  string id = 1; // menu_item_extra_item_option_id
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.StringValue name = 3;
+  repeated ItemExtraOption item_extra_options = 4;
+  string reference_uuid = 5; // a unique reference id for each order item extra option
+  google.protobuf.StringValue merchant_supplied_id = 6;
+  google.protobuf.StringValue item_extra_id = 7; // parent item extra's id
+  google.protobuf.StringValue item_extra_merchant_supplied_id = 8; // parent item extra's merchant supplied id
+  google.protobuf.Int64Value unit_price = 9;
+  money.PriceSource price_source = 10;
+  google.protobuf.Int32Value item_extra_num_free_options = 11; // parent item extra's num free options
+  google.protobuf.Int64Value base_price = 12;
+  google.protobuf.Int64Value price = 13;
+  google.protobuf.Int64Value pre_inflation_price = 14; // prices provided by merchants before DD applying inflation
+  google.protobuf.Int32Value charge_above = 15;
+  menu_common.DynamicProperties menu_dynamic_properties = 16;
+  google.protobuf.StringValue dd_sic = 17;
+  google.protobuf.StringValue item_extra_dd_sic = 18; // parent item extra's dd_sic
+  google.protobuf.StringValue description = 19;
+  // this existing indicates there are some restriction on the item extra option
+  RestrictionInfo restriction_info = 20;
+}
+
+// individual item fee and the root (the item or it's options) which cause the cost.
+message ItemFeeLink {
+  // Item or Item Option's id that generated the given item fee
+  google.protobuf.StringValue rootId = 1;
+  money.ItemFee item_fee = 2;
+}
+
+message MenuItem {
+  reserved 11, 14;
+  reserved "item_fees";
+  google.protobuf.Int64Value price = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue categoryId = 3;
+  google.protobuf.StringValue categoryName = 4;
+  google.protobuf.StringValue category_merchant_supplied_id = 5;
+  google.protobuf.Int64Value unit_price = 6; // base_price for pickup orders, price for others
+  money.PriceSource price_source = 7;
+  google.protobuf.BoolValue is_alcohol = 8;
+  google.protobuf.Int32Value bottle_deposit_amount = 9;
+  google.protobuf.Int64Value base_price = 10;
+  google.protobuf.Int64Value pre_inflation_price = 12; // prices provided by merchants before DD applying inflation
+  repeated money.FeeCategory fee_categories = 13;
+  repeated ItemFeeLink item_fee_links = 15;
+  google.protobuf.BoolValue is_snap_eligible = 16;
+  google.protobuf.BoolValue is_gift_card = 17;
+  google.protobuf.BoolValue is_hsa_fsa_eligible = 18;
+  google.protobuf.BoolValue is_map_item = 19;
+  google.protobuf.Int64Value non_discount_price = 20; // non discount price is never used to charge and solely for display purpose
+  google.protobuf.Int64Value loyalty_price = 21; // loyalty price will be used if Cx is a loyalty member
+  // this indicates whether we use loyalty pricing
+  google.protobuf.BoolValue use_loyalty_pricing = 22;
+  Brand brand = 23;
+  google.protobuf.StringValue description = 24;
+  // this existing indicates there are some restriction on the item
+  RestrictionInfo restriction_info = 25;
+}
+
+// Item restriction info
+message RestrictionInfo {
+  // The restricted type of an item, ex. ALCOHOL, OTC etc.
+  common.restriction_rules.v1.RestrictedItemType restricted_item_type = 1;
+}
+
+message Brand {
+  google.protobuf.Int64Value brand_id = 1;
+  google.protobuf.StringValue brand_name = 2;
+}
+
+message GenerateBatchStoreQuoteRequest {
+  ConsumerInfo consumer_info = 1;
+  common.ConsumerLocation consumer_location = 2;
+  // list of store info
+  repeated StoreInfo store_info = 3;
+  string locale = 4;
+  // a map of experiments(experiment_name: experiment_bucket)
+  map<string, string> experiments = 5;
+  // Identify which page is the feed service calling for.
+  TriggerPage trigger_page = 6;
+  // session id
+  string dd_session_id = 7;
+}
+
+message GenerateBatchStoreQuoteResponse {
+  repeated StoreQuote store_quotes = 1;
+
+  SystemMetadata system_metadata = 2;
+}
+
+message GenerateBatchStoreQuoteForRankingRequest {
+  ConsumerInfo consumer_info = 1;
+  common.ConsumerLocation consumer_location = 2;
+  // list of store info
+  repeated StoreInfo store_info = 3;
+  string locale = 4;
+  // a map of experiments(experiment_name: experiment_bucket)
+  map<string, string> experiments = 5;
+  // Identify which page is the feed service calling for.
+  TriggerPage trigger_page = 6;
+  // Optimization strategy
+  repeated OptimizationStrategy optimization_strategy = 7;
+  // session id
+  string dd_session_id = 8;
+}
+
+message GenerateBatchStoreQuoteForRankingResponse {
+  repeated StoreQuote store_quotes = 1;
+
+  SystemMetadata system_metadata = 2;
+}
+
+message StoreInfo {
+  // store id
+  string id = 1;
+  // store location
+  common.StoreLocation store_location = 2;
+  // feed will provide merchant promotion in order to prevent calling promotion service too many times
+  repeated PromotionIncentive incentives = 3;
+  // if this store has been looked up in promotion service already (by feed service)
+  bool looked_up = 4;
+  // business id
+  string business_id = 5;
+  bool consumer_subscription_eligible = 6;
+  // business vertical id
+  string business_vertical_id = 7;
+  // if store fulfills own deliveries
+  bool fulfills_own_deliveries = 8;
+  /**
+   *  Entire Tag message. Selectively sent when other Tag fields are needed (Eg. attributes) to control payload size.
+   */
+  repeated doordash.audience.service.v1.Tag complete_merchant_tags = 9;
+  // store's delivery radius
+  google.protobuf.Int32Value storeDeliveryRadius = 10;
+}
+
+message PromotionIncentive {
+  string incentive_target_type = 1;
+
+  string incentive_value_type = 2;
+  // The value to apply to the target
+  oneof value {
+    // Percent off if the discount is of type PERCENT_OFF
+    int32 percent_off = 3;
+
+    // Flat amount off if the discount is of type FLAT_AMOUNT_OFF
+    money.MonetaryFields flat_amount_off = 4;
+
+    // Specific value if the discount is of type SPECIFIC_VALUE (e.g. $1 delivery fee)
+    money.MonetaryFields set_specific_value = 5;
+  }
+  repeated IncentiveCriterion criteria = 6;
+}
+
+message IncentiveCriterion {
+  string criterion_type = 1;
+  money.MonetaryFields minimum_subtotal = 2;
+}
+
+message StoreQuote {
+  // store id
+  string id = 1;
+  // delivery fee details
+  money.StoreDeliveryFeeDetails delivery_fee_details = 2;
+  // service fee details
+  money.StoreServiceFeeDetails service_fee_details = 3;
+  // Metadata of extra info per store
+  map<string, google.protobuf.Any> additional_info = 4;
+}
+
+message ConsumerInfo {
+  string consumer_id = 1;
+  string consumer_email = 2;
+  bool is_guest = 3;
+  bool is_employee = 4;
+  repeated string consumer_tags = 5;
+  /**
+   *  Entire Tag message. Selectively sent when other Tag fields are needed (Eg. attributes) to control payload size.
+   *  Can eventually replace consumer_tags.
+   */
+  repeated doordash.audience.service.v1.Tag complete_consumer_tags = 6;
+  // optional field specifying whether user is dashpass subscriber. used to potentially optimize performance
+  bool is_subscriber = 7;
+  // consumer timezone
+  google.protobuf.StringValue timezone = 8;
+
+  // consumer_address_id associated with the lat/lng
+  google.protobuf.StringValue consumer_address_id = 9;
+}
+
+message ConsumerIdentifier {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue user_id = 2;
+}
+
+// For each PricingProfile, there would potentially be a Details msg
+message CreatorSponsoredPricingProfileDetails {
+  money.MonetaryFields creator_sponsored_amount = 1;
+}
+
+message CreatorPaysEntirelyPricingProfileDetails {
+  string creator_id = 1;
+}
+
+// used for expense meal budget
+message ExpenseBudgetDetails {
+  // the budget amount
+  money.MonetaryFields budget_amount = 1;
+  // the company payer consumer id for the budget
+  string company_payer_consumer_id = 2;
+}
+
+message ConsumerPricingDetailsRequest {
+  money.ConsumerInfoV2 consumer_info = 1;
+  money.TipDetails tip_details = 2;
+  bool is_tip_suggestion_required = 3 [deprecated = true];
+  // We will move usage to this one in favor of tip details to support multiple types of tips (dasher, merchant, etc)
+  repeated money.TipDetails tips_details = 4;
+  google.protobuf.BoolValue is_card_payment = 5;
+  // used for each participant of a group cart when split bill
+  ExpenseBudgetDetails expense_budget_details = 6;
+}
+
+message FinalizeOrderQuoteRequestV2 {
+  reserved 25, 32;
+  reserved "payment_method_metadata";
+
+  Cart cart = 1;
+  string locale = 2;
+
+  common.ConsumerLocation delivery_location = 3;
+  common.StoreLocation store_location = 4;
+  common.CommonAddress store_address = 5;
+
+  TaxOptions tax_options = 6;
+  money.PricingProfile pricing_strategy = 7;
+  CreatorSponsoredPricingProfileDetails creator_sponsored_details = 8;
+  CreatorPaysEntirelyPricingProfileDetails creator_pays_entirely_details = 9;
+
+  map<string, ConsumerPricingDetailsRequest> consumer_details = 10;
+
+  // A train is a set of scheduled, batched orders that get discount pricing
+  // PRD: https://docs.google.com/document/d/1sXeTNJocOSlyt_C0hcnqg-HMYZNKnIxRFFJa-hVersM/
+  google.protobuf.StringValue train_id = 11;
+  common.ClientDeviceCtx request_ctx = 12;
+  google.protobuf.Timestamp scheduled_delivery_time = 13;
+  PricingLockCtx pricing_lock_ctx = 14;
+  AdditionalStoreInfo additional_store_info = 15;
+
+  // denotes if an order is eligible for a bundling discount, which affects both
+  // small order and delivery fees
+  BundleDetails bundle_details = 16;
+
+  AdditionalConsumerInfo additional_consumer_info = 17;
+  common.DeliveryOptionType delivery_option_type = 18;
+
+  // The loyalty program id for the business_group/business/store as stored in the loyalty db
+  // TDD: https://docs.google.com/document/d/1zFrRGxuu-2fKm_Cy3mTazIg8EqtLmCizvdjL3sxAMgg/edit#heading=h.rabrq9qs389g
+  google.protobuf.StringValue loyalty_program_id = 19;
+  google.protobuf.StringValue external_order_reference = 20;
+
+  repeated google.protobuf.StringValue routine_reorder_item_ids = 21;
+
+  money.ExternalGiftCardDetails external_gift_card_details = 22;
+  repeated money.SupplementalPaymentAuthorizedAmount supplemental_payment_authorized_amount = 23;
+  money.RewardBalanceInfo reward_balance_info = 24;
+  order.DeliveryOptionAttributes delivery_option_attributes = 26;
+  google.protobuf.BoolValue should_apply_credits = 27;
+  // Pathfinder POS Loyalty Configuration
+  DDPosLoyaltyConfig dd_pos_loyalty_config = 28;
+
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 29;
+  // only set if this is a shadow request. this is the quote id of the original request so we can join shadow to primary
+  google.protobuf.StringValue original_quote_id = 30;
+
+  // Contains details about the parent order used for computing the discount for an automatic reorder
+  AutomaticReorderDetails automatic_reorder_details = 31;
+
+  // Provides context about the payment method used for the order
+  // Use case includes validating payment method type for payment method promotions
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA/edit
+  payin.v1.PaymentContext payment_context = 33;
+
+  // strategy for multiple order quote calculation
+  oneof multi_order_strategy_payload {
+    CheckoutStoreRedirectionOrderDetails checkout_store_redirection_order_details = 34;
+    PostCheckoutFullOrderStoreAdjustmentDetails post_checkout_full_order_store_adjustment_details = 35;
+    PostCheckoutPartialOrderStoreAdjustmentDetails post_checkout_partial_order_store_adjustment_details = 36;
+  }
+}
+
+message AlternateQuoteStoreContext {
+  common.StoreLocation store_location = 1;
+  common.CommonAddress store_address = 2;
+  AdditionalStoreInfo additional_store_info = 3;
+  TaxOptions taxOptions = 4;
+}
+
+message ReferenceOrderQuoteDetail {
+  money.OrderQuoteV2 reference_order_quote = 1;
+}
+
+message AlternateQuoteInputContext {
+  Cart alternate_order_cart = 1;
+  AlternateQuoteStoreContext alternate_order_store_info = 2;
+}
+
+message CheckoutStoreRedirectionOrderDetails {
+  // order cart that we would like to calculate and get parity against the main cart
+  repeated AlternateQuoteInputContext alternate_order_cart_detail = 1;
+}
+
+message PostCheckoutFullOrderStoreAdjustmentDetails {
+  // order quote reference that we would like the main cart to get parity against
+  ReferenceOrderQuoteDetail parity_reference_order_quote = 1;
+}
+
+message PostCheckoutPartialOrderStoreAdjustmentDetails {
+  // order quote reference that we would like the main cart to get parity against
+  repeated ReferenceOrderQuoteDetail parity_reference_order_quote = 1;
+  // order quote reference that we would like calculate alongside with the main cart
+  repeated ReferenceOrderQuoteDetail supplement_reference_order_quotes = 2;
+}
+
+message FinalizeOrderQuoteResponseV2 {
+  reserved 2, 3;
+  money.OrderQuoteV2 order_quote = 1;
+
+  SystemMetadata system_metadata = 4;
+
+  // For debug purpose only
+  bool accurate_tax_calculated = 1000;
+  // currently it is mainly used for superOrder
+  // but it can also be used for multiple order quotes
+  map<string, money.OrderQuoteV2> order_quotes_maps = 5;
+}
+
+message FinalizeRedeliveryQuoteRequest {
+  Cart cart = 1;
+  string locale = 2;
+
+  common.ConsumerLocation delivery_location = 3;
+  common.StoreLocation store_location = 4;
+  common.CommonAddress store_address = 5;
+
+  TaxOptions tax_options = 6;
+  money.PricingProfile pricing_strategy = 7;
+  CreatorSponsoredPricingProfileDetails creator_sponsored_details = 8;
+  CreatorPaysEntirelyPricingProfileDetails creator_pays_entirely_details = 9;
+
+  map<string, ConsumerPricingDetailsRequest> consumer_details = 10;
+
+  common.ClientDeviceCtx request_ctx = 11;
+  google.protobuf.Timestamp scheduled_delivery_time = 12;
+  PricingLockCtx pricing_lock_ctx = 13;
+  AdditionalStoreInfo additional_store_info = 14;
+
+  AdditionalConsumerInfo additional_consumer_info = 15;
+  common.DeliveryOptionType delivery_option_type = 16;
+}
+
+message FinalizeRedeliveryQuoteResponse {
+  reserved 2, 3;
+  money.OrderQuoteV2 order_quote = 1;
+}
+
+message GenerateOrderQuoteRequestV2 {
+  reserved 29, 35;
+  reserved "payment_method_metadata";
+
+  Cart cart = 1;
+  string locale = 2;
+
+  common.ConsumerLocation delivery_location = 3;
+  common.StoreLocation store_location = 4;
+  common.CommonAddress store_address = 5;
+
+  money.PricingProfile pricing_strategy = 6;
+  CreatorSponsoredPricingProfileDetails creator_sponsored_details = 7;
+  CreatorPaysEntirelyPricingProfileDetails creator_pays_entirely_details = 8;
+
+  map<string, money.ConsumerInfoV2> consumer_info = 9;
+
+  google.protobuf.BoolValue is_card_payment = 10;
+
+  // A train is a set of scheduled, batched orders that get discount pricing
+  // PRD: https://docs.google.com/document/d/1sXeTNJocOSlyt_C0hcnqg-HMYZNKnIxRFFJa-hVersM/
+  google.protobuf.StringValue train_id = 11;
+  common.ClientDeviceCtx request_ctx = 12;
+  PricingLockCtx pricing_lock_ctx = 13;
+  AdditionalStoreInfo additional_store_info = 14;
+
+  // denotes if an order is eligible for a bundling discount, which affects both
+  // small order and delivery fees
+  BundleDetails bundle_details = 15;
+
+  AdditionalConsumerInfo additional_consumer_info = 16;
+
+  common.PaymentMethod payment_method = 17;
+
+  bool include_delivery_option_quote = 18;
+  common.DeliveryOptionType delivery_option_type = 19;
+
+  // The loyalty program id for the business_group/business/store as stored in the loyalty db
+  // TDD: https://docs.google.com/document/d/1zFrRGxuu-2fKm_Cy3mTazIg8EqtLmCizvdjL3sxAMgg/edit#heading=h.rabrq9qs389g
+  google.protobuf.StringValue loyalty_program_id = 20;
+
+  money.UpsellOptions upsell_options = 21;
+
+  repeated google.protobuf.StringValue routine_reorder_item_ids = 22;
+  money.ExternalGiftCardDetails external_gift_card_details = 23;
+
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 24;
+
+  repeated money.SupplementalPaymentAuthorizedAmount supplemental_payment_authorized_amount = 25;
+
+  money.RewardBalanceInfo reward_balance_info = 26;
+
+  // This message will ask pricing to making 2 quotes
+  //   one normal quote using the delivery address info in this request message
+  //   one alternative quote using the info in this message
+  //   and populate the AlternativeQuoteDetails message in the response
+  CalculateAlternativeQuote calculate_alternative_quote = 27;
+
+  google.protobuf.Timestamp scheduled_delivery_time = 28;
+  order.DeliveryOptionAttributes delivery_option_attributes = 30;
+
+  // only set if this is a shadow request. this is the quote id of the original request so we can join shadow to primary
+  google.protobuf.StringValue original_quote_id = 31;
+
+  // The use case for what data is returned in DisplayQuote
+  money.DisplayQuoteType display_quote_type = 32;
+
+  google.protobuf.BoolValue should_apply_credits = 33;
+
+  // Pathfinder POS Loyalty Configuration
+  DDPosLoyaltyConfig dd_pos_loyalty_config = 34;
+
+  // Provides context about the payment method used for the order
+  // Use case includes validating payment method type for payment method promotions
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA/edit
+  payin.v1.PaymentContext payment_context = 36;
+
+  FlatTipOverride flat_tip_override = 37;
+}
+
+// to determine if and what flat tip type to use
+message FlatTipOverride {
+  google.protobuf.BoolValue should_use_flat_tip_suggestions = 1;
+  TipSuggestionsType tip_suggestions_type = 2;
+}
+
+// Type for tip suggestions.
+enum TipSuggestionsType {
+  // unspecified -- follow the default logic for determining tip suggestions type
+  TIP_SUGGESTIONS_TYPE_UNSPECIFIED = 0;
+  // percentage-based tip suggestions
+  TIP_SUGGESTIONS_TYPE_PERCENTAGE = 1;
+  // dollar-amount-based tip suggestions
+  TIP_SUGGESTIONS_TYPE_AMOUNT = 2;
+}
+
+message GenerateOrderQuoteResponseV2 {
+  money.OrderQuoteV2 order_quote = 1;
+
+  SystemMetadata system_metadata = 2;
+
+  map<string, google.protobuf.Any> metadata_t1 = 3;
+}
+
+message GetItemPriceDetailsRequest {
+  Cart cart = 1;
+  google.protobuf.BoolValue use_cart_price = 2;
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 11;
+}
+
+message GetItemPriceDetailsResponse {
+  repeated money.ItemPriceDetails item_price_details = 1;
+  money.MonetaryFields subtotal = 2;
+}
+
+// returns system metadata about the pod that handled the request
+message SystemMetadata {
+  string build_hash = 1;
+  string tracking_uuid = 2;
+  map<string, bool> dependency_success = 3;
+}
+
+message BundleDetails {
+  reserved 3;
+
+  google.protobuf.StringValue original_bundle_order_cart_id = 1;
+  google.protobuf.Timestamp original_bundle_order_cart_created_at = 2;
+  //    repeated BundleCart bundle_carts = 3; removed, do not use
+  google.protobuf.BoolValue is_eligible_post_checkout_bundle_order = 4;
+}
+
+message BundleCart {
+  reserved 1;
+
+  //    Cart bundle_cart = 1; removed, do not use
+  common.StoreLocation store_location = 2;
+  common.CommonAddress store_address = 3;
+  AdditionalStoreInfo additional_store_info = 4;
+  string id = 5;
+  repeated CartItem items = 6;
+  google.protobuf.StringValue store_name = 7;
+  google.protobuf.StringValue store_id = 8;
+  google.protobuf.StringValue menu_id = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+// Status for merchant order. Used to call DRS.
+enum MerchantOrderStatus {
+  // unspecified merchant order status
+  MERCHANT_ORDER_STATUS_UNSPECIFIED = 0;
+  // before merchant confirms the order
+  MERCHANT_ORDER_STATUS_UNCONFIRMED = 1;
+  // when merchant confirms the order
+  MERCHANT_ORDER_STATUS_CONFIRMED = 2;
+  // when order is completed
+  MERCHANT_ORDER_STATUS_COMPLETED = 3;
+}
+
+// Status for delivery. Used to call DRS.
+enum DeliveryStatus {
+  // unspecified delivery status
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  // status before dasher is assigned
+  DELIVERY_STATUS_UNASSIGNED = 1;
+  // status of picked up
+  DELIVERY_STATUS_PICKING_UP = 2;
+  // status of dasher waiting at store
+  DELIVERY_STATUS_WAITING_AT_STORE = 3;
+  // status of order dropped off
+  DELIVERY_STATUS_DROPPING_OFF = 4;
+  // status of dasher waiting at consumer
+  DELIVERY_STATUS_WAITING_AT_CONSUMER = 5;
+  // status of order completed
+  DELIVERY_STATUS_COMPLETED = 6;
+}
+
+// used by feed service calling GenerateBatchStoreQuote to determine the request is for which page.
+enum TriggerPage {
+  // unknow page/usecase
+  TRIGGER_PAGE_RESOURCE_UNSPECIFIED = 0;
+  // home page
+  TRIGGER_PAGE_HOME_PAGE = 1;
+  // store page
+  TRIGGER_PAGE_STORE_PAGE = 2;
+  // search page
+  TRIGGER_PAGE_SEARCH_PAGE = 3;
+  // ranking request
+  TRIGGER_PAGE_RANKING = 4;
+}
+
+// used by feed serving calling GenerateBatchStoreQuoteForRanking for different types of optimization
+enum OptimizationStrategy {
+  // unspecified
+  OPTIMIZATION_STRATEGY_UNSPECIFIED = 0;
+  // skip promo
+  OPTIMIZATION_STRATEGY_DISABLE_DISCOUNTS = 1;
+  // assume 0 delivery fee with 12 subtotal
+  OPTIMIZATION_STRATEGY_ASSUME_SUBS_ZERO_DF = 2;
+}
+
+message CancelOrderQuoteRequest {
+  MerchantOrderStatus merchant_order_status = 1; // necessary to call DRS
+  DeliveryStatus delivery_status = 2; // necessary to call DRS
+  google.protobuf.Timestamp estimated_delivery_time = 3; // necessary to call DRS
+  FinalizeOrderQuoteRequestV2 original_finalize_order_quote_request = 4;
+  money.OrderQuoteV2 latest_finalized_order_quote = 5;
+  google.protobuf.BoolValue should_refund_as_credit = 6; // should refund the whole amount as credit
+  google.protobuf.BoolValue is_test_order = 7; // order populates this from a delivery object
+  order.CancellationReason cancellation_reason = 8;
+  google.protobuf.BoolValue is_eligible_for_apology_credit = 9;
+  google.protobuf.StringValue order_uuid = 10;
+  google.protobuf.StringValue delivery_uuid = 11;
+  google.protobuf.BoolValue is_pickup_order = 12;
+  google.protobuf.Timestamp restaurant_order_ready_time = 13; // necessary to call DRS for pickup orders
+  google.protobuf.Timestamp dasher_assigned_time = 14;
+  google.protobuf.StringValue cart_uuid = 15; // necessary for bundle sibling cart
+  google.protobuf.Int32Value issued_credit_and_refund_amount = 16; // c&r amount already issued to customer
+  google.protobuf.StringValue cancellation_source_string = 17; // string of consumer_order.OrderCancellationSource
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 18;
+  // latest adjusted cart if there was any
+  Cart latest_adjusted_cart = 19;
+}
+
+message CancelOrderQuoteResponse {
+  money.OrderQuoteV2 cancel_order_quote = 1;
+  order.CancellationPricingPolicies refund_policy = 2;
+
+  SystemMetadata system_metadata = 3;
+}
+
+message RecurringDeliveryDiscountDetails {
+  google.protobuf.Int32Value recurring_delivery_discount_percentage = 1;
+  common.order_config.v1.RecurringOrderDetails recurring_order_details = 2;
+}
+
+// Indicates the caller of GetPromoMessageForCart
+enum PromoMessageRequestSource {
+  // Default
+  PROMO_MESSAGE_REQUEST_SOURCE_UNSPECIFIED = 0;
+  // Client App (to populate the sticky footer)
+  PROMO_MESSAGE_REQUEST_SOURCE_CLIENT_APP = 1;
+  // MIC Fetcher
+  PROMO_MESSAGE_REQUEST_SOURCE_MIC_FETCHER = 2;
+}
+
+message PromoDetails {
+  // Reason for promotion.
+  money.DiscountType discount_type = 1;
+  // Promotion taxonomy (e.g Delivery Fee or Service Fee promo).
+  money.DiscountTarget discount_target = 2;
+  // Min subtotal required for promotion.
+  google.protobuf.Int32Value promotion_min_subtotal = 3;
+  // $ savings as a result of promotion (e.g $4 savings would be 400)
+  google.protobuf.Int32Value promotion_savings = 4;
+}
+
+message GetPromoMessageForCartRequest {
+  // Current cart
+  Cart cart = 1;
+  // User's locale
+  google.protobuf.StringValue locale = 2;
+  // Current Cart's store location
+  common.StoreLocation store_location = 3;
+  // The cart creator's information
+  money.ConsumerInfoV2 consumer_info = 4;
+  // The user's current device context
+  common.ClientDeviceCtx request_ctx = 5;
+  // The subtotal of the pricing cart. If absent the pricing service will calculate based on cart content.
+  google.protobuf.Int32Value subtotal = 6;
+  // The consumer delivery location
+  common.ConsumerLocation delivery_location = 7;
+  // Bundle details
+  BundleDetails bundle_details = 8;
+  // Additional store info
+  AdditionalStoreInfo additional_store_info = 9;
+  // optional storeId for empty cart case
+  google.protobuf.StringValue store_id = 10;
+  // flag to indicate whether the request is from a pricing-service side shadow call
+  google.protobuf.BoolValue is_from_shadow_call = 11;
+  // flag to indicate request caller
+  PromoMessageRequestSource request_source = 12;
+  // the state of the sticky footer that is currently being shown in client. Each enum should be a state machine system
+  // per the requirement of each project/team
+  oneof sticky_footer_state {
+    MICStickyFooterState mic_sticky_footer_state = 13;
+  }
+}
+
+message GetPromoMessageForCartResponse {
+  // The promo message string
+  google.protobuf.StringValue promo_message = 1;
+  // The subtotal of the cart
+  google.protobuf.Int32Value cart_subtotal = 2;
+  // The minimum subtotal needed to be eligible for the promotion
+  google.protobuf.Int32Value promotion_min_subtotal = 3;
+  // The promotion's campaign
+  promotion_service.Campaign campaign = 4;
+  // The description to be displayed in the popup dialogue
+  google.protobuf.StringValue promo_message_description = 5;
+  // The title to be displayed in the popup dialogue
+  google.protobuf.StringValue promo_message_title = 6;
+  // The promo description that shows up under promo_message
+  google.protobuf.StringValue promo_sub_message = 7;
+  // The message type set by pricing service for certain cases (e.g. Taste of Dashpass)
+  // that require additional information
+  PromoMessageType promo_message_type = 8;
+  // Timestamp indicating when the promotion will end for certain cases (e.g. Weekly Drops)
+  google.protobuf.Timestamp promo_end_time = 9;
+  // Text to be included on badge of sticky footer
+  google.protobuf.StringValue badge_text = 10;
+  // Background color of sticky footer banner. This will override the background color set in cxmbff by
+  // placement_assets.json
+  google.protobuf.StringValue sticky_footer_background_color = 11;
+  // Type of the sticky footer banner. This will override the type set in cxmbff by placement_assets.json
+  google.protobuf.StringValue sticky_footer_type = 12;
+  // progress on loyalty rewards progress, on the scale of 1 - like 0.75
+  // it will only be set if the current promo message is from loyalty rewards
+  google.protobuf.FloatValue loyalty_progress_on_scale_1 = 13;
+  // More details on active promotion.
+  PromoDetails promo_details = 14;
+  // Sticky footer metadata
+  StickyFooterMetadata sticky_footer_metadata = 15;
+}
+
+// enum to define which state MIC sticky footer is currently showing
+enum MICStickyFooterState {
+  // default
+  MIC_STICKY_FOOTER_STATE_UNSPECIFIED = 0;
+  // cart is empty
+  MIC_STICKY_FOOTER_STATE_EMPTY_CART = 1;
+  // 0 < subtotal < delivery fee MIC benefit threshold
+  MIC_STICKY_FOOTER_STATE_DF_WIP = 2;
+  // delivery fee MIC benefit unlocked
+  MIC_STICKY_FOOTER_STATE_DF_CELEBRATION = 3;
+  // delivery fee MIC benefit threshold < subtotal < service fee MIC benefit threshold
+  MIC_STICKY_FOOTER_STATE_SF_WIP = 4;
+  // service fee MIC benefit unlocked
+  MIC_STICKY_FOOTER_STATE_SF_CELEBRATION = 5;
+  // last awareness state to convey how much saving the user has unlocked in total
+  MIC_STICKY_FOOTER_STATE_LAST_AWARENESS = 6;
+}
+
+message StickyFooterMetadata {
+  // how many segments are in the progress bar
+  google.protobuf.Int32Value segments_count = 1;
+  // the state of the sticky footer that is currently being shown in client. Each enum should be a state machine system
+  // per the requirement of each project/team
+  oneof sticky_footer_states {
+    MICStickyFooterState mic_sticky_footer_state = 2;
+  }
+  google.protobuf.FloatValue progress_bar_value = 3;
+}
+
+// Message type determined by pricing service GetPromoMessageForCart
+enum PromoMessageType {
+  // default
+  PROMO_MESSAGE_TYPE_UNSPECIFIED = 0;
+  // set using context only available in Pricing
+  PROMO_MESSAGE_TYPE_TASTE_OF_DASHPASS = 1;
+  // set to distinguish DP vs classic sticky footer styling
+  PROMO_MESSAGE_TYPE_DASHPASS = 2;
+}
+
+message FinalizeReturnOrderQuoteRequest {
+  Cart cart = 1;
+  string locale = 2;
+
+  common.ConsumerLocation delivery_location = 3;
+  common.StoreLocation store_location = 4;
+  common.CommonAddress store_address = 5;
+
+  TaxOptions tax_options = 6;
+  money.PricingProfile pricing_strategy = 7;
+  CreatorSponsoredPricingProfileDetails creator_sponsored_details = 8;
+  CreatorPaysEntirelyPricingProfileDetails creator_pays_entirely_details = 9;
+
+  map<string, ConsumerPricingDetailsRequest> consumer_details = 10;
+
+  common.ClientDeviceCtx request_ctx = 11;
+  PricingLockCtx pricing_lock_ctx = 12;
+  AdditionalStoreInfo additional_store_info = 13;
+
+  AdditionalConsumerInfo additional_consumer_info = 14;
+  common.DeliveryOptionType delivery_option_type = 15;
+}
+
+message FinalizeReturnOrderQuoteResponse {
+  money.OrderQuoteV2 order_quote = 1;
+}

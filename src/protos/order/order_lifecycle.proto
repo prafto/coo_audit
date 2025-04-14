@@ -1,0 +1,542 @@
+syntax = "proto3";
+package order_service;
+
+import "common/bundle_order_info.proto";
+import "common/common.proto";
+import "common/legacy.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/order_config.proto";
+import "delivery_service/delivery_core.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/consumer_order.proto";
+import "order/cx_revenue_ledger.proto";
+import "order/event.proto";
+
+option go_package = "order_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.order";
+
+message MerchantOrderLifecycleEvent {
+  google.protobuf.Timestamp timestamp = 1;
+
+  int64 store_id = 2;
+  int64 submarket_id = 3;
+
+  bool is_test = 4;
+
+  oneof lifecycle_event {
+    StoreConfirmedOrderLifecycleEvent store_confirmed_order = 5;
+    StoreCancelOrderLifecycleEvent store_cancel_order = 6;
+  }
+  int64 business_id = 7;
+}
+
+message StoreConfirmedOrderLifecycleEvent {
+  google.protobuf.Timestamp store_order_confirmed_time = 1;
+  google.protobuf.StringValue provider = 2;
+  string order_protocol = 3;
+  google.protobuf.Int64Value delivery_id = 4;
+  google.protobuf.StringValue delivery_uuid = 5;
+}
+
+message StoreCancelOrderLifecycleEvent {
+  google.protobuf.Timestamp cancelled_at = 1;
+  google.protobuf.StringValue provider = 2;
+  string order_protocol = 3;
+  google.protobuf.Int64Value delivery_id = 4;
+  google.protobuf.StringValue delivery_uuid = 5;
+}
+
+// Please do not use this anymore. Instead use order_common.v1.UserDetails
+// This will be deprecated eventually
+message UserDetails {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.BoolValue is_blacklisted = 4;
+  google.protobuf.BoolValue is_active = 5;
+  google.protobuf.BoolValue is_guest = 6;
+  google.protobuf.StringValue email = 7;
+  google.protobuf.StringValue phone_number = 8;
+}
+
+message OrderLifecycleEvent {
+  message DebugInfo {
+    // denotes if the event was sent from a sandbox environment
+    google.protobuf.BoolValue is_sandbox_traffic = 1;
+  }
+
+  string order_uuid = 1;
+  OrderLifecycleEventType event_type = 2;
+  OrderLifecycleEventStatus status = 3;
+  OrderOperationCode order_operation_code = 4;
+  common.order_config.v1.OrderConfig order_config = 5;
+  google.protobuf.Timestamp timestamp = 6;
+
+  oneof event_payload {
+    PaymentSuccess payment_success = 7;
+    PaymentFailure payment_failure = 8;
+    FraudSuccess fraud_success = 9;
+    FraudFailure fraud_failure = 10;
+    OrderCancelSuccess order_cancel_success = 11;
+    OrderCancelFailure order_cancel_failure = 12;
+    ProcessedOrderCancelSuccess processed_order_cancel_success = 16;
+    ProcessedOrderCancelFailure processed_order_cancel_failure = 17;
+    OrderTransmissionSuccess order_transmission_success = 28;
+    OrderTransmissionFailure order_transmission_failure = 29;
+    OrderPersistSuccess order_persist_success = 30;
+    FinalUpdatesSuccess final_updates_success = 32;
+    StoreConfirmOrderSuccess store_confirm_order_success = 34;
+    StoreConfirmOrderFailure store_confirm_order_failure = 35;
+    PendingRefundExecutedSuccess pending_refund_executed_success = 36;
+    PendingRefundExecutedFailure pending_refund_executed_failure = 37;
+    RefundMerchantPaymentSuccess refund_merchant_payment_success = 60;
+    RefundMerchantPaymentFailure refund_merchant_payment_failure = 61;
+    CancelDeliverySuccess cancel_delivery_success = 62;
+    CancelDeliveryFailure cancel_delivery_failure = 63;
+    OrderTransmissionSendSuccess order_transmission_send_success = 64;
+    OrderTransmissionSendFailure order_transmission_send_failure = 65;
+    PostSubmissionPersistSuccess post_submission_persist_success = 66;
+  }
+
+  string store_id = 13;
+  google.protobuf.StringValue delivery_uuid = 14;
+  google.protobuf.StringValue delivery_id = 15;
+  google.protobuf.BoolValue is_from_store_to_us = 18;
+  google.protobuf.Timestamp order_created_at = 19;
+  google.protobuf.Int64Value business_id = 20;
+  google.protobuf.Int64Value starting_point_id = 21;
+  google.protobuf.Int64Value submarket_id = 22;
+  google.protobuf.Int64Value market_id = 23;
+  google.protobuf.Int64Value country_id = 24;
+  google.protobuf.BoolValue is_partner = 25;
+  google.protobuf.BoolValue is_test = 26;
+  google.protobuf.BoolValue is_asap = 27;
+  google.protobuf.Int64Value store_order_cart_id = 31;
+  google.protobuf.Int64Value consumer_id = 33;
+  // original pricing response or adjusted pricing response
+  money.OrderQuoteV2 order_quote = 38;
+  // order cart id
+  google.protobuf.StringValue order_cart_id = 39;
+  google.protobuf.Int32Value exact_order_operation_code = 40;
+
+  ProcessingUserError processing_user_error = 41;
+  google.protobuf.Int64Value business_vertical_id = 42;
+  legacy.OverauthConfig overauth_config = 43;
+  google.protobuf.Int64Value business_group_id = 44;
+  google.protobuf.BoolValue contains_alcohol = 45;
+
+  // Will be used if present and delivery_id is null, idempotency_key is to avoid duplicate creation
+  google.protobuf.StringValue delivery_idempotency_key = 46;
+  OrderCancellationRequest order_cancellation_request = 47;
+  google.protobuf.Int32Value item_count = 48;
+
+  // Information on the user of the order
+  UserDetails user_details = 49;
+
+  PricingDataExtensions pricing_data_extensions = 50;
+
+  // A field to indicate the anticipated subsequent order state
+  google.protobuf.StringValue next_order_state = 51;
+
+  // parent cx_order uuid if it exists
+  google.protobuf.StringValue parent_consumer_order_uuid = 52;
+
+  // debug info
+  DebugInfo debug_info = 53;
+}
+
+enum OrderLifecycleEventType {
+  UNKNOWN_ORDER_LIFECYCLE_EVENT_TYPE = 0;
+
+  ADJUSTMENT_SUBMIT = 1;
+
+  PERSIST = 2;
+  ADD_PAYMENT_METHOD = 3;
+  CREDITS = 4;
+  FRAUD = 5;
+  PAYMENT_MERCHANT = 6;
+  PAYMENT_CONSUMER = 7;
+
+  // corresponds to DELIVERY state in OrderState.kt
+  DELIVERY_EVENT = 8;
+
+  ORDER_TRANSMISSION = 9;
+  FINAL_UPDATES_CRITICAL = 10;
+  FINAL_UPDATES = 11;
+
+  ORDER_CANCEL_FINAL_UPDATE = 12;
+  ORDER_CANCEL = 13;
+  RECOVER_FINAL_UPDATES_CRITICAL = 14;
+  REFUND_CREDITS = 15;
+  REFUND_CONSUMER_PAYMENT = 16;
+  REFUND_MERCHANT_PAYMENT = 17;
+  DEPRECATED_1 = 18;
+  DELIVERY_CANCEL = 19;
+  ORDER_TRANSMISSION_CANCEL = 20;
+
+  FAILED_ORDER_CANCEL = 21;
+  FAILED_REFUND_CREDITS = 22;
+  FAILED_REFUND_PAYMENT = 23;
+  FAILED_DELIVERY_CANCEL = 24;
+  FAILED_ORDER_TRANSMISSION_CANCEL = 25;
+  FAILED_ROLLBACK_MERCHANT_PAYMENT = 26;
+
+  PROCESSED_FAILED_FINAL_UPDATE = 27;
+  PROCESSED_SUCCESS = 28;
+  PROCESSED_ORDER_CANCEL = 29;
+
+  // Additional states that have been added to OrderState.kt
+  PAYMENT_PAUSE = 30;
+  RESUME_ORDER_REVALIDATE = 31;
+  PAYMENT_CONSUMER_CONFIRM = 32;
+  POST_SUBMISSION_PERSIST = 33;
+  REVERT_POST_SUBMISSION_PERSIST = 34;
+  FAILED_REVERT_POST_SUBMISSION_PERSIST = 35;
+
+  STORE_CONFIRM_ORDER = 36;
+
+  CANCELLATION_REFUND_EXECUTION = 37;
+  FAILED_CANCELLATION_REFUND_EXECUTION = 38;
+
+  SNAP_PAYMENT_CONSUMER = 39;
+  REFUND_SNAP_PAYMENT_CONSUMER = 40;
+
+  REDEEM_REWARD_POINTS = 41;
+  REFUND_REWARD_POINTS = 42;
+  FAILED_REFUND_REWARD_POINTS = 43;
+
+  HSA_FSA_PAYMENT_CONSUMER = 44;
+  REFUND_HSA_FSA_PAYMENT_CONSUMER = 45;
+  DELIVERY_RETRY = 46;
+  PAUSE = 47;
+  DELIVERY_VIRTUAL = 48;
+  DELIVERY_VIRTUAL_CANCEL = 49;
+  DELIVERY_PAUSE = 50;
+
+  // Indicating when orders are transmitted for order fulfillment
+  ORDER_TRANSMISSION_SEND = 51;
+
+  // States to pause and resume parent consumer order when child merchant orders are processing
+  PAUSE_PARENT_ORDER = 52;
+  PROCESS_CHILD_ORDERS = 53;
+  RESUME_PARENT_ORDER = 54;
+}
+
+enum OrderOperationCode {
+  UNKNOWN_OPERATION_CODE = 0;
+  CHECKOUT = 1;
+  ADJUSTMENT = 2;
+  CANCEL = 3;
+}
+
+message OrderLifecycleItem {
+  google.protobuf.Int64Value item_id = 1;
+  google.protobuf.StringValue item_name = 2;
+  google.protobuf.Int32Value quantity = 3;
+  google.protobuf.StringValue description = 4;
+  google.protobuf.Int32Value subtotal = 5;
+  google.protobuf.Int32Value unit_price = 6;
+  google.protobuf.Int64Value order_item_id = 7;
+}
+
+message OrderLifecycleEventStatus {
+  bool is_success = 1;
+}
+
+message PricingDataExtensions {
+  money.MonetaryFields vat_exclusive_alcohol_subtotal = 1;
+}
+
+message PaymentSuccess {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message PaymentFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message FraudSuccess {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message FraudFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message StoreConfirmOrderSuccess {
+  reserved 3, 4, 9, 18, 19;
+  reserved "order_cart_id", "store_order_confirm_time", "consumer_id", "delivery_uuid", "delivery_id";
+  message StoreInfo {
+    reserved 1, 2;
+    reserved "store_id", "business_id";
+    google.protobuf.StringValue store_timezone = 3;
+    google.protobuf.BoolValue is_store_partner = 4;
+    google.protobuf.BoolValue is_store_marketplace_facilitator = 5;
+    google.protobuf.StringValue external_store_id = 6;
+    google.protobuf.StringValue store_street = 7;
+    google.protobuf.StringValue store_city = 8;
+    google.protobuf.StringValue store_state = 9;
+    google.protobuf.StringValue store_country = 10;
+    google.protobuf.StringValue store_currency = 11;
+    google.protobuf.StringValue store_name = 12;
+    google.protobuf.StringValue business_name = 13;
+  }
+
+  google.protobuf.StringValue mx_pickup_instructions_for_dasher = 1;
+  StoreInfo store_info = 2;
+  google.protobuf.BoolValue auto_release_enabled = 5;
+  CountryInfo country_info = 6;
+  MarketInfo market_info = 7;
+  google.protobuf.StringValue order_protocol = 8;
+  google.protobuf.Timestamp delivery_active_date = 10;
+  money.MonetaryFields invoiceable_marketing_fee = 11;
+  money.MonetaryFields subtotal = 12;
+  order.PromotionInvoicingMetadata promotion_info = 13;
+  order.MarketingFeeComponentBreakdown marketing_fee_breakdown = 14;
+  money.MonetaryFields merchant_fee = 15;
+  common.PaymentMethod payment_method = 16;
+  order_service.ConfirmationProtocolType confirmation_protocol = 17;
+  google.protobuf.StringValue submit_platform = 20;
+  google.protobuf.Timestamp order_cart_submitted_at = 21;
+}
+
+message StoreConfirmOrderFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message OrderCancelSuccess {
+  order.CancellationPricingPolicies refund_policy = 1;
+  order.CancellationReason cancellation_reason = 2;
+  OrderCancellationSource cancellation_source = 3;
+  google.protobuf.Timestamp delivery_actual_pickup_time = 4;
+
+  // The points summary information of DoorDash loyalty platform
+  money.DoorDashLoyaltyPointsSummary doordash_loyalty_points_summary = 5;
+  repeated OrderLifecycleItem order_item_list = 6;
+
+  order.CancellationPendingRefundInfo pending_refund_info = 7;
+
+  // revert_reason
+  google.protobuf.StringValue revert_reason = 8;
+
+  // The timestamp when the order was cancelled
+  google.protobuf.Timestamp order_cancelled_at = 9;
+
+  //previous marketing fee breakdown before the order was cancelled
+  order.MarketingFeeComponentBreakdown marketing_fee_breakdown = 10;
+}
+
+message PendingRefundExecutedSuccess {
+  order.CancellationPendingRefundInfo pending_refund_info = 1;
+}
+
+message PendingRefundExecutedFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message RefundMerchantPaymentSuccess {
+  OrderCancellationRequest cancellation_request = 1;
+}
+
+message RefundMerchantPaymentFailure {
+  OrderCancellationRequest cancellation_request = 1;
+}
+
+message CancelDeliverySuccess {
+  OrderCancellationRequest cancellation_request = 1;
+}
+
+message CancelDeliveryFailure {
+  OrderCancellationRequest cancellation_request = 1;
+}
+
+message OrderCancelFailure {
+  // The points summary information of DoorDash loyalty platform
+  money.DoorDashLoyaltyPointsSummary doordash_loyalty_points_summary = 1;
+}
+
+message OrderTransmissionSuccess {
+  // The points summary information of DoorDash loyalty platform
+  money.DoorDashLoyaltyPointsSummary doordash_loyalty_points_summary = 1;
+  repeated OrderLifecycleItem order_item_list = 2;
+  // The bundle order (i.e., DoubleDash) info which indicates if this order is an O2 (i.e., non-primary order)
+  common.bundle_order_info.v1.BundleOrderInfo bundle_order_info = 3;
+
+  google.protobuf.Timestamp submitted_at = 4;
+  repeated order_service.Payment payments = 5;
+  repeated order_service.CreditIssuance credit_issuance = 6;
+  money.MonetaryFields max_individual_cost = 7;
+  order.MarketingFeeComponentBreakdown marketing_fee_breakdown = 8;
+  repeated google.protobuf.StringValue order_ids = 9;
+  google.protobuf.StringValue order_transmission_payment_protocol = 10;
+  order_service.Experience experience = 11;
+  // use unified platform type
+  order_service.PlatformType platform = 12 [deprecated = true];
+  google.protobuf.BoolValue is_dde = 13;
+  google.protobuf.BoolValue is_ddk = 14;
+  google.protobuf.BoolValue is_mpf_state = 15;
+  google.protobuf.BoolValue is_pass_through = 16;
+  google.protobuf.BoolValue top_off_enabled = 17;
+  repeated order_service.RegulatedItemsCategory regulated_items_categories = 18;
+  MerchantCommission order_transmission_commission = 19;
+  LunchpassInfo lunchpass_info = 20;
+  google.protobuf.StringValue pgp_code = 21;
+  common.PlatformType unified_platform_type = 22;
+  google.protobuf.StringValue business_name = 23;
+}
+
+message OrderTransmissionFailure {
+  // The points summary information of DoorDash loyalty platform
+  money.DoorDashLoyaltyPointsSummary doordash_loyalty_points_summary = 1;
+}
+
+message MerchantCommission {
+  google.protobuf.Int32Value order_transmission_commission = 1;
+  google.protobuf.Int32Value order_transmission_commission_tax = 2;
+  google.protobuf.StringValue order_transmission_commission_rate_string = 3;
+}
+
+message LunchpassInfo {
+  google.protobuf.Int64Value mealplan_revenue = 64;
+  google.protobuf.Int32Value num_meals_used = 65;
+}
+
+// deprecated, will not be used because nothing is executed on ProcessedOrderCancel state
+message ProcessedOrderCancelSuccess {
+  order.CancellationPricingPolicies refund_policy = 1;
+}
+
+// deprecated, will not be used because nothing is executed on ProcessedOrderCancel state
+message ProcessedOrderCancelFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message OrderPersistSuccess {
+  google.protobuf.Int64Value payment_protocol_id = 1;
+  repeated delivery_service.core.DeliveryOrderItem items = 2;
+}
+
+message FinalUpdatesSuccess {
+  google.protobuf.BoolValue is_first_order = 1;
+  google.protobuf.StringValue device_id_map = 2;
+  RedcardRefundBreakdown redcard_refund_breakdown = 3;
+  AdjustmentInfo adjustment_info = 4;
+  money.MonetaryFields new_store_commission_amount = 5;
+  money.MonetaryFields new_store_commission_tax = 6;
+  repeated order_service.Payment new_payments = 7;
+  repeated order_service.CreditIssuance credit_issuance = 8;
+  repeated google.protobuf.Int64Value error_ids = 9;
+  money.MonetaryFields store_refund = 10;
+  money.MonetaryFields store_charge = 11;
+  // Inflation amount applied on merchant in-feed price
+  // See https://docs.google.com/document/d/1ASF8DrEYRWJkLb199B6uLAfRBjNLtIB7e0wxvWhTv04/edit#
+  money.MonetaryFields inflation = 12;
+}
+
+message AdjustmentInfo {
+  reserved 4;
+  reserved "adjustment_cost_diffs";
+  reserved 7;
+  reserved "pre_adjusted_order_quote";
+  google.protobuf.Timestamp adjusted_at = 1;
+  order_service.AdjustmentType adjustment_type = 2;
+  order.OrderAdjustmentSource adjustment_source = 3;
+  AdjustmentMonetaryFieldDiffs adjustment_monetary_fields_diffs = 5;
+  OrderAdjustmentType order_adjustment_type = 6;
+  order.MarketingFeeComponentBreakdown previous_marketing_fee_breakdown = 8;
+  order.MarketingFeeComponentBreakdown new_marketing_fee_breakdown = 9;
+  //reflects the order's totalPricingDetails from the previous adjustment if there was one or from checkout
+  money.OrderPricingDetails pre_adjusted_total_pricing_details = 10;
+}
+
+message AdjustmentMonetaryFieldDiffs {
+  reserved "diff_vat_exclusive_subotal";
+  reserved 13;
+  // Added for revenue subledger accounting use
+  // Difference in amounts: post_adjusted MINUS pre_adjusted
+  money.MonetaryFields diff_subtotal_amount = 1;
+  money.MonetaryFields diff_pre_delivery_tip_amount = 2;
+  money.MonetaryFields diff_pre_order_mx_tip_amount = 3;
+  repeated order_service.Fee diff_fees = 4;
+  repeated order_service.Discount diff_discounts = 5;
+  repeated order_service.Tax diff_taxes = 6;
+  money.MonetaryFields diff_store_subtotal_amount = 7;
+  money.MonetaryFields diff_store_subtotal_tax = 8;
+  money.MonetaryFields diff_alcohol_subtotal_amount = 9;
+  money.MonetaryFields diff_alcohol_subtotal_tax_amount = 10;
+  money.MonetaryFields diff_non_regulated_subtotal_amount = 11;
+  money.MonetaryFields diff_non_regulated_subtotal_tax_amount = 12;
+  money.MonetaryFields diff_vat_exclusive_alcohol_subtotal_amount = 14;
+  money.MonetaryFields diff_vat_exclusive_subtotal = 15;
+  money.MonetaryFields diff_alcohol_subtotal_vat = 16;
+  DiffVatFeesTaxDetail diff_vat_fees_tax_detail = 17;
+}
+
+message DiffVatFeesTaxDetail {
+  money.MonetaryFields diff_vat_delivery_fee_tax_amount = 1;
+  money.MonetaryFields diff_vat_service_fee_tax_amount = 2;
+  money.MonetaryFields diff_vat_min_order_fee_tax_amount = 3;
+  money.MonetaryFields diff_vat_legislative_fee_tax_amount = 4;
+  repeated DiffVatGenericFeeTaxDetail diff_vat_generic_fee_taxes = 5;
+  money.MonetaryFields diff_vat_priority_fee_tax_amount = 6;
+}
+
+message DiffVatGenericFeeTaxDetail {
+  string fee_config_id = 1;
+  money.MonetaryFields diff_vat_fee_tax_amount = 3;
+}
+
+message FinalUpdatesFailure {
+  RedcardRefundBreakdown redcard_refund_breakdown = 1;
+}
+
+message RedcardRefundBreakdown {
+  google.protobuf.Int32Value subtotal_refund = 1;
+  google.protobuf.Int32Value subtotal_tax_refund = 2;
+  google.protobuf.Int32Value service_fee_refund = 3;
+  google.protobuf.Int32Value service_fee_tax_refund = 4;
+  google.protobuf.Int32Value total_refund = 5;
+  google.protobuf.Int32Value credit_refund = 6;
+}
+
+message CountryInfo {
+  google.protobuf.Int64Value country_id = 1;
+}
+
+message MarketInfo {
+  google.protobuf.Int64Value market_id = 1;
+  google.protobuf.Int64Value submarket_id = 2;
+}
+
+message OrderTransmissionSendSuccess {
+  google.protobuf.Timestamp transmitted_at = 1;
+  google.protobuf.StringValue order_protocol = 2;
+  common.Experience experience = 3;
+}
+
+message OrderTransmissionSendFailure {
+  // A dummy field that enables Revenue Platform to archive the event payload   in Apache Parquet format.
+  google.protobuf.NullValue unused_field = 1;
+}
+
+message PostSubmissionPersistSuccess {
+  google.protobuf.Timestamp quoted_delivery_time = 1;
+  google.protobuf.Timestamp delivery_window_start_time = 2;
+  google.protobuf.Timestamp delivery_window_end_time = 3;
+  common.DeliveryOptionType delivery_option_type = 4;
+  common.Location delivery_address = 5;
+  common.Location store_address = 6;
+  bool is_consumer_pickup = 7;
+}

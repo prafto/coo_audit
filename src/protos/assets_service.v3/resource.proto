@@ -1,0 +1,233 @@
+syntax = "proto3";
+
+package assets_service.v3;
+
+import "assets_service.v3/common.proto";
+import "assets_service.v3/resource_type.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/assets_service.v3";
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.assetsservice.v3";
+
+// Resource represents an item (e.g. a Cadence workflow) that is utilized by a SoftwareAsset.
+message Resource {
+  // Read only. A stable identifier for the resource of the format: 'ddrn::resource::<UUID>'
+  string ddrn = 1;
+  // Unique alias for this resource
+  string alias = 2;
+  // The software asset ddrn that this resource belongs to
+  string software_asset_ddrn = 3;
+
+  // The resource type
+  ResourceType resource_type = 4;
+
+  // Read only. Indicates the epoch time that the resource was created
+  google.protobuf.Timestamp created_at = 5;
+  // Read only. Indicates the epoch time that the resource was updated
+  google.protobuf.Timestamp updated_at = 6;
+  // Read only. Indicates the epoch time that the resource was deleted
+  google.protobuf.Timestamp deleted_at = 7;
+
+  // The metadata depends on the resource type
+  oneof resource_metadata {
+    // The metadata for type CADENCE_WORKFLOW
+    ResourceMetadataCadenceWorkflow cadence_workflow_metadata = 10;
+    // The metadata for type CRDB_CLUSTER
+    ResourceMetadataCrdbCluster crdb_cluster_metadata = 11;
+    // The metadata for type S3_BUCKET
+    ResourceMetadataS3Bucket s3_bucket_metadata = 12;
+    // The metadata for type ELASTICACHE_CLUSTER
+    ResourceMetadataElasticacheCluster elasticache_cluster_metadata = 20;
+  }
+}
+
+// GetResourceRequest is the request message for GetResource.
+message GetResourceRequest {
+  // The query to use to find the resource
+  oneof query {
+    // The ddrn of the resource
+    string ddrn = 1;
+    // The alias of the resource
+    string alias = 2;
+  }
+
+  // if alias is set, the software asset ddrn must also be set
+  string software_asset_ddrn = 3;
+  // if alias is set, the resource type must also be set
+  ResourceType resource_type = 4;
+}
+
+// GetResourceResponse is the response message for GetResource.
+message GetResourceResponse {
+  // The resource requested
+  Resource resource = 1;
+}
+
+// ListResourcesRequest is the request message for ListResources.
+message ListResourcesRequest {
+  // The filters to apply to the list of resources. Multiple filters will be OR'd together.
+  repeated ResourceFilter filters = 1;
+
+  // the number of results to return per page
+  int32 page_size = 3;
+  // the page token to use for pagination
+  string page_token = 4;
+}
+
+// ResourceFilter is the filter to apply to the list of resources.
+message ResourceFilter {
+  // Resources matching this resource type
+  ResourceType resource_type = 1;
+  // Resources associated with this software asset ddrn
+  string software_asset_ddrn = 2;
+  // All resources that match any of these given metadata fields (must correspond to resource_type)
+  oneof metadata_query {
+    // The query metadata for type CADENCE_WORKFLOW
+    ResourceMetadataQueryCadenceWorkflow cadence_workflow_metadata = 10;
+    // The query metadata for type CRDB_CLUSTER
+    ResourceMetadataQueryCrdbCluster crdb_cluster_metadata = 11;
+    // The query metadata for type S3_BUCKET
+    ResourceMetadataQueryS3Bucket s3_bucket_metadata = 12;
+    // The query metadata for type ELASTICACHE_CLUSTER
+    ResourceMetadataQueryElasticacheCluster elasticache_cluster_metadata = 20;
+  }
+}
+
+// ListResourcesResponse is the response message for ListResources.
+message ListResourcesResponse {
+  // the list of resources matching the request filters
+  repeated Resource resources = 1;
+  // the next page token to use for pagination
+  string next_page_token = 2;
+  // the total count of resources matching the request filters
+  int32 total_count = 3;
+}
+
+// Represents all fields that should be set when registering a resource to a SoftwareAsset.
+message ResourceData {
+  // Required. The alias of the resource. Must be unique within the software asset and resource type.
+  string alias = 1;
+
+  // Required. The software asset ddrn that this resource belongs to
+  string software_asset_ddrn = 2;
+
+  // Required. The resource type
+  ResourceType resource_type = 3;
+
+  // Optional. If set, the metadata needs to correspond to the resource type
+  oneof resource_metadata {
+    // The metadata for type CADENCE_WORKFLOW resource type
+    ResourceMetadataCadenceWorkflow cadence_workflow_metadata = 10;
+    // The metadata for type CRDB_CLUSTER resource type
+    ResourceMetadataCrdbCluster crdb_cluster_metadata = 11;
+    // The metadata for type S3_BUCKET resource type
+    ResourceMetadataS3Bucket s3_bucket_metadata = 12;
+    // The metadata for type ELASTICACHE_CLUSTER resource type
+    ResourceMetadataElasticacheCluster elasticache_cluster_metadata = 20;
+  }
+}
+
+// RegisterResourceRequest is the request message for RegisterResource.
+message RegisterResourceRequest {
+  // The resource to register
+  ResourceData resource_data = 1;
+}
+
+// RegisterResourceResponse is the response message for RegisterResource.
+message RegisterResourceResponse {
+  // The registered resource, if successful
+  Resource resource = 1;
+  // The validation errors that occurred during registration
+  repeated ValidationError validation_errors = 2;
+}
+
+// DeleteResourceRequest is the request message for DeleteResource.
+message DeleteResourceRequest {
+  // The resource identifier to delete
+  oneof query {
+    // The ddrn of the resource
+    string ddrn = 1;
+    // DEPRECATED. The alias of the resource
+    string alias = 2;
+  }
+}
+
+// DeleteResourceResponse is the response message for DeleteResource.
+message DeleteResourceResponse {
+  // Indicates if the resource was successfully deleted
+  bool success = 1;
+}
+
+// UpdateResourceRequest is the request message for UpdateResource.
+message UpdateResourceRequest {
+  // The resource identifier to update
+  oneof query {
+    // The ddrn of the resource
+    string ddrn = 1;
+    // DEPRECATED. The alias of the resource
+    string alias = 2;
+  }
+
+  // The fields to update. Only fields explicitly set will be updated, regardless of what is set in resource_data field.
+  // Available paths: alias, software_asset_ddrn, resource_type, metadata
+  // E.g., to update the alias and metadata fields, set the field mask to { paths: ["alias", "metadata"] }
+  // Note: metadata updates will replace the entire metadata object.
+  google.protobuf.FieldMask field_mask = 3;
+  // The fields to update. Only fields explicitly set will be updated.
+  // Including the metadata field will update the entire metadata object.
+  ResourceData resource_data = 4;
+}
+
+// UpdateResourceResponse is the response message for UpdateResource.
+message UpdateResourceResponse {
+  // The updated resource, if successful
+  Resource resource = 1;
+  // Any validation errors that occurred during update
+  repeated ValidationError validation_errors = 2;
+}
+
+// List all resource types
+message ListResourceTypesRequest {
+  // The filter to apply to the list of resource types
+  ResourceTypeFilter filter = 1;
+}
+
+// Filter for resource types
+message ResourceTypeFilter {
+  // The resource type state to include in the response
+  ResourceTypeTrackingState tracking_state = 1;
+}
+
+// The state of the resource type
+enum ResourceTypeTrackingState {
+  // All resource types
+  RESOURCE_TYPE_TRACKING_STATE_UNSPECIFIED = 0;
+  // Resource type is tracked
+  RESOURCE_TYPE_TRACKING_STATE_TRACKED = 1;
+  // Resource type is untracked
+  RESOURCE_TYPE_TRACKING_STATE_UNTRACKED = 2;
+}
+
+// ListResourceTypesResponse is the response message for ListResourceTypes.
+message ListResourceTypesResponse {
+  // The list of resource types with information for each
+  repeated ResourceTypeInfo resource_type_infos = 1;
+}
+
+// Information about a resource type
+message ResourceTypeInfo {
+  // The resource type
+  ResourceType resource_type = 1;
+  // The state of the resource type
+  ResourceTypeTrackingState tracking_state = 2;
+  // The DDRN of the resource type tracker
+  string tracker_software_asset_ddrn = 3;
+  // The time the resource type was created
+  google.protobuf.Timestamp created_at = 4;
+  // The time the resource type was last updated
+  google.protobuf.Timestamp updated_at = 5;
+  // The user who last updated the resource type
+  string last_updated_by_ddrn = 6;
+}

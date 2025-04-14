@@ -1,0 +1,203 @@
+syntax = "proto3";
+
+package developer_insights_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "iguazu/events/developer_insights_event.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.developer_insights_service";
+
+// developer insight service to handle integration health queries
+service DeveloperInsightsService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+  // Timeout after 5000 milliseconds or 5 seconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  //Returns traffic summary response
+  rpc GetTrafficSummaryMetrics(GetTrafficSummaryMetricsRequest) returns (GetTrafficSummaryMetricsResponse);
+
+  // Integration SLA
+  rpc GetIntegrationSla(GetIntegrationSlaRequest) returns (GetIntegrationSlaResponse);
+
+  // Integration Quality Metrics
+  rpc GetIntegrationQualityMetrics(GetIntegrationQualityMetricsRequest) returns (GetIntegrationQualityMetricsResponse);
+}
+
+// Request for GetIntegrationQualityMetrics
+message GetIntegrationQualityMetricsRequest {
+  // developer UUID
+  string developer_id = 1;
+  // startDate in epoch milliseconds
+  int64 start_date_epoch_ms = 2;
+  // endDate in epoch milliseconds
+  int64 end_date_epoch_ms = 3;
+  // PROD or TEST data
+  iguazu.events.v1.Environment environment = 4;
+  // provider type from MP
+  string tenant = 5;
+  // integration type : Drive V1, Drive V2, Marketplace V1, Reporting V1
+  IntegrationType integration_type = 6;
+  // metric name list
+  repeated QualityMetricType metric_names = 7;
+}
+
+// Response for GetIntegrationQualityMetrics
+message GetIntegrationQualityMetricsResponse {
+  // response is a map of metric_name to list of metric values
+  map<string, IntegrationQualityMetricList> integration_quality_metrics_response = 1;
+}
+
+// list of IntegrationQualityMetric
+message IntegrationQualityMetricList {
+  // list of quality metric value
+  repeated IntegrationQualityMetric quality_metric = 1;
+}
+
+// for each unit, we have timestamp and value
+message IntegrationQualityMetric {
+  // time when collecting metrics
+  google.protobuf.Timestamp timestamp = 1;
+  // metric value
+  double metric_value = 2;
+}
+
+// integration quality metric type: mhqdr_7d, mto_7d, percetnage_good_menu_7d
+enum QualityMetricType {
+  // unspecified
+  QUALITY_METRIC_TYPE_UNSPECIFIED = 0;
+  // mHQDR 7 days
+  QUALITY_METRIC_TYPE_MHQDR_7D = 1;
+  // MTO 7 days
+  QUALITY_METRIC_TYPE_MTO_7D = 2;
+  // Percentage Good Menus 7 days
+  QUALITY_METRIC_TYPE_PERCENTAGE_GOOD_MENUS_7D = 3;
+}
+
+// Request for GetIntegrationSla
+message GetIntegrationSlaRequest {
+  // developer UUID
+  string developer_id = 1;
+  // startDate in epoch milliseconds
+  int64 start_date_epoch_ms = 2;
+  // endDate in epoch milliseconds
+  int64 end_date_epoch_ms = 3;
+  // PROD or TEST data
+  iguazu.events.v1.Environment environment = 4;
+  // provider type from MP
+  string tenant = 5;
+  // query time interval: 5 mins, daily, weekly, monthly. ONLY MONTHLY works now.
+  QueryTimeInterval time_interval = 6;
+  // event_source: Drive V1, Drive V2, Marketplace
+  string event_source = 7;
+}
+
+// Response for GetIntegrationSla
+message GetIntegrationSlaResponse {
+  // a list of sla metrics
+  repeated IntegrationSlaMetrics integration_sla_metrics = 1;
+}
+
+// Integration SLA metric info
+message IntegrationSlaMetrics {
+  // time when collecting metrics
+  google.protobuf.Timestamp timestamp = 1;
+  // uptime percentage, 0 to 1
+  float uptime_percentage = 2;
+  // downtime minute
+  int64 downtime_minutes = 3;
+  // excluded time explanation
+  repeated ExcludedEvents excluded_events = 4;
+}
+
+// Excluded Events info
+message ExcludedEvents {
+  // incident starts
+  google.protobuf.Timestamp start_time = 1;
+  // event description
+  string event_description = 2;
+  // incident ends
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Request for GetTrafficSummaryMetrics
+message GetTrafficSummaryMetricsRequest {
+  // developer UUID
+  string developer_id = 1;
+  // provider type from MP
+  string tenant = 2;
+  // event_source
+  string event_source = 3;
+  // startDate in epoch milliseconds
+  int64 start_date_epoch_ms = 4;
+  // endDate in epoch milliseconds
+  int64 end_date_epoch_ms = 5;
+  // query time interval: 5 mins, daily, weekly, monthly, etc
+  QueryTimeInterval time_interval = 6;
+  // PROD or TEST data
+  iguazu.events.v1.Environment environment = 7;
+}
+
+// enum type for query interval
+enum QueryTimeInterval {
+  // unspecified
+  QUERY_TIME_INTERVAL_UNSPECIFIED = 0;
+  // every 5 minutes
+  QUERY_TIME_INTERVAL_FIVE_MINUTES = 1;
+  // daily
+  QUERY_TIME_INTERVAL_DAILY = 2;
+  // weekly
+  QUERY_TIME_INTERVAL_WEEKLY = 3;
+  // monthly
+  QUERY_TIME_INTERVAL_MONTHLY = 4;
+}
+
+// Response for GetTrafficSummaryMetrics
+message GetTrafficSummaryMetricsResponse {
+  // list of metrics we want to collect in a unit of time
+  repeated TrafficSummaryMetrics traffic_summary_metrics = 1;
+  // event source: drive_v1_api, drive_v2_webhook
+  string event_source = 2;
+}
+
+// TrafficSummaryMetrics struct
+message TrafficSummaryMetrics {
+  // time value when collecting metrics
+  google.protobuf.Timestamp timestamp = 1;
+  // list of response code count
+  repeated ResponseCode response_code_count = 2;
+}
+
+// part of response for GetTrafficSummaryMetrics
+message ResponseCode {
+  // http status code
+  int32 http_status_code = 1;
+  // counter
+  int64 count = 2;
+}
+
+// integration type for quality metrics table
+enum IntegrationType {
+  // unspecified
+  INTEGRATION_TYPE_UNSPECIFIED = 0;
+  // marketplace v1
+  INTEGRATION_TYPE_MARKETPLACE_V1 = 1;
+  // drive v1
+  INTEGRATION_TYPE_DRIVE_V1 = 2;
+  // drive v2
+  INTEGRATION_TYPE_DRIVE_V2 = 3;
+  // reporting v1
+  INTEGRATION_TYPE_REPORTING_V1 = 4;
+}

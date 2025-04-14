@@ -1,0 +1,862 @@
+syntax = "proto3";
+package dasher_service.courier_platform.v1;
+
+import "common/common.proto";
+import "common/date.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "dasher_service/courier_lcsp_scorecard.proto";
+import "dasher_service/dasher_dasher.proto";
+import "dasher_service/dasher_shift.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.courier_platform";
+
+// Service with defined endpoints for LCSP
+service LcspService {
+  option (doordash.api.service) = {
+    name: "dasher-service-courier"
+    url: "dasher-service-courier.service.prod.ddsd"
+    port: 50051
+    api_key_name: "DASHER_SERVICE_COURIER_API_KEY"
+    name_spaces: ["courier"]
+    owner: {
+      id: "courier-platform"
+      name: "courier-platform"
+      slack_channel: "#ask-courier"
+      email_alias: "local-commerce-service-partner@doordash.com"
+    }
+    target_products: [LCSP]
+  };
+
+  // Retrieve LCSP by user ID
+  rpc GetLcspByUserId(GetLcspByUserIdRequest) returns (GetLcspByUserIdResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/me"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // Retrieve LCSP by ID
+  rpc GetLcspById(GetLcspByIdRequest) returns (GetLcspByIdResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/info"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // List couriers for a specific LCSP
+  rpc ListCouriers(ListCouriersRequest) returns (ListCouriersResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/couriers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // List couriers for a specific LCSP, in this version we return a Courier instead of a Dasher
+  rpc ListCouriersV2(ListCouriersV2Request) returns (ListCouriersV2Response) {
+    option (google.api.http) = {get: "/lcsp/v2/couriers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // create shift endpoint for owners to create shift for a DA
+  rpc CreateShiftForCourier(CreateShiftForCourierRequest) returns (CourierShiftResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/shift"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // update shift endpoint for owners to update shift for a DA
+  rpc UpdateShiftForCourier(UpdateShiftForCourierRequest) returns (CourierShiftResponse) {
+    option (google.api.http) = {
+      patch: "/lcsp/v1/shift/update"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // cancel shift endpoint for owners to cancel shift for a DA
+  // this is a soft delete
+  rpc CancelShiftForCourier(CancelShiftForCourierRequest) returns (CourierShiftResponse) {
+    option (google.api.http) = {delete: "/lcsp/v1/shift/delete"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // bulk shift scheduling endpoint, supports create/update/delete
+  rpc BulkScheduleShifts(BulkScheduleShiftsRequest) returns (BulkScheduleShiftsResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/shifts/schedule"
+
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 20000;
+  }
+
+  // list shifts for lcsp; powers bulk shift scheduling table view
+  rpc ListShiftsForLcsp(ListShiftsForLcspRequest) returns (ListShiftsForLcspResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/shifts"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // bulk list shift for courier endpoint
+  rpc ListShiftsForCourier(ListShiftsForCourierRequest) returns (ListShiftsForCourierResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/courier/{dasher_id}/shifts"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // map courier to lcsp
+  rpc MapCourierToLcsp(MapCourierToLcspRequest) returns (MapCourierToLcspResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/courier/map"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // remove courier from lcsp
+  rpc RemoveCourierFromLcsp(RemoveCourierFromLcspRequest) returns (RemoveCourierFromLcspResponse) {
+    option (google.api.http) = {delete: "/lcsp/v1/courier/remove"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // update courier properties
+  rpc UpdateCourierProperties(UpdateCourierPropertiesRequest) returns (UpdateCourierPropertiesResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/courier/update"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // get quality forecast for lcsp
+  rpc GetQualityForecast(GetQualityForecastRequest) returns (GetQualityForecastResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/quality_forecast/{lcsp_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // List Dispatchers for a specific LCSP
+  rpc ListDispatchers(ListDispatchersRequest) returns (ListDispatchersResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/dispatchers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // adds a dispatcher to a target lcsp
+  rpc AddDispatcherToLcsp(AddDispatcherToLcspRequest) returns (AddDispatcherToLcspResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/dispatcher"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // removes a dispatcher from the target lcsp
+  rpc RemoveDispatcherFromLcsp(RemoveDispatcherFromLcspRequest) returns (RemoveDispatcherFromLcspResponse) {
+    option (google.api.http) = {delete: "/lcsp/v1/dispatcher/{user_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // create lcsp candidate
+  rpc CreateLcspCandidate(CreateLcspCandidateRequest) returns (CreateLcspCandidateResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/candidate"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [NONE]
+    };
+  }
+
+  // get scorecard for lcsp
+  rpc GetLcspScorecard(GetLcspScorecardRequest) returns (GetLcspScorecardResponse) {
+    option (google.api.http) = {get: "/lcsp/v1/scorecard"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  // Get payout details for LCSPs
+  rpc GetPayoutDetails(GetPayoutDetailsRequest) returns (GetPayoutDetailsResponse);
+
+  // Onboard Courier for LCSP
+  rpc OnboardCourier(OnboardCourierRequest) returns (OnboardCourierResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/courier/onboard"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+
+  //Update lcsp courier equipment to support parcels
+  rpc UpdateCourierEquipment(UpdateCourierEquipmentRequest) returns (UpdateCourierEquipmentResponse) {
+    option (google.api.http) = {
+      post: "/lcsp/v1/courier/equipment"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+    };
+  }
+}
+
+// List couriers request
+message ListCouriersRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Boolean which only returns ACTIVE couriers if set to true, otherwise all couriers are returned
+  bool include_active_couriers_only = 2;
+}
+
+// List couriers response
+message ListCouriersResponse {
+  // List of couriers
+  repeated dasher_service.dasher.Dasher couriers = 1;
+}
+
+// List couriers request, in this version we return a Courier instead of a Dasher
+message ListCouriersV2Request {
+  // UUID of the LCSP
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Boolean which only returns ACTIVE couriers if set to true, otherwise all couriers are returned
+  bool include_active_couriers_only = 2;
+}
+
+// List couriers response, in this version we return a Courier instead of a Dasher
+message ListCouriersV2Response {
+  // List of couriers
+  repeated Courier couriers = 1;
+}
+
+// enum denoting the current status of a courier
+enum CourierStatus {
+  // unspecified
+  COURIER_STATUS_UNSPECIFIED = 0;
+  // courier is active
+  COURIER_STATUS_ACTIVE = 1;
+  // courier is inactive
+  COURIER_STATUS_INACTIVE = 2;
+  // courier is onboarding
+  COURIER_STATUS_ONBOARDING = 3;
+}
+
+// Entity of LCSP
+message LcspEntity {
+  // UUID of the LCSP entity
+  string id = 1;
+  // Name of the LCSP entity
+  string name = 2;
+  // Starting points in which the LCSP can operate
+  repeated dasher_service.dasher.StartingPoint starting_points = 3;
+}
+
+// Get LCSP by user ID request
+message GetLcspByUserIdRequest {}
+
+// Get LCSP by user ID response
+message GetLcspByUserIdResponse {
+  // LCSP entity
+  LcspEntity lcsp_entity = 1;
+}
+
+// Get LCSP by ID request
+message GetLcspByIdRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1;
+}
+
+// Get LCSP by ID response
+message GetLcspByIdResponse {
+  // LCSP entity
+  LcspEntity lcsp_entity = 1;
+}
+
+// create shift request for owners to create shift for a DA
+message CreateShiftForCourierRequest {
+  // dasher ID of DA
+  int64 dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // start time for shift
+  google.protobuf.Timestamp scheduled_start_time = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // end time for shift
+  google.protobuf.Timestamp scheduled_end_time = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // starting point ID
+  int32 shift_starting_point_id = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// bulk list shifts for all couriers in a LCSP
+message ListShiftsForLcspRequest {
+  // UUID of LCSP entity
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Define the projection for each Shift.
+  // mapped to URL query param, e.g. `shift_info_params.include_shift_pay_info`
+  dasher_service.shift.ShiftInfoParams shift_info_params = 2 [(doordash.api.client.optional) = true];
+  // Return shifts where scheduled_start_time falls
+  // within the range (start_time, end_time) inclusive.
+  // Passed in as ISO-8601 date time strings
+  google.protobuf.Timestamp start_time = 3;
+  // end time of range, see above comment for usage
+  google.protobuf.Timestamp end_time = 4;
+  // Boolean which only returns ACTIVE couriers if set to true, otherwise all couriers are returned
+  bool include_active_couriers_only = 5;
+}
+
+// bulk list shifts for LCSP response
+message ListShiftsForLcspResponse {
+  // courier info for bulk shift view
+  message ListShiftsCourierInfo {
+    // dasher ID of courier
+    int64 dasher_id = 1;
+    // courier first name
+    string first_name = 2;
+    // courier last name
+    string last_name = 3;
+    // courier's total scheduled shift hours for shift list
+    float scheduled_shift_hours = 4;
+    // starting point info; contains sp id and sp name
+    dasher_service.dasher.StartingPoint starting_point = 5;
+    // TODO courier's rating, still needs scoping
+    // float courier_rating = 6;
+  }
+  // helper message to support mapping couriers to shift lists
+  message CourierShiftListEntry {
+    // courier info
+    ListShiftsCourierInfo courier_info = 1;
+    // list of shifts within start/end time range specified, and shift info params requests
+    repeated dasher_service.shift.ShiftInfo shifts = 2;
+  }
+  // map of courier ID to shift
+  repeated CourierShiftListEntry courier_shifts = 1;
+}
+
+// bulk list shifts for single courier request
+message ListShiftsForCourierRequest {
+  // dasher ID of courier, mapped to URL path
+  int64 dasher_id = 1;
+
+  // Define the projection for each Shift.
+  // mapped to URL query param, e.g. `shift_info_params.include_shift_pay_info`
+  dasher_service.shift.ShiftInfoParams shift_info_params = 2 [(doordash.api.client.optional) = true];
+
+  // If specified, limits the number of shifts returned to this number.
+  // If set to a value less than or equal to 0, logs a warning and returns an
+  // empty response.
+  // If unset (null), defaults to 25.
+  // TODO: validate - mapped to URL query param, e.g. `limit.value`
+  google.protobuf.Int32Value limit = 3;
+
+  // If both start_time and end_time are set, return shifts where scheduled_start_time falls
+  // within the range (start_time, end_time) inclusive.
+  // Otherwise returns current and upcoming shifts.
+  // Passed in as ISO-8601 date time strings
+  google.protobuf.Timestamp start_time = 4;
+  // end time of range, see above comment for usage
+  google.protobuf.Timestamp end_time = 5;
+}
+
+// bulk list shifts for single courier response
+message ListShiftsForCourierResponse {
+  // list of shift response objects
+  repeated dasher_service.shift.ShiftInfo shifts = 1;
+}
+
+// update shift request for owners to modify shifts for a DA
+message UpdateShiftForCourierRequest {
+  // shift ID of DA
+  int64 shift_id = 1;
+  // new start time
+  google.protobuf.Timestamp scheduled_start_time = 2;
+  // new end time
+  google.protobuf.Timestamp scheduled_end_time = 3;
+  // new starting point ID
+  int32 shift_starting_point_id = 4;
+  // dasher ID of DA
+  int64 dasher_id = 5;
+}
+
+// cancel shift request for owners to cancel shifts for a DA
+message CancelShiftForCourierRequest {
+  // shift ID to cancel
+  int64 shift_id = 1;
+  // shift start time
+  google.protobuf.Timestamp scheduled_start_time = 2;
+  // shift end time
+  google.protobuf.Timestamp scheduled_end_time = 3;
+  // dasher ID of DA
+  int64 dasher_id = 4;
+}
+
+// courier shift response
+message CourierShiftResponse {
+  // shift ID of created/updated/cancelled shift
+  int64 shift_id = 1;
+  // dasher ID of DA
+  int64 dasher_id = 2;
+  // gRPC status code, e.g. "OK", "FAILED_PRECONDITION", etc.
+  google.protobuf.StringValue grpc_status_code = 3;
+  // error message
+  google.protobuf.StringValue error_message = 4;
+  // new start time
+  google.protobuf.Timestamp scheduled_start_time = 5;
+  // new end time
+  google.protobuf.Timestamp scheduled_end_time = 6;
+}
+
+// bulk create shift request
+// because we don't assume any specific order of requests, you can only modify
+// (update or cancel) 1 shift per bulk request. this guardrail will be
+// maintained in the microservice implementation.
+message BulkScheduleShiftsRequest {
+  // wrapper for create/update/cancel requests
+  message BulkShiftAction {
+    // create request; see comments above
+    CreateShiftForCourierRequest create_request = 1 [(doordash.api.client.optional) = true];
+    // update request; see comments above
+    UpdateShiftForCourierRequest update_request = 2 [(doordash.api.client.optional) = true];
+    // cancel request; see comments above
+    CancelShiftForCourierRequest cancel_request = 3 [(doordash.api.client.optional) = true];
+  }
+  // bulk actions
+  repeated BulkShiftAction actions = 1 [(doordash.api.client.optional) = true];
+}
+
+// bulk create shift response
+message BulkScheduleShiftsResponse {
+  // courier shift responses
+  repeated CourierShiftResponse responses = 1;
+}
+
+// map courier to lcsp owner request
+message MapCourierToLcspRequest {
+  // email of the courier
+  string courier_email = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // UUID of the LCSP
+  string lcsp_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // hourly rate
+  string hourly_rate = 3;
+  // mileage rate
+  string mileage_rate = 4;
+}
+
+// map courier to owner, empty response
+message MapCourierToLcspResponse {}
+
+// remove courier from their lcsp request
+message RemoveCourierFromLcspRequest {
+  // dasher ID of the courier
+  int64 dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// remove courier from their lcsp response
+message RemoveCourierFromLcspResponse {}
+
+// represents a courier
+message Courier {
+  // dasher id
+  int32 dasher_id = 1;
+  // default starting point
+  dasher_service.dasher.StartingPoint default_starting_point = 2;
+  // phone OS
+  string phone_os = 3;
+  // phone model
+  string phone_model = 4;
+  // date the courier was deactivated
+  google.protobuf.Timestamp deactivation_date = 5;
+  // first name
+  string first_name = 6;
+  // last name
+  string last_name = 7;
+  // email
+  string email = 8;
+  // phone number
+  string phone_number = 9;
+  // courier status
+  CourierStatus courier_status = 10;
+  // hourly rate
+  money.MonetaryFields hourly_rate = 11;
+  // mileage rate
+  money.MonetaryFields mileage_rate = 12;
+  // lcsp id
+  string lcsp_id = 13;
+  // is parcel runner
+  bool is_parcel_runner = 14;
+}
+
+// update the courier's properties
+message UpdateCourierPropertiesRequest {
+  // dasher ID of the courier
+  int64 dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // courier's new hourly rate
+  string hourly_rate = 2;
+  // courier's new mileage rate
+  string mileage_rate = 3;
+}
+
+// update courier properties response
+message UpdateCourierPropertiesResponse {}
+
+// get quality forecast request
+message GetQualityForecastRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1;
+}
+
+// Quality forecast metric
+message QualityForecastMetric {
+  // The date for which the quality metrics are calculated
+  string week_of_forecast = 1;
+  // The percentage of late deliveries, where 100 represents 100%
+  string lateness = 2;
+  // The percentage of missing and incorrect deliveries, where 100 represents 100%
+  string missing_and_incorrect = 3;
+  // The percentage of deliveries that were never made, where 100 represents 100%
+  string never_delivered = 4;
+  // The percentage of DA attendance, where 100 represents 100%
+  string attendance = 5;
+}
+
+// get quality forecast response
+message GetQualityForecastResponse {
+  // list of quality metrics by date
+  repeated QualityForecastMetric metrics = 1;
+}
+
+// list dispatchers request
+message ListDispatchersRequest {
+  // lcsp id
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // toggle between returning all dispatchers or active dispatchers only
+  bool include_active_dispatchers_only = 2;
+}
+
+// list dispatchers response
+message ListDispatchersResponse {
+  // list of dispatchers returned
+  repeated Dispatcher dispatchers = 1;
+}
+
+// A dispatcher which can assist in managing an lcsp
+message Dispatcher {
+  // the dispatcher's user id
+  string user_id = 1;
+  // first name
+  string first_name = 2;
+  // last name
+  string last_name = 3;
+  // email address
+  string email = 4;
+  // phone number
+  string phone_number = 5;
+  // lcsp id
+  string lcsp_id = 6;
+  // is active status
+  bool is_active = 7;
+}
+
+// add a dispatcher to an lcsp request
+message AddDispatcherToLcspRequest {
+  // dispatcher's email
+  string dispatcher_email = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // target lcsp_id
+  string lcsp_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // dispatcher's first name
+  string first_name = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // dispatcher's last name
+  string last_name = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // phone number
+  string phone_number = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// add a dispatcher to an lcsp, empty response
+message AddDispatcherToLcspResponse {}
+
+// create lcsp candidate request
+message CreateLcspCandidateRequest {
+  // deprecated locale 7
+  reserved 7;
+  reserved "locale";
+  // first name of lcsp candidate
+  string first_name = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // last name of lcsp candidate
+  string last_name = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // date of birth of lcsp candidate
+  string date_of_birth = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // email of lcsp candidate
+  string email = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // phone number of lcsp candidate
+  string phone_number = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // zip code of lcsp candidate
+  string zip_code = 6 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // boolean which is true if lcsp candidate has a driver license
+  bool has_driver_license = 8 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // boolean which is true if lcsp candidate is eligible to own a business
+  bool is_eligible_to_own_business = 9 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// create lcsp candidate response
+message CreateLcspCandidateResponse {
+  // UUID of the LCSP candidate
+  string lcsp_candidate_id = 1;
+}
+
+// get LCSP Scorecard request
+message GetLcspScorecardRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Boolean which returns previous week's scorecard if set to true, otherwise returns current week's scorecard
+  bool is_previous_week = 2;
+  // week_start_date should be the selected week's Monday
+  date.Date week_start_date = 3;
+}
+
+// Get LCSP Scorecard response
+message GetLcspScorecardResponse {
+  // Overall view of the LCSP scorecard
+  courier_lcsp_scorecard.v1.OverallView overall_view = 1;
+  // Metrics breakdown for the LCSP scorecard
+  courier_lcsp_scorecard.v1.MetricsBreakdown metrics_breakdown = 2;
+  // Quality card for never delivered
+  courier_lcsp_scorecard.v1.QualityCard never_delivered = 3;
+  // Quality card for missing and incorrect
+  courier_lcsp_scorecard.v1.QualityCard missing_incorrect = 4;
+  // Quality card for extreme lateness
+  courier_lcsp_scorecard.v1.QualityCard extreme_lateness = 5;
+  // Driving at risk incentive
+  courier_lcsp_scorecard.v1.DrivingAtRiskIncentive driving_at_risk_incentive = 6;
+  // Available courier metrics
+  repeated courier_lcsp_scorecard.v1.AvailableCourierMetrics available_couriers = 7;
+  // Payout
+  map<string, string> payout = 8;
+  // New Payout using PayoutDetail
+  PayoutDetail payout_detail = 9;
+  // Quality card for goal hour coverage
+  courier_lcsp_scorecard.v1.QualityCard goal_hour_coverage = 10;
+}
+
+// remove a dispatcher to an lcsp request
+message RemoveDispatcherFromLcspRequest {
+  // dispatcher's user_id
+  string user_id = 1;
+  // lcsp_id in which the dispatcher belongs
+  string lcsp_id = 2;
+  // should deactivate the dispatcher's dasher profile
+  bool should_deactivate_dasher = 3;
+}
+
+// remove dispatcher from lcsp response
+message RemoveDispatcherFromLcspResponse {}
+
+// Payout detail
+message PayoutDetail {
+  // UUID of the LCSP
+  string lcsp_id = 1;
+  // Active paid shift hours - marketplace
+  google.protobuf.FloatValue mp_active_paid_shift_hours = 2;
+  // Active paid shift hour rate - marketplace
+  money.MonetaryFields mp_active_paid_shift_hour_rate = 3;
+  // Active hour shift service fee - marketplace
+  money.MonetaryFields mp_active_hour_shift_service_fee = 4;
+  // Active paid shift hours - parcel
+  google.protobuf.FloatValue parcel_active_paid_shift_hours = 5;
+  // Active paid shift hour rate - parcel
+  money.MonetaryFields parcel_active_paid_shift_hour_rate = 6;
+  // Active hour shift service fee - parcel
+  money.MonetaryFields parcel_active_hour_shift_service_fee = 7;
+  // Weekly service fee - marketplace
+  money.MonetaryFields mp_weekly_service_fee = 8;
+  // Weekly service fee - parcel
+  money.MonetaryFields parcel_weekly_service_fee = 9;
+  // Total service fee
+  money.MonetaryFields total_service_fee = 10;
+  // Mileage - marketplace
+  google.protobuf.FloatValue mp_mileage = 11;
+  // Mileage rate - marketplace
+  google.protobuf.FloatValue mp_mileage_rate = 12;
+  // Mileage reimbursement - marketplace
+  money.MonetaryFields mp_mileage_reimbursement = 13;
+  // Mileage - parcel
+  google.protobuf.FloatValue parcel_mileage = 14;
+  // Mileage rate - parcel
+  google.protobuf.FloatValue parcel_mileage_rate = 15;
+  // Mileage reimbursement - parcel
+  money.MonetaryFields parcel_mileage_reimbursement = 16;
+  // Tips
+  money.MonetaryFields tips = 17;
+  // Total other disbursements
+  money.MonetaryFields total_other_disbursements = 18;
+  // Total incentive fees
+  money.MonetaryFields total_incentive_fees = 19;
+  // Total payout
+  money.MonetaryFields total_payout = 20;
+  // Marketplace daily incentive fee
+  money.MonetaryFields mp_daily_incentive_fee = 21;
+  // Parcel daily incentive fee
+  money.MonetaryFields parcel_daily_incentive_fee = 22;
+  // Marketplace weekly incentive fee
+  money.MonetaryFields mp_weekly_incentive_fee = 23;
+  // Parcel weekly incentive fee
+  money.MonetaryFields parcel_weekly_incentive_fee = 24;
+  // Ad hoc pay
+  money.MonetaryFields ad_hoc_pay = 25;
+}
+
+// Get payout details request
+message GetPayoutDetailsRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1;
+  // A flag indicates whether to retrieve payout details for all LCSPs
+  bool include_all = 2;
+  // Start date of the week for the payout
+  google.protobuf.Timestamp week_start_date = 3;
+}
+
+// Get payout details response
+message GetPayoutDetailsResponse {
+  // A list of payout details
+  repeated PayoutDetail payout_details = 1;
+}
+
+// Onboard Courier Request
+message OnboardCourierRequest {
+  // UUID of the LCSP
+  string lcsp_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // first name
+  string first_name = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // last name
+  string last_name = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // email of the courier
+  string courier_email = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // phone number
+  string phone_number = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // date of birth
+  string date_of_birth = 6 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // default starting point
+  int32 starting_point_id = 7 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // zip code
+  string zip_code = 8 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // existing dasher email
+  string dasher_email = 9;
+  // hourly rate
+  string hourly_rate = 10 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // mileage rate
+  string mileage_rate = 11 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // is DA a parcel runner
+  bool is_parcel_runner = 12;
+}
+
+// Onboard Courier Response
+message OnboardCourierResponse {}
+
+// Update courier equipment request
+message UpdateCourierEquipmentRequest {
+  // dasher ID of the courier
+  int64 dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Type of the equipment
+  common.DasherEquipmentType equipment_type = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Are we removing or adding equipment as a part of the request
+  bool should_remove_equipment = 3;
+}
+
+// Update courier equipment response
+message UpdateCourierEquipmentResponse {}

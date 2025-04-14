@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+// Service to serve Campaign Status Flow use cases
+service CampaignStatusFlowService {
+  option (service_client.client_config).service_name = "promotion-service";
+  option (service_client.client_config).service_app = "web-campaign-service";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+
+  // Return all available workflows with the details
+  rpc GetCampaignsStatusFlows(GetCampaignsStatusFlowsRequest) returns (GetCampaignsStatusFlowsResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // Execute a transition for a specific workflow and campaign
+  rpc ExecuteCampaignStatusFlowByTransition(ExecuteCampaignStatusFlowByTransitionRequest) returns (ExecuteCampaignStatusFlowByTransitionResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+}
+
+// Request payload to get all available workflows
+message GetCampaignsStatusFlowsRequest {}
+
+// Response payload to describe all the available workflows
+message GetCampaignsStatusFlowsResponse {
+  // available workflows
+  repeated StatusFlowWorkflow workflows = 1;
+
+  // definition of one workflow
+  message StatusFlowWorkflow {
+    // workflow id
+    string id = 1;
+    // workflow name
+    string name = 2;
+    // workflow transitions
+    repeated Transition transitions = 3;
+  }
+
+  // definition of one workflow transition
+  message Transition {
+    // workflow transition id
+    string transition_id = 1;
+    // workflow transition name
+    string name = 2;
+    // applicable from statuses for the workflow transition
+    repeated string from_status = 3;
+    // allowed roles to execute the workflow transition
+    repeated string permitted_roles = 4;
+    // fields that can be captured executing workflow transition
+    repeated TransitionProperty accepted_properties = 5;
+  }
+
+  // definition of properties that can be captured executing a transition
+  message TransitionProperty {
+    // workflow transition property id
+    string transition_property_id = 1;
+    // workflow transition property name
+    string name = 2;
+    // type of the workflow transition property, to be used by the UI
+    // type is string and send back string value of possible enum values
+    string type = 3;
+  }
+}
+
+// Request payload to execute a workflow transition by id
+message ExecuteCampaignStatusFlowByTransitionRequest {
+  // campaign id to execute the transition on
+  string campaign_id = 1;
+  // workflow id to execute the transition from, this can be used to switch the work flow
+  string workflow_id = 2;
+  // transition id to execute, optional, when it's not provided the call simply updates the workflow
+  google.protobuf.StringValue transition_id = 4;
+  // fields with values needed by the workflow to execute the transition
+  repeated TransitionProperty transition_properties = 5;
+  // notes to accompany the transition, for instance a rejection reason
+  google.protobuf.StringValue transition_notes = 6;
+
+  // definition of properties that can be captured executing a transition
+  message TransitionProperty {
+    // property id to set
+    string transition_property_id = 1;
+    // provided property value
+    string value = 2;
+  }
+}
+
+// Response payload to execute a workflow transition by id
+message ExecuteCampaignStatusFlowByTransitionResponse {
+  // campaign id in which the transition executed on
+  string campaign_id = 1;
+  // workflow id assigned to the campaign
+  string workflow_id = 2;
+  // status type assigned to the campaign
+  CampaignStatusFlow.StatusType status_type = 3;
+  // status id assigned to the campaign
+  google.protobuf.StringValue status_id = 4;
+  // transition id assigned to the campaign
+  google.protobuf.StringValue transition_id = 5;
+  // notes to accompany the transition, for instance a rejection reason
+  google.protobuf.StringValue transition_notes = 6;
+}

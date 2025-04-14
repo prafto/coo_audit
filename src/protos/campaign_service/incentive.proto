@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package campaign_service.v1;
+
+import "campaign_service/cart_criterion.proto";
+import "campaign_service/common.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/common.proto";
+import "promotion/criterion.proto";
+import "promotion/incentive.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.campaign";
+
+/**
+ * Incentive object to configure discounts and cart criteria
+ */
+message Incentive {
+  // Incentive type
+  Type type = 1;
+  // enum of Incentive types to support polymorphism of the object
+  enum Type {
+    // invalid default incentive type
+    UNSPECIFIED = 0;
+
+    // discount value applied to subtotal
+    SUBTOTAL = 1;
+
+    // discount value applied to the product defined in the incentive block
+    PRODUCT = 2;
+
+    // discount value applied to the delivery fee
+    DELIVERY_FEE = 3;
+
+    // discount value applied to the service fee
+    SERVICE_FEE = 4;
+
+    // discount value applied to the small order fee
+    SMALL_ORDER_FEE = 5;
+
+    // discount value applied to the priority fee
+    PRIORITY_FEE = 6;
+
+    // discount value as credits back??
+    // todo: only used for DP pickup credit, should this be supported?
+    CREDITS_BACK = 7;
+
+    // discount value applied to the distance based pricing expanded range fee
+    DBP_EXPAND_RANGE_FEE = 8;
+  }
+
+  // value of the incentive (e.g. 10% off, $5 off, etc.)
+  Value value = 2;
+
+  // incentive value definition
+  message Value {
+    // Value type
+    Type type = 1;
+    // enum of Value types to support polymorphism of the object
+    enum Type {
+      // invalid default incentive value type
+      UNSPECIFIED = 0;
+      // uses percent property
+      PERCENT_OFF = 1;
+      // uses percent property
+      SET_RATE = 2;
+      // uses monetary_value property
+      FLAT_AMOUNT_OFF = 3;
+      //uses monetary_value property
+      SET_VALUE = 4;
+    }
+
+    // percent or monetary value of the incentive
+    oneof value {
+      // decimal value to represent a percentage use with percent off or set rate
+      google.protobuf.DoubleValue percent = 3;
+
+      // monetary value use with flat amount off or set value
+      money.MonetaryFields monetary_value = 4;
+    }
+
+    // optional min value of the incentive value
+    money.MonetaryFields min_value = 5;
+
+    // optional max value of the incentive value
+    money.MonetaryFields max_value = 6;
+  }
+
+  // collection of cart criteria that must be satisfied for the incentive to be applied to the cart
+  repeated CartCriterion cart_criteria = 3;
+
+  // todo: should we flatten this out directily into incentive instead of wrapping it in an object?
+  oneof incentive {
+    // required when incentive type is PRODUCT
+    Product product = 4;
+  }
+
+  // product definition used for PRODUCT incentive type
+  message Product {
+    // Among num_required_items in the cart, how many items will be discounted.
+    // The deal can be applied multiple times. This defined the discount ratio, i.e. Buy 3 Get 2 free
+    google.protobuf.Int32Value num_discounted_products = 1;
+
+    // max number of applications of the incentive per product
+    google.protobuf.Int32Value max_applications_per_product = 2;
+
+    // collection of product ids that the incentive applies to
+    repeated ProductId product_ids = 3;
+
+    // collection of product and parent ids without direct parent-child relationship
+    ProductAndParentProductIds product_and_parent_product_ids = 7;
+
+    // wrapper object for a collection of ProductIds with Parent Product Ids
+    message ProductAndParentProductIds {
+      // collection of product ids that the incentive applies to
+      repeated ProductId product_ids = 1;
+
+      // collection of product ids that the incentive applies to
+      repeated ProductId parent_product_ids = 2;
+    }
+
+    // enum of included discount types
+    enum DiscountIncludes {
+      // invalid default discount type
+      UNSPECIFIED = 0;
+      // discount applied to only the price of the item
+      ITEM_ONLY = 1;
+      // discount applied to only the price of the option
+      OPTION_ONLY = 2;
+      // discount applied to both the price of the item and the option
+      ITEM_WITH_OPTION = 3;
+    }
+
+    // option discount includes used when the incentive is applied to a menu item with parent and/or options
+    DiscountIncludes discount_includes = 4;
+
+    // audience name referencing the collection of items the incentive applies to
+    google.protobuf.StringValue audience_name = 5;
+
+    // number of time the incentive can be applied to the cart in a single redemption
+    google.protobuf.Int32Value max_applications = 6;
+
+    // if set to true,
+    // the incentive can be applied to any product in the Cx's cart
+    // product_ids and audience_name should not be set
+    google.protobuf.BoolValue any_product = 8;
+  }
+
+  // legacy discount metadata for the incentive. This is porting over a hack from the old incentive system
+  // and it will be deprecated in the savvy write path. Any modifications to this field will be rejected in
+  // the savvy write paths
+  promotion_service.DiscountMetadata discount_metadata = 5;
+}

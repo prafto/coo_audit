@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package pkg.processing.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.pkg.processing";
+
+// Common response body to be shared by all different use cases. Endpoint-specific response field will be put into
+// corresponding response message.
+message CommonResponse {
+  // The request id,
+  // if the request provides a request id, the same value will be return.
+  // else a new request id will be generated and returned.
+  google.protobuf.StringValue request_id = 1;
+}
+
+// Parameters that controls the offline ingestion behaviour.
+message ControlParameters {
+  // This parameter will decide which data source configure to fetch. Mandatory field.
+  string data_source = 1;
+  // This parameter will decide under the data source which scenario config to fetch. Mandatory field.
+  string scenario = 2;
+  // Anchored timestamp. Default value of EPOCH means the app uses utcNOW()
+  google.protobuf.Timestamp as_of_timestamp = 3;
+  // If set, it will use the high priority queue and send a signal to downstream indexing.
+  google.protobuf.BoolValue need_indexing = 4;
+  // the request id, the request can choose to provide a request id to track to downstream processing,
+  // else a new request id will be generated and returned in the response.
+  google.protobuf.StringValue request_id = 5;
+}
+
+// Request Metadata are used to pass metadata information to the request.
+// They should be only set by the framework.
+message Metadata {
+  // The partition key of the request without data source and scenario prefix.
+  // This is used to determine the key group of the request in flink and
+  // partition key in kafka.
+  // If it's not set:
+  //    for kafka partition, we will just the default partitioner
+  //    for flink key group, we will generate a random key group prefixed with data source and scenario.
+  google.protobuf.StringValue partition_key = 1;
+
+  // The timestamp when the request is queued in the system.
+  google.protobuf.Timestamp queued_at_timestamp = 2;
+
+  // The timestamp when the request is executed in the system.
+  google.protobuf.Timestamp executed_at_timestamp = 3;
+}
+
+// A wrapper over all the domain specific requests. This is the internal format we are going to put in the common kafka
+// queue for all requests.
+message OfflineRequestWrapper {
+  // As name indicates.
+  google.protobuf.Any request = 1;
+  // As name indicates.
+  ControlParameters control_parameters = 2;
+  // As name indicates. Any client changes to this field will be overwritten by the framework.
+  Metadata metadata = 3;
+}
+
+// A trigger message to start the batch ingestion process for the given s3 file.
+message BatchIngestionTrigger {
+  // The bucket where the object is stored.
+  string bucket = 1;
+  // The object key of the object to be ingested.
+  string object_key = 2;
+}

@@ -1,0 +1,218 @@
+// Copyright 2013 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Note: Made modifications in order to generate Java code needed to construct
+// protobuf messages for Prometheus metrics.
+
+syntax = "proto2";
+
+package prometheus_metrics.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.prometheus_metrics";
+
+// Label and value pair
+message LabelPair {
+  // Name of the label
+  optional string name = 1;
+  // Value of the label
+  optional string value = 2;
+}
+
+// MetricType is the type of a metric.
+enum MetricType {
+  // COUNTER must use the Metric field "counter".
+  COUNTER = 0;
+  // GAUGE must use the Metric field "gauge".
+  GAUGE = 1;
+  // SUMMARY must use the Metric field "summary".
+  SUMMARY = 2;
+  // UNTYPED must use the Metric field "untyped".
+  UNTYPED = 3;
+  // HISTOGRAM must use the Metric field "histogram".
+  HISTOGRAM = 4;
+  // GAUGE_HISTOGRAM must use the Metric field "histogram".
+  GAUGE_HISTOGRAM = 5;
+}
+
+// Gauge is a metric that represents a single numerical value that can arbitrarily go up and down.
+message Gauge {
+  // Value of the gauge
+  optional double value = 1;
+}
+
+// Counter is a metric that represents a single numerical value that only ever goes up.
+message Counter {
+  // Value of the counter
+  optional double value = 1;
+  // Exemplar for the counter
+  optional Exemplar exemplar = 2;
+
+  // The timestamp when the counter was created
+  optional google.protobuf.Timestamp created_timestamp = 3;
+}
+
+// Quantile is a quantile value with a given quantile and value.
+message Quantile {
+  // Quantile value
+  optional double quantile = 1;
+  // Value of the quantile
+  optional double value = 2;
+}
+
+// Summary is a metric that represents a summary of observations.
+message Summary {
+  // Number of observations
+  optional uint64 sample_count = 1;
+  // Sum of all observed values
+  optional double sample_sum = 2;
+  // Quantiles of the summary
+  repeated Quantile quantile = 3;
+
+  // The timestamp when the summary was created
+  optional google.protobuf.Timestamp created_timestamp = 4;
+}
+
+// Untyped metric type
+message Untyped {
+  // Value of the untyped metric
+  optional double value = 1;
+}
+
+// Histogram metric type
+message Histogram {
+  // Sample count of the histogram
+  optional uint64 sample_count = 1;
+  // Sample count of the histogram as a float
+  optional double sample_count_float = 4; // Overrides sample_count if > 0.
+  // Sample sum of the histogram
+  optional double sample_sum = 2;
+  // Buckets for the conventional histogram.
+  repeated Bucket bucket = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
+
+  // The timestamp when the histogram was created
+  optional google.protobuf.Timestamp created_timestamp = 15;
+
+  // Everything below here is for native histograms (also known as sparse histograms).
+  // Native histograms are an experimental feature without stability guarantees.
+
+  // schema defines the bucket schema. Currently, valid numbers are -4 <= n <= 8.
+  // They are all for base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+  // then each power of two is divided into 2^n logarithmic buckets.
+  // Or in other words, each bucket boundary is the previous boundary times 2^(2^-n).
+  // In the future, more bucket schemas may be added using numbers < -4 or > 8.
+  optional sint32 schema = 5;
+  // Breadth of the zero bucket.
+  optional double zero_threshold = 6;
+  // Count in zero bucket.
+  optional uint64 zero_count = 7;
+  // Overrides sb_zero_count if > 0.
+  optional double zero_count_float = 8;
+
+  // Negative buckets for the native histogram.
+  repeated BucketSpan negative_span = 9;
+  // Use either "negative_delta" or "negative_count", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated sint64 negative_delta = 10;
+  // Absolute count of each bucket.
+  repeated double negative_count = 11;
+
+  // Positive buckets for the native histogram.
+  // Use a no-op span (offset 0, length 0) for a native histogram without any
+  // observations yet and with a zero_threshold of 0. Otherwise, it would be
+  // indistinguishable from a classic histogram.
+  repeated BucketSpan positive_span = 12;
+  // Use either "positive_delta" or "positive_count", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated sint64 positive_delta = 13;
+  // Absolute count of each bucket.
+  repeated double positive_count = 14;
+
+  // Only used for native histograms. These exemplars MUST have a timestamp.
+  repeated Exemplar exemplars = 16;
+}
+
+// A Bucket of a conventional histogram, each of which is treated as
+// an individual counter-like time series by Prometheus.
+message Bucket {
+  // Cumulative in increasing order.
+  optional uint64 cumulative_count = 1;
+  // Overrides cumulative_count if > 0.
+  optional double cumulative_count_float = 4;
+  // Inclusive.
+  optional double upper_bound = 2;
+  // Exemplar for the bucket.
+  optional Exemplar exemplar = 3;
+}
+
+// A BucketSpan defines a number of consecutive buckets in a native
+// histogram with their offset. Logically, it would be more
+// straightforward to include the bucket counts in the Span. However,
+// the protobuf representation is more compact in the way the data is
+// structured here (with all the buckets in a single array separate
+// from the Spans).
+message BucketSpan {
+  // Gap to previous span, or starting point for 1st span (which can be negative).
+  optional sint32 offset = 1;
+  // Length of consecutive buckets.
+  optional uint32 length = 2;
+}
+
+// Exemplar type
+message Exemplar {
+  // Labels of the exemplar
+  repeated LabelPair label = 1;
+  // Value of the exemplar
+  optional double value = 2;
+  // The time when the exemplar was observed
+  optional google.protobuf.Timestamp timestamp = 3; // OpenMetrics-style.
+}
+
+// Metric is a single metric value.
+message Metric {
+  // Labels of the metric
+  repeated LabelPair label = 1;
+  // Optional Gauage metric
+  optional Gauge gauge = 2;
+  // Optional Counter metric
+  optional Counter counter = 3;
+  // Optional Summary metric
+  optional Summary summary = 4;
+  // Optional Untyped metric
+  optional Untyped untyped = 5;
+  // Optional Histogram metric
+  optional Histogram histogram = 7;
+  // The timestamp when the metric was created
+  optional int64 timestamp_ms = 6;
+}
+
+// MetricFamily is a set of metrics with the same name and the same type.
+message MetricFamily {
+  // Name of the metric family
+  optional string name = 1;
+  // Help of the metric family
+  optional string help = 2;
+  // Type of the metric family
+  optional MetricType type = 3;
+  // Metrics of the metric family
+  repeated Metric metric = 4;
+  // Unit of the metric family
+  optional string unit = 5;
+}

@@ -1,0 +1,149 @@
+syntax = "proto3";
+package teammate_experience_service.api.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "teammate_experience_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.tes.api.v1";
+
+// Timeline Service
+service TimelineService {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "teammate-experience-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  option (doordash.api.service) = {
+    name: "teammate-experience-service"
+    url: "teammate-experience-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["teammate-experience-service"]
+    api_key_name: "TEAMMATE_EXPERIENCE_SERVICE_API_KEY"
+    owner: {
+      name: "teammate-experience-service"
+      id: "teammate-experience-alerts"
+      slack_channel: "#ask-teammate-experience"
+      email_alias: "team-teammate-experience@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Takes an identifier and returns an event timeline for it.
+  rpc GetTimeline(GetTimelineRequest) returns (GetTimelineResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/get-timeline"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Timeline Event Type
+enum TimelineEventType {
+  // unspecified
+  TIMELINE_EVENT_TYPE_UNSPECIFIED = 0;
+  // delivery event
+  TIMELINE_EVENT_TYPE_DELIVERY_EVENT = 1;
+  // case event
+  TIMELINE_EVENT_TYPE_CASE_EVENT = 2;
+  // workflow execution event
+  TIMELINE_EVENT_TYPE_WORKFLOW_EVENT = 3;
+  // fraud event
+  TIMELINE_EVENT_TYPE_FRAUD_EVENT = 4;
+  // chat event
+  TIMELINE_EVENT_TYPE_CHAT_EVENT = 5;
+  // email event
+  TIMELINE_EVENT_TYPE_EMAIL_EVENT = 6;
+  // task lifecycle event
+  TIMELINE_EVENT_TYPE_TASK_LIFECYCLE_EVENT = 7;
+}
+
+// Timeline Event
+message TimelineEvent {
+  // The identifier of the event
+  google.protobuf.StringValue event_id = 1;
+  // Human readable name of the event
+  google.protobuf.StringValue event_name = 2;
+  // The type of event
+  TimelineEventType event_type = 3;
+  // The timestamp of the event
+  google.protobuf.Timestamp timestamp = 4;
+  // Whether it is a primary event
+  google.protobuf.BoolValue is_primary = 5;
+  // The fields of the event
+  repeated EventField fields = 6;
+  // Child events of this event
+  repeated TimelineEvent child_events = 7;
+}
+
+// Event Field
+message EventField {
+  // The name of the field
+  google.protobuf.StringValue name = 1;
+  // The value of the field
+  google.protobuf.StringValue value = 2;
+  // Whether it is a primary field
+  google.protobuf.BoolValue is_primary = 3;
+}
+
+// Get Timeline Request
+message GetTimelineRequest {
+  reserved 2;
+  reserved "case_id";
+  // The ID to use for the root of the timeline
+  oneof id {
+    // Delivery UUID
+    google.protobuf.StringValue delivery_uuid = 1;
+    // Case Identifiers (Case Id, Case Number, Incident Id)
+    CaseIdentifiers case_identifiers = 4;
+    // Task Group UUID
+    google.protobuf.StringValue task_group_uuid = 5;
+  }
+  // Client
+  Client client = 3;
+  // Whether this request was initiated by a user
+  google.protobuf.BoolValue user_initiated = 6;
+}
+
+// all the case related identifiers (Case ID, Case Number, Incident Id)
+message CaseIdentifiers {
+  // Case ID
+  google.protobuf.StringValue case_id = 1;
+  // case num
+  google.protobuf.StringValue case_number = 2;
+  // incident id
+  google.protobuf.StringValue incident_id = 3;
+  // chat key
+  google.protobuf.StringValue chat_key = 4;
+  // create at
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// Get Timeline Response
+message GetTimelineResponse {
+  // List of events
+  repeated TimelineEvent events = 1;
+}

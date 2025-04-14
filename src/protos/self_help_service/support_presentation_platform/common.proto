@@ -1,0 +1,141 @@
+syntax = "proto3";
+package self_help_service.support_presentation_platform.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.selfhelpservice.spp";
+
+// Domain context to identify the domain identifier, e.g. order id,
+// associated delivery or task id, support case id etc.
+// All we need is one of the id and backend will get the associated
+// data from downstream (e.g. from delivery-intelligence-platform)
+message DomainContext {
+  // Id representing an order or delivery or task group
+  oneof id {
+    // Uuid representing a delivery
+    google.protobuf.StringValue delivery_uuid = 1;
+    // Uuid representing an order
+    google.protobuf.StringValue order_uuid = 2;
+    // Id representing a task group
+    google.protobuf.StringValue task_group_id = 3;
+    // Support case id from case-management-platform
+    google.protobuf.StringValue support_case_id = 4;
+  }
+}
+
+// Client context with requested experience. Any client specific context will be
+// added to this context.
+message ClientContext {
+  // User experience, whether the user is Cx, Dx, Tx, Mx
+  enum UserExperience {
+    // Unspecified
+    USER_EXPERIENCE_UNSPECIFIED = 0;
+    // Cx on mobile/web
+    USER_EXPERIENCE_CX = 1;
+    // Dx on mobile
+    USER_EXPERIENCE_DX = 2;
+    // Tx on THQ/Web
+    USER_EXPERIENCE_TX = 3;
+    // Mx on mobile/tablet
+    USER_EXPERIENCE_MX = 4;
+  }
+  // (Required) User experience
+  UserExperience user_experience = 1;
+  // (Optional) map of context key-value pairs. Clients will use this
+  // filed to share client state with content provider.
+  map<string, string> context_map = 2;
+}
+
+// Session context: Sessions will be maintained by backend. Backend will
+// send the session context as part of the support content response.
+// Client will return the session context to backend in request, or, send
+// its own session data. Any backend session related context will be added to
+// this context.
+// TO BE DEPRECATED: SessionContext is moved under WorkflowPlatformContext. This
+// message will be deprecated once we are prod ready.
+message SessionContext {
+  // map of context key-value pairs.
+  map<string, string> context_map = 1;
+}
+
+// Workflow Platform (WFP) context.
+// WFP also requires WorkflowContext (message owned by WFP). Clients
+// are not required to set WorkflowContext as part of this context.
+// Platform will set all available context when calling WPF.
+message WorkflowPlatformContext {
+  // (Required) Workflow uuid representing workflow in WFP
+  google.protobuf.StringValue workflow_uuid = 1;
+  // (Optional) Id of a node in WFP workflow.
+  // If present, backend will execute workflow form this node.
+  google.protobuf.StringValue node_id = 2;
+  // (Optional) Name of the output step/branch in the workflow
+  // If present, backend will parse workflow_outputs_json to match the next_step with output_name
+  google.protobuf.StringValue next_step = 3;
+  // (Optional) This will be a json representation of WorkflowOutputs.
+  // The clients do not need to parse this but need to send it back as part of the following request.
+  google.protobuf.StringValue workflow_outputs_json = 4;
+  // (Optional) Serialized map representing session context which SPP receive from WFP
+  // and passes it to clients.
+  google.protobuf.StringValue session_context = 5;
+  // (Optional) Serialized map representing page-props defined UI/Generic node in workflows in WFP.
+  google.protobuf.StringValue page_props = 6;
+}
+
+// Represents wrapper message with list of workflow output. This message is used in backend
+// to map WFP output to SPP
+message WorkflowOutputs {
+  // List of WorkflowOutput.
+  repeated WorkflowOutput workflow_output = 1;
+}
+
+// Represents one workflow output that will be indicating path to the next node.
+message WorkflowOutput {
+  // Id of the output as represented by workflow platform.
+  google.protobuf.StringValue output_id = 1;
+  // Hunan readable name for a path to the next node.
+  // This will be provided in WorkflowPlatformContext as next_step based on user action.
+  google.protobuf.StringValue output_name = 2;
+  // The id of the node that should be executed next.
+  google.protobuf.StringValue next_node_id = 3;
+}
+
+// Content type can be a Mosaic UI (lego page), Mosaic action etc.
+enum SupportContentType {
+  // Unspecified content type
+  SUPPORT_CONTENT_TYPE_UNSPECIFIED = 0;
+  // Mosaic UI content
+  SUPPORT_CONTENT_TYPE_LEGO_PAGE = 1;
+  // Mosaic action content
+  SUPPORT_CONTENT_TYPE_ACTION = 2;
+}
+
+// Context for support content
+message SupportContentContext {
+  // Support content type
+  SupportContentType support_content_type = 1;
+
+  // Support content id
+  google.protobuf.StringValue content_id = 2;
+
+  // Content context (includes page properties and other context required
+  // for content construction)
+  map<string, string> content_context = 3;
+}
+
+// Serialized support content. Platform will send serialized content along with the content type.
+// It will be client's responsibility to deserialize the content. Reason for serialized content
+// is lack of support for Any type in UG.
+message SupportContent {
+  // Support content type
+  SupportContentType support_content_type = 1;
+
+  // Support content as string
+  google.protobuf.StringValue support_content = 2;
+
+  // Support content id
+  google.protobuf.StringValue content_id = 3;
+}

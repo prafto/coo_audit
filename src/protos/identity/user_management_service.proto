@@ -1,0 +1,1139 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/service_client_config.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "identity/authentication.proto";
+import "identity/common.proto";
+import "identity/user.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+/*
+ * Request for creating a new User
+ */
+message CreateUserRequest {
+  // User info to be created.
+  User user = 1;
+
+  // User raw password.
+  google.protobuf.StringValue password = 2;
+
+  // Optional client id, used to associate users to existing clients.
+  google.protobuf.StringValue client_id = 3;
+
+  // Flag for requesting authorization code when creating user
+  bool need_authorization_code = 4;
+  // Flag to indicate if the request is from legacy flow. Default to true
+  google.protobuf.BoolValue is_from_legacy = 5;
+  // Flag to indicate if we create the user with user ID in int64 range. Default to false
+  bool create_user_in_int64 = 6;
+}
+
+/*
+ * Response for creating a User
+ */
+message CreateUserResponse {
+  // User info after create operation.
+  User user = 1;
+
+  // Authorization code for the user if requested.
+  google.protobuf.StringValue authorization_code = 2;
+}
+
+/*
+ * Request for updating an existing User
+ */
+message UpdateUserRequest {
+  // update user by id/email as UserIdentifier.
+  UserIdentifier user_id = 1;
+
+  // User object. Null fields won't be updated.
+  User user = 2;
+
+  // User raw password.
+  google.protobuf.StringValue password = 3;
+}
+
+message UpdateUserResponse {
+  // User info after update operation.
+  User user = 1;
+}
+
+/*
+ * Remove all current user sessions
+ */
+message LogoutUserRequest {
+  UserIdentifier user_id = 1;
+}
+
+message LogoutUserResponse {
+  UserIdentifier user_id = 1;
+}
+
+/*
+ * Request for deleting a User
+ */
+message DeleteUserRequest {
+  // User to be deleted by id or email.
+  UserIdentifier user_id = 1;
+}
+
+/*
+ * Response for deleting a User
+ */
+message DeleteUserResponse {}
+
+/*
+ * Request for get a User info
+ */
+message GetUserRequest {
+  // User info with group/roles by id, email, or phone number.
+  UserIdentifier user_id = 1;
+}
+
+/*
+ * Request for getting User info based on phone number
+ */
+message GetUserWithVerifiedPhoneNumberRequest {
+  // User's phone number with international format (e.g. +18005551234)
+  string phone_number = 1;
+}
+
+/*
+ * Response for getting User info based on phone number
+ */
+message GetUserWithVerifiedPhoneNumberResponse {
+  // User info object
+  UserInfo user_info = 1;
+}
+
+/*
+ * Request for setting phone verification for user
+ */
+message SetUserPhoneVerifiedRequest {
+  string user_id = 1;
+  // User's phone number to be set as verified with international format (e.g. +18005551234).
+  string phone_number = 2;
+}
+
+/*
+ * Response for setting verification for user
+ */
+message SetUserPhoneVerifiedResponse {}
+
+/*
+ * Queries are performed as an "and" of the provided, non-null, fields, i.e. if a set
+ * of ids are provided along with a valid email_prefix, then only the users with that
+ * email_prefix from the set of ids are returned.
+ */
+message QueryUserRequest {
+  // List of user IDs, returns all users with any id in the list.
+  repeated string ids = 1;
+
+  // List of user emails, returns all users with any email in the list.
+  repeated string emails = 2;
+
+  // Users' phone number prefix.
+  google.protobuf.StringValue phone_number_prefix = 3;
+
+  // Users have email prefix.
+  google.protobuf.StringValue email_prefix = 4;
+
+  // User isActive or not.
+  AdminStateValue admin_state = 5;
+
+  // Users created/joined after or equalTo created_after time.
+  google.protobuf.Timestamp created_after = 6;
+
+  // Users last login time before or equalTo last_login_before time.
+  google.protobuf.Timestamp last_login_before = 7;
+
+  // Maximum number of rows to return.
+  google.protobuf.Int32Value max_row_count = 8;
+
+  // Users updated after or equalTo updated_at time.
+  google.protobuf.Timestamp updated_at_after = 9;
+
+  // List of user phone number, returns all users with any phone number in the list.
+  repeated string phone_numbers = 10;
+
+  // If true, will fetch user's roles.
+  google.protobuf.BoolValue fetch_roles = 11;
+
+  // User isGuest or not
+  google.protobuf.BoolValue is_guest = 12;
+}
+
+message QueryUserByGroupsRequest {
+  // List of group IDs, returns all users in any of the group in the list.
+  repeated string id = 1;
+
+  // Maximum number of rows to return.
+  google.protobuf.Int32Value max_row_count = 2;
+}
+
+message QueryUserResponse {
+  // List of queried Users.
+  repeated User users = 1;
+}
+
+message VerificationContext {
+  // Type of verification (e.g. email OTP, SMS OTP, SMS link)
+  VerificationType type = 1;
+  enum VerificationType {
+    UNSPECIFIED = 0;
+    SMS_OTP = 1;
+  }
+
+  // User-supplied content needed for verification
+  oneof content {
+    // OTP user received and entered
+    string code = 2;
+  }
+}
+
+message CreateUserAssistedRequest {
+  // User object
+  User user = 1;
+
+  // This field has been deprecated and will not used by server.
+  // Instead, server will get client id based on mapping from client's API token.
+  google.protobuf.StringValue client_id = 2;
+
+  // Optional device id, used to recognize the device user has logged in from
+  google.protobuf.StringValue device_id = 3;
+
+  // Optional send_email flag, if true an email containing password reset url will be sent to the user
+  google.protobuf.BoolValue send_email = 4;
+
+  // Verification info needed before user can be created
+  VerificationContext verification_info = 5;
+
+  // Optional redirect uri, used to specify the reset password url.
+  // Client should make best effort to supply this field;
+  // otherwise, server will default to the 1st element in redirect_uris of client config.
+  google.protobuf.StringValue redirect_uri = 6;
+
+  // Optional email fields for customizing email templates to send
+  CustomEmailFields custom_email_fields = 7;
+}
+
+message CustomEmailFields {
+  // Configuration ID to specify iterable template in postal service
+  google.protobuf.StringValue configuration_id = 1;
+
+  // Mapping of Iterable data fields to pass to the email client
+  map<string, google.protobuf.StringValue> iterable_data_fields = 2;
+
+  // Layout configuration that sets the password reset landing page layout
+  google.protobuf.StringValue layout = 3;
+}
+
+message CreateUserAssistedResponse {
+  // AuthToken, would be `null` in case of any errors, refresh token is not added
+  AuthToken token = 1;
+
+  // Any errors that might have occurred during processing.
+  // For all intents and purposes use HTTP status code for identifying error type, and `error_reason`
+  // for detailed logging on what happened. We **highly recommend** preparing your own payload for clients.
+  // This string might be null in case HTTP verb or status code is enough to describe any errors.
+  google.protobuf.StringValue error_reason = 2;
+  UserInfo user_info = 3;
+
+  // This field will never be populated
+  google.protobuf.StringValue password_reset_url = 4;
+}
+
+message PasswordResetRequest {
+  // email
+  google.protobuf.StringValue email = 1;
+}
+
+message PasswordResetResponse {}
+
+message DeleteServiceResponse {}
+
+/*
+ * Request for invalidating the User cache
+ */
+message InvalidateUserRequest {
+  // List of user unique identifiers.
+  repeated UserIdentifier ids = 1;
+}
+
+/*
+ * Response for invalidating the User cache
+ */
+message InvalidateUserResponse {}
+
+message LinkUserSocialAccountRequest {
+  // The state string is used to prevent CXRF attack, it can be got from GetSocialState function.
+  string state = 1;
+
+  // Access token for this user sent from social provider.
+  string token = 2;
+
+  // Which social provider account you want to link. Eg: 'facebook'.
+  string provider = 3;
+
+  // The request user id.
+  string user_id = 4;
+}
+
+message LinkUserSocialAccountResponse {}
+
+message UnlinkUserSocialAccountRequest {
+  // The state string is used to prevent CSRF attack, it can be got from GetUserSocialState call.
+  string state = 1;
+
+  // Access token for this user sent from social provider.
+  string token = 2;
+
+  // Which social provider account you want to link. Eg: 'facebook'.
+  string provider = 3;
+
+  // The request user id.
+  string user_id = 4;
+}
+
+message UnlinkUserSocialAccountResponse {}
+
+message GetUserSocialStateRequest {
+  // Optional ttl (unit: seconds) for the generated state string to expire.
+  google.protobuf.Int32Value ttl_seconds = 1;
+
+  // The request user id.
+  string user_id = 2;
+}
+
+message GetUserSocialStateResponse {
+  // user data related with signature.
+  string signed_data = 1;
+
+  // the signature of user data.
+  string signature = 2;
+
+  // When this state is going to expire.
+  google.protobuf.Int32Value expiry = 3;
+
+  // This state is used for which user id.
+  string user_id = 4;
+}
+
+message GetUserSocialAccountProviderRequest {
+  // Get all current linked social account providers for this user id.
+  UserIdentifier user_id = 1;
+}
+
+message GetUserSocialAccountProviderResponse {
+  // Return a list of string represents all current linked social account providers.
+  repeated string social_accounts = 1;
+
+  // list of linked accounts with the external user id
+  repeated SocialAccount social_user_accounts = 2;
+
+  message SocialAccount {
+    google.protobuf.StringValue provider = 1;
+    // this is the external user id coming from the social provider
+    google.protobuf.StringValue user_id = 2;
+    // organization id (SSO)
+    google.protobuf.StringValue organization_id = 3;
+  }
+}
+
+enum PasswordPolicy {
+  TEN_ALPHANUMERIC = 0;
+  FOUR_DIGITS = 1;
+  ANDROID_FRIENDLY_TEN_ALPHANUMERIC_FOR_TEST_ACCOUNTS = 2; // For use in test accounts only
+}
+
+message CreatePasswordForUserRequest {
+  UserIdentifier user_id = 1;
+
+  PasswordPolicy password_policy = 2;
+}
+
+message CreatePasswordForUserResponse {
+  string password = 1;
+}
+
+message ChangePasswordRequest {
+  google.protobuf.StringValue email = 1;
+  google.protobuf.StringValue old_password = 2;
+  google.protobuf.StringValue new_password = 3;
+  google.protobuf.StringValue device_id = 4;
+}
+
+message ChangePasswordResponse {}
+
+message GetUserVerificationStateRequest {
+  // User id
+  string user_id = 1;
+  // The target object that the verification state associated with.
+  oneof target {
+    // User's phone number with international format (e.g. +18005551234).
+    string phone_number = 2;
+    // User's email address (e.g. first.last@doordash.com).
+    string email = 3;
+  }
+}
+
+message GetUserVerificationStateResponse {
+  // The verification state of the given (user, target) pair.
+  // See GetUserVerificationStateRequest for more details on the target definition.
+  VerificationState state = 1;
+  enum VerificationState {
+    NONE = 0;
+    NEEDED = 1;
+    DONE = 2;
+  }
+}
+
+enum Provider {
+  NO_PROVIDER = 0;
+  DOORDASH = 1;
+  SPENDGO = 2;
+}
+
+message LinkUserToExternalAccountRequest {
+  // The request user id
+  string user_id = 1;
+  // provider enum. Will take priority if specified, otherwise use provider_name
+  Provider provider = 2;
+  //External account's user id, e.g., DoorDash user id
+  string external_user_id = 3;
+  // optional - the name of provider
+  google.protobuf.StringValue provider_name = 4;
+  // organization id
+  google.protobuf.StringValue organization_id = 5;
+}
+
+message LinkUserToExternalAccountResponse {}
+
+message UnlinkUserFromExternalAccountRequest {
+  // The request user id
+  string user_id = 1;
+  // provider enum. Will take priority if specified, otherwise use provider_name
+  Provider provider = 2;
+  // optional - the name of provider
+  google.protobuf.StringValue provider_name = 3;
+}
+
+message UnlinkUserFromExternalAccountResponse {}
+
+message EditLinkedUserForExternalAccountRequest {
+  // The request user id
+  string user_id = 1 [deprecated = true];
+  // new email
+  string new_email = 2;
+  // external_user_id, social links will be unlinked except the one with below external_user_id
+  string external_user_id = 3;
+  // provider name
+  string provider_name = 4;
+}
+
+message EditLinkedUserForExternalAccountResponse {}
+
+message GetLinkedUserForExternalAccountRequest {
+  string external_user_id = 1;
+  // provider enum. Will take priority if specified, otherwise use provider_name
+  Provider provider = 2;
+  // optional - the name of provider
+  google.protobuf.StringValue provider_name = 3;
+}
+
+/*
+ * Response payload that contains User social information
+ */
+message UserSocialData {
+  // optional id of data entry
+  google.protobuf.StringValue id = 1;
+  // optional the name of provider
+  google.protobuf.StringValue provider = 2;
+  // optional the related social user id
+  google.protobuf.StringValue social_user_id = 3;
+  // optional the user id
+  google.protobuf.StringValue user_id = 4;
+  // optional the additional data
+  google.protobuf.StringValue extra_data = 5;
+  // time stamp of this data created
+  google.protobuf.Timestamp created_at = 6;
+  // organization id (SSO)
+  google.protobuf.StringValue organization_id = 7;
+}
+
+message GetLinkedUserForExternalAccountResponse {
+  // optional - will be null if linked user is not found
+  google.protobuf.StringValue user_id = 1;
+  // optional - the social data of linked user
+  UserSocialData user_social_data = 2;
+}
+
+message GetUserSocialDataRequest {
+  // user identifier
+  string user_id = 1;
+}
+
+message GetUserSocialDataResponse {
+  // List of user's social data
+  repeated UserSocialData user_social_data = 1;
+}
+
+message UpdateUserPasswordRequest {
+  // The request user id
+  string user_id = 1;
+  // Mandatory new password
+  string new_password = 2;
+}
+
+message UpdateUserPasswordResponse {
+  // User info object
+  UserInfo user_info = 1;
+  // New Password that was reset
+  google.protobuf.StringValue password = 2;
+  // If the password successfully passed "Have I Been Pwnd" check
+  google.protobuf.BoolValue is_password_secure = 3;
+}
+
+message UpdateUserLastLoginRequest {
+  // The request user id
+  string user_id = 1;
+}
+
+message UpdateUserLastLoginResponse {}
+
+message UpdateUserDasherIdRequest {
+  int64 user_id = 1;
+  int64 dasher_id = 2;
+}
+
+message UpdateUserDasherIdResponse {}
+
+// Third party account management
+
+enum RemoveThirdPartyAccountReason {
+  UNSPECIFIED = 0;
+  USER_REVOKE_CONSENT = 1;
+  //Deprecated, use THIRD_PARTY_UNLINK_ACCOUNT instead
+  THIRD_PARTY_REMOVE_ACCOUNT = 2;
+  THIRD_PARTY_DELETE_ACCOUNT = 3;
+  DOORDASH_DELETE_ACCOUNT = 4;
+  THIRD_PARTY_UNLINK_ACCOUNT = 5;
+}
+
+message UserThirdPartyAccount {
+  // The DD user id
+  string user_id = 1;
+  // The client id
+  string client_id = 2;
+  // User's third party account id
+  string third_party_id = 3;
+  // time stamp of when the account linked
+  google.protobuf.Timestamp account_linked_at = 4;
+}
+
+message AddThirdPartyAccountRequest {
+  // The DD user id
+  string user_id = 1;
+  // The client id
+  string client_id = 2;
+  // User's third party account id
+  string third_party_id = 3;
+}
+
+message AddThirdPartyAccountResponse {
+  // The accounts that has been added
+  UserThirdPartyAccount user_third_party_account = 1;
+  // If the account already existed before the call, this will be false
+  bool is_new_added = 2;
+}
+
+message RemoveThirdPartyAccountRequest {
+  // The DD user id
+  google.protobuf.StringValue user_id = 1;
+  // The client id
+  string client_id = 2;
+  // User's third party account id
+  google.protobuf.StringValue third_party_id = 3;
+  // Reason for removing the account
+  RemoveThirdPartyAccountReason reason = 4;
+  // Time stamp of when the account unlinked
+  google.protobuf.Timestamp account_unlinked_at = 5;
+  // details of why account is unlinked. should be plain text
+  google.protobuf.StringValue details = 6;
+}
+
+message RemoveThirdPartyAccountResponse {
+  // The accounts that has been removed
+  repeated UserThirdPartyAccount removed_third_party_accounts = 1;
+}
+
+message ListUserThirdPartyAccountsRequest {
+  // The DD user id
+  google.protobuf.StringValue user_id = 1;
+  // The client id
+  string client_id = 2;
+  // User's third party account id
+  google.protobuf.StringValue third_party_id = 3;
+}
+
+message ListUserThirdPartyAccountsResponse {
+  // List of third party account ids
+  repeated UserThirdPartyAccount third_party_accounts = 1;
+}
+
+/*
+ * Request for remembering device
+ */
+message RememberDeviceRequest {
+  // Identifier of user
+  string user_id = 1;
+  // Identifier of device
+  string device_id = 2;
+  // whether to opt device in or out based on boolean value
+  bool opt_in = 3;
+}
+
+/*
+ * Response for remembering device
+ * returns simple OK if successful
+ */
+message RememberDeviceResponse {}
+
+/*
+ * Request for determining whether a user has opted into remembering this device for longer log-in
+ */
+message GetRememberedDeviceRequest {
+  // Identifier of user (need this field for db index)
+  string user_id = 1;
+  // Identifier of device
+  string device_id = 2;
+}
+
+/*
+ * Response for determining whether a user has opted into remembering this device
+ * returns a boolean value for true if the device is opted in
+ */
+message GetRememberedDeviceResponse {
+  // boolean response of whether this device is opted_in
+  bool opt_in = 1;
+}
+
+/*
+ * UserManagementService service contains user related requests
+ * All of the responses contains following additional headers:
+ *
+ * - `X-REQUEST-ID` a unique request ID assigned to this request on Identity Service (for tracing purposes).
+ * - `X-TIME-ELAPSED` (if > 100ms) total time in consumed (milliseconds) while processing request on server.
+ */
+service UserManagementService {
+  /*
+   * Create a new user
+   * The fields of User can be created by the caller:
+   * firstName, lastName, email, phoneNumber, password
+   *
+   * You need API Key/token for internal-identity-service with of at-least "WRITE" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid first_name, last_name, phone_number, email. Bad password
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   *
+   * * 500 for any internal server errors
+   */
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/users"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * This endpoint has migrated to identity bff. Please configure properly
+   * to point to identity bff instead of identity service as identity service will
+   * disallow access for this endpoint.
+   */
+  rpc CreateUserAssisted(CreateUserAssistedRequest) returns (CreateUserAssistedResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/users/assisted_signup"
+      body: "*"
+      additional_bindings {
+        patch: "/api/v1/users/assisted-signup"
+        body: "*"
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1500;
+  }
+
+  /*
+   * Update user info by UserIdentifier id/email
+   * The fields of User can be updated by the caller:
+   * firstName, lastName, email, phoneNumber, adminState, password
+   *
+   * You need API Key/token for internal-identity-service with of at-least "WRITE" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid id format, first_name, last_name, phone_number, email. Bad password
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   *
+   * * 500 for any internal server errors
+   */
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/users/{user_id.id}"
+      body: "*"
+      additional_bindings {
+        patch: "/api/v1/users/email/{user_id.email}"
+        body: "*"
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Query the list of user by combined search criteria
+   *
+   * You need API Key/token for internal-identity-service with of at-least "READ" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format, AdminState value and max_row_count
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   *
+   * * 500 for any internal server errors
+   */
+  rpc QueryUser(QueryUserRequest) returns (QueryUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/userquery"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 50;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Query the list of user info by group id list
+   *
+   * You need API Key/token for internal-identity-service with of at-least "READ" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid group id format and max_row_count
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   *
+   * * 500 for any internal server errors
+   */
+  rpc QueryUserByGroups(QueryUserByGroupsRequest) returns (QueryUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/user_query_by_groups"
+      body: "*"
+    };
+  }
+
+  /*
+   * Delete User by id or email
+   *
+   * You need API Key/token for internal-identity-service with of at-least "WRITE" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   *
+   * * 404 if id/email doesn't exist
+   *
+   * * 500 for any internal server errors
+   */
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/users/{user_id.id}"
+      additional_bindings {delete: "/api/v1/users/email/{user_id.email}"}
+    };
+  }
+
+  /*
+   * Get User Info
+   *
+   * Given user_id or email, returns the UserInfo.
+   */
+  rpc GetUser(GetUserRequest) returns (UserInfo) {
+    option (google.api.http) = {
+      get: "/api/v1/users/{user_id.id}"
+      additional_bindings {get: "/api/v1/users/email/{user_id.email}"}
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 50;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+    // Ignore NOT_FOUND from circuit breaker error rate calculation.
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "identity-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "web";
+  }
+
+  /*
+   * Get User Info
+   *
+   * Given phone number, returns the UserInfo if the phone number has verified. This endpoint is used for storefront only.
+   */
+  rpc GetUserWithVerifiedPhoneNumber(GetUserWithVerifiedPhoneNumberRequest) returns (GetUserWithVerifiedPhoneNumberResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 50;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Verify a user
+   *
+   * by userId
+   */
+  rpc VerifyUserPhone(SetUserPhoneVerifiedRequest) returns (SetUserPhoneVerifiedResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1200;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Verify user's old password and change to new password
+   */
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse) {}
+
+  /*
+   * Remove all current user sessions
+   */
+  rpc LogoutUser(LogoutUserRequest) returns (LogoutUserResponse) {}
+
+  /*
+   * This API is purely to support Mx Onboarding.  This API should __NOT__ be used
+   * if possible because the password for a DD account should only be known
+   * to the owner of the account and to DD infrastructure in salted hashed form.
+   */
+  rpc CreatePasswordForUser(CreatePasswordForUserRequest) returns (CreatePasswordForUserResponse) {}
+
+  /*
+   * WARNING: NOT IMPLEMENTED OR UNSTABLE
+   */
+  rpc PasswordReset(PasswordResetRequest) returns (PasswordResetResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/users/reset-password"
+      body: "*"
+    };
+  }
+
+  /*
+   * INTERNAL: Invalidate User cache entry by unique identifiers
+   *
+   * You need API Key/token for internal-identity-service with of at-least "WRITE" scope.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *
+   * * 500 for any internal server errors
+   */
+  rpc InvalidateUserCache(InvalidateUserRequest) returns (InvalidateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/users/invalidate-cache"
+      body: "*"
+    };
+  }
+
+  /* Get list of already linked social account providers for the user.
+   * It needs to be passed along in the following link/unlink social account API. This is used to prevent CSRF
+   *
+   * Needs an identity API token with Read Permission.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *
+   * * 500 for any internal server errors
+   */
+  rpc GetUserSocialAccountProviders(GetUserSocialAccountProviderRequest) returns (GetUserSocialAccountProviderResponse) {}
+
+  /* Get state string for this user before calling any actual link/unlink social account API.
+   * It needs to be passed along in the following link/unlink social account API. This is used to prevent CSRF
+   *
+   * Needs an identity API token with Read Permission.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *
+   * * 500 for any internal server errors
+   */
+  rpc GetUserSocialState(GetUserSocialStateRequest) returns (GetUserSocialStateResponse) {}
+
+  /* Link social account to this user. Eg: Link Facebook account to this user.
+   *
+   * Needs an identity API token with WRITE Permission.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *
+   * * 500 for any internal server errors
+   */
+  rpc LinkUserSocialAccount(LinkUserSocialAccountRequest) returns (LinkUserSocialAccountResponse) {}
+
+  /* Unlink social account to this user. Eg: Unlink Facebook account from this user.
+   *
+   * Needs an identity API token with WRITE Permission.
+   *
+   * In case of errors it can returns:
+   *
+   * * 400 bad request. eg: invalid user id format
+   *
+   * * 401 for invalid token
+   *
+   * * 403 for token with insufficient privileges or too many attempts additional headers include:
+   *
+   * * 500 for any internal server errors
+   */
+  rpc UnlinkUserSocialAccount(UnlinkUserSocialAccountRequest) returns (UnlinkUserSocialAccountResponse) {}
+
+  /*
+   * Returns the verification state of the given object(e.g. email, phone number), which associates with the given user.
+   * In case of errors it may throw:
+   *    * 400: bad request
+   *    * 401: invalid token
+   *    * 403: token with insufficient privileges
+   *    * 500：internal server errors
+   */
+  rpc GetUserVerificationState(GetUserVerificationStateRequest) returns (GetUserVerificationStateResponse) {}
+
+  /* This API links a user account to an external account.
+   * Note: The user account linked by this API is based on tenant
+   * Eg: For storefont(SF) tenant, Link a SF user to DoorDash(DD) account.  DD is the provider and user is a SF user.
+   * Eg: For SF tenant, Link a SF user to LEYE account.  LEYE is the provider and user is a SF user.
+   * Eg: For DoorDash tenant, Link a DD user to Facebook account. Facebook is the provider and user is a DD user.
+   * Needs an identity API token with WRITE Permission. This endpoint is used for Social Login ONLY.
+   * Please refer AddThirdPartyAccount for third party account management.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc LinkUserToExternalAccount(LinkUserToExternalAccountRequest) returns (LinkUserToExternalAccountResponse) {}
+
+  /* This API unlinks a user account from an external provider.
+   * Note: The user account unlinked by this API is based on tenant.
+   * Eg: For storefront(SF) tenant, Unlink a SF user from DoorDash(DD) account. DD is the provider and user is a SF user.
+   * Eg: For SF tenant, Unlink a SF user from LEYE account.  LEYE is the provider and user is a SF user.
+   * Eg: For DoorDash tenant, Unlink a DD user from Facebook account. Facebook is the provider and user is a DD user.
+   * Needs an identity API token with WRITE Permission. This endpoint is used for Social Login ONLY.
+   * Please refer RemoveThirdPartyAccount for third party account management.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc UnlinkUserFromExternalAccount(UnlinkUserFromExternalAccountRequest) returns (UnlinkUserFromExternalAccountResponse) {}
+
+  /* This API edit an already linked user account with a new email address.
+   * Needs an identity API token with WRITE Permission.
+   * In case of errors it can returns:
+   * ALREADY_EXISTS if the email is already linked to another user
+   */
+  rpc EditLinkedUserForExternalAccount(EditLinkedUserForExternalAccountRequest) returns (EditLinkedUserForExternalAccountResponse) {}
+
+  /* This API retrieves a user id linked to external provider.
+   * Note: The user account returned by this API is based on tenant.
+   * Eg: For storefront(SF) tenant, a request with (123, DoorDash) will return 456 (SF user account), if it exists.
+   * Eg: For SF tenant, a request with (789, LEYE) will return 456 (SF user account), if it exists.
+   * Eg: For DoorDash tenant, a request with (678, Facebook) will return 123 (DD user account), if it exists.
+   * Needs an identity API token with READ Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc GetLinkedUserForExternalAccount(GetLinkedUserForExternalAccountRequest) returns (GetLinkedUserForExternalAccountResponse) {}
+
+  /*
+   * This API is restricted only for internal identity usages and is not publicly available
+   * It is used specifically for PasswordReset Flows
+   * Needs an identity API token with WRITE Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc UpdateUserPassword(UpdateUserPasswordRequest) returns (UpdateUserPasswordResponse) {}
+
+  /*
+   * This API is restricted only for internal identity usages and is not publicly available
+   * It is used to update the timestamp of user last time login
+   * Needs an identity API token with WRITE Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc UpdateUserLastLogin(UpdateUserLastLoginRequest) returns (UpdateUserLastLoginResponse) {}
+
+  /*
+   * This API is for dasher id need to be updated from dasher service side
+   * to user table.
+   * Needs an identity API token with WRITE Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc UpdateUserDasherId(UpdateUserDasherIdRequest) returns (UpdateUserDasherIdResponse) {}
+
+  /*
+   * This API is to get all user social data such as providers, the user social id in user_social_data table
+   * to user table. Return empty list if nothing is found
+   * Needs an identity Internal API token with Read Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc GetUserSocialData(GetUserSocialDataRequest) returns (GetUserSocialDataResponse) {}
+
+  /*
+   * This API is to link a user to a third party account.
+   * Needs an identity API token with Write Permission.
+   * In case of errors it can returns:
+   * ALREADY_EXISTS: when third party account already exists with different user or user has different third party account
+   */
+  rpc AddThirdPartyAccount(AddThirdPartyAccountRequest) returns (AddThirdPartyAccountResponse) {}
+
+  /*
+   * This API is to remove a user's third party account.
+   * Needs an identity API token with Write Permission.
+   */
+  rpc RemoveThirdPartyAccount(RemoveThirdPartyAccountRequest) returns (RemoveThirdPartyAccountResponse) {}
+
+  /*
+   * This API is to list a user's third party accounts or user associated with third party id.
+   * Needs an identity API token with Read Permission.
+   */
+  rpc ListUserThirdPartyAccounts(ListUserThirdPartyAccountsRequest) returns (ListUserThirdPartyAccountsResponse) {}
+
+  /*
+   * This API is used for allowing the user to opt in and out of remembering a device for longer log-in.
+   * Needs an identity API token with WRITE Permission.
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc RememberDevice(RememberDeviceRequest) returns (RememberDeviceResponse) {}
+
+  /*
+   * This API is to get whether the device has been opted_in for longer log-in
+   * Needs an identity API token with READ Permission.
+   */
+  rpc GetRememberedDevice(GetRememberedDeviceRequest) returns (GetRememberedDeviceResponse) {}
+}

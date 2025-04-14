@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package kaizen_platform.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kaizen_platform/identity.proto";
+
+// go_package enabled for use in TAS go proxy
+option go_package = "github.com/doordash/services-protobuf/generated/kaizen_platform";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.kaizen_platform";
+
+// The representation of a Kaizen Job as a whole, not an individual execution of the job. This information will be held within the runtime configurations, but in the future may include a combination of runtime data + compiled data.
+message KaizenJob {
+  // Deprecated "requester_identity" field. This belongs to a KaizenJobExecution instead.
+  reserved 6;
+  reserved "requester_identity";
+
+  // Unique job identifier
+  string id = 1;
+
+  // The type of job
+  JobType type = 2;
+
+  // Whether the job runs within the DoorDash production environment (cells), or whether it runs outside the DoorDash production environment (infra-reliability cluster)
+  JobExecutionScope execution_scope = 3;
+
+  // A description of the job. This field is populated on the UI so it's more straightforward to determine the purpose of each job.
+  string description = 4;
+
+  // Link to the Dev Console Group that owns this job (eg: https://devconsole.doordash.team/catalog/default/group/ads-demand)
+  string dev_console_link = 5;
+
+  // Whether or not the job uses & requires a test data pool.
+  // Note: we assume that workflows that don't require a test data pool should not have one.
+  // That is: there are no jobs for which data pools are optional.
+  bool requires_test_data_pool = 7;
+}
+
+// KaizenJobExecution represents an individual execution of a job.
+message KaizenJobExecution {
+  // A randomly generated 128-bit UUID that uniquely identifies the particular job execution.
+  string execution_uuid = 1;
+
+  // The state of the KaizenJobExecution
+  JobExecutionState state = 2;
+
+  // The job that is being run
+  KaizenJob job = 3;
+
+  // The parameters used to start the job
+  JobExecutionParameters parameters = 4;
+
+  // The start time of this execution of the job.
+  google.protobuf.Timestamp start_time = 5;
+
+  // The estimated end time of this execution of the job.
+  google.protobuf.Timestamp estimated_end_time = 6;
+
+  // The Test Data Pool used for this execution
+  string test_data_pool_id = 7;
+
+  // Entity (user or system) that's responsible for starting this job execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity requester_identity = 8;
+}
+
+// JobExecutionParameters represents the parameters that are used to start a job.
+message JobExecutionParameters {
+  // An override total amount of runs for the job. This field will be directly translated into the totalruns query parameter currently available for Loadgen. This field will be deprecated once the traffic pattern fields are supported.
+  int64 total_runs = 1;
+
+  // An override for the QPS to run the job at. This field will be directly translated into the qps query parameter currently available for Loadgen. This field will be deprecated once the traffic pattern fields are supported.
+  int64 qps = 2;
+
+  // An override for the runtime (in ms) to run the job for. This field will be directly translated into the runtimemillis query parameter currently available for Loadgen. This field will be deprecated once the traffic pattern fields are supported.
+  int64 runtime_millis = 3;
+}
+
+// JobType represents the type of job. The type of the job determines at what cadence the job is run.
+enum JobType {
+  // This should only be used when querying for jobs and you want to return all types of jobs, irrespective of ONE_OFF or RECURRING.
+  JOB_TYPE_UNSPECIFIED = 0;
+
+  // One-off jobs run once and require an explicit request to kick them off.
+  JOB_TYPE_ONE_OFF = 1;
+
+  // Recurring jobs run on a schedule and are automatically kicked off.
+  JOB_TYPE_RECURRING = 2;
+}
+
+// JobExecutionScope represents the scope of a job execution. The scope of the job determines which environment the job is run in.
+enum JobExecutionScope {
+  // This should only be used when querying for jobs and you want to return all types of jobs, irrespective and INTERNAL or EXTERNAL.
+  JOB_EXECUTION_SCOPE_UNSPECIFIED = 0;
+
+  // Internal jobs run within the DoorDash production environment (cells).
+  JOB_EXECUTION_SCOPE_INTERNAL = 1;
+
+  // External jobs run outside of the DoorDash production environment, within the infra-reliability cluster.
+  JOB_EXECUTION_SCOPE_EXTERNAL = 2;
+}
+
+// JobExecutionState represents the state of a job execution.
+enum JobExecutionState {
+  // This should only be used when querying for jobs and you want to return all types of jobs, irrespective of the state.
+  JOB_EXECUTION_STATE_UNSPECIFIED = 0;
+
+  // Running job executions are currently in progress and have not yet completed or errored out.
+  JOB_EXECUTION_STATE_RUNNING = 1;
+
+  // Completed job executions have completed and are no longer running.
+  JOB_EXECUTION_STATE_COMPLETED = 2;
+
+  // Job executions that are awaiting pool provisioning and manual confirmation to start
+  JOB_EXECUTION_STATE_PENDING = 3;
+
+  // Running job executions that are currently rampup paused
+  // When a job execution is rampup paused, modifications to parent job's QPS won't effect
+  // The child's effective QPS, maintaining overall effective QPS
+  JOB_EXECUTION_STATE_RUNNING_RAMPUP_PAUSED = 4;
+}

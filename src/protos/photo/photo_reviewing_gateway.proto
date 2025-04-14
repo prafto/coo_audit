@@ -1,0 +1,344 @@
+syntax = "proto3";
+
+package photoreviewinggateway;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "photo/photo.proto";
+import "photo/photo_collecting_gateway.proto";
+
+option go_package = "photoreviewinggateway";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.photoreviewinggateway.grpc";
+
+service PhotoReviewingGateway {
+  option (doordash.api.service) = {
+    url: "photo-service-web.service.prod.ddsd"
+    name: "PhotoReviewingGateway"
+    port: 50051
+    name_spaces: ["photo"]
+    api_key_name: "PHOTO-SERVICE-API-KEY"
+    owner: {
+      id: "photo-service-platform"
+      name: "photo"
+      slack_channel: "#ask-photo-eng"
+      email_alias: "core-mx-menu-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+  rpc GetPendingReviewPhotosByBusinessId(GetPendingReviewPhotosByBusinessIdRequest) returns (GetPendingReviewPhotosByBusinessIdResponse);
+  rpc ApprovePhoto(ApprovePhotoRequest) returns (ApprovePhotoResponse);
+  rpc RejectPhoto(RejectPhotoRequest) returns (RejectPhotoResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {
+      post: "/photo/v1/reject_photo"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        MX_USER,
+        DD_EMPLOYEE
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+  rpc UpsertPhotoFeedback(UpsertPhotoFeedbackRequest) returns (UpsertPhotoFeedbackResponse);
+  rpc ReUploadPhoto(ReUploadPhotoRequest) returns (ReUploadPhotoResponse);
+  rpc AssignPhotoToEntities(AssignPhotoToEntitiesRequest) returns (AssignPhotoToEntitiesResponse);
+  rpc AutoReviewBusinessPhoto(AutoReviewBusinessPhotoRequest) returns (AutoReviewBusinessPhotoResponse);
+  rpc AutoReviewSafetyPhoto(AutoReviewSafetyPhotoRequest) returns (AutoReviewSafetyPhotoResponse);
+  rpc AutoReviewMenuPhoto(AutoReviewMenuPhotoRequest) returns (AutoReviewMenuPhotoResponse);
+  rpc ModeratePhotos(ModeratePhotosRequest) returns (ModeratePhotosResponse);
+  rpc ReviewUGCPhotosForMenuDisplay(ReviewUGCPhotosForMenuDisplayRequest) returns (ReviewUGCPhotosForMenuDisplayResponse);
+  rpc PhotoOperationWorkflow(PhotoOperationWorkflowRequest) returns (PhotoOperationWorkflowResponse);
+  rpc ApprovePhotoVariant(ApprovePhotoVariantRequest) returns (ApprovePhotoVariantResponse);
+  rpc SubmitPhotosForAIModeration(SubmitPhotosForAIModerationRequest) returns (SubmitPhotosForAIModerationResponse);
+  rpc SubmitPhotosForModeration(SubmitPhotosForModerationRequest) returns (SubmitPhotosForModerationResponse);
+}
+
+/**
+ * Request to get pending review photos by business id
+ */
+message GetPendingReviewPhotosByBusinessIdRequest {
+  string business_id = 1;
+}
+
+/**
+ * Return of getting pending review photos by business id
+ */
+message GetPendingReviewPhotosByBusinessIdResponse {
+  repeated photo.Photo photo = 1;
+}
+
+/**
+ * Request to approve photo by photo's uuid/origin photo id
+ */
+message ApprovePhotoRequest {
+  string photo_uuid = 1;
+  int64 origin_photo_id = 2;
+  bool is_ai_approved = 3;
+  google.protobuf.Int64Value moderator_id = 4;
+  photo.Client client = 5;
+}
+
+/**
+ * Return of approving photo by photo's uuid/origin photo id
+ */
+message ApprovePhotoResponse {}
+
+/**
+ * Request to reject photo by photo's uuid/origin photo id
+ */
+message RejectPhotoRequest {
+  string photo_uuid = 1;
+  int64 origin_photo_id = 2;
+  string comments = 3;
+  string created_by_id = 4;
+  google.protobuf.Int64Value moderator_id = 5;
+  photo.Client client = 6;
+}
+
+/**
+ * Return of rejecting photo by photo's uuid/origin photo id
+ */
+message RejectPhotoResponse {}
+
+/**
+ * Request to upsert photo feedback
+ */
+message UpsertPhotoFeedbackRequest {
+  photo.PhotoFeedback photo_feedback = 1;
+}
+
+/**
+ * Return of upserting photo feedback
+ */
+message UpsertPhotoFeedbackResponse {}
+
+/**
+ * Request to Re-Upload Photo by Origin Photo Id/Photo Uuid
+ */
+message ReUploadPhotoRequest {
+  bytes photo_image_file = 1;
+  string file_name_with_extension = 2;
+  string photo_uuid = 3;
+  int64 origin_photo_id = 4;
+  bool reingest_photo = 5;
+  bool should_keep_original_path = 6;
+}
+
+/**
+ * Return of Re-Uploading Origin Photo Id/Photo Uuid
+ */
+message ReUploadPhotoResponse {
+  photo.PhotoEntity photo_entity = 1;
+}
+
+/**
+ * Request to assign photo to entities
+ */
+message AssignPhotoToEntitiesRequest {
+  string business_id = 1;
+  string entity_id = 2;
+  string entity_type = 3;
+  string photo_uuid = 4;
+}
+
+/**
+ * Return of assigning photo to entities
+ */
+message AssignPhotoToEntitiesResponse {}
+
+/**
+ * Request to auto review business photo
+ */
+message AutoReviewBusinessPhotoRequest {
+  photo.BusinessPhotoType business_photo_type = 1;
+  bytes photo_image_file = 2;
+  string file_name_with_extension = 3;
+}
+
+/**
+ * Return of auto review business photo
+ */
+message AutoReviewBusinessPhotoResponse {
+  bool approved = 1;
+  repeated photo.BusinessPhotoRejectionReason rejection_reasons = 2;
+  repeated string additional_details = 3;
+}
+
+/**
+ * Request to auto review safety photo
+ */
+message AutoReviewSafetyPhotoRequest {
+  bytes photo_image_file = 1;
+  photocollectinggateway.PhotoUseCase use_case = 2;
+}
+
+/**
+ * Return of auto review safety photo
+ */
+message AutoReviewSafetyPhotoResponse {
+  int64 adult_score = 1;
+  int64 spoof_score = 2;
+  int64 medicine_score = 3;
+  int64 violence_score = 4;
+  int64 racy_score = 5;
+}
+
+/**
+ * Request to auto review menu photo
+ */
+message AutoReviewMenuPhotoRequest {
+  string photo_url = 1;
+  photo.AutoReviewMenuPhotoUseCase use_case = 2;
+}
+
+/**
+ * Return of auto review menu photo
+ */
+message AutoReviewMenuPhotoResponse {
+  bool approved = 1;
+  repeated photo.MenuPhotoRejectionReason rejection_reasons = 2;
+}
+
+/**
+ * Request to apply moderations a list of photos, creating photo_quality(s)
+ */
+message ModeratePhotosRequest {
+  repeated photo.PhotoModeration photo_moderations = 1;
+}
+
+/**
+ * Respond with failed to save moderations
+ */
+message ModeratePhotosResponse {
+  repeated string failed_photo_uuids = 1;
+}
+
+/**
+ * Request to submit a list of UGC photos to be moderated and approved/rejected for display on menu
+ */
+message ReviewUGCPhotosForMenuDisplayRequest {
+  repeated photo.UGCPhotosForMenuDisplaySubmission mx_moderation_submission = 1;
+}
+
+/**
+ * Respond with list of failed submissions
+ */
+message ReviewUGCPhotosForMenuDisplayResponse {
+  repeated string failed_photo_uuids = 1;
+}
+
+/**
+ * Request to run operations on photos
+ * If uuids are provided, run operations on the supplied list of uuids
+ * If none, use all photos within the start_time and end_time (epoch ms)
+ */
+message PhotoOperationWorkflowRequest {
+  repeated string photo_uuids = 1;
+  google.protobuf.Int64Value start_time = 2;
+  google.protobuf.Int64Value end_time = 3;
+  repeated PhotoOperation operations = 4 [deprecated = true];
+  string operation = 5;
+}
+
+/**
+ * Available photo operations
+ */
+enum PhotoOperation {
+  // No operation is specified
+  PHOTO_OPERATION_UNSPECIFIED = 0;
+  // Pings the S3 url to validate whether a photo is accessible
+  PHOTO_OPERATION_VALIDATION = 1;
+}
+
+/**
+ * Response of photo operation workflow
+ */
+message PhotoOperationWorkflowResponse {}
+
+/**
+ * Request to approve photo variant using variant photo_uuid
+ */
+message ApprovePhotoVariantRequest {
+  string photo_uuid = 1;
+  string comments = 2;
+  string created_by_id = 3;
+  google.protobuf.Int64Value moderator_id = 4;
+  photo.Client client = 5;
+}
+
+/**
+ * Return of approving photo variant
+ */
+message ApprovePhotoVariantResponse {}
+
+/**
+ * Request to submit photos to the moderation AI pipeline
+ */
+message SubmitPhotosForAIModerationRequest {
+  // data for the request, contains multiple photos
+  repeated AIModerationContext context = 1;
+
+  // Data class to represent arguments needed to represent a photo.
+  message AIModerationContext {
+    // business id
+    string business_id = 1;
+    // photo_uuid
+    string photo_uuid = 2;
+    // use_case
+    photocollectinggateway.PhotoUseCase use_case = 3;
+  }
+}
+
+/**
+ * Response of submitting photos to AI pipeline
+ */
+message SubmitPhotosForAIModerationResponse {
+  // Data to represent the success or failure.
+  message AIModerationResult {
+    // photo_id
+    string photo_uuid = 1;
+    // return success or error
+    oneof status {
+      // success or failure
+      bool success = 2;
+      // error
+      string error_message = 3;
+    }
+  }
+  // Data to be returned in the response, contains response for multiple photos.
+  repeated AIModerationResult data = 1;
+}
+
+/**
+ * Request for submitting photos to get moderated
+ */
+message SubmitPhotosForModerationRequest {
+  repeated string photo_uuids = 1;
+}
+
+/**
+ * Response for submitting photos to get moderated
+ */
+message SubmitPhotosForModerationResponse {
+  // Data to represent the success or failure of submitting the photo for moderation
+  message SubmitPhotoForModerationResult {
+    // photo id
+    string photo_uuid = 1;
+    // error
+    string error_message = 2;
+  }
+  repeated SubmitPhotoForModerationResult data = 1;
+}

@@ -1,0 +1,235 @@
+syntax = "proto3";
+package teammate_experience_service.api.v1;
+
+import "common/service_client_config.proto";
+import "experience_reliability_service/dispatch_error.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.tes.api.v1";
+
+// Merchant Support Service
+service MerchantSupportService {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "teammate-experience-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Validates whether a delivery is eligible for a Mx to dispute its corresponding error charge based on our internal DoorDash Policies
+  rpc GetDeliveryEligibilityForMerchantDispute(GetDeliveryEligibilityForMerchantDisputeRequest) returns (GetDeliveryEligibilityForMerchantDisputeResponse);
+  // Calculate a specific Mx’s ratio of orders with error charges to total number of orders over a specified amount of time
+  rpc GetMxErrorChargeRateByStoreId(GetMxErrorChargeRateByStoreIdRequest) returns (GetMxErrorChargeRateByStoreIdResponse);
+  // Get the status of a Mx Error Charge Dispute
+  rpc GetMxErrorChargeDisputeStatus(GetMxErrorChargeDisputeStatusRequest) returns (GetMxErrorChargeDisputeStatusResponse);
+  // This is the endpoint to create a dispute if the corresponding dispute is still in the Created state. Only mx portal should call this endpoint
+  rpc CreateMxErrorChargeDispute(CreateMxErrorChargeDisputeRequest) returns (CreateMxErrorChargeDisputeResponse);
+  // This is the endpoint to evaluate the dispute if the corresponding dispute is still in the Pending state.
+  // Should be only used internally by the team as a rescue mechanism if the dispute is still in the Pending state.
+  rpc EvaluateMxErrorChargeDispute(EvaluateMxErrorChargeDisputeRequest) returns (EvaluateMxErrorChargeDisputeResponse);
+}
+
+// Request object for GetDeliveryEligibilityForMerchantDispute rpc
+message GetDeliveryEligibilityForMerchantDisputeRequest {
+  // Delivery to check eligibility on
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Response object for GetDeliveryEligibilityForMerchantDispute rpc
+message GetDeliveryEligibilityForMerchantDisputeResponse {
+  // Whether or not this delivery is eligible for dispute
+  google.protobuf.BoolValue is_eligible_for_dispute = 1;
+  // If this delivery is ineligible for dispute, this returns the reason
+  IneligibleForDisputeReason ineligible_for_dispute_reason = 2;
+  // Doordash policy dictates orders cannot be disputed 14-days after quoted delivery time
+  google.protobuf.Timestamp last_day_to_dispute = 3;
+}
+
+// Types of inEligibleForDisputeReason
+enum IneligibleForDisputeReason {
+  // Default; this is also the return value if this order is eligible for dispute
+  INELIGIBLE_FOR_DISPUTE_REASON_UNSPECIFIED = 0;
+  // Order cannot be disputed due to delivery doesn't have error charges
+  INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DOES_NOT_CONTAIN_ERROR_CHARGE = 1;
+  // Order cannot be disputed due to the quoted delivery date exceeding 14 days in the past
+  INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_EXCEEDS_14_DAY_POLICY = 2;
+  // Order cannot be disputed due this delivery was already fully/partially refunded
+  INELIGIBLE_FOR_DISPUTE_REASON_PRIOR_STORE_REFUND_EXISTS_FOR_DELIVERY = 3;
+  // Order cannot be disputed due to the Mx exceeding our fraud threshold (i.e. high dispute rate)
+  INELIGIBLE_FOR_DISPUTE_REASON_STORE_EXCEEDS_DISPUTE_THRESHOLD = 4;
+  // Store is disallowed from disputing due to company policy infringement
+  INELIGIBLE_FOR_DISPUTE_REASON_STORE_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 5;
+  // User is disallowed from disputing due to company policy infringement
+  INELIGIBLE_FOR_DISPUTE_REASON_USER_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 6;
+  // Delivery was denied because the order did not pass one or more fraud heuristics
+  INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DID_NOT_PASS_MX_ERROR_CHARGE_DISPUTE_FRAUD_HEURISTICS = 7;
+}
+
+// Request object for GetMxErrorChargeRateByStoreIdRequest
+message GetMxErrorChargeRateByStoreIdRequest {
+  // Store id of store to find error charge rate
+  int64 store_id = 1;
+  // Number of days starting from today to look back at
+  int32 rolling_window_size = 2;
+}
+
+// Response object for GetMxErrorChargeRateByStoreIdResponse
+message GetMxErrorChargeRateByStoreIdResponse {
+  // Ratio of Mx orders with error charges to total orders for a specific store id
+  google.protobuf.DoubleValue mx_error_charge_ratio = 1;
+  // Total number of Mx orders with error charges for specific store id over certain period of time
+  google.protobuf.Int64Value total_mx_orders_with_mxa_error_charges = 2;
+  // Total number of Mx orders for specific store id over certain period of time
+  google.protobuf.Int64Value total_mx_orders_count = 3;
+}
+
+// Mx error charge dispute status request
+message GetMxErrorChargeDisputeStatusRequest {
+  // Delivery to check dispute status on
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Mx error charge dispute status response
+message GetMxErrorChargeDisputeStatusResponse {
+  // Delivery to check dispute status on
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Returns whether this delivery was approved, denied, or is pending decision
+  DisputeStatus dispute_status = 2;
+  // This should be the reason for the dispute being denied
+  DisputeDeniedReason dispute_denied_reason = 3 [deprecated = true];
+  // Reusing the same response for previous CreateMerchantInitiatedRefundResponse to avoid changes in the client side
+  experience_reliability_service.dispatch_error_api.RefundResponse refund_response = 4;
+}
+
+// Dispute notes to be associated with the dispute submission
+message DisputeNotes {
+  // Order item level dispute notes
+  google.protobuf.StringValue order_item_level_dispute_notes = 1;
+  // Order level dispute notes
+  google.protobuf.StringValue order_level_dispute_notes = 2;
+}
+
+// Request object for CreateMxErrorChargeDispute rpc
+message CreateMxErrorChargeDisputeRequest {
+  // Delivery to check eligibility on
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Notes to be associated with the dispute submission. Can be on order level or order item level
+  DisputeNotes dispute_notes = 2;
+  // Actual amount to dispute
+  google.protobuf.Int32Value dispute_amount = 3;
+  // Mx id who is creating the dispute
+  google.protobuf.Int64Value created_by_id = 4;
+}
+
+// This is a placeholder response object for CreateMxErrorChargeDispute submission; the actual success of the request can be determined from the gRPC status code.
+message CreateMxErrorChargeDisputeResponse {}
+
+// Mx Error Charge Dispute Result - Detailed reason for denied
+enum DisputeDeniedReason {
+  // Default value not set
+  DISPUTE_DENIED_REASON_UNSPECIFIED = 0;
+  // Order cannot be disputed due to delivery doesn't have error charges
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DOES_NOT_CONTAIN_ERROR_CHARGE = 1;
+  // Order cannot be disputed due to the quoted delivery date exceeding 14 days in the past
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_EXCEEDS_14_DAY_POLICY = 2;
+  // Order cannot be disputed due this delivery was already fully/partially refunded
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_PRIOR_STORE_REFUND_EXISTS_FOR_DELIVERY = 3;
+  // Order cannot be disputed due to the Mx exceeding our fraud threshold (i.e. high dispute rate)
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_STORE_EXCEEDS_DISPUTE_THRESHOLD = 4;
+  // Store is disallowed from disputing due to company policy infringement
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_STORE_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 5;
+  // User is disallowed from disputing due to company policy infringement
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_USER_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 6;
+  // Delivery was denied because the order did not pass one or more fraud heuristics
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DID_NOT_PASS_MX_ERROR_CHARGE_DISPUTE_FRAUD_HEURISTICS = 7;
+  // Dispute was rejected because store refund requested exceeds store charges on this delivery
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REQUESTED_STORE_REFUND_GREATER_THAN_STORE_CHARGE = 8;
+}
+
+// Mx Error Charge Dispute Result - Returns the status of the dispute
+enum DisputeStatus {
+  // Default value
+  DISPUTE_STATUS_UNSPECIFIED = 0;
+  // Dispute was approved but Mx has not been issued a merchant payment adjustment yet
+  DISPUTE_STATUS_APPROVED = 1;
+  // Dispute was denied and Mx was not issued a merchant payment adjustment
+  DISPUTE_STATUS_DENIED = 2;
+  // For Mx initiated refund, the Mx error charge will first enter a pending state. After a certain period of time, it will enter either Approved or Denied status based on the dispute evaluation result. Note: for Ax initiated refund (bulk tool & THQ), it won’t enter this state
+  DISPUTE_STATUS_PENDING = 3;
+  // Mx error charge dispute for any reasons like item missing or poor food quality has been created
+  DISPUTE_STATUS_CREATED = 4;
+  // Mx error charge dispute was approved and Mx has been issued a merchant payment adjustment (CNR record will be created)
+  DISPUTE_STATUS_REFUNDED = 5;
+}
+
+// Dispute source for the dispute.
+enum DisputeSource {
+  // Default value.
+  DISPUTE_SOURCE_UNSPECIFIED = 0;
+  // THQ.
+  DISPUTE_SOURCE_DISPATCH_MERCHANT_PAYMENT_ADJUSTMENT_TOOL = 1;
+  // Bulk Tool.
+  DISPUTE_SOURCE_BULK_MX_PAYMENT_ADJUSTMENT_TOOL = 2;
+  // Mx Portal.
+  DISPUTE_SOURCE_MX_INITIATED_FROM_MX_PORTAL = 3;
+}
+
+// Persistent data for dispute denied reason in DB
+// We intentionally do not reuse the same message as GetMxErrorChargeDisputeStatusResponse to avoid tight coupling.
+// Also it will allow us to add more fields in the future without affecting the existing clients
+message DisputeDeniedReasonData {
+  // Returns the reason why the dispute was denied.
+  // This should be a generic reason for the dispute across all 3 channels (bulk tool/thq/mx portal).
+  // We will start set the reason only for mx portal.
+  // This should be in the beginning since we are going to show a generic message to the Mx.
+  // However in the future if we want to show detailed reason to the Mx, we need to
+  // 1. convert bulk tool/thq specific reasons to this format
+  // 2. pass down the reason from the bulk tool/thq dispute flow to mx portal
+  // For more context, refer to https://doordash.slack.com/archives/C087RJCQJKH/p1740764887358669
+  DisputeDeniedReason dispute_denied_reason = 1;
+  // Source of this dispute
+  DisputeSource dispute_source = 2;
+}
+
+// Request object for mark dispute status
+message MarkDisputeStatusRequest {
+  // Delivery to check dispute status on
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Dispute status to be set
+  DisputeStatus dispute_status = 2;
+  // Reason for the dispute being denied
+  DisputeDeniedReasonData dispute_denied_reason_data = 3;
+  // Dispatch error ids to be set.
+  repeated google.protobuf.Int64Value disputed_dispatch_error_ids = 8;
+}
+
+// Request object for EvaluateMxErrorChargeDisputeRequest rpc.
+// Will be used as a rescue mechanism to evaluate the dispute if the dispute is still in the Pending state.
+// Should be only used internally by the team.
+message EvaluateMxErrorChargeDisputeRequest {
+  // Wrapper around the CreateMxErrorChargeDisputeRequest
+  // Will not be used if mark_state_only is set to true.
+  CreateMxErrorChargeDisputeRequest create_mx_error_charge_dispute_request = 1;
+
+  // This is a flag to indicate whether we should only mark the state of the dispute as Approved/Denied when the dispute
+  // is in the Pending state.
+  // This works as a rescue mechanism to evaluate the dispute if the call to CNR record succeeds but write to db failed.
+  // If this is set to true, we will skip evaluate the dispute and just mark the state of the dispute as Approved/Denied.
+  google.protobuf.BoolValue mark_state_only = 2;
+
+  // This is a wrapper around the MarkDisputeStatusRequest.
+  MarkDisputeStatusRequest mark_dispute_status_request = 3;
+}
+
+// This is a placeholder response object for EvaluateMxErrorChargeDispute submission;
+message EvaluateMxErrorChargeDisputeResponse {
+  // Delivery to check dispute status on
+  google.protobuf.StringValue delivery_uuid = 1;
+  // If it is rejected, we will return the reason for the rejection.
+  // Since this is an internal API, we can return the generic detailed reason.
+  DisputeDeniedReason dispute_denied_reason = 2;
+}

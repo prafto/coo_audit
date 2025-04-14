@@ -1,0 +1,214 @@
+syntax = "proto3";
+package order_accuracy_service.v1;
+
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/order_accuracy_service/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.order_accuracy";
+
+// RPC to manage item availability
+service ItemAvailabilityService {
+  // Update Item Availability in menu and order, when it is reported as missing or substituted
+  rpc UpdateItemAvailability(UpdateItemAvailabilityRequest) returns (UpdateItemAvailabilityResponse);
+  // service to temporary suspend entities of store
+  rpc SuspendEntity(SuspendEntityRequest) returns (SuspendEntityResponse);
+  // RPC that records order verification done by dx
+  rpc SubmitOrderVerificationReport(SubmitOrderVerificationReportRequest) returns (SubmitOrderVerificationReportResponse);
+  // RPC that returns order verificationstatus
+  rpc FetchOrderVerificationStatus(FetchOrderVerificationStatusRequest) returns (FetchOrderVerificationStatusResponse);
+}
+
+//Request type for FetchOrderVerificationStatus
+message FetchOrderVerificationStatusRequest {
+  // delivery UUID
+  string delivery_uuid = 1;
+  // dasher id
+  int64 dasher_id = 2;
+}
+
+//Response type for FetchOrderVerificationStatus
+message FetchOrderVerificationStatusResponse {
+  // Deprecated fields
+  reserved 5;
+  reserved "incentive_amount";
+
+  // Did the dasher report an issue
+  bool did_report_issue = 1;
+  // List of reported issues
+  repeated OrderVerificationReportItem items = 2;
+  // Whether dasher performed order verfication
+  bool order_verified_by_dasher = 3;
+  // The protocol specifying how Dx are incentivised to complete order verification.
+  OrderVerificationIncentiveProtocol incentive_protocol = 4;
+  // The incentive amount
+  google.protobuf.FloatValue incentive = 6;
+}
+
+// Reason why item was missing during verification
+enum OrderVerificationMissingReason {
+  // item update type is unspecified
+  ORDER_VERIFICATION_MISSING_REASON_UNSPECIFIED = 0;
+  // item is out of stock
+  ORDER_VERIFICATION_MISSING_REASON_OUT_OF_STOCK = 1;
+  // item is substituted, and OCA should be performed
+  ORDER_VERIFICATION_MISSING_REASON_SUBSTITUTED = 2;
+}
+
+// Report submitted by dasher
+message OrderVerificationReportItem {
+  // Menu item id
+  string menu_item_id = 1;
+  // Menu item id
+  string order_item_id = 2;
+  // Report type
+  OrderVerificationMissingReason oos_action = 3;
+  // Number of items
+  int32 quantity = 4;
+}
+
+// How Dx are incentivised to complete order verification.
+enum OrderVerificationIncentiveProtocol {
+  // Dx incentive protocol is unspecified.
+  ORDER_VERIFICATION_INCENTIVE_PROTOCOL_UNSPECIFIED = 0;
+  // Dx receive an incentive for completing order verification,
+  ORDER_VERIFICATION_INCENTIVE_PROTOCOL_INCENTIVE = 1;
+  // Dx receive no incentive for completing order verification.
+  ORDER_VERIFICATION_INCENTIVE_PROTOCOL_NO_INCENTIVE = 2;
+  // Dx will complete order verification as part of `earn by time`.
+  ORDER_VERIFICATION_INCENTIVE_PROTOCOL_TIME_MODE = 3;
+  // Dx verification only using existing checklist
+  ORDER_VERIFICATION_INCENTIVE_PROTOCOL_DX_VERIFICATION_ONLY = 4;
+}
+
+// Request for SubmitOrderVerificationReport
+message SubmitOrderVerificationReportRequest {
+  // Deprecated fields
+  reserved 7;
+  reserved "incentive_amount";
+
+  // delivery UUID
+  string delivery_uuid = 1;
+  // Store ID
+  int64 store_id = 2;
+  // Dasher Id
+  int64 dasher_id = 3;
+  // Did the dasher report an issue
+  bool did_report_issue = 4;
+  // List of reported issues
+  repeated OrderVerificationReportItem items = 5;
+  // The protocol specifying how Dx are incentivised to complete order verification.
+  OrderVerificationIncentiveProtocol incentive_protocol = 6;
+  // The incentive amount
+  google.protobuf.FloatValue incentive = 8;
+}
+
+// Response for SubmitOrderVerificationReport
+message SubmitOrderVerificationReportResponse {}
+
+// request of UpdateItemAvailability
+message UpdateItemAvailabilityRequest {
+  // delivery UUID
+  string delivery_uuid = 1;
+  // details per item needed to make item updates,
+  repeated ItemUpdateDetails item_update_details = 2;
+}
+
+// item update details proto
+message ItemUpdateDetails {
+  // the type of update to item
+  ItemUpdateType item_update_type = 1;
+  // if set, we create order resolution in cnr platform to issue credit and refund
+  google.protobuf.StringValue order_resolution_problem_name = 2;
+  // menu_item_id of the item
+  string menu_item_id = 3;
+  // order_item_id of the item
+  int64 order_item_id = 4;
+  // number of items of id ~ item_id, which needs to be updated, default is 1
+  google.protobuf.Int32Value quantity = 5;
+  // default is false, boolean to indicate if item_suspension should be skipped, Note: by default, item is suspended and an email is sent to mx as long as skip_mx_email_notification is not set to true
+  google.protobuf.BoolValue skip_item_suspension = 6;
+  // default is false, boolean to indicate if we should skip sending email to Mx about item suspension, NOTE: emails are also skipped if item suspension does not happen
+  google.protobuf.BoolValue skip_mx_email_notification = 7;
+  // default is false, boolean to indicate if we should skip sending push notification to Cx about order item update
+  google.protobuf.BoolValue skip_cx_push_notification = 8;
+}
+
+//empty response for UpdateItemAvailability
+message UpdateItemAvailabilityResponse {}
+
+// the type of update to item
+enum ItemUpdateType {
+  // item update type is unspecified
+  ITEM_UPDATE_TYPE_UNSPECIFIED = 0;
+  // item is missing
+  ITEM_UPDATE_TYPE_MISSING = 1;
+  // item is substituted, and OCA should be performed
+  ITEM_UPDATE_TYPE_SUBSTITUTED_WITH_OCA = 2;
+  // item is substituted, and if order_resolution_problem_name is set, credits should be issued
+  ITEM_UPDATE_TYPE_SUBSTITUTED_WITH_CREDITS = 3;
+}
+
+// suspend entity request
+message SuspendEntityRequest {
+  // entity type - currently we're only suspending items so this is not getting honored and we're treating all entities as items
+  menu.EntityType entity_type = 1;
+  // store id
+  string store_id = 2;
+  // entity id is the id corresponding to entity_type
+  string entity_id = 3;
+  // suspension duration
+  EntitySuspensionDuration entity_suspension_duration = 4;
+  // suspension reason
+  EntitySuspensionReason entity_suspension_reason = 5;
+  // used if entity_suspension_duration = ITEM_SUSPENSION_DURATION_CLIENT_PROVIDED, we suspend until the time passed in suspend_util_milliseconds
+  google.protobuf.Int64Value suspend_util_milliseconds = 6;
+  // used if we need to send emails to Merchants about suspension
+  MerchantEmailInfo merchant_email_info = 7;
+}
+
+// merchant email info
+message MerchantEmailInfo {
+  // contact emails
+  repeated string contact_emails = 1;
+  // email configuration id, this is needed if we want to send emails to Mx, if null we don't send emails
+  google.protobuf.StringValue email_configuration_id = 2;
+  // data fields for email template
+  map<string, string> email_data_fields = 3;
+}
+
+// entity suspension response
+message SuspendEntityResponse {
+  //  valid or invalid request
+  bool is_valid_request = 1;
+}
+
+// entity suspension reason
+enum EntitySuspensionReason {
+  // reason unspecified
+  ENTITY_SUSPENSION_REASON_UNSPECIFIED = 0;
+  // dasher_triggered - used by Item Out of Stock feature
+  ENTITY_SUSPENSION_REASON_DASHER_TRIGGERED = 1;
+  // mni item level ATD
+  ENTITY_SUSPENSION_REASON_MNI_ITEM_ATD = 2;
+}
+
+// entity suspension duration
+enum EntitySuspensionDuration { // NOTE: all hours will be in store's timeZone
+  // suspend entity until midnight in store's local timezone
+  ENTITY_SUSPENSION_DURATION_UNSPECIFIED = 0;
+  // suspend entity until midnight in store's local timezone
+  ENTITY_SUSPENSION_DURATION_UNTIL_MID_NIGHT = 1;
+  // suspend entity for next 2 hours in store's local timezone
+  ENTITY_SUSPENSION_DURATION_NEXT_2_HOURS = 2;
+  // suspend entity for next 3 hours in store's local timezone
+  ENTITY_SUSPENSION_DURATION_NEXT_3_HOURS = 3;
+  // suspend entity for next 6 hours in store's local timezone
+  ENTITY_SUSPENSION_DURATION_NEXT_6_HOURS = 4;
+  // suspend entity for next 12 hours in store's local timezone
+  ENTITY_SUSPENSION_DURATION_NEXT_12_HOURS = 5;
+  // suspend entity until client's provided timezone
+  ENTITY_SUSPENSION_DURATION_CLIENT_PROVIDED = 6; // NOTE: if client passes this, then they should also set the time they want to suspend until, via clientProvidedSuspendUntil(time in epoch millis), if this is not set, suspension will behave like MIDNIGHT
+}

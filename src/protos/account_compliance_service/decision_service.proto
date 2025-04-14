@@ -1,0 +1,395 @@
+syntax = "proto3";
+
+package account_compliance_service.v1;
+
+import "account_compliance_service/common.proto";
+import "common/service_client_config.proto";
+import "dasher_service/dasher_dasher.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+import "multi_vendor_platform_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.account_compliance_service";
+
+// Service for evaluating dasher needs_review actions
+service DecisionService {
+  option (doordash.api.service) = {
+    name: "account-compliance-service-web"
+    url: "account-compliance-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["account-compliance"]
+    owner: {
+      name: "trust-eng"
+      id: "trust-team"
+      slack_channel: "#team-trust"
+      email_alias: "trust-eng@doordash.com"
+    }
+    target_products: [DX]
+  };
+  // Evaluate unsuspend decision on needs_review
+  rpc Decision(DecisionRequest) returns (DecisionResponse) {}
+  // Evaluate device switch in shift
+  rpc AssessShift(AssessShiftRequest) returns (AssessShiftResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      post: "/account-compliance/v1/assess-shift/{shift_id}",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+
+  // Evaluate compliance
+  rpc ComplianceEvaluation(ComplianceEvaluationRequest) returns (ComplianceEvaluationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      post: "/account-compliance/v1/compliance-evaluation",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+
+  // Compliance Ack
+  rpc ComplianceAck(ComplianceAckRequest) returns (ComplianceAckResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      post: "/account-compliance/v1/compliance-ack",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {critical_alerts_enabled: false}
+    };
+  }
+}
+
+// Compliance Ack Request
+message ComplianceAckRequest {
+  // user identifier
+  UserIdentifier user_identifier = 1;
+  // Compliance action type
+  ComplianceActionType action_type = 2;
+  // Compliance Ack
+  ComplianceAckMetadata compliance_ack = 3;
+}
+
+// Compliance Ack Response
+message ComplianceAckResponse {}
+
+// The request message with Facts
+message DecisionRequest {
+  // facts
+  DecisionFact fact = 1;
+}
+
+// The response message with Actions
+message DecisionResponse {
+  // action
+  Action action = 1;
+  // message
+  google.protobuf.StringValue message = 2;
+}
+
+// facts for evaluation
+message DecisionFact {
+  // user identifier
+  UserIdentifier user_identifier = 1;
+  // idv_fact
+  IdvFact idv_fact = 2;
+}
+
+// IDV Facts
+message IdvFact {
+  // template_id
+  google.protobuf.StringValue template_id = 1;
+  // inquiry_id
+  google.protobuf.StringValue inquiry_id = 2;
+  // tags
+  repeated google.protobuf.StringValue tags = 3;
+}
+
+// action
+message Action {
+  // IDV action
+  IdvAction idv_action = 1;
+}
+
+// IDV Action
+message IdvAction {
+  // action type
+  IdvActionType action_type = 1;
+  // reason type
+  IdvReasonType reason_type = 2;
+}
+
+// Assess Device Request message
+message AssessShiftRequest {
+  // Shift step
+  google.protobuf.StringValue shift_step = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Shift ID
+  google.protobuf.StringValue shift_id = 2;
+  // Device ID
+  google.protobuf.StringValue device_id = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Starting Point ID
+  google.protobuf.Int32Value starting_point_id = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Dasher object
+  Dasher dasher = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // App version to pass to Risk
+  google.protobuf.StringValue app_version = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Vehicle type ID to pass to Risk
+  google.protobuf.Int32Value vehicle_type_id = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Sub market ID for Risk
+  google.protobuf.Int32Value submarket_id = 8 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Action required after evaluation
+message AssessShiftResponse {
+  // Action
+  RiskAction risk_action = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Message
+  google.protobuf.StringValue message = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // device switch boolean, default to false
+  google.protobuf.BoolValue device_switch = 3 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+}
+
+// Risk action from RDP
+message RiskAction {
+  // Risk action type
+  google.protobuf.StringValue action_type = 1;
+  // Risk reason type
+  oneof kind {
+    // Request IDV action
+    RequestIdv request_idv = 32;
+    // Request TIN action
+    RequestTinInfo request_tin_info = 52;
+    // Update app action
+    UpdateApp update_app = 37;
+  }
+}
+
+// UpdateApp action
+message UpdateApp {
+  // reason
+  string reason = 1;
+}
+
+// RequestIdv action
+message RequestIdv {
+  // DasherDeactivationReasonId
+  DasherDeactivationReasonId status_code = 1;
+  // internal_reason
+  google.protobuf.StringValue internal_reason = 2;
+  // status code value as int
+  google.protobuf.Int32Value status_reason_id = 3;
+  // Dasher status
+  dasher_service.dasher.Status dasher_status = 4;
+}
+
+// RequestTinInfo
+message RequestTinInfo {
+  // DasherDeactivationReasonId
+  DasherDeactivationReasonId status_code = 1;
+  // internal_reason
+  google.protobuf.StringValue internal_reason = 2;
+}
+
+// Compliance Evaluation Request
+message ComplianceEvaluationRequest {
+  // user identifier
+  UserIdentifier user_identifier = 1;
+}
+
+// Compliance Evaluation Response
+message ComplianceEvaluationResponse {
+  // Compliance action
+  repeated ComplianceAction compliance_action = 1;
+}
+
+// Compliance Action
+message ComplianceAction {
+  // Compliance action type
+  ComplianceActionType action_type = 1;
+  // Compliance metadata
+  ComplianceMetadata general_metadata = 2;
+
+  // Compliance action details
+  oneof action_details {
+    // Request residence address
+    RequestResidenceAddressMetadata request_residence_address_metadata = 4;
+    // Request IDV metadata
+    RequestIdvMetadata request_idv_metadata = 5;
+    // Request Profile Photo metadata
+    RequireProfilePhotoMetadata require_profile_photo_metadata = 7;
+  }
+  // Landing UI metadata
+  LandingUIMetadata landing_ui_metadata = 6 [deprecated = true];
+  // lego page response to be rendered by frontend
+  lego.response.v1.LegoPageResponse landing_ui_lego_page_response = 8;
+  // Presentation type
+  PresentationType presentation_type = 9;
+}
+
+// Compliance action type
+enum ComplianceActionType {
+  // unspecified
+  COMPLIANCE_ACTION_TYPE_UNSPECIFIED = 0;
+  // Dx suspended, client will need to refresh dasher status (backward compatible)
+  COMPLIANCE_ACTION_TYPE_DX_SUSPENDED = 1;
+  // Require residence address
+  COMPLIANCE_ACTION_TYPE_REQUIRE_RESIDENCE_ADDRESS = 2;
+  // Require IDV
+  COMPLIANCE_ACTION_TYPE_REQUIRE_IDV = 3;
+  // Require Profile_Photo
+  COMPLIANCE_ACTION_TYPE_REQUIRE_PROFILE_PHOTO = 4;
+  // Update payout info
+  COMPLIANCE_ACTION_TYPE_UPDATE_PAYOUT_INFO = 5;
+  // Verify identity for stripe kyc
+  COMPLIANCE_ACTION_TYPE_STRIPE_KYC_VERIFY_IDENTITY = 6;
+  // Require work authorization document
+  COMPLIANCE_ACTION_TYPE_REQUIRE_WORK_AUTH = 7;
+}
+
+// Compliance Metadata
+message ComplianceMetadata {
+  // Compliance action reason
+  google.protobuf.StringValue reason = 1;
+  // Compliance action description
+  google.protobuf.StringValue description = 2;
+  // Compliance action acknowledgement
+  ComplianceAckMetadata ack_metadata = 3;
+  // Post compliance action page type
+  TrustPageType post_compliance_action_page_type = 4;
+}
+
+// Compliance action acknowledgement (this is the ack that client will send back to service)
+message ComplianceAckMetadata {
+  // Dismiss settings
+  DismissSettings dismiss_settings = 1;
+}
+
+// Dismiss settings
+message DismissSettings {
+  // dismiss timer in second.
+  google.protobuf.Int32Value dismiss_timer = 1;
+  // dismiss frequency: should dismiss after x times. Client just send the data back and service will reduce one.
+  google.protobuf.Int32Value dismiss_frequency = 2;
+}
+
+// landing ui metadata
+message LandingUIMetadata {
+  // presentation type
+  PresentationType presentation_type = 1;
+  // hero image url
+  google.protobuf.StringValue hero_image_url = 2;
+  // title
+  google.protobuf.StringValue title = 3;
+  // description
+  google.protobuf.StringValue description = 4;
+  // bullet point items
+  repeated BulletPointItem bullet_point_items = 5;
+  // action button
+  Button action_button = 6;
+  // static image url
+  google.protobuf.StringValue static_image_url = 7;
+}
+
+// bullet point item
+message BulletPointItem {
+  // icon name
+  google.protobuf.StringValue icon_name = 1;
+  // title
+  google.protobuf.StringValue title = 2;
+  // description
+  google.protobuf.StringValue description = 3;
+}
+
+// button
+message Button {
+  // button text
+  google.protobuf.StringValue text = 1;
+  // button action
+  google.protobuf.StringValue style = 2; // primary, secondary, tertiary
+  // size
+  google.protobuf.StringValue size = 3; // small, medium, large
+}
+
+// Request Residence Address Metadata
+message RequestResidenceAddressMetadata {
+  // request residence starting time
+  google.protobuf.BoolValue require_residence_start_time = 1;
+  // existing formatted address
+  google.protobuf.StringValue formatted_address = 2;
+  // country code
+  google.protobuf.StringValue country_code = 3;
+}
+
+// Request IDV Metadata
+message RequestIdvMetadata {
+  // compliance status
+  ComplianceStatus compliance_status = 1;
+  // vendor type
+  multi_vendor_platform_service.v1.VendorType vendor_type = 2;
+  // payload
+  oneof payload {
+    // persona payload
+    PersonaPayload persona_payload = 3;
+  }
+  // Screen to render after IDV
+  TrustPageType post_idv_page_type = 4;
+}
+
+// Request Profile Photo Metadata
+message RequireProfilePhotoMetadata {
+  // compliance status
+  ComplianceStatus compliance_status = 1;
+  // vendor type
+  multi_vendor_platform_service.v1.VendorType vendor_type = 2;
+  // payload
+  oneof payload {
+    // persona payload
+    PersonaPayload persona_payload = 3;
+  }
+}
+
+// persona payload
+message PersonaPayload {
+  // template id
+  google.protobuf.StringValue template_id = 1;
+  // map of data that send to the vendor
+  google.protobuf.Struct metadata = 2;
+}
+
+// Compliance Status
+enum ComplianceStatus {
+  // unspecified, default case
+  COMPLIANCE_STATUS_UNSPECIFIED = 0;
+  // Compliance status pending
+  COMPLIANCE_STATUS_PENDING = 1;
+  // Compliance status rejected
+  COMPLIANCE_STATUS_REJECTED = 3;
+  // Compliance status DL expired
+  COMPLIANCE_STATUS_DL_EXPIRED = 4;
+  // Compliance status registration doc expired
+  COMPLIANCE_STATUS_REGISTRATION_DOC_EXPIRED = 5;
+}

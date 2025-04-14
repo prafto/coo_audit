@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package reliability_scorecard.v2;
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/reliability_scorecard.v2";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.reliabilityscorecard.v2";
+
+// The main check object..
+message ScorecardCheck {
+  // Unique identifier for the check definition. ONLY AVAILABLE FOR READ REQUESTS.
+  string id = 1;
+  // Human readable name for the check.
+  string display_name = 2;
+  // The DDRN of the team or org that owns this check and is responsible for its maintenance.
+  // See go/ddrn for details.
+  string owner_ddrn = 3;
+  // Contains the parameters and (optionally) the success criteria for the check.
+  CheckType check_type = 4;
+  // The status of the check.
+  CheckStatus status = 5;
+  // Timestamp of when the check was created.
+  google.protobuf.Timestamp created_at = 6;
+  // Timestamp of when the check was last updated.
+  google.protobuf.Timestamp updated_at = 7;
+  // [Optional] Adding a filter allows you to apply the check to a subset of software assets.
+  // Not setting a filter means that ALL software assets are evaluated against the check.
+  Filter filter = 10;
+  // Documentation about the check that adds more context to the check. This should be used to provide details
+  // on why the check is essential and what software asset owners need to do to pass the check.
+  string documentation = 11;
+}
+
+// CheckStatus represents the status of a check.
+enum CheckStatus {
+  // Default value.
+  CHECK_STATUS_UNSPECIFIED = 0;
+  // All checks start off in the disabled state. The check will be executed against software assets
+  // **BUT DOES NOT AFFECT** their total score. This allows check owners to test their checks before releasing them.
+  CHECK_STATUS_DISABLED = 1;
+  // When enabled, check will execute against all applicable software assets and affect their total score.
+  CHECK_STATUS_ENABLED = 2;
+  // Check is currently in an inactive state and will not be executed against any software assets.
+  CHECK_STATUS_INACTIVE = 3;
+  // Check has been archived and is no longer in use.
+  CHECK_STATUS_ARCHIVED = 4;
+}
+
+// Wrapper for all the types of check that we support.
+message CheckType {
+  // Each check can be one of several types that we support.
+  oneof type {
+    // Create a check based on a PromQL query returning an instant vector.
+    PrometheusInstantVectorQueryCheck promql_instant_vector_query_check = 10;
+    // Create a check based on a PromQL query returning a range vector.
+    PrometheusRangeVectorQueryCheck promql_range_vector_query_check = 20;
+    // Create a check based on events from Global Changelog..
+    GlobalChangelogEventCheck global_changelog_events_check = 30;
+  }
+}
+
+// A filter allows check owners to apply checks to a subset of software assets.
+// Clauses added to a single filter are conjunctive (combined with an AND operation).
+// Values added to a single clause are disjunctive (combined with an OR operation).
+// E.g. the following filter:
+// ```
+// Filter {
+//  software_asset_owner_ddrns: ["ddrn:group::1234", "ddrn:group::5678"]
+//  software_asset_tiers: ["T0", "T1"]
+// }
+// ```
+// will cause the check to evaluate all software assets that are owned by either of the 2 groups that are of tiers 0 or 1.
+message Filter {
+  // Allows limiting the check to specific software assets.
+  repeated string software_asset_ddrns = 1;
+  // Limits the check to evaluate software assets of tiers (e.g. T0 only, T0 + T1, etc).
+  repeated string software_asset_tiers = 2;
+  // Limits the check to evaluate software assets to specific types (e.g. web, mobile, etc).
+  repeated string software_asset_subtypes = 3;
+  // Limits the check to evaluate software assets owned by specific teams.
+  repeated string software_asset_owner_ddrns = 4;
+}
+
+// A check that executes a PromQL query returning an instant vector.
+message PrometheusInstantVectorQueryCheck {
+  // A templated query containing placeholders for software asset attributes that returns an instant vector.
+  // E.g.
+  //    `http_requests_total{job="{{job_name}}", code="200"}`
+  // The templated query is in the style of Mustache templates: https://mustache.github.io/
+  string query_template = 1;
+}
+
+// A check that executes a PromQL query returning a range vector.
+message PrometheusRangeVectorQueryCheck {
+  // A templated PromQL query containing placeholders for software asset attributes that returns a range vector.
+  // E.g.
+  //    `sum(rate(http_requests_total{job="{{job_name}}", code="200"}[5m])) by (job)`
+  // The templated query is in the style of Mustache templates: https://mustache.github.io/
+  string query_template = 1;
+  // The number of days to search for..
+  uint32 search_window_in_days = 2;
+}
+
+// GlobalChangelogEventCheck represents a check that uses a global changelog event.
+message GlobalChangelogEventCheck {
+  // The tags of the global changelog events to use for the check.
+  repeated string gcl_event_types = 1;
+  // [Optional] The number of days to search for.
+  uint32 search_window_in_days = 2;
+}
+
+// Report for a specific scorecard check.
+message ScorecardCheckReport {
+  // The timestamp of the most recent successful evaluation of this check.
+  google.protobuf.Timestamp last_successful_evaluation_at = 1;
+  // The list of evaluation results for each software asset.
+  repeated SoftwareAssetEvaluationRecord software_asset_eval_results = 2;
+  // No. of entities that passed the check.
+  uint32 passed_count = 3;
+  // No. of entities that partially met the requirements of the check.
+  uint32 partially_succeeded_count = 4;
+  // No. of entities that failed the check.
+  uint32 failed_count = 5;
+  // No. of entities for which the evaluation was skipped.
+  uint32 skipped_count = 6;
+}
+
+// Evaluation result for a specific software asset for a specific check.
+message SoftwareAssetEvaluationRecord {
+  // The unique ID of this evaluation record.
+  string id = 1;
+  // The ID of the scorecard check.
+  string check_id = 2;
+  // The DDRN of the software asset.
+  string software_asset_ddrn = 3;
+  // The status of the evaluation.
+  EvaluationResult result = 4;
+  // The timestamp of the evaluation.
+  google.protobuf.Timestamp evaluated_at = 5;
+  // Additional context around the evaluation.
+  map<string, string> details = 6;
+
+  // The result of the evaluation.
+  enum EvaluationResult {
+    // Default value.
+    EVALUATION_RESULT_UNSPECIFIED = 0;
+    // The check passed for the software asset.
+    EVALUATION_RESULT_PASSED = 1;
+    // The check failed for the software asset.
+    EVALUATION_RESULT_FAILED = 2;
+    // The software asset partially passed the check.
+    EVALUATION_RESULT_PARTIALLY_SUCCEEDED = 3;
+    // The check was skipped for the software asset.
+    EVALUATION_RESULT_SKIPPED = 4;
+  }
+}

@@ -1,0 +1,331 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package dasher_comms_service.v2;
+
+import "dasher_comms_service/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_comms_service.v2";
+
+// The DasherCommsService service definition.
+service DasherCommsService {
+  // Onboard New Comms
+  rpc RegisterNewComms(RegisterNewCommsRequest) returns (RegisterNewCommsResponse) {}
+
+  // edit Comms
+  rpc EditComms(EditCommsRequest) returns (EditCommsResponse) {}
+
+  // cancel this Comms
+  rpc CancelComms(CancelCommsRequest) returns (CancelCommsResponse) {}
+
+  // GetCommsByFilter read all comms by filter
+  rpc GetCommsByFilter(GetCommsByFilterRequest) returns (GetCommsByFilterResponse) {}
+
+  // Send push notification
+  rpc SendPushNotification(SendPushNotificationRequest) returns (SendPushNotificationResponse) {}
+}
+
+// Send push notification request
+message SendPushNotificationRequest {
+  // Client can either provide user_id of dasher_id.
+  // user_id to be provided
+  google.protobuf.StringValue user_id = 1;
+  // when user_id is not available, dasher_id is required.
+  google.protobuf.StringValue dasher_id = 2;
+  // push notification content
+  oneof push_notification_content {
+    // Use a predefined configuration template to send the push notification
+    // https://doordash.atlassian.net/wiki/spaces/Eng/pages/2915008513/Push+Configurations
+    ConfigurationNotificationContent config_content = 3;
+    // Use a custom contents with details like title, body, deeplink and place holders to send the push notification
+    CustomNotificationContent custom_content = 4;
+  }
+}
+
+// Custom notification content
+message CustomNotificationContent {
+  // title of the notification
+  google.protobuf.StringValue title = 1;
+  // body of the notification
+  google.protobuf.StringValue body = 2;
+  // deeplink to be opened when the notification is clicked
+  google.protobuf.StringValue deeplink = 3;
+  // place holders value for the notification, optional
+  map<string, string> place_holders = 4;
+}
+
+// Configuration notification content
+message ConfigurationNotificationContent {
+  // configuration id to be used for the push notification
+  google.protobuf.StringValue configuration_id = 1;
+  // place holders value for the configuration
+  map<string, string> place_holders = 2;
+}
+
+// Send push notification response
+message SendPushNotificationResponse {
+  // unique message id of the push notification
+  string message_id = 1;
+}
+
+// request object for RegisterNewComms
+message RegisterNewCommsRequest {
+  // payload associated with this request
+  OnboardingRequest input = 2;
+  reserved 1;
+  reserved "request";
+}
+
+// response object for RegisterNewComms
+message RegisterNewCommsResponse {
+  // uniq id to identify the onboarded request
+  string comms_uuid = 1;
+}
+
+// request object for EditComms
+message EditCommsRequest {
+  // payload associated with this request
+  OnboardingRequest input = 2;
+  reserved 1;
+  reserved "request";
+}
+
+// response object for EditComms
+message EditCommsResponse {
+  // uniq id to identify the onboarded request
+  string comms_uuid = 1;
+}
+
+// request object for CancelComms
+message CancelCommsRequest {
+  // cancel filter
+  oneof cancel_filter {
+    // complete cancel by requestName
+    google.protobuf.StringValue request_name = 1;
+
+    // complete cancel by comms_uuid
+    google.protobuf.StringValue comms_uuid = 2;
+
+    // partial cancellation of the existing request
+    DxPartialCancellationPayload partial_cancel_payload = 3;
+  }
+}
+
+// request payload for partial cancellation of DxComms
+message DxPartialCancellationPayload {
+  // The name of the original onboarding request
+  google.protobuf.StringValue request_name = 1;
+
+  // payload associated with this request
+  oneof request_payload {
+    // Cohort details
+    CohortDetails cohort_details = 2;
+
+    // StaticCohort
+    StaticCohort static_cohort = 3;
+  }
+}
+
+// response object for CancelComms
+message CancelCommsResponse {
+  // The name of the request
+  string comms_uuid = 1;
+
+  // RequestStatus: status of the request
+  RequestStatus request_status = 2;
+}
+
+// The dx comm sending request
+message GetCommsByFilterRequest {
+  // filter templates by one of the following fields
+  oneof filter {
+    // The name of the request
+    google.protobuf.StringValue filter_request_name = 8;
+
+    // RequestStatus: status of the request
+    RequestStatus filter_request_status = 9;
+
+    // ownership details associated with this template
+    dasher_comms_service.v2.OwnerInfo filter_owner_info = 10;
+
+    // experimentation tag associated with this request, DV value., request will fail if Experimentation Tag doesn't exist
+    google.protobuf.StringValue filter_experiment_name = 11;
+
+    // filter by template name
+    google.protobuf.StringValue filter_template_name = 12;
+
+    // filter by request uuid
+    google.protobuf.StringValue filter_request_uuid = 13;
+  }
+
+  // max number of records to return as response, no value results to 10
+  int32 page_size = 6;
+
+  // page_token received in the last response, if empty response will be from the beginning
+  google.protobuf.StringValue page_token = 7;
+
+  reserved 1, 2, 3, 4, 5;
+  reserved 'request_name', 'request_status', 'owner_info', 'experiment_name', 'template_name';
+}
+
+// The dx comm sending request
+message GetCommsByFilterResponse {
+  // payload associated with this request
+  repeated OnboardingRequest records = 4;
+
+  // max number of records to return as response, no value results to 10
+  int32 page_size = 2;
+
+  // page_token received in the last response, if empty response will be from the beginning
+  google.protobuf.StringValue page_token = 3;
+
+  reserved 1;
+  reserved "request";
+}
+
+// RequestStatus
+enum RequestStatus {
+  // unspecified channel, default value
+  REQUEST_STATUS_UNSPECIFIED = 0;
+
+  // REQUEST_RECEIVED ... REQUEST has been received not onboarded yet
+  REQUEST_STATUS_REQUEST_RECEIVED = 1;
+
+  // INPROGRESS ... REQUEST is being processed and some notifications might have reached the target audience
+  REQUEST_STATUS_ACTIVE = 2;
+
+  // SENT ... REQUEST has been processed and all comms have been sent
+  REQUEST_STATUS_SENT = 3;
+
+  // Failed .. REQUEST has been processed and resulted in a failure, please check the error details
+  REQUEST_STATUS_FAILED = 4;
+
+  // Canelled .. REQUEST has been processed and all the comms associated with this request are cancelled
+  REQUEST_STATUS_CANCELLED = 5;
+}
+
+// OnboardingRequest is the Comms onboarding payload
+message OnboardingRequest {
+  // The name of the onboarding request
+  google.protobuf.StringValue request_name = 1;
+
+  // The name of the onboarding request
+  google.protobuf.StringValue template_name = 2;
+
+  // ownership details associated with this template
+  dasher_comms_service.v2.OwnerInfo owner_info = 3;
+
+  // RequestStatus: status of the request
+  RequestStatus request_status = 4;
+
+  // experimentation tag associated with this request, DV value., request will fail if Experimentation Tag doesn't exist
+  google.protobuf.StringValue experiment_name = 5;
+
+  // onboarding time
+  google.protobuf.Timestamp onboarding_time = 6;
+
+  // payload associated with this request
+  oneof request_payload {
+    // Cohort details
+    CohortDetails cohort_details = 7;
+
+    // CohortSQL
+    CohortSQL cohort_sql = 8;
+
+    // StaticCohort
+    StaticCohort static_cohort = 9;
+
+    // APIBasedCohort details
+    APIBasedCohort api_based = 17;
+
+    // partial cancellation of the existing request
+    DxPartialCancellationPayload partial_cancel_payload = 19;
+  }
+
+  // activation type
+  oneof activation_type {
+    // activate comms when this time reaches
+    google.protobuf.Timestamp activation_time = 10;
+    // activate comms when this journey gets triggered
+    google.protobuf.StringValue activation_journey_uuid = 11;
+    // activate comms asap
+    google.protobuf.BoolValue activate_asap = 18;
+  }
+
+  // expiration type
+  oneof expiration_type {
+    // expire comms when this time reaches (absolute value)
+    google.protobuf.Timestamp expiration_time = 12;
+    // expire comms after this duration from activation_time
+    google.protobuf.Duration expiration_duration = 13;
+    // expire comms when this journey gets triggered
+    google.protobuf.StringValue expiration_journey_uuid = 14;
+  }
+
+  // The uuid associated with this onboarding request
+  // Not a mandatory field when calling the API and response will always contain this field
+  google.protobuf.StringValue request_uuid = 15;
+
+  // template version
+  google.protobuf.FloatValue template_version = 16;
+}
+
+// CohortDetails .. cohort details associated with this request
+message CohortDetails {
+  // cohort tag to read from Lx attributes platform
+  google.protobuf.StringValue cohort_tag = 1;
+
+  // how often to refresh the above cohort
+  oneof refresh_interval {
+    // refresh once
+    google.protobuf.BoolValue refresh_once = 3;
+
+    // cron schedule
+    google.protobuf.StringValue cron_schedule = 4;
+  }
+
+  reserved 2;
+  reserved 'sp_ids';
+}
+
+// CohortSQL ... SQL to run to get the cohort details associated with this request
+message CohortSQL {
+  // sql to execute to get the values for the cohort
+  google.protobuf.StringValue sql_payload = 1;
+}
+
+// StaticList .. static list of the cohorts to begin with
+message StaticCohort {
+  // static cohort csv associated with this request
+  repeated StaticCohortRecord records = 2;
+
+  reserved 1;
+  reserved 'cohort_csv';
+}
+
+// one record representation of the static csv
+message StaticCohortRecord {
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // place holder values for the template place holders
+  map<string, string> place_holder_values = 2;
+}
+
+// APIBasedCohort ... the client has control of what Comm's are being sent.
+message APIBasedCohort {
+  // service name that's authorized to send comms using this request
+  google.protobuf.StringValue service_name = 1;
+
+  // email associated with this service, used for accountability.
+  google.protobuf.StringValue team_email = 2;
+
+  // slack channel associated with this service, used for accountability
+  google.protobuf.StringValue slack_channel = 3;
+}

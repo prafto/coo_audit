@@ -1,0 +1,283 @@
+syntax = "proto3";
+package merchant_pricing_program;
+
+import "common/common.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_financial_service/common.proto";
+import "merchant_financial_service/merchant_program_service.proto";
+import "parcel_protobuf/parcel_midmile_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "MerchantPricingProgramProtos";
+option java_package = "com.doordash.service.merchant_pricing_program";
+
+// Service supporting onboarding any Mx pricing configuration including trial pricing
+// Currently only supports Mx Affiliate Programs and Store Partnership. Drive is not yet supported
+service MerchantPricingProgramService {
+  // Onboarding a pricing program will end any previous programs that will be overridden by this new pricing
+  // e.g. ANY for fulfillment_type will _end_ existing DELIVERY and PICKUP pricing and the new pricing will apply to all fulfillment_types
+  // ANY for audience will _end_ existing SUBSCRIBER and NON-SUBSCRIBER pricing and the new pricing will apply to all audiences
+  // For TRIAL pricing
+  //   Pricing will begin applying once the TrialTrigger event occurs (start_time will be ignored)
+  //   Pricing will end after the trial_duration_days have passed (end_time will be ignored)
+  //   Any post-trial pricing will automatically begin applying after the trial ends
+  rpc OnboardMxPricingPrograms(OnboardMxPricingProgramsRequest) returns (OnboardMxPricingProgramsResponse) {}
+
+  // Returns all the active and pending programs including
+  //    pre-trial (before activated), trial, and post-trial (after trial ends)
+  rpc GetAllActiveAndPendingMxPricingPrograms(GetAllActiveAndPendingMxPricingProgramsRequest) returns (GetAllActiveAndPendingMxPricingProgramsResponse) {}
+
+  // Add a mapping for rate_card that is used to fetch the right rate card for a parcel order
+  // based on params: origin_facility_id, service_tier and upcharge_market_name
+  rpc CreateRateCardMappingForParcels(CreateRateCardMappingForParcelsRequest) returns (CreateRateCardMappingForParcelsResponse) {}
+
+  // Add a rate card entry that has the fee and zone name
+  rpc CreateRateCardEntryForParcels(CreateRateCardEntryForParcelsRequest) returns (CreateRateCardEntryForParcelsResponse) {}
+}
+
+// Request to create a mapping for rate cards used in parcel delivery pricing
+// This mapping helps determine the appropriate rate card based on origin facility, service tier, and market
+message CreateRateCardMappingForParcelsRequest {
+  // Required: The ID of the merchant warehouse/facility from where the parcel is picked up
+  google.protobuf.StringValue origin_facility_id = 1;
+  // Required: Service tier of the parcel route
+  merchant_financial_service.common.MidmileServiceTier service_tier = 2;
+  // Required: Unique identifier for the rate card
+  google.protobuf.StringValue rate_card_id = 6;
+  // Required: Lower bound of the weight range (in pounds) this mapping applies to
+  google.protobuf.DoubleValue weight_in_lb_low = 7;
+  // Required: Upper bound of the weight range (in pounds) this mapping applies to
+  google.protobuf.DoubleValue weight_in_lb_high = 8;
+
+  // Optional: Upcharge market name if applies to this rate card mapping
+  parcel_service.v1.UpchargeMarketName upcharge_market_name = 3;
+  // Optional: User identifier who last updated this mapping
+  google.protobuf.StringValue last_updated_by = 4;
+  // Optional: Additional notes or context for this rate card mapping
+  google.protobuf.StringValue comments = 5;
+}
+
+// Response for creating a rate card mapping for parcels
+message CreateRateCardMappingForParcelsResponse {}
+
+// Request to create an entry in a rate card with specific pricing details
+// Each entry defines the fee for a combination of zone, weight class, and distance range
+message CreateRateCardEntryForParcelsRequest {
+  // Required: Unique identifier for the rate card this entry belongs to
+  google.protobuf.StringValue rate_card_id = 1;
+  // Required: The fee amount in cents for this combination of parameters
+  google.protobuf.Int32Value flat_fee_in_cents = 2;
+  // Required: The delivery zone name this entry applies to
+  google.protobuf.StringValue zone_name = 3;
+  // Required: The weight class (in pounds) this entry applies to
+  google.protobuf.DoubleValue weight_class_in_lb = 4;
+  // Required: Lower bound of the distance range (in meters) this entry applies to
+  google.protobuf.Int32Value distance_in_meters_low = 5;
+  // Required: Upper bound of the distance range (in meters) this entry applies to
+  google.protobuf.Int32Value distance_in_meters_high = 6;
+}
+
+// Response for creating a rate card entry for parcels
+message CreateRateCardEntryForParcelsResponse {}
+
+// Request to onboard pricing configuration for a Mx
+message OnboardMxPricingProgramsRequest {
+  // The user creating the program
+  int64 creator_user_id = 1;
+  // How the program is being created (the caller)
+  merchant_financial_service.common.SourceType source = 2;
+  // The currency for _all_ programs
+  google.protobuf.StringValue currency = 3;
+  // The program requests themselves
+  repeated MxPricingProgramRequest programs = 4;
+}
+
+// The program details to be onboarded
+message MxPricingProgramRequest {
+  // The program details.
+  // If there is a trial_program this is considered post_trial rates
+  // If there is no trial_program these are considered active rates (based on start_time)
+  MxPricingProgram program = 1;
+  // The program that will be applied during the trial
+  // If this if set, TrialDetails must also be set
+  MxPricingProgram trial_program = 2;
+  // Details of the trial (excluding pricing details), trigger, duration, etc.
+  TrialDetails trial_details = 3;
+}
+
+// Pricing configuration details for a Mx
+message MxPricing {
+  // Owned by POS team but lives on this object currently
+  google.protobuf.StringValue inflation_rate = 1;
+  // Owned by POS team but lives on this object currently
+  google.protobuf.Int32Value inflation_rounding_unit = 2;
+  // Fee charged weekly for the use of the DD supplied tablets
+  google.protobuf.StringValue weekly_tablet_subscription_fee = 3;
+  // Fee charged weekly for the use of the DD supplied printers
+  google.protobuf.StringValue weekly_printer_subscription_fee = 4;
+  // Fees stored on the Mx Affiliate Program object
+  // supports the individual fees that will be charged through this program
+  repeated merchant_program.FeeAttribute fee_attributes = 5;
+}
+
+// Program configuration details for a Mx including entity details and pricing details
+message MxPricingProgram {
+  // The product line that this pricing will apply to
+  MxProduct product = 1;
+  // The entity that the pricing will apply to
+  google.protobuf.StringValue reference_entity_id = 2;
+  // The type of the entity (store, business, etc)
+  merchant_financial_service.common.EntityType reference_entity_type = 3;
+  // When the pricing begins to apply
+  //    Note: this value is ignored for trial pricing as the trigger determines start time
+  google.protobuf.Timestamp start_time = 4;
+  // When the pricing will end
+  //  (this is typically null, if you want the pricing to only be live for a specified time, use a trial)
+  google.protobuf.Timestamp end_time = 5;
+  // The identifier from the source (if there is none, use a random UUID)
+  //  E.g. in SFDC this would be either the opportunity_id or the salesforce_uuid
+  //  We have no uniqueness constraint on this, but will pass it back in any request for the programs
+  google.protobuf.StringValue source_id = 6;
+  // Whether or not this is a partner program
+  google.protobuf.BoolValue is_partner = 7;
+  // Pricing details
+  MxPricing pricing = 8;
+}
+
+// Trial details for a MxPricingProgram
+message TrialDetails {
+  // The event that will trigger the trial to begin
+  TrialTrigger trial_trigger = 1;
+  // The duration of the trial in days
+  google.protobuf.Int32Value trial_duration_days = 2;
+}
+
+// Triggers for when trial rates become active
+enum TrialTrigger {
+  // Unspecified
+  TRIAL_TRIGGER_UNSPECIFIED = 0;
+  // The trial will begin when the store is activated
+  //  This is not experience aware activation, it listens to the event emitted when the is_active flag on the store is toggled
+  TRIAL_TRIGGER_ACTIVATION = 1;
+}
+
+// Response to onboarding pricing configuration for a Mx with both Trial and Post-Trial rates
+message MxPricingProgramAndTrial {
+  // If the program is live, the program ID will be populated, if it is not yet live this will be blank
+  google.protobuf.StringValue program_id = 1;
+  // If the program came from a trial (even post-trial rates) the trial ID will be populated here
+  google.protobuf.StringValue trial_id = 2;
+  // The ID from the source
+  google.protobuf.StringValue source_id = 3;
+  // The store partnership ID
+  google.protobuf.StringValue store_partnership_id = 4;
+}
+
+// Individual response for each request
+message OnboardMxPricingProgramResponse {
+  // Either an error with more detailed messaging or the result of the onboard
+  oneof result {
+    // custom
+    Error error = 1;
+    // Details of the program
+    MxPricingProgramAndTrial program = 2;
+  }
+  // The product line that this pricing will apply to
+  MxProduct product = 3;
+  // The entity that the pricing will apply to
+  google.protobuf.StringValue reference_entity_id = 4;
+  // The type of the entity (store, business, etc)
+  merchant_financial_service.common.EntityType reference_entity_type = 5;
+  // The ID from the source
+  google.protobuf.StringValue source_id = 6;
+}
+
+// Response to onboarding pricing configuration for a Mx
+message OnboardMxPricingProgramsResponse {
+  // Response to individual program requests
+  repeated OnboardMxPricingProgramResponse programs = 1;
+}
+
+// Error code with more detailed error messaging of the result of the onboard
+message Error {
+  // Error codes
+  enum ErrorCode {
+    // base error code, unmapped
+    ERROR_CODE_INTERNAL_ERROR_UNSPECIFIED = 0;
+    // entity not found
+    ERROR_CODE_NOT_FOUND = 1;
+    // failed validation
+    ERROR_CODE_INVALID_REQUEST = 2;
+    // auth problem
+    ERROR_CODE_UNAUTHORIZED = 3;
+    // failure in creation
+    ERROR_CODE_CREATE_FAILURE = 4;
+    // trial already exists
+    ERROR_CODE_ALREADY_EXISTS = 5;
+  }
+
+  // enum error encountered
+  ErrorCode error_code = 1;
+  // human readable message with more details
+  google.protobuf.StringValue error_details = 2;
+}
+
+// What product line this will apply to. A combination of experience, channel, audience and fulfillment_type
+message MxProduct {
+  // The experience the Cx is using (DoorDash, Caviar, etc)
+  common.Experience experience = 1;
+  // The business channel the Cx used to place the order (weblink, marketplace, etc)
+  common.Channel channel = 2;
+  // The method that DD will use to fulfill the order (delivery, pickup, etc)
+  common.FulfillmentType fulfillment_type = 3;
+  // The audience that the Cx belongs to (subscriber, non-subscriber, etc)
+  common.Audience audience = 4;
+}
+
+// Request to get all the active and pending programs for a Mx including trials and non/post-trial pricing
+message GetAllActiveAndPendingMxPricingProgramsRequest {
+  // The entity that the programs are being requested for
+  google.protobuf.StringValue reference_entity_id = 1;
+  // The type of the entity (store, business, etc)
+  // Currently only store pricing is supported (10/25/2023)
+  merchant_financial_service.common.EntityType reference_entity_type = 2;
+  // If empty, all programs will be returned across all product lines.
+  // _any_ for audience or fulfillment_type will return _all_ programs for that product line
+  repeated MxProduct products = 3;
+}
+
+// Response to get all the active and pending programs for a Mx including trials and non/post-trial pricing
+message GetAllActiveAndPendingMxPricingProgramsResponse {
+  // The entity that the programs are being returned for
+  google.protobuf.StringValue reference_entity_id = 1;
+  // The type of the entity (store, business, etc)
+  merchant_financial_service.common.EntityType reference_entity_type = 2;
+  // The programs that apply to the entity
+  repeated MxPricingProgramResponse programs = 3;
+}
+
+// Individual program response to get all the active and pending programs for a Mx including trials and non/post-trial pricing
+message MxPricingProgramResponse {
+  // Program details
+  MxPricingProgram program = 1;
+  // If the program is live, the program ID will be populated, if it is not yet live this will be blank
+  google.protobuf.StringValue program_id = 2;
+  // If the program came from a trial (even post-trial rates) the trial ID will be populated here
+  google.protobuf.StringValue trial_id = 3;
+
+  // True if the program is the currently active pricing program
+  bool is_active = 4;
+  // True if the program is trial pricing (if it is pre-trial `is_active` will be false)
+  bool is_trial = 5;
+  // True if the program is post-trial pricing (if it is true, `is_active` will be false)
+  // If this is post-trial pricing that is active, this will be set false and is_active will be set true
+  // At that point in time, this is just an active program (though we will have history that this was from a trial)
+  bool is_post_trial = 6;
+  // Details for the trial (duration, trigger, etc)
+  TrialDetails trial_details = 7;
+  // If the program is a Store Partnership, the partnership ID will be populated, if it is not yet live this will be blank
+  google.protobuf.StringValue partnership_id = 8;
+}

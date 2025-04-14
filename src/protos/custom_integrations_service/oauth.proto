@@ -1,0 +1,253 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package custom_integrations_service.v1;
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.customintegrations";
+
+import "common/service_client_config.proto";
+import "custom_integrations_service/common.proto";
+import "merchant_integrations/store_onboarding.proto";
+
+// OAuth service for Custom Integration Service
+service OAuthService {
+
+    option (service_client.client_config).response_attempt_timeout_millis = 200000;
+    option (service_client.client_config).retry_config.max_attempts = 4;
+    option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+    option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+    option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+    // Obtain an OAuth token from the provider
+    rpc ObtainToken(ObtainTokenRequest) returns (ObtainTokenResponse) {
+    }
+
+    // Revoke a previously obtained token
+    rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
+    }
+
+    // Check for token's existence
+    rpc CheckToken(CheckTokenRequest) returns (CheckTokenResponse) {
+    }
+
+    // Renew tokens
+    rpc RenewTokens(RenewTokensRequest) returns (RenewTokensResponse) {
+    }
+
+    // Dual writing of OAuth data to CIS crdb
+    rpc WriteOAuthData(WriteOAuthDataRequest) returns (WriteOAuthDataResponse) {
+    }
+
+    // Dual reading of OAuth data from CIS crdb
+    rpc ReadOAuthData(ReadOAuthDataRequest) returns (ReadOAuthDataResponse) {
+    }
+
+}
+
+// Obtain token request
+message ObtainTokenRequest {
+    // provider type for this request
+    CISProviderType provider_type = 1;
+
+    // Auth code to be used
+    google.protobuf.StringValue auth_code = 2;
+
+    // business id associated with this OAuth flow
+    google.protobuf.StringValue business_id = 3;
+
+    // merchant_id associated with this request
+    google.protobuf.StringValue merchant_id = 4;
+
+    // redirect url for this OAuth request
+    google.protobuf.StringValue redirect_uri = 5;
+}
+
+// Obtain token successful response
+message ObtainTokenSuccessfulResponse {
+}
+
+// Obtain Token error response
+message ObtainTokenErrorResponse {
+    // error message
+    google.protobuf.StringValue message = 1;
+}
+
+// Obtain token response
+message ObtainTokenResponse {
+    // result of obtain token
+    oneof obtain_token_response {
+        // obtain token succeed
+        ObtainTokenSuccessfulResponse successful_response = 1;
+        // obtain token failed
+        ObtainTokenErrorResponse error_response = 2;
+    }
+    // list of store onboarding events
+    repeated merchant_integrations.StoreOnboardingEvent store_onboarding_events = 3;
+}
+
+// Request to revoke a token
+message RevokeTokenRequest {
+    // provider type for this request
+    CISProviderType provider_type = 1;
+    // business id associated with this OAuth request
+    google.protobuf.StringValue business_id = 2;
+}
+
+// Revoke token succeed
+message RevokeTokenSuccessfulResponse {
+}
+
+// Revoke token error
+message RevokeTokenErrorResponse {
+    // error message
+    google.protobuf.StringValue message = 1;
+}
+
+// Response to the OAuth revoke request
+message RevokeTokenResponse {
+    // result of revoke token
+    oneof revoke_token_result {
+        // OAuth renew token successful response
+        RevokeTokenSuccessfulResponse successful_response = 1;
+        // OAuth renew token error response
+        RevokeTokenErrorResponse error_response = 2;
+    }
+}
+
+// Request to check existence of a token
+message CheckTokenRequest {
+    // provider type for this request
+    CISProviderType provider_type = 1;
+    // business id associated with this OAuth request
+    google.protobuf.StringValue business_id = 2;
+}
+
+// Response to the OAuth check request
+message CheckTokenResponse {
+    // check if token is authorized
+    google.protobuf.BoolValue authorized = 1;
+}
+
+// Request to renew OAuth tokens for specified provider(s)
+message RenewTokensRequest {
+    // provider types for this request
+    repeated CISProviderType provider_types = 1;
+    // business ids associated with this OAuth request
+    repeated google.protobuf.StringValue business_ids = 2;
+}
+
+// Renew tokens succeed
+message RenewTokensSuccessfulResponse {
+}
+
+// Renew tokens error
+message RenewTokensErrorResponse {
+    // error message
+    google.protobuf.StringValue message = 1;
+}
+
+// Renew token partial success result
+message RenewTokenPartialSuccessResult {
+    // provider type for the partial success renew tokens
+    CISProviderType provider_type = 1;
+    // business ids of the success renew tokens
+    repeated google.protobuf.StringValue business_ids = 2;
+}
+
+// Renew token partial failed result
+message RenewTokenPartialFailedResult {
+    // provider type for the failed renew tokens
+    CISProviderType provider_type = 1;
+    // failed type
+    RenewTokenFailureType failure_type = 2;
+    // business ids of the failed renew tokens
+    repeated google.protobuf.StringValue business_ids = 3;
+    // error message
+    google.protobuf.StringValue message = 4;
+}
+
+// Failure reasons
+enum RenewTokenFailureType {
+    // failure type unspecified
+    RENEW_TOKEN_FAILURE_TYPE_UNSPECIFIED = 0;
+    // unknown failure
+    RENEW_TOKEN_FAILURE_TYPE_UNKNOWN_FAILURE = 1;
+    // model not found error
+    RENEW_TOKEN_FAILURE_TYPE_MODEL_NOT_FOUND = 2;
+    // missing pos service
+    RENEW_TOKEN_FAILURE_TYPE_MISSING_POS_SERVICE = 3;
+    // failed api call
+    RENEW_TOKEN_FAILURE_TYPE_FAILED_PROVIDER_API_CALL = 4;
+    // provider type not found
+    RENEW_TOKEN_FAILURE_TYPE_PROVIDER_TYPE_NOT_FOUND = 5;
+}
+
+// Renew token partially succeed
+message RenewTokensPartialSuccessfulResponse {
+    // success results
+    repeated RenewTokenPartialSuccessResult partial_success_result = 1;
+    // failure results
+    repeated RenewTokenPartialFailedResult partial_failed_result = 2;
+}
+
+// Response to the OAuth renew tokens request
+message RenewTokensResponse {
+    // result of renew tokens
+    oneof renew_tokens_result {
+        // OAuth renew token successful response
+        RenewTokensSuccessfulResponse successful_response = 1;
+        // OAuth renew token error response
+        RenewTokensErrorResponse error_response = 2;
+        // OAuth renew token partial success response
+        RenewTokensPartialSuccessfulResponse partial_successful_response = 3;
+    }
+}
+
+// Dual write OAuth request
+message WriteOAuthDataRequest {
+    // provider type for this request
+    CISProviderType provider_type = 1;
+    // business id to be written
+    google.protobuf.StringValue business_id = 2;
+    // access_token to be written
+    google.protobuf.StringValue access_token = 3;
+    // refresh token to be written
+    google.protobuf.StringValue refresh_token = 4;
+    // merchant id to be written
+    google.protobuf.StringValue merchant_id = 5;
+    // expiration timestamp of the access token
+    google.protobuf.Timestamp access_token_expires_at = 6;
+    // if refresh token is active
+    google.protobuf.BoolValue is_active = 7;
+}
+
+// Response for OAuth data write flow
+message WriteOAuthDataResponse {
+}
+
+// Dual read OAuth request
+message ReadOAuthDataRequest {
+    // provider type for this request
+    CISProviderType provider_type = 1;
+    // business id to be read
+    google.protobuf.StringValue business_id = 2;
+}
+
+// Response for OAuth data read flow
+message ReadOAuthDataResponse {
+    // access_token of the business
+    google.protobuf.StringValue access_token = 3;
+    // refresh token of the business
+    google.protobuf.StringValue refresh_token = 4;
+    // merchant id of the business
+    google.protobuf.StringValue merchant_id = 5;
+    // expiration timestamp of the access token
+    google.protobuf.Timestamp access_token_expires_at = 6;
+    // if refresh token is active
+    google.protobuf.BoolValue is_active = 7;
+}

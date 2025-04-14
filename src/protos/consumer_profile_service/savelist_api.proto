@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package doordash_consumer_profile_service.savelist.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/consumer_profile_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_profile_service.savelist.v1";
+
+/* Enum representing the various supported SavelistTypes */
+enum SavelistType {
+  /* unspecified */
+  SAVELIST_TYPE_UNSPECIFIED = 0;
+
+  /* SavelistType for Store Bookmarking i.e. Favoriting */
+  SAVELIST_TYPE_STORE_BOOKMARKS = 1;
+
+  /* SavelistType for SuperSave stores */
+  SAVELIST_TYPE_STORE_SUPER_SAVE = 2;
+}
+
+/* Represents a store that belongs in a savelist */
+message Store {
+  /* Unique id for a store entity */
+  google.protobuf.StringValue id = 1;
+
+  /* Unique id for a savelist */
+  google.protobuf.StringValue savelist_id = 2;
+
+  /* Time that the store was saved to the savelist */
+  google.protobuf.Timestamp saved_at = 3;
+
+  /* Unique id for the link of the savelist and store */
+  google.protobuf.StringValue savelist_store_link_id = 4;
+}
+
+/* Represents the Consumer's address details */
+message ConsumerAddressDetails {
+  /* The district ID of the Consumer */
+  google.protobuf.StringValue district_id = 1;
+}
+
+/* Request to bookmark a store */
+message BookmarkStoreRequest {
+  /* Creator's consumer id */
+  google.protobuf.StringValue consumer_id = 1;
+
+  /* Unique id for a store */
+  google.protobuf.StringValue store_id = 2;
+
+  /* Savelist Type */
+  SavelistType savelist_type = 3;
+
+  /* Optional container field for SavelistUpdateEvent */
+  google.protobuf.StringValue container = 4;
+}
+
+/* Response for bookmark creation */
+message BookmarkStoreResponse {}
+
+/* Request to delete a store from bookmarks */
+message UnbookmarkStoreRequest {
+  /* Creator's consumer id */
+  google.protobuf.StringValue consumer_id = 1;
+
+  /* Unique id for a store */
+  google.protobuf.StringValue store_id = 2;
+
+  /* Savelist Type */
+  SavelistType savelist_type = 3;
+
+  /* Optional container field for SavelistUpdateEvent */
+  google.protobuf.StringValue container = 4;
+}
+
+/* Response for bookmark deletion */
+message UnbookmarkStoreResponse {}
+
+/* Request to get stores from the bookmarks list */
+message GetBookmarkedStoresRequest {
+  /* Creator's consumer id */
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  /* Optional field to only fetch for a given set of store ids */
+  repeated google.protobuf.StringValue store_ids = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  /* Savelist Type */
+  SavelistType savelist_type = 3 [(doordash.api.validate.rules).missing_value = {action: USE_DEFAULT_VALUE}];
+
+  /* Optional ConsumerAddressDetails */
+  oneof optional_consumer_address_details {
+    /* The Consumer's address details */
+    ConsumerAddressDetails consumer_address_details = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  }
+}
+
+/* Request to get stores from the bookmarks list */
+message GetBookmarkedStoresResponse {
+  /* Request to get stores from the bookmarks list */
+  repeated Store stores = 1;
+}
+
+/*
+ * SavelistService contains around APIs regarding store bookmarks and savelists
+ * Tech design: https://drd.sh/cYvY85/
+ */
+service SavelistService {
+  option (doordash.api.service) = {
+    name: "consumer-profile-service"
+    url: "consumer-profile-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["savelist"]
+    api_key_name: "DOORDASH_CONSUMER_PROFILE_API_KEY"
+    owner: {
+      name: "consumer-profile-service"
+      id: "consumer-profile-service"
+      slack_channel: "#ask-identity"
+      email_alias: "identity-platform@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).retry_config.initial_wait_millis = 10;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  /* save a store to a default savelist (bookmarks) */
+  rpc BookmarkStore(BookmarkStoreRequest) returns (BookmarkStoreResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  /* delete a store from the default savelist (bookmarks) */
+  rpc UnbookmarkStore(UnbookmarkStoreRequest) returns (UnbookmarkStoreResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+  }
+
+  /* get bookmarked stores from the default savelist (bookmarks) */
+  rpc GetBookmarkedStores(GetBookmarkedStoresRequest) returns (GetBookmarkedStoresResponse) {
+    option (google.api.http) = {get: "/savelist/v1/stores"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+}

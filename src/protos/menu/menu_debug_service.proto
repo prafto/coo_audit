@@ -1,0 +1,388 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package menudebugservice.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/event.proto";
+import "menu/menu.proto";
+import "menu/menu_consumer_gateway.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menudebugservice/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menudebugservice.grpc";
+
+// Service meant for debugging purposes only
+service DebugService {
+  // Publishes incoming event to menu_change Kafka topic
+  rpc PublishMenuChangeEvent(menuevent.v1.MenuChangeEvent) returns (DebugServiceResponse);
+  // Publishes incoming event to menu_item_change Kafka topic
+  rpc PublishMenuItemChangeEvent(menuevent.v1.MenuItemChangeEvent) returns (DebugServiceResponse);
+  // Publishes incoming event to debug_change Kafka topic
+  rpc PublishSuspensionChangeEvent(menuevent.v1.SuspensionChangeEvent) returns (DebugServiceResponse);
+  // Reverse sync menu to menu 1.5
+  rpc ReverseSyncMenu(ReverseSyncMenuRequest) returns (DebugServiceResponse);
+  // Reverse sync sml to menu 1.5
+  rpc ReverseSyncSML(ReverseSyncSMLRequest) returns (DebugServiceResponse);
+  // backfill id dag index from C* to S3
+  rpc SyncIdDagIndexFromCassandraToS3(SyncIdDagIndexRequest) returns (SyncIdDagIndexResponse);
+  // scan and compare id dag index between C* and S3
+  rpc CompareIdDagIndex(IdDagIndexComparisonRequest) returns (IdDagIndexComparisonResponse);
+  // endpoint to start scan
+  rpc ScanMenus(ScanMenusRequest) returns (ScanMenusResponse);
+  // Fixes menu data issues.
+  rpc FixMenus(FixMenusRequest) returns (FixMenusResponse);
+  // Generic gRPC to start Cadence workflow - internal use only
+  rpc StartCadenceWorkflow(StartCadenceWorkflowRequest) returns (StartCadenceWorkflowResponse);
+  // scan and compare item data store_menu - source of truth against item_lookup_v1 es index
+  rpc ScanItemLookupIndexByStore(ScanItemLookupIndexRequest) returns (ScanItemLookupIndexResponse);
+  // warmup menu-data-service apps by sending test or known traffic requests
+  rpc ExecuteStartUpProbe(ExecuteStartUpProbeRequest) returns (ExecuteStartUpProbeResponse);
+  // Resets the 'testing' entity type for the entity sequence ID table
+  rpc ResetTestingSequenceRange(ResetTestingSequenceRangeRequest) returns (ResetTestingSequenceRangeResponse);
+  // Gets the current value of the `testing` entity type from the entity sequence ID table
+  rpc GetCurrentTestingSequenceRangeValue(GetCurrentTestingSequenceRangeValueRequest) returns (GetCurrentTestingSequenceRangeValueResponse);
+  // Deletes an entire store menu partition from the store. It is only meant for use on E2E test stores (prefix with 'e2e').
+  rpc DeleteStoreMenu(DeleteStoreMenuRequest) returns (DeleteStoreMenuResponse);
+  // Sync the suspension entities from db to cache
+  rpc SyncSuspensionsToCache(SyncSuspensionsToCacheRequest) returns (SyncSuspensionsToCacheResponse);
+
+  // update a derived channel-based menu
+  rpc UpdateDerivedMenu(UpdateDerivedMenuRequest) returns (UpdateDerivedMenuResponse);
+
+  // Sync the suspension entities from db to cache
+  rpc SyncMenuStructureToCache(SyncMenuStructureToCacheRequest) returns (SyncMenuStructureToCacheResponse);
+  // Upload descriptions (AI descriptions, experiment descriptions). This is used for running extremely large upload where a single bulk tool job cannot handle.
+  rpc UploadDescriptions(UploadDescriptionsRequest) returns (UploadDescriptionsResponse);
+  // Get Menu for shadow purpose
+  rpc GetMenuForShadow(menuconsumergateway.GetMenuRequest) returns (menuconsumergateway.GetMenuResponse);
+  // Get Entities for shadow purpose
+  rpc GetEntitiesForShadow(menuconsumergateway.GetEntitiesRequest) returns (menuconsumergateway.GetEntitiesResponse);
+}
+
+// request of UpdateDerivedMenu
+message UpdateDerivedMenuRequest {
+  // the store id
+  string store_menu_id = 1;
+  // the new menu
+  menu.Menu menu = 2;
+}
+
+// response of UpdateDerivedMenu
+message UpdateDerivedMenuResponse {}
+
+// response with request data
+message IdDagIndexComparisonRequest {
+  // true if backfill data to s3 based on id_dag_index table or backfill data to s3 based on store_menu table
+  bool read_from_id_dag_index = 1;
+  // ids of store to backfill
+  repeated string store_ids = 2;
+}
+
+// response with request data
+message IdDagIndexComparisonResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  google.protobuf.StringValue error = 2;
+}
+
+// response with request data
+message SyncIdDagIndexRequest {
+  // true if backfill data to s3 based on id_dag_index table or backfill data to s3 based on store_menu table
+  bool read_from_id_dag_index = 1;
+  // ids of store to backfill
+  repeated string store_ids = 2;
+}
+
+// response with request data
+message SyncIdDagIndexResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  google.protobuf.StringValue error = 2;
+}
+
+// response with request data
+message DebugServiceResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  google.protobuf.StringValue error = 2;
+}
+
+// request to reverse sync menu to mds
+message ReverseSyncMenuRequest {
+  // store menu id
+  string store_menu_id = 1;
+  // menu ids
+  repeated string menu_ids = 2;
+}
+
+// request to reverse sync sml to mds
+message ReverseSyncSMLRequest {
+  // store menu id
+  string store_menu_id = 1;
+  // menu ids
+  repeated string menu_ids = 2;
+}
+
+// request to start scan menus
+message ScanMenusRequest {
+  // list of store id for the request
+  repeated string store_id_list = 1;
+}
+
+// response to start scan menus
+message ScanMenusResponse {}
+
+// Request to fix menu data issues with a given tool.
+message FixMenusRequest {
+  // The store menu id, same as store id.
+  string store_menu_id = 1;
+  // Apply to certain menus, or all menus when empty.
+  repeated string menu_ids = 2;
+  // The name of the tool to run.
+  string tool_name = 3;
+}
+
+// Response from fixing menu data.
+message FixMenusResponse {
+  // Status code enum.
+  enum FixMenusResponseStatus {
+    // Unspecified.
+    FIX_MENUS_RESPONSE_STATUS_UNSPECIFIED = 0;
+    // The tool was missing.
+    FIX_MENUS_RESPONSE_STATUS_MISSING = 1;
+    // The tool executed successfully.
+    FIX_MENUS_RESPONSE_STATUS_SUCCESS = 2;
+    // The tool executed with failure.
+    FIX_MENUS_RESPONSE_STATUS_FAILED = 3;
+  }
+
+  // Status code.
+  FixMenusResponseStatus status = 1;
+  // Explain why failed.
+  string detail = 2;
+}
+
+// FOR CADENCE USE //
+
+// Generic backfill type
+enum BackfillType {
+  // unspecified backfill type
+  BACKFILL_TYPE_UNSPECIFIED = 0;
+  // backfill for existing data
+  BACKFILL_TYPE_EXISTING = 1;
+  // backfill historical data
+  BACKFILL_TYPE_HISTORICAL = 2;
+  // backfill for data reconciliation
+  BACKFILL_TYPE_RECONCILIATION = 3;
+  // backfill for ER data initial match
+  BACKFILL_TYPE_ER_INITIAL_MATCH = 4;
+  // backfill for ER data re-match
+  BACKFILL_TYPE_ER_RE_MATCH = 5;
+}
+
+// OptionalParams is the optional parameters for specific cadence job.
+message OptionalParams {
+  // Params for ER backfill workflows
+  message ErBackfill {
+    // The snowflake table name to use in the ER backfill workflow.
+    string er_snowflake_table_name = 1;
+  }
+  // Params that require ES index name
+  message EsBased {
+    // The ElasticSearch index name to use in ItemLookupDataInconsistencyResolverWorkflow.
+    string es_index_name = 1;
+  }
+  // Params for CRDB sync
+  message CrdbSync {
+    // Include IdDagIndex data as part of sync
+    bool include_id_dag_index = 1;
+    // The Crdb target to use in MenuCrdbAdhocSyncWorkflow
+    string crdb_target = 2;
+    // Delete the orphan data from CRDB
+    bool delete_orphan = 3;
+    // Support skipping menu_dag sync to CRDB
+    bool skip_menu_dag = 4;
+    // Backfill stores within given business_id
+    google.protobuf.StringValue business_id = 5;
+  }
+
+  // The snowflake table name to use in the ER backfill workflow.
+  string er_snowflake_table_name = 1 [deprecated = true];
+  // The ElasticSearch index name to use in ItemLookupDataInconsistencyResolverWorkflow.
+  string es_index_name = 2 [deprecated = true];
+  // Additional params specific to the workflow
+  oneof params {
+    // er_backfill params
+    ErBackfill er_backfill = 3;
+    // es_based params
+    EsBased es_based = 4;
+    // crdb_sync params
+    CrdbSync crdb_sync = 5;
+  }
+}
+
+// StartCadenceWorkflowRequest is the request proto for StartCadenceWorkflow rpc.
+// Note: Not all the fields are required. It depends on the workflow.
+message StartCadenceWorkflowRequest {
+  // workflow_name is the name of the workflow desired.
+  string workflow_name = 1;
+  // bucket_name is the S3 bucket name containing the data.
+  string bucket_name = 2;
+  // key_name is the key name to the data.
+  string key_name = 3;
+  // store_ids is the list of storeIDs
+  repeated string store_ids = 4;
+  // backfill_type is the type of backfill if the cadence job is a backfill job.
+  BackfillType backfill_type = 5;
+  // entity_ids is the list of entityIDs
+  repeated string entity_ids = 6;
+  // The tool name to use in the GenericBackfill workflow.
+  string tool_name = 7;
+  // Enable to scan whole store menu table (all the stores in Cassandra).
+  bool scan_all_stores = 8;
+  // Optional params for specific cadence job.
+  OptionalParams optional_params = 9;
+}
+
+// StartCadenceWorkflowResponse is the response of the StartCadenceWorkflow rpc.
+message StartCadenceWorkflowResponse {
+  // workflow_id is the workflow ID returned by the cadence job.
+  string workflow_id = 1;
+  // run_id is the run ID returned by the cadence job.
+  string run_id = 2;
+}
+
+// Request proto for the ScanItemLookupIndex rpc
+message ScanItemLookupIndexRequest {
+  // store id to compare
+  string store_id = 1;
+}
+
+// Response proto yielded from the ScanItemLookupIndex rpc
+message ScanItemLookupIndexResponse {
+  // total menus in the store
+  int64 total_menus_count_reference_source = 1;
+  // number of active menus in the store
+  int64 active_menus_count_reference_source = 2;
+  // number of inactive menus in the store
+  int64 inactive_menus_count_reference_source = 3;
+  // number of items in the store - source of truth
+  int64 items_count_reference_source = 4;
+  // number of options in the store - source of truth
+  int64 options_count_reference_source = 5;
+  // number of items in the store - item_lookup_index
+  int64 items_count_item_lookup_index = 6;
+  // number of options in the store - item_lookup_index
+  int64 options_count_item_lookup_index = 7;
+  // count of unmatched / not found [extra docs] items or option against the source of truth
+  int64 unmatched_items_count_item_lookup_index = 8;
+  // list of es doc_ids corresponding to unmatched_items
+  repeated string unmatched_doc_ids_item_lookup_index = 9;
+}
+
+// Request for Startup Probe
+message ExecuteStartUpProbeRequest {
+  // the service name (set in the envVariable eg: menu-data-service-indexer, menu-data-service-cadence)
+  // for which we need to run the start up probe
+  google.protobuf.StringValue service_name = 1;
+}
+
+// Response payload for ExecuteStartUpProbeRequest
+message ExecuteStartUpProbeResponse {
+  // Perform warmup checks depending on app / service name and
+  // return flag to indicate if the warmup was successful
+  google.protobuf.BoolValue ready = 1;
+}
+
+// Request for getting the current value of the testing entity sequence range
+message GetCurrentTestingSequenceRangeValueRequest {}
+
+// Response for getting the current value of the testing entity sequence range
+message GetCurrentTestingSequenceRangeValueResponse {
+  // The current value of the 'testing' sequence entity in the DB.
+  google.protobuf.Int64Value current_value = 1;
+}
+
+// Request for ResetTestingSequenceRange
+message ResetTestingSequenceRangeRequest {
+  // The value to reset the 'testing' entity range to. Default is MAX_LONG - 100000;
+  google.protobuf.Int64Value reset_value = 1;
+}
+
+// Response for ResetTestingSequenceRange RPC
+message ResetTestingSequenceRangeResponse {}
+
+// Request for deleting store menu partition
+message DeleteStoreMenuRequest {
+  // The store menu ID of the store to delete.
+  string store_menu_id = 1;
+}
+
+// Response for DeleteStoreMenu RPC
+message DeleteStoreMenuResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  google.protobuf.StringValue error = 2;
+}
+
+// Request for sync suspensions to cache
+message SyncSuspensionsToCacheRequest {
+  // store ids
+  repeated string store_ids = 1;
+}
+
+// Response for sync suspensions to cache
+message SyncSuspensionsToCacheResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  string error = 2;
+}
+
+// Request for sync menu structure to cache
+message SyncMenuStructureToCacheRequest {
+  // store ids
+  repeated string store_ids = 1;
+}
+
+// Response for sync suspensions to cache
+message SyncMenuStructureToCacheResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  string error = 2;
+}
+
+// Request for upload descriptions
+message UploadDescriptionsRequest {
+  // description type enum
+  enum DescriptionType {
+    // unspecified
+    DESCRIPTION_TYPE_UNSPECIFIED = 0;
+    // AI description
+    DESCRIPTION_TYPE_AI_DESCRIPTION = 1;
+    // experiment description
+    DESCRIPTION_TYPE_EXPERIMENT_DESCRIPTION = 2;
+  }
+  // s3 file name containing the descriptions
+  string file_name = 1;
+  // description type
+  DescriptionType description_type = 2;
+  // last completed index (optional) - if the previous workflow failed, it ended at an index. we can fill in the index so it will continue at this point without restarting the whole workflow. this field is optional
+  int64 last_completed_index = 3;
+}
+
+// Response for upload descriptions
+message UploadDescriptionsResponse {
+  // specifies whether event has been successfully published
+  bool is_success = 1;
+  // error message if any
+  string error = 2;
+}

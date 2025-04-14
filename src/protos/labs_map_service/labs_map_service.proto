@@ -1,0 +1,265 @@
+syntax = "proto3";
+
+package labs_map_service.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "robot/map_feature.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.labs_map_service.rpc.api";
+
+// Service handling Labs live map features
+service LabsMapService {
+  option (doordash.api.service) = {
+    name: "LabsMapService"
+    url: "labs-map-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["labs-map-service"]
+    owner: {
+      // https://doordash.chronosphere.io/collections/doordash-labs-remote-assistance-engi
+      id: "doordash-labs-remote-assistance-engi"
+      name: "ddlabs-ra-eng"
+      // Sharing slack channel with labs fleet service
+      slack_channel: "#labs-fleet-service-builds"
+      email_alias: "ddlabs-ra-eng@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // GetMapFeatures fetches map features
+  rpc GetMapFeatures(GetMapFeaturesRequest) returns (GetMapFeaturesResponse) {
+    option (google.api.http) = {
+      post: "/labs-map-service/v1/map-features"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // UpdateMapFeature updates a map feature
+  rpc UpdateMapFeature(UpdateMapFeatureRequest) returns (UpdateMapFeatureResponse) {
+    option (google.api.http) = {
+      put: "/labs-map-service/v1/map-feature/{map_feature_id}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // CreateMapFeature creates a map feature
+  rpc CreateMapFeature(CreateMapFeatureRequest) returns (CreateMapFeatureResponse) {
+    option (google.api.http) = {
+      post: "/labs-map-service/v1/map-feature"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // DeleteMapFeature deletes a map feature
+  rpc DeleteMapFeature(DeleteMapFeatureRequest) returns (DeleteMapFeatureResponse) {
+    option (google.api.http) = {delete: "/labs-map-service/v1/map-feature/{map_feature_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+    };
+  }
+
+  // Fetches map features that are updated after the request conditions; As compared to GetMapFeatures(),
+  // this RPC is designed to return incremental updates. Used by the labs-fleet-service and the
+  // labs-router-service to sync the robot & cloud router's map feature cache efficiently.
+  rpc GetMapFeatureUpdates(GetMapFeatureUpdatesRequest) returns (GetMapFeatureUpdatesResponse) {}
+}
+
+// Contains the feature and the filter method to use
+message GeoFilter {
+  reserved 1;
+  reserved "geometry";
+
+  // Functions to evaluate the input geometry against map features in the DB
+  enum SpatialFunction {
+    // Unspecified
+    SPATIAL_FUNCTION_UNSPECIFIED = 0;
+    // Returns true if the shapes share any of the same space -- that is,
+    // if any point in the set that comprises a map feature is also a member of
+    // the set of points that make up the input geometry.
+    // Use: https://www.cockroachlabs.com/docs/v24.2/st_intersects
+    SPATIAL_FUNCTION_INTERSECTS = 1;
+    // Returns true if no point in a map feature lies outside of input geometry
+    // Use: https://www.cockroachlabs.com/docs/v24.2/st_covers
+    SPATIAL_FUNCTION_COVERS = 2;
+  }
+  // The geometry will be used to query for the feature using the specified spatial function
+  robot.v1.Geometry geometry_filter = 3;
+  // Spatial function to apply
+  SpatialFunction spatial_function = 2;
+}
+
+// An enum to express how to filter features based on the operating mode of the robot
+enum OperatingModeFilter {
+  // Unspecified - return features for all operating modes
+  OPERATING_MODE_FILTER_UNSPECIFIED = 0;
+  // Return features needed for robots in NoLo mode
+  OPERATING_MODE_FILTER_NOLO = 1;
+  // Return features needed for robots in YesLo mode
+  OPERATING_MODE_FILTER_YESLO = 2;
+}
+
+// Request to get map features
+message GetMapFeaturesRequest {
+  // Feature to check against
+  repeated GeoFilter geo_filter = 1;
+  // Namespace of the map feature; empty namespace filter will return all namespaces
+  repeated robot.v1.FeatureNamespace namespace_filter = 2;
+  // Optional feature type filter
+  repeated robot.v1.FeatureType type_filter = 3;
+  // Returns all the features id included in this filter; leaving unspecified will return all ids
+  repeated string id_filter = 4;
+  // Filter what features to return based on the operating mode of the robot
+  OperatingModeFilter operating_mode_filter = 5;
+}
+
+// Request to get map features
+message GetMapFeaturesResponse {
+  // Returns all the features that matches the query
+  repeated robot.v1.MapFeature map_features = 1;
+}
+
+// Request to update a map feature
+message UpdateMapFeatureRequest {
+  // Unique identifier of this feature instance
+  string map_feature_id = 1;
+  // Human readable label for this feature
+  string label = 2;
+  // Type of map feature
+  robot.v1.FeatureType type = 3;
+  // A point, line or region on the map
+  robot.v1.Geometry geometry = 4;
+  // Time when the feature is deemed expired
+  google.protobuf.Timestamp expired_at = 5;
+  // Time when the feature needs to be re-evaluated
+  google.protobuf.Timestamp revisit_at = 6;
+  // Namespace of the map feature
+  robot.v1.FeatureNamespace namespace = 7;
+  // Whether the feature should be deleted
+  bool deleted = 8;
+  // Operating mode of the feature
+  robot.v1.FeatureOperatingMode operating_mode = 9;
+  // Schedule for the feature to be active
+  robot.v1.FeatureSchedule schedule = 10;
+  // Is this feature disabled by the user?
+  bool user_disabled = 11;
+}
+
+// Response of map feature creation
+message UpdateMapFeatureResponse {}
+
+// Request to create a map feature
+message CreateMapFeatureRequest {
+  // Human readable label for this feature
+  string label = 1;
+  // Type of map feature
+  robot.v1.FeatureType type = 2;
+  // A point, line or region on the map
+  robot.v1.Geometry geometry = 3;
+  // Time when the feature is deemed expired
+  google.protobuf.Timestamp expired_at = 4;
+  // Time when the feature needs to be re-evaluated
+  google.protobuf.Timestamp revisit_at = 5;
+  // Namespace of the map feature.
+  robot.v1.FeatureNamespace namespace = 6;
+  // Operating mode of the feature
+  robot.v1.FeatureOperatingMode operating_mode = 7;
+  // Schedule for the feature to be active
+  robot.v1.FeatureSchedule schedule = 8;
+  // Is this feature disabled by the user?
+  bool user_disabled = 9;
+}
+
+// Response of map feature creation
+message CreateMapFeatureResponse {}
+
+// Request to delete a map feature
+message DeleteMapFeatureRequest {
+  // Map feature id
+  string map_feature_id = 1;
+}
+
+// Response of map feature deletion
+message DeleteMapFeatureResponse {}
+
+// Request to get map feature updates; used by robot and cloud router to sync their caches
+message GetMapFeatureUpdatesRequest {
+  reserved 2;
+  reserved "updated_after";
+
+  // Filter map features using geometries; used to query for features relevant
+  // to the robot's current location and route; uses logical OR to combine multiple filters
+  repeated GeoFilter geo_filter = 1;
+  // Excludes following snapshot ids from the return value
+  repeated string exclude_snapshot_ids = 3;
+  // Whether to return signed S3 urls
+  bool signed_s3_urls = 4;
+
+  // Reduces the map features to return of the specified tile id
+  // If not provided, all map features that matches the geofilter will be returned (respecting the limit)
+  message TileFilter {
+    // Tile id to filter
+    string tile_id = 1;
+    // Request for all map features updated after the given time
+    google.protobuf.Timestamp updated_after = 2;
+  }
+  // Filter for map features in specific tiles
+  repeated TileFilter tile_filters = 5;
+  // Total number of map features to return per query; when unset uses a default limit
+  google.protobuf.Int32Value limit = 6;
+  // Namespace of the map feature; empty namespace filter will return all namespaces
+  repeated robot.v1.FeatureNamespace namespace_filter = 7;
+  // Optional feature type filter; empty filter will return results with any feature types
+  repeated robot.v1.FeatureType include_type_filters = 8;
+  // Filter what features to return based on the operating mode of the robot
+  OperatingModeFilter operating_mode_filter = 9;
+}
+
+// Map features and snapshot updates that satisfy request conditions
+// Orders the returned map features by oldest to newest updated_at time
+message GetMapFeatureUpdatesResponse {
+  reserved 2, 3;
+  reserved "annotations", "request_updated_after";
+
+  // Returns all the most recent snapshots since `updated_after`
+  repeated robot.v1.MapFeatureSnapshotRef snapshot_refs = 1;
+  // All map feature records not included in the snapshots but were recently
+  // updated since `updated_after`
+  repeated robot.v1.MapFeature map_features = 4;
+}

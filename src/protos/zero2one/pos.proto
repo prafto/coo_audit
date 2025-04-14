@@ -1,0 +1,3017 @@
+syntax = "proto3";
+
+package zero2one.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "feed_service/recommendations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/consumer_order_gateway.proto";
+import "zero2one/cart_payment.proto";
+import "zero2one/cash_drawer.proto";
+import "zero2one/payment_method.proto";
+import "zero2one/pos_access_control.proto";
+import "zero2one/pos_audit_trail.proto";
+import "zero2one/pos_external_order.proto";
+import "zero2one/pos_menu.proto";
+import "zero2one/pos_menu_override.proto";
+import "zero2one/pos_order_details.proto";
+import "zero2one/pos_order_receipt.proto";
+import "zero2one/pos_refund.proto";
+import "zero2one/pos_reports.proto";
+import "zero2one/pos_revenue_center.proto";
+import "zero2one/pos_server_saved_order.proto";
+import "zero2one/pos_stripe.proto";
+import "zero2one/printer.proto";
+import "zero2one/station.proto";
+import "zero2one/store.proto";
+import "zero2one_common/employee.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.zero2one";
+
+// Service for all POS related logic
+service PosService {
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "version-name"},
+      {field: "dd-user-locale"},
+      {field: "dd-store-id"},
+      {field: "Idempotency-Key"}]
+  };
+
+  option (doordash.api.service) = {
+    url: "zero2one-web.service.prod.ddsd"
+    name: "Zero2One"
+    port: 50051
+    name_spaces: ["ddpos"]
+    owner: {
+      id: "pathfinder-team"
+      name: "pathfinder"
+      slack_channel: "#eng-launchpad"
+      email_alias: "pathfinder-working-group@doordash.com"
+    }
+    vertical_domains: [MX]
+    target_products: [MX]
+  };
+
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Adds store details
+  rpc GetStore(GetStoreRequest) returns (GetStoreResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/payment_config/stores/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+
+  // Back fill payment
+  rpc PaymentBackFill(PaymentBackFillRequest) returns (PaymentBackFillResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/payment/back_fill"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create station
+  rpc CreateStation(CreateStationRequest) returns (CreateStationResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/station"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update station
+  rpc UpdateStation(UpdateStationRequest) returns (UpdateStationResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/station/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete station
+  rpc DeleteStation(DeleteStationRequest) returns (DeleteStationResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/station/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get stations for store
+  rpc GetStations(GetStationsRequest) returns (GetStationsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/stations"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+
+  // Get printers for store
+  rpc GetPrinters(GetPrintersRequest) returns (GetPrintersResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/printers"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+
+  // Get stations for store authenticated
+  rpc GetStationsV2(GetStationsV2Request) returns (GetStationsV2Response) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/stations_v2"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get printers for store authenticated
+  rpc GetPrintersV2(GetPrintersV2Request) returns (GetPrintersV2Response) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/printers_v2"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create printer
+  rpc CreatePrinter(CreatePrinterRequest) returns (CreatePrinterResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/printer"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update printer
+  rpc UpdatePrinter(UpdatePrinterRequest) returns (UpdatePrinterResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/printer/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete printer
+  rpc DeletePrinter(DeletePrinterRequest) returns (DeletePrinterResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/printer/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create KDS device
+  rpc CreateKdsDevice(CreateKdsDeviceRequest) returns (CreateKdsDeviceResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/kds_device"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create Cash Drawer
+  rpc CreateCashDrawer(CreateCashDrawerRequest) returns (CreateCashDrawerResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/cash_drawer"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update Cash Drawer
+  rpc CloseCurrentCashDrawer(CloseCurrentCashDrawerRequest) returns (CloseCurrentCashDrawerResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/cash_drawer/current/close"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get Cash Drawer
+  rpc GetCashDrawer(GetCashDrawerRequest) returns (GetCashDrawerResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/cash_drawer/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get Cash Drawer
+  rpc GetCurrentCashDrawer(GetCurrentCashDrawerRequest) returns (GetCurrentCashDrawerResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/cash_drawers/current"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update Cash Drawers paginated for a store
+  rpc GetCashDrawers(GetCashDrawersRequest) returns (GetCashDrawersResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/cash_drawers"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create Cash Transaction for the Drawer
+  rpc CreateTransactionAndUpdateDrawer(CreateTransactionAndUpdateDrawerRequest) returns (CreateTransactionAndUpdateDrawerResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/cash_drawer/transaction"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get all DoorDash POS employee details for the store
+  rpc GetDDPosEmployees(GetDDPosEmployeesRequest) returns (GetDDPosEmployeesResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/employees"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Check whether a given store uses DoorDash's POS system
+  rpc DoesStoreUseDDPos(DoesStoreUseDDPosRequest) returns (DoesStoreUseDDPosResponse);
+
+  // Create or updates DoorDash Pos employee profile
+  rpc UpsertDDPosEmployee(UpsertDDPosEmployeeRequest) returns (UpsertDDPosEmployeeResponse);
+
+  // Delete DoorDash Pos employee profile (if exists)
+  rpc DeleteDDPosEmployee(DeleteDDPosEmployeeRequest) returns (DeleteDDPosEmployeeResponse);
+
+  // Create or update pos employee shift
+  rpc UpsertShift(UpsertShiftRequest) returns (UpsertShiftResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/shifts"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create or update pos employee break
+  rpc UpsertBreak(UpsertBreakRequest) returns (UpsertBreakResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/breaks"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete pos employee break
+  rpc DeleteBreak(DeleteBreakRequest) returns (DeleteBreakResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/store/{store_id}/breaks/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create or update pos store break type
+  rpc UpsertBreakType(UpsertBreakTypeRequest) returns (UpsertBreakTypeResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/break_types"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get all pos store break types
+  rpc GetBreakTypes(GetBreakTypesRequest) returns (GetBreakTypesResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/break_types"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete pos store break type
+  rpc DeleteBreakType(DeleteBreakTypeRequest) returns (DeleteBreakTypeResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/store/{store_id}/break_types/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Upsert break for employee shift
+  rpc UpsertShiftWithBreaks(UpsertShiftWithBreaksRequest) returns (UpsertShiftWithBreaksResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{upsert_shift_request.store_id}/shifts_with_breaks"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get current shifts and breaks
+  rpc GetCurrentShiftsAndBreaks(GetCurrentShiftsAndBreaksRequest) returns (GetCurrentShiftsAndBreaksResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/shifts_and_breaks"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get current shifts and breaks
+  rpc GetStoreEmployeeWorkReports(GetStoreEmployeeWorkReportsRequest) returns (GetStoreEmployeeWorkReportsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/employee_work_reports"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+        runbook: "https://doordash.atlassian.net/wiki/spaces/PATHFINDER/pages/4250108366/Time+Tracking+Payroll+Runbook"
+        ddrn: "ddrn::software::68a82dce-456b-4f5f-825b-8baf2fae9b50"
+      }
+    };
+  }
+
+  // Get available reports for the store
+  rpc GetStoreAvailableReports(GetStoreAvailableReportsRequest) returns (GetStoreAvailableReportsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/stores/{store_id}/available_reports"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get a store report based on the type
+  rpc GetStoreReport(GetStoreReportRequest) returns (GetStoreReportResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/stores/{store_id}/report"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create pos saved order
+  rpc CreateDDPosSavedOrder(CreateDDPosSavedOrderRequest) returns (CreateDDPosSavedOrderResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/saved_orders"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update pos saved order
+  rpc UpdateDDPosSavedOrder(UpdateDDPosSavedOrderRequest) returns (UpdateDDPosSavedOrderResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/store/{store_id}/saved_orders/{saved_order_uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete 1 saved order
+  rpc DeleteDDPosSavedOrder(DeleteDDPosSavedOrderRequest) returns (DeleteDDPosSavedOrderResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/saved_orders/{saved_order_uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Batch cleanup pos saved order
+  rpc BatchDeleteDDPosSavedOrders(BatchDeleteDDPosSavedOrdersRequest) returns (BatchDeleteDDPosSavedOrdersResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/saved_orders/batch_delete"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get current saved orders under given store
+  rpc GetDDPosSavedOrders(GetDDPosSavedOrdersRequest) returns (GetDDPosSavedOrdersResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/saved_orders"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Health check between client & Z2O to determine if client should enter degraded mode or recover
+  // Z2O will end degraded session if it receives a healthy pulse check from Android and there was an active degraded session
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/health"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // For uploading degraded order records in bulk to Z2O for persistence
+  rpc UploadDegradedOrdersFile(UploadDegradedOrdersFileRequest) returns (UploadDegradedOrdersFileResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/bulk_degraded_orders"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // For manual reconciliation when auto playback of degraded orders failed
+  rpc CreateManualReconciledOrders(CreateManualReconciledOrdersRequest) returns (CreateManualReconciledOrdersResponse);
+
+  // For correcting data, the request will just contain a string to identify the operation
+  rpc RectifyData(RectifyDataRequest) returns (RectifyDataResponse);
+
+  // Manually run payment intents retrieval scheduler job
+  rpc RunPaymentIntentsRetrieval(RunPaymentIntentsRetrievalRequest) returns (RunPaymentIntentsRetrievalResponse);
+
+  // Get open item config list for the store
+  rpc GetOpenItemConfig(GetOpenItemConfigRequest) returns (GetOpenItemConfigResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/open_item_config"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create In Store Price Modification
+  rpc CreateInStorePriceModification(CreateInStorePriceModificationRequest) returns (CreateInStorePriceModificationResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/in_store_price_modification"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update In Store Price Modification
+  rpc UpdateInStorePriceModification(UpdateInStorePriceModificationRequest) returns (UpdateInStorePriceModificationResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/in_store_price_modification/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Activate In Store Price Modification
+  rpc ActivateInStorePriceModification(ActivateInStorePriceModificationRequest) returns (ActivateInStorePriceModificationResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/in_store_price_modification/activate/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Deactivate In Store Price Modification
+  rpc DeactivateInStorePriceModification(DeactivateInStorePriceModificationRequest) returns (DeactivateInStorePriceModificationResponse) {
+    option (google.api.http) = {
+      patch: "/ddpos/v1/in_store_price_modification/deactivate/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get In Store Price Modifications for store
+  rpc GetInStorePriceModificationsForStore(GetInStorePriceModificationsForStoreRequest) returns (GetInStorePriceModificationsForStoreResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/in_store_price_modifications/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [NONE]
+    };
+  }
+
+  // To link price modified with the order
+  rpc CreateInStorePriceModifiedTransaction(CreateInStorePriceModifiedTransactionRequest) returns (CreateInStorePriceModifiedTransactionResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/in_store_price_modified_transaction"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get In Store Price Modified Transactions for given order
+  rpc GetInStorePriceModifiedTransactionsForOrder(GetInStorePriceModifiedTransactionsForOrderRequest) returns (GetInStorePriceModifiedTransactionsForOrderResponse);
+
+  // Get In Store Price Modification with given uuid
+  rpc GetInStorePriceModification(GetInStorePriceModificationRequest) returns (GetInStorePriceModificationResponse);
+
+  //Get Price Modification for given order uuid
+  rpc GetPriceModificationsForOrder(GetPriceModificationsForOrderRequest) returns (GetPriceModificationsForOrderResponse);
+
+  // Send email and/or SMS receipt for an order
+  rpc SendOrderReceipt(SendOrderReceiptRequest) returns (SendOrderReceiptResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/order/{order_uuid}/send_receipt"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get revenue centers for the store
+  rpc GetStoreRevenueCenters(GetStoreRevenueCentersRequest) returns (GetStoreRevenueCentersResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/revenue_centers"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Reactivate single menu item on particular store
+  rpc ReactivateStoreItem(ReactivateStoreItemRequest) returns (ReactivateStoreItemResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item/{item_id}/reactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Reactivate single item extra for specific menu item on particular store
+  rpc ReactivateStoreItemExtra(ReactivateStoreItemExtraRequest) returns (ReactivateStoreItemExtraResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item_extra/{item_extra_id}/reactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Reactivate single item extra option for specific menu item extra on particular store
+  rpc ReactivateStoreItemExtraOption(ReactivateStoreItemExtraOptionRequest) returns (ReactivateStoreItemExtraOptionResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item_extra_option/{item_extra_option_id}/reactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Deactivate single menu item on particular store
+  rpc DeactivateStoreItem(DeactivateStoreItemRequest) returns (DeactivateStoreItemResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item/{item_id}/deactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Deactivate single item extra for specific menu item on particular store
+  rpc DeactivateStoreItemExtra(DeactivateStoreItemExtraRequest) returns (DeactivateStoreItemExtraResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item_extra/{item_extra_id}/deactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Deactivate single item extra option for specific menu item extra on particular store
+  rpc DeactivateStoreItemExtraOption(DeactivateStoreItemExtraOptionRequest) returns (DeactivateStoreItemExtraOptionResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/item_extra_option/{item_extra_option_id}/deactivate"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create revenue center for the store
+  rpc CreateStoreRevenueCenter(CreateStoreRevenueCenterRequest) returns (CreateStoreRevenueCenterResponse);
+
+  // Update revenue center for the specifc revenue center
+  rpc UpdateStoreRevenueCenter(UpdateStoreRevenueCenterRequest) returns (UpdateStoreRevenueCenterResponse);
+
+  // Get full menu details
+  rpc GetFullMenuDetails(GetFullMenuDetailsRequest) returns (GetFullMenuDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (google.api.http) = {get: "/ddpos/v1/stores/{store_id}/menus"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get menu attributes for active menus
+  rpc GetMenusAttributes(GetMenusAttributesRequest) returns (GetMenusAttributesResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/stores/{store_id}/menus_attributes"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get store config
+  rpc GetStoreConfig(GetStoreConfigRequest) returns (GetStoreConfigResponse);
+
+  // Upsert store config
+  rpc UpsertStoreConfig(UpsertStoreConfigRequest) returns (UpsertStoreConfigResponse);
+
+  // Pathfinder Preview order
+  rpc PathfinderPreviewOrderEndpoint(PathfinderPreviewOrderEndpointRequest) returns (PathfinderPreviewOrderEndpointResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v2/order/preview"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Pathfinder Submit order
+  rpc PathfinderSubmitOrderEndpoint(PathfinderSubmitOrderEndpointRequest) returns (PathfinderSubmitOrderEndpointResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v2/order/submit"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Upsert an open item
+  rpc UpsertOpenItem(UpsertOpenItemRequest) returns (UpsertOpenItemResponse);
+
+  // Get orders history
+  rpc GetOrdersHistory(GetOrdersHistoryRequest) returns (GetOrdersHistoryResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/orders_history/{store_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get orders details
+  rpc GetOrderDetails(GetOrderDetailsRequest) returns (GetOrderDetailsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {get: "/ddpos/v1/orders_details/{delivery_uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get degraded orders history
+  rpc GetDegradedOrdersHistory(GetDegradedOrdersHistoryRequest) returns (GetDegradedOrdersHistoryResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/degraded_orders_history"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Pathfinder Submit order
+  rpc PathfinderSubmitOrderEndpointV3(PathfinderSubmitOrderEndpointV3Request) returns (PathfinderSubmitOrderEndpointV3Response) {
+    option (google.api.http) = {
+      post: "/ddpos/v3/order/submit"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Pathfinder Submit order
+  rpc SubmitOrderEndpointV4(SubmitOrderEndpointV4Request) returns (SubmitOrderEndpointV4Response) {
+    option (google.api.http) = {
+      post: "/ddpos/v4/order/submit"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Submit external orders (from 3PD)
+  rpc SubmitExternalOrders(SubmitExternalOrdersRequest) returns (SubmitExternalOrdersResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/external_order/submit"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get Cart Item Recommendations
+  rpc GetCartItemRecommendations(GetCartItemRecommendationsRequest) returns (GetCartItemRecommendationsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/cart/suggested_items"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create refunds
+  rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/delivery/{delivery_uuid}/refund"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create audit trail
+  rpc CreateAuditTrail(CreateAuditTrailRequest) returns (CreateAuditTrailResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/audit_trail"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Update tip configuration for store
+  rpc UpdateTipConfiguration(UpdateTipConfigurationRequest) returns (UpdateTipConfigurationResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/tip_configuration"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [NONE]
+    };
+  }
+
+  // Get payment intent
+  rpc GetPaymentIntent(GetPaymentIntentRequest) returns (GetPaymentIntentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/payment_intent"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get cart payment
+  rpc GetCartPayment(GetCartPaymentRequest) returns (GetCartPaymentResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/cart_payment"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create cart payment
+  rpc CreateCartPayment(CreateCartPaymentRequest) returns (CreateCartPaymentResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/cart_payment"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [MX_USER]
+    };
+  }
+
+  // Capture cart payment intent
+  rpc CaptureCartPayment(CaptureCartPaymentRequest) returns (CaptureCartPaymentResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/cart_payment/capture"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [MX_USER]
+    };
+  }
+
+  // Cancel cart payment
+  rpc CancelCartPayment(CancelCartPaymentRequest) returns (CancelCartPaymentResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/cart_payment/cancel"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create payment intent
+  rpc CreatePaymentIntent(CreatePaymentIntentRequest) returns (CreatePaymentIntentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment_intent"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create payment intent and send to terminal
+  rpc CreateAndProcessPaymentIntent(CreateAndProcessPaymentIntentRequest) returns (CreateAndProcessPaymentIntentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment_intent_and_process"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Capture stripe payment intent
+  rpc CapturePayment(CapturePaymentRequest) returns (CapturePaymentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/capture"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Stripe Increment Authorization
+  rpc IncrementAuthorization(IncrementAuthorizationRequest) returns (IncrementAuthorizationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/increment_authorization"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Stripe cancel payment intent
+  rpc CancelPaymentIntent(CancelPaymentIntentRequest) returns (CancelPaymentIntentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/cancel_payment_intent"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Stripe terminal cancel reader action
+  rpc CancelReaderAction(CancelReaderActionRequest) returns (CancelReaderActionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/payment/cancel_reader_action"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Retrieve Stripe reader diagnostics
+  rpc GetStripeReaderDiagnostics(GetStripeReaderDiagnosticsRequest) returns (GetStripeReaderDiagnosticsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/terminal/readers/{reader_id}/diagnostics"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get all kiosk assets for a store
+  rpc GetKioskAssets(GetKioskAssetsRequest) returns (GetKioskAssetsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/kiosk_asset"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Create or update a kiosk asset for a store
+  rpc UpsertKioskAsset(UpsertKioskAssetRequest) returns (UpsertKioskAssetResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/kiosk_asset/{uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Delete a kiosk asset from a store
+  rpc DeleteKioskAsset(DeleteKioskAssetRequest) returns (DeleteKioskAssetResponse) {
+    option (google.api.http) = {delete: "/ddpos/v1/store/{store_id}/kiosk_asset/{uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get menu entities overrides
+  rpc GetMenuEntitiesOverride(GetMenuEntitiesOverrideRequest) returns (GetMenuEntitiesOverrideResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/menu/override"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Upsert menu entities overrides
+  rpc UpsertMenuEntitiesOverride(UpsertMenuEntitiesOverrideRequest) returns (UpsertMenuEntitiesOverrideResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/menu/override"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Set permissions for a role using this endpoint
+  rpc SetRolePermissions(SetRolePermissionsRequest) returns (SetRolePermissionsResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/role/{role_uuid}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get roles for a store
+  rpc GetRoles(GetRolesRequest) returns (GetRolesResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/roles"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get roles for a store
+  rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/roles/{role_uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get the shared passcode for a store
+  rpc GetSharedPasscode(GetSharedPasscodeRequest) returns (GetSharedPasscodeResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/shared_passcode"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Get the shared passcode for a store
+  rpc SetSharedPasscode(SetSharedPasscodeRequest) returns (SetSharedPasscodeResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/shared_passcode"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Generate a new shared passcode for a store
+  rpc GeneratePasscode(GeneratePasscodeRequest) returns (GeneratePasscodeResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/generate_passcode"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Accepts a list of cached degraded order uuids on client side and returns uuids that have already been uploaded
+  // Android client uses to purge records in the cache
+  rpc GetUploadedDegradedOrderUUIDs(GetUploadedDegradedOrderUUIDsRequest) returns (GetUploadedDegradedOrderUUIDsResponse) {
+    option (google.api.http) = {
+      post: "/ddpos/v1/store/{store_id}/uploaded_degraded_order_uuids"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Returns degraded order details
+  rpc GetDegradedOrderDetails(GetDegradedOrderDetailsRequest) returns (GetDegradedOrderDetailsResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/store/{store_id}/degraded_order_details/{degraded_order_uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Returns the gift card balance
+  rpc GetGiftCardBalance(GetGiftCardBalanceRequest) returns (GetGiftCardBalanceResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/{store_id}/gift_cards/check_balance"};
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+
+  // Load gift card
+  rpc LoadGiftCard(LoadGiftCardRequest) returns (LoadGiftCardResponse) {
+    option (google.api.http) = {get: "/ddpos/v1/{store_id}/gift_cards/load"};
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: PROD
+      authorization: [MX_USER]
+    };
+  }
+}
+
+// Get degraded order details request
+message GetDegradedOrderDetailsRequest {
+  // degraded order uuid
+  google.protobuf.StringValue degraded_order_uuid = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+}
+
+// Get degraded order details response
+message GetDegradedOrderDetailsResponse {
+  // re-using GetOrderDetailsResponse
+  GetOrderDetailsResponse resp = 1;
+}
+
+// Get uploaded degraded order uuids request
+message GetUploadedDegradedOrderUUIDsRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // cached degraded order uuids on the client side
+  repeated google.protobuf.StringValue cached_degraded_order_uuids = 2;
+}
+
+// Get uploaded degraded order uuids response
+message GetUploadedDegradedOrderUUIDsResponse {
+  // uploaded degraded order uuids
+  repeated google.protobuf.StringValue uploaded_degraded_order_uuids = 1;
+}
+
+// Get Cart Item Recommendations Request
+message GetCartItemRecommendationsRequest {
+  // The store ID for the order
+  google.protobuf.Int64Value store_id = 1;
+  // The menu ID for the order
+  google.protobuf.Int64Value menu_id = 2;
+  // The IDs of the items in the customer's cart (e.g. i_12345 or 12345)
+  repeated google.protobuf.StringValue cart_item_ids = 3;
+  // The order's fulfillment type (DELIVERY, PICKUP, etc.)
+  common.FulfillmentType fulfillment_type = 4;
+}
+
+// Get Cart Items Recommendations Response
+message GetCartItemRecommendationsResponse {
+  // get item recommendations response
+  feed_service.GetItemRecommendationsResponse response = 1;
+}
+
+// Get Orders History Request
+message GetOrdersHistoryRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // offset
+  google.protobuf.Int32Value offset = 2;
+  // limit for pagination
+  google.protobuf.Int32Value limit = 3;
+  // start time
+  google.protobuf.Timestamp start_time = 4;
+  // end time
+  google.protobuf.Timestamp end_time = 5;
+  // channels
+  repeated common.Channel channels = 6;
+  // is external (mutually exclusive with channels)
+  google.protobuf.BoolValue is_external = 7;
+}
+
+// Get Orders History Response
+message GetOrdersHistoryResponse {
+  // order history details
+  repeated OrdersHistoryDetails orders = 1;
+  // total for pagination
+  google.protobuf.Int64Value total = 2;
+  // list of available channels to filter with
+  repeated Channel available_channels = 3;
+}
+
+// Orders History details
+message OrdersHistoryDetails {
+  // customer name
+  google.protobuf.StringValue customer_name = 1;
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 3;
+  // experience
+  common.Experience experience = 6;
+  // actual pick up time
+  google.protobuf.Timestamp actual_pickup_time = 7;
+  // actual delivery time
+  google.protobuf.Timestamp actual_delivery_time = 8;
+  // order status display
+  google.protobuf.StringValue order_status_display = 10;
+  // order status
+  order.OrderStatus order_status = 11;
+  // completed time
+  google.protobuf.Timestamp completed_time = 12;
+  // ticket number
+  google.protobuf.StringValue ticket_number = 13;
+  // channel
+  Channel channel = 14;
+  // fulfillment type
+  FulfillmentType fulfillment_type = 15;
+  // payment method
+  PaymentMethod payment_method = 16;
+  // order items
+  repeated OrderItem order_items = 17;
+  // subtotal display string
+  google.protobuf.StringValue subtotal_display_string = 18;
+  // refunded boolean
+  google.protobuf.BoolValue refunded = 19;
+  // refunded time
+  google.protobuf.Timestamp refunded_time = 20;
+  // refund type
+  RefundType refund_type = 21;
+
+  reserved 2, 4, 5, 9;
+  reserved "item_count", "is_large_order", "status", "cancelled_at";
+}
+
+// Degraded order status
+enum DegradedOrderStatus {
+  // unspecified
+  DEGRADED_ORDER_STATUS_UNSPECIFIED = 0;
+  // pending - DoorDash is working on reconciling this
+  DEGRADED_ORDER_STATUS_PENDING = 1;
+  // interim state - manual payout in progress
+  DEGRADED_ORDER_STATUS_MANUAL_PAYOUT_IN_PROGRESS = 2;
+  // terminal state - manual payout completed
+  DEGRADED_ORDER_STATUS_MANUAL_PAYOUT_COMPLETED = 3;
+  // terminal state - completed
+  DEGRADED_ORDER_STATUS_COMPLETED = 4;
+  // terminal state - cash
+  DEGRADED_ORDER_STATUS_CASH_PAID_OUT = 5;
+}
+
+// Get degraded orders history request
+message GetDegradedOrdersHistoryRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // offset
+  google.protobuf.Int32Value offset = 2;
+  // limit for pagination
+  google.protobuf.Int32Value limit = 3;
+  // start time
+  google.protobuf.Timestamp start_time = 4;
+  // end time
+  google.protobuf.Timestamp end_time = 5;
+  // channels
+  repeated common.Channel channels = 6;
+}
+
+// get degraded orders history response
+message GetDegradedOrdersHistoryResponse {
+  // degraded orders history
+  repeated DegradedOrderHistory orders = 1;
+  // total for pagination
+  google.protobuf.Int64Value total = 2;
+}
+
+// degraded order history details
+message DegradedOrderHistoryDetails {
+  // degraded order uuid
+  google.protobuf.StringValue degraded_order_uuid = 1;
+  // degraded order status
+  DegradedOrderStatus status = 2;
+}
+
+// degraded order history
+message DegradedOrderHistory {
+  // order history details
+  OrdersHistoryDetails order_history_details = 1;
+  // degraded order specific history details
+  DegradedOrderHistoryDetails degraded_order_details = 2;
+}
+
+// channel
+message Channel {
+  // channel enum
+  common.Channel channel = 1;
+  // display string
+  google.protobuf.StringValue channel_display_string = 2;
+}
+
+// upsert open item endpoint request
+message UpsertOpenItemRequest {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+
+  // menu item id
+  google.protobuf.StringValue menu_item_id = 2;
+
+  // tax strategy
+  TaxStrategy tax_strategy = 3;
+
+  // is this open item active or inactive
+  google.protobuf.BoolValue is_active = 4;
+}
+
+// upsert open item endpoint response
+message UpsertOpenItemResponse {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+
+  // menu item id
+  google.protobuf.StringValue menu_item_id = 2;
+
+  // tax strategy
+  TaxStrategy tax_strategy = 3;
+
+  // is this open item active or inactive
+  google.protobuf.BoolValue is_active = 4;
+
+  // When the open item was created
+  google.protobuf.Timestamp created_at = 5;
+
+  // Last time the open item was updated
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// submit order endpoint request
+message PathfinderSubmitOrderEndpointRequest {
+  // downstream order service request
+  order_service.DDPOSSubmitOrderRequest submit_order_request = 1;
+}
+
+// order preview request
+message PathfinderPreviewOrderEndpointRequest {
+  // downstream order service request
+  order_service.DDPOSPreviewOrderRequest preview_order_request = 1;
+}
+
+// preview response
+message PathfinderPreviewOrderEndpointResponse {
+  // downstream order service response
+  order_service.DDPOSPreviewOrderResponse preview_order_response = 1;
+}
+
+// submit response
+message PathfinderSubmitOrderEndpointResponse {
+  // downstream order service response
+  order_service.DDPOSSubmitOrderResponse submit_order_response = 1;
+}
+
+// Get store details
+message GetStoreRequest {
+  // Store id
+  google.protobuf.Int64Value store_id = 1;
+  // device id
+  google.protobuf.StringValue device_id = 2;
+  // items (deprecated)
+  repeated StoreItem items = 3 [deprecated = true];
+  // business id (deprecated)
+  google.protobuf.StringValue business_id = 4 [deprecated = true];
+  // store address (deprecated)
+  StoreAddress store_address = 5 [deprecated = true];
+  // experience - e.g., DD_POS, SELF_KIOSK
+  common.Experience experience = 6;
+}
+
+// Item level tax rate
+message ItemLevelTaxRate {
+  // Menu item id
+  google.protobuf.StringValue menu_item_id = 1;
+  // tax rate - e.g. .0887
+  google.protobuf.FloatValue tax_rate = 2;
+}
+
+// Store details
+message GetStoreResponse {
+  // Stripe connected Account Id
+  google.protobuf.StringValue stripe_connected_account_id = 1;
+  // All terminals associated with a store
+  repeated Terminal terminals = 2;
+  // Ticket Prefix
+  google.protobuf.StringValue ticket_prefix = 3;
+  // To be deprecated - Tax rate from tax service for degraded mode - sourced from https://github.com/doordash/services-protobuf/blob/master/protos/tax/tax_service.proto#L83C3-L83C3
+  google.protobuf.FloatValue tax_rate = 4;
+  // fulfillment types
+  repeated FulfillmentType fulfillment_types = 6;
+
+  // customizations for the store
+  StoreCustomization customization = 7;
+
+  // Tip configurations that are available for the store
+  repeated TipConfiguration tip_configurations = 9;
+
+  reserved 5;
+  reserved "item_level_tax_rates";
+  reserved 8;
+  reserved "kiosk_menu_ids";
+}
+
+// Store customization
+message StoreCustomization {
+  // url to the store banner
+  google.protobuf.StringValue banner_image_url = 6;
+
+  // url to the store background image
+  google.protobuf.StringValue background_image_url = 7;
+}
+
+// fulfillment type
+message FulfillmentType {
+  // fulfillment type enum
+  common.FulfillmentType fulfillment_type = 1;
+  // display string
+  google.protobuf.StringValue fulfillment_type_display_string = 2;
+}
+
+// Stripe Terminal Details
+message Terminal {
+  // Terminal id
+  google.protobuf.StringValue terminal_id = 1;
+}
+
+// Payment Back fill request
+message PaymentBackFillRequest {
+  // The amount of the payment
+  google.protobuf.Int32Value amount = 1;
+  // The consumer id making the order
+  google.protobuf.StringValue consumer_id = 2;
+  // The order uuid
+  google.protobuf.StringValue order_uuid = 3;
+  // The country of the store
+  google.protobuf.StringValue country = 4;
+  // The currency of the store
+  google.protobuf.StringValue currency = 5;
+  // The payment method id from Stripe
+  google.protobuf.StringValue payment_method_id = 6;
+  // The payment intent id from Stripe
+  google.protobuf.StringValue payment_intent_id = 7;
+  // The charge id from Stripe
+  google.protobuf.StringValue charge_id = 8;
+  // The client description for the payment
+  google.protobuf.StringValue client_description = 9;
+  // Payment method fingerprint
+  google.protobuf.StringValue fingerprint = 10;
+  // Payment method last 4 digits
+  google.protobuf.StringValue last4 = 11;
+  // Payment method expiration month
+  google.protobuf.Int32Value exp_month = 12;
+  // Payment method expiration year
+  google.protobuf.Int32Value exp_year = 13;
+  // Payment method brand
+  google.protobuf.StringValue brand = 14;
+  // Payment method type
+  google.protobuf.StringValue type = 15;
+}
+
+// Payment Back fill response
+message PaymentBackFillResponse {
+  // Unique UUID linking the payment data to the order/cart
+  google.protobuf.StringValue cart_payment_id = 1;
+}
+
+// Create Station Request
+message CreateStationRequest {
+  // Name of the station
+  google.protobuf.StringValue name = 1;
+
+  // DoorDash menu item ids that can be fulfilled by this station. Deprecated in favor of StationItems
+  repeated google.protobuf.StringValue menu_item_ids = 2 [deprecated = true];
+
+  // Store id that the station is linked to
+  google.protobuf.StringValue store_id = 3;
+
+  // Station items
+  repeated StationItem station_items = 4;
+}
+
+// Create Station Response
+message CreateStationResponse {
+  // Created UUID for the station
+  google.protobuf.StringValue uuid = 1;
+
+  // Name of the station
+  google.protobuf.StringValue name = 2;
+
+  // DoorDash menu item ids that can be fulfilled by this station. Deprecated in favor of StationItems
+  repeated google.protobuf.StringValue menu_item_ids = 3 [deprecated = true];
+
+  // Timestamp at which the record was 'deleted' or marked as inactive
+  google.protobuf.Timestamp deleted_at = 4;
+
+  // store id
+  google.protobuf.StringValue store_id = 5;
+
+  // When the station was created
+  google.protobuf.Timestamp created_at = 6;
+
+  // Last time the station was updated
+  google.protobuf.Timestamp updated_at = 7;
+
+  // Station items
+  repeated StationItem station_items = 8;
+}
+
+// Update Station Request
+message UpdateStationRequest {
+  // Created UUID for the station
+  google.protobuf.StringValue uuid = 1;
+
+  // Name of the station
+  google.protobuf.StringValue name = 2;
+
+  // DoorDash menu item ids that can be fulfilled by this station. Deprecated in favor of StationItems
+  repeated google.protobuf.StringValue menu_item_ids = 3 [deprecated = true];
+
+  // store id
+  google.protobuf.StringValue store_id = 4;
+
+  // Station items
+  repeated StationItem station_items = 5;
+}
+
+// Update Station Response
+message UpdateStationResponse {
+  // Created UUID for the station
+  google.protobuf.StringValue uuid = 1;
+
+  // Name of the station
+  google.protobuf.StringValue name = 2;
+
+  // DoorDash menu item ids that can be fulfilled by this station. Deprecated in favor of StationItems
+  repeated google.protobuf.StringValue menu_item_ids = 4 [deprecated = true];
+
+  // Timestamp at which the record was 'deleted' or marked as inactive
+  google.protobuf.Timestamp deleted_at = 5;
+
+  // store id
+  google.protobuf.StringValue store_id = 6;
+
+  // When the station was created
+  google.protobuf.Timestamp created_at = 7;
+
+  // Last time the station was updated
+  google.protobuf.Timestamp updated_at = 8;
+
+  // Station items
+  repeated StationItem station_items = 9;
+}
+
+// Delete station request
+message DeleteStationRequest {
+  // Created UUID for the station
+  google.protobuf.StringValue uuid = 1;
+}
+
+// Delete Station Response
+message DeleteStationResponse {}
+
+// Get Stations Request
+message GetStationsRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // device id
+  google.protobuf.StringValue device_id = 2;
+
+  // (optional) include deleted stations
+  google.protobuf.BoolValue include_deleted = 3;
+}
+
+// Get Stations Request V2
+message GetStationsV2Request {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // device id
+  google.protobuf.StringValue device_id = 2;
+
+  // (optional) include deleted stations
+  google.protobuf.BoolValue include_deleted = 3;
+}
+
+// Get Stations Response
+message GetStationsResponse {
+  // list of active stations for the store id
+  repeated Station stations = 1;
+}
+
+// Get Stations Response V2
+message GetStationsV2Response {
+  // list of active stations for the store id
+  repeated Station stations = 1;
+}
+
+// Get Printers Request
+message GetPrintersRequest {
+  // store id
+  string store_id = 1;
+
+  // (optional) include deleted printers
+  google.protobuf.BoolValue include_deleted = 2;
+
+  // (optional) device id
+  google.protobuf.StringValue device_id = 10;
+}
+
+// Get Printers Request
+message GetPrintersV2Request {
+  // store id
+  string store_id = 1;
+
+  // (optional) include deleted printers
+  google.protobuf.BoolValue include_deleted = 2;
+
+  // (optional) device id
+  google.protobuf.StringValue device_id = 10;
+}
+
+// Get Printers Response
+message GetPrintersResponse {
+  // store id
+  string store_id = 1;
+
+  // printers associated with this store
+  repeated Printer printers = 2;
+}
+
+// Get Printers Response
+message GetPrintersV2Response {
+  // store id
+  string store_id = 1;
+
+  // printers associated with this store
+  repeated Printer printers = 2;
+}
+
+// Create Printer Request
+message CreatePrinterRequest {
+  // MAC address for the printer
+  google.protobuf.StringValue mac_address = 1;
+
+  // Name of the printer
+  google.protobuf.StringValue name = 2;
+
+  // Whether the printer is tied to a cash register or not
+  google.protobuf.BoolValue has_cash_register = 3;
+
+  // Number of receipts the printer should print
+  google.protobuf.Int32Value receipt_count = 4;
+
+  // Number of tickets the printer should print
+  google.protobuf.Int32Value ticket_count = 5;
+
+  // Printer type
+  PrinterType printer_type = 7;
+
+  // Store id that the printer is linked to
+  google.protobuf.StringValue store_id = 8;
+
+  // Station uuid that the printer is linked to
+  google.protobuf.StringValue station_uuid = 9;
+
+  // Device id
+  google.protobuf.StringValue device_id = 10;
+
+  // (optional) Marketplace receipt count
+  google.protobuf.Int32Value marketplace_receipt_count = 11;
+
+  // Printer connection type (Defaults to PRINTER_CONNECTION_TYPE_LAN)
+  PrinterConnectionType printer_connection_type = 12;
+
+  // (optional) Number of item level tickets the printer should print
+  google.protobuf.Int32Value item_level_ticket_count = 13;
+}
+
+// Create Printer Response
+message CreatePrinterResponse {
+  // UUID for the printer
+  google.protobuf.StringValue uuid = 1;
+
+  // MAC address for the printer
+  google.protobuf.StringValue mac_address = 2;
+
+  // Name of the printer
+  google.protobuf.StringValue name = 3;
+
+  // Whether the printer is tied to a cash register or not
+  google.protobuf.BoolValue has_cash_register = 4;
+
+  // Number of receipts the printer should print
+  google.protobuf.Int32Value receipt_count = 5;
+
+  // Number of tickets the printer should print
+  google.protobuf.Int32Value ticket_count = 6;
+
+  // Timestamp at which the record was 'deleted' or marked as inactive
+  google.protobuf.Timestamp deleted_at = 7;
+
+  // Printer type
+  PrinterType printer_type = 8;
+
+  // Store id that the printer is linked to
+  google.protobuf.StringValue store_id = 9;
+
+  // (optional) Station uuid that the printer is linked to
+  google.protobuf.StringValue station_uuid = 10;
+
+  // When the printer was created for the store
+  google.protobuf.Timestamp created_at = 11;
+
+  // Last time the printer was updated for the store
+  google.protobuf.Timestamp updated_at = 12;
+
+  // Device id
+  google.protobuf.StringValue device_id = 13;
+
+  // (optional) Marketplace receipt count
+  google.protobuf.Int32Value marketplace_receipt_count = 14;
+
+  // Printer connection type (Defaults to PRINTER_CONNECTION_TYPE_LAN)
+  PrinterConnectionType printer_connection_type = 15;
+
+  // (optional) Number of item level tickets the printer should print
+  google.protobuf.Int32Value item_level_ticket_count = 16;
+}
+
+// Update Printer Request
+message UpdatePrinterRequest {
+  // UUID for the printer
+  google.protobuf.StringValue uuid = 1;
+
+  // Name of the printer
+  google.protobuf.StringValue name = 2;
+
+  // Whether the printer is tied to a cash register or not
+  google.protobuf.BoolValue has_cash_register = 3;
+
+  // Number of receipts the printer should print
+  google.protobuf.Int32Value receipt_count = 4;
+
+  // Number of tickets the printer should print
+  google.protobuf.Int32Value ticket_count = 5;
+
+  // Printer type
+  PrinterType printer_type = 6;
+
+  // Station uuid that the printer is linked to
+  google.protobuf.StringValue station_uuid = 7;
+
+  // Device id
+  google.protobuf.StringValue device_id = 8;
+
+  // Mac address
+  google.protobuf.StringValue mac_address = 9;
+
+  // (optional) Marketplace receipt count
+  google.protobuf.Int32Value marketplace_receipt_count = 10;
+
+  // Printer connection type (Defaults to PRINTER_CONNECTION_TYPE_LAN)
+  PrinterConnectionType printer_connection_type = 11;
+
+  // (optional) Number of tickets the printer should print
+  google.protobuf.Int32Value item_level_ticket_count = 12;
+}
+
+// Update Printer Response
+message UpdatePrinterResponse {
+  // UUID for the printer
+  google.protobuf.StringValue uuid = 1;
+
+  // MAC address for the printer
+  google.protobuf.StringValue mac_address = 2;
+
+  // Name of the printer
+  google.protobuf.StringValue name = 3;
+
+  // Whether the printer is tied to a cash register or not
+  google.protobuf.BoolValue has_cash_register = 4;
+
+  // Number of receipts the printer should print
+  google.protobuf.Int32Value receipt_count = 5;
+
+  // Number of tickets the printer should print
+  google.protobuf.Int32Value ticket_count = 6;
+
+  // Timestamp at which the record was 'deleted' or marked as inactive
+  google.protobuf.Timestamp deleted_at = 7;
+
+  // Printer type
+  PrinterType printer_type = 8;
+
+  // Store id that the printer is linked to
+  google.protobuf.StringValue store_id = 9;
+
+  // Station uuid that the printer is linked to
+  google.protobuf.StringValue station_uuid = 10;
+
+  // When the printer was created for the store
+  google.protobuf.Timestamp created_at = 11;
+
+  // Last time the printer was updated for the store
+  google.protobuf.Timestamp updated_at = 12;
+
+  // Device id
+  google.protobuf.StringValue device_id = 13;
+
+  // (optional) Marketplace receipt count
+  google.protobuf.Int32Value marketplace_receipt_count = 14;
+
+  // Printer connection type (Defaults to PRINTER_CONNECTION_TYPE_LAN)
+  PrinterConnectionType printer_connection_type = 15;
+
+  // (optional) Number of item level tickets the printer should print
+  google.protobuf.Int32Value item_level_ticket_count = 16;
+}
+
+// Delete Printer request
+message DeletePrinterRequest {
+  // UUID for the printer
+  google.protobuf.StringValue uuid = 1;
+}
+
+// Delete Printer Response
+message DeletePrinterResponse {}
+
+// Create KdsDevice Request
+message CreateKdsDeviceRequest {
+  // Device ID of the KDS
+  string device_id = 1;
+
+  // Name of the KDS
+  string name = 2;
+
+  // Store id that the kds is linked to
+  string store_id = 3;
+
+  // Station uuid that the kds is linked to
+  google.protobuf.StringValue station_uuid = 4;
+
+  // When the kds was created for the store
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// Create KdsDevice Response
+message CreateKdsDeviceResponse {
+  // UUID for the KDS
+  google.protobuf.StringValue uuid = 1;
+
+  // Device ID of the KDS
+  string device_id = 2;
+
+  // Name of the KDS
+  string name = 3;
+
+  // Store id that the kds is linked to
+  string store_id = 4;
+
+  // Station uuid that the kds is linked to
+  google.protobuf.StringValue station_uuid = 5;
+
+  // When the kds was created for the store
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// Create Cash Drawer Request
+message CreateCashDrawerRequest {
+  // Store Id the cash drawer belongs to
+  google.protobuf.StringValue store_id = 1;
+  // Amount of money in the cash drawer at the start of the session
+  money.MonetaryFields start_cash = 2;
+  // Device Id the cash drawer belongs to
+  google.protobuf.StringValue device_id = 3;
+  // ApiAuditParams, mx and employee related audit fields
+  ApiAuditParams audit_params = 4;
+}
+
+// Create Cash Drawer Response
+message CreateCashDrawerResponse {
+  // Cash Drawer object
+  CashDrawer cash_drawer = 1;
+}
+
+// Close Cash Drawer Request
+message CloseCurrentCashDrawerRequest {
+  // Actual amount of money in the Cash drawer
+  money.MonetaryFields actual_cash = 1;
+  // Store Id the cash drawer belongs to
+  google.protobuf.StringValue store_id = 2;
+  // Device Id the cash drawer belongs to
+  google.protobuf.StringValue device_id = 3;
+  // ApiAuditParams, mx and employee related audit fields
+  ApiAuditParams audit_params = 4;
+  // Notes for the Cash Drawer session
+  google.protobuf.StringValue notes = 5;
+}
+
+// Close Cash Drawer Response
+message CloseCurrentCashDrawerResponse {
+  // Cash Drawer object
+  CashDrawer cash_drawer = 1;
+}
+
+// Get Cash Drawer Request
+message GetCashDrawerRequest {
+  // UUID of the cash drawer to get
+  google.protobuf.StringValue uuid = 1;
+}
+
+// Get Cash Drawer Response
+message GetCashDrawerResponse {
+  // Cash Drawer object
+  CashDrawer cash_drawer = 1;
+}
+
+// Get Current Cash Drawer Request
+message GetCurrentCashDrawerRequest {
+  // Store Id the cash drawer belongs to
+  google.protobuf.StringValue store_id = 1;
+  // Device Id the cash drawer belongs to
+  google.protobuf.StringValue device_id = 2;
+}
+
+// Get Current Cash Drawer Response
+message GetCurrentCashDrawerResponse {
+  // Cash Drawer object
+  CashDrawer cash_drawer = 1;
+}
+
+// Get Cash Drawers Request
+message GetCashDrawersRequest {
+  // Store Id the cash drawer belongs to
+  google.protobuf.StringValue store_id = 1;
+  // Number of cash drawer sessions in the page
+  google.protobuf.Int32Value limit = 2;
+  // Offset to start from for the page
+  google.protobuf.Int32Value offset = 3;
+  // Device Id the cash drawer belongs to
+  google.protobuf.StringValue device_id = 4;
+}
+
+// Get Cash Drawers Response
+message GetCashDrawersResponse {
+  // List of Cash Drawers objects
+  repeated CashDrawer cash_drawers = 1;
+  // The total number of Cash Drawers for this store
+  google.protobuf.Int32Value total = 2;
+  // The last Cash Drawer returned index
+  google.protobuf.Int32Value offset = 3;
+}
+
+// Create Cash Transaction Request
+message CreateTransactionAndUpdateDrawerRequest {
+  // Store ID making the transaction
+  google.protobuf.StringValue store_id = 1;
+  // The amount of money for this Cash Transaction
+  money.MonetaryFields amount = 2;
+  // The type of the Cash Transaction
+  CashTransactionType type = 3;
+  // The order uuid linked to the Cash Transaction, this is only for SALE type
+  google.protobuf.StringValue order_uuid = 4;
+  // The delivery uuid linked to the Cash Transaction, this is only for REFUND type
+  google.protobuf.StringValue delivery_uuid = 5;
+  // The memo for this Cash Transaction, this is only for PAY_IN/PAY_OUT types
+  google.protobuf.StringValue memo = 6;
+  // Device Id making the transaction
+  google.protobuf.StringValue device_id = 7;
+  // ApiAuditParams, mx and employee related audit fields
+  ApiAuditParams audit_params = 8;
+}
+
+// Create Cash Transaction Response
+message CreateTransactionAndUpdateDrawerResponse {
+  // Cash Transaction Object
+  CashTransaction cash_transaction = 1;
+  // Cash Transaction Metadata
+  TransactionMetadata metadata = 2;
+}
+
+// Request to get all DoorDash POS employee details for the store
+message GetDDPosEmployeesRequest {
+  // Store id
+  string store_id = 1;
+  // Include deactivated employees in the response
+  google.protobuf.BoolValue include_deactivated = 2;
+  // Include ghost employees in the response
+  google.protobuf.BoolValue include_ghost = 3;
+}
+
+// Response with all DoorDash POS employee details for the store
+message GetDDPosEmployeesResponse {
+  // List of employee details
+  repeated zero2one_common.v1.EmployeesDetails employees = 2;
+}
+
+// Request to check whether a given store uses DoorDash's POS system
+message DoesStoreUseDDPosRequest {
+  // Store id
+  string store_id = 1;
+}
+
+// Response whether a given store uses DoorDash's POS system
+message DoesStoreUseDDPosResponse {
+  // True/false whether store uses DoorDash POS
+  bool does_store_use_dd_pos = 1;
+}
+
+// Request to create or update a POS Employee
+message UpsertDDPosEmployeeRequest {
+  // UUID (if passed, will try to find and update existing employee)
+  google.protobuf.StringValue uuid = 1;
+  // Store id (required)
+  string store_id = 2;
+  // Employee given (first) name
+  google.protobuf.StringValue given_name = 3;
+  // Employee family (last) name
+  google.protobuf.StringValue family_name = 4;
+  // Employee PIN for accessing POS
+  google.protobuf.StringValue pin = 5;
+  // Employee role
+  zero2one_common.v1.EmployeeRole role = 6;
+  // Employee Role uuid
+  google.protobuf.StringValue role_uuid = 7;
+  // Whether this employee is a ghost employee (does not show up in reports, and list of employees)
+  google.protobuf.BoolValue is_ghost = 8;
+  // Labor wage rate per hour in cents (can be null if the Mx does not want to provide an hourly wage rate to the employee)
+  google.protobuf.Int32Value labor_wage_rate = 9;
+}
+
+// Response to create or update a POS Employee
+message UpsertDDPosEmployeeResponse {
+  // UUID of employee created or updated
+  string uuid = 1;
+}
+
+// Request to create or update a POS employee Shift
+message UpsertShiftRequest {
+  // Shift UUID (required)
+  string uuid = 1;
+  // Employee UUID (required)
+  string employee_uuid = 2;
+  // Store id (required)
+  string store_id = 3;
+  // Shift start time (required)
+  google.protobuf.Timestamp start_time = 4;
+  // Shift end time
+  google.protobuf.Timestamp end_time = 5;
+}
+
+// Response to create or update a POS employee Shift
+message UpsertShiftResponse {}
+
+// Request to create or update a POS employee Break
+message UpsertBreakRequest {
+  // Break UUID (required)
+  string uuid = 1;
+  // Shift UUID (required)
+  string shift_uuid = 2;
+  // Store id (required)
+  string store_id = 3;
+  // Break start time (required)
+  google.protobuf.Timestamp start_time = 4;
+  // Break end time
+  google.protobuf.Timestamp end_time = 5;
+  // Employee UUID (required)
+  string employee_uuid = 6;
+  // Break Type UUID
+  google.protobuf.StringValue break_type_uuid = 7;
+}
+
+// Response to create or update a POS employee Break
+message UpsertBreakResponse {}
+
+// Request to delete a POS employee Break
+message DeleteBreakRequest {
+  // Break UUID (required)
+  string uuid = 1;
+  // Store id (required)
+  string store_id = 2;
+}
+
+// Response from deleting a POS employee Break
+message DeleteBreakResponse {}
+
+// Request to create or update a POS store Break Type
+message UpsertBreakTypeRequest {
+  // Break Type UUID (required)
+  string uuid = 1;
+  // Store id (required)
+  string store_id = 2;
+  // Break Type name (required)
+  string name = 3;
+  // Break Type duration in minutes
+  google.protobuf.Int32Value duration_in_minutes = 4;
+  // Whether this break type is paid
+  google.protobuf.BoolValue is_paid = 5;
+  // Whether this break type is active
+  google.protobuf.BoolValue is_active = 6;
+}
+
+// POS store Break Type
+message UpsertBreakTypeResponse {
+  // UUID of the Break Type created or updated
+  string uuid = 1;
+  // Store id
+  string store_id = 2;
+  // Break Type name
+  string name = 3;
+  // Break Type duration in minutes
+  google.protobuf.Int32Value duration_in_minutes = 4;
+  // Whether this break type is paid
+  google.protobuf.BoolValue is_paid = 5;
+  // Whether this break type is active
+  google.protobuf.BoolValue is_active = 6;
+  // When the Break Type was created
+  google.protobuf.Timestamp created_at = 7;
+  // Last time the Break Type was updated
+  google.protobuf.Timestamp updated_at = 8;
+  // When the Break Type was deleted (i.e., archived)
+  google.protobuf.Timestamp deleted_at = 9;
+}
+
+// Request to get all POS store Break Types
+message GetBreakTypesRequest {
+  // Store id (required)
+  string store_id = 1;
+}
+
+// Response from getting all POS store Break Types
+message GetBreakTypesResponse {
+  // List of Break Types
+  repeated UpsertBreakTypeResponse break_types = 1;
+}
+
+// Request to delete a POS store Break Type
+message DeleteBreakTypeRequest {
+  // Break Type UUID (required)
+  string uuid = 1;
+  // Store id (required)
+  string store_id = 2;
+}
+
+// Response from deleting a POS store Break Type
+message DeleteBreakTypeResponse {}
+
+// Request to upsert a shift with associated breaks
+message UpsertShiftWithBreaksRequest {
+  // Request to upsert a shift
+  UpsertShiftRequest upsert_shift_request = 1;
+  // List of break configs for the shift
+  repeated zero2one_common.v1.PosBreakConfig break_configs = 3;
+}
+
+// Response from upserting a shift with associated breaks
+message UpsertShiftWithBreaksResponse {
+  // Shift UUID
+  string uuid = 1;
+  // List of break UUIDs
+  repeated string break_uuids = 2;
+}
+
+// Request to get current shifts and breaks
+message GetCurrentShiftsAndBreaksRequest {
+  // Store id (required)
+  string store_id = 1;
+}
+
+// Response to get current shifts and breaks
+message GetCurrentShiftsAndBreaksResponse {
+  // List of current active shifts
+  repeated zero2one_common.v1.PosShift shifts = 1;
+  // List of current active breaks
+  repeated zero2one_common.v1.PosBreak breaks = 2;
+}
+
+// Request to get store employee work reports
+message GetStoreEmployeeWorkReportsRequest {
+  // Store id (required)
+  string store_id = 1;
+  // Start time (required)
+  google.protobuf.Timestamp start_time = 2;
+  // End time (required)
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response to store employees work report
+message GetStoreEmployeeWorkReportsResponse {
+  // List of employee work reports (overall for the selected time period)
+  repeated zero2one_common.v1.EmployeeWorkReport employee_work_reports = 1;
+  // List of employee work reports (by day, for the selected time period)
+  repeated zero2one_common.v1.EmployeeWorkReport employee_work_reports_daily = 2;
+  // Work report for shifts during time range
+  repeated zero2one_common.v1.ShiftWorkReport shifts = 3;
+  // Work report for breaks during time range
+  repeated zero2one_common.v1.BreakWorkReport breaks = 4;
+}
+
+// Request to delete DoorDash POS employee profile (if exists)
+message DeleteDDPosEmployeeRequest {
+  // UUID of employee to delete
+  string uuid = 1;
+}
+
+// Response to delete DoorDash POS employee profile (if exists)
+message DeleteDDPosEmployeeResponse {}
+
+// Health check request to determine if client should enter degraded mode or recover
+message HealthCheckRequest {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+  // start time of degraded session
+  google.protobuf.Timestamp degraded_start_time = 2;
+  // degraded mode session uuid
+  google.protobuf.StringValue degraded_mode_session_uuid = 3;
+}
+
+// Health check response to notify client if it should enter degraded mode
+message HealthCheckResponse {
+  // Flag to notify client if it should enter degraded mode or recover
+  google.protobuf.BoolValue is_degraded_mode = 1;
+  // Error message to display on client if in degraded mode
+  google.protobuf.StringValue error_message_display = 2;
+}
+
+// Request to upload bulk degraded orders file to Z2O
+message UploadDegradedOrdersFileRequest {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+  // Degraded orders file name
+  google.protobuf.StringValue file_name = 2;
+  // Degraded orders file
+  google.protobuf.BytesValue file = 3;
+}
+
+// Response from uploading bulk degraded orders file to Z2O
+message UploadDegradedOrdersFileResponse {
+  // url of uploaded file
+  google.protobuf.StringValue url = 1;
+}
+
+// Rectify data request
+message RectifyDataRequest {
+  // operation name
+  google.protobuf.StringValue operation = 1;
+}
+
+// Rectify data response
+message RectifyDataResponse {
+  // operation result
+  google.protobuf.StringValue result = 1;
+}
+
+// Run scheduler job request
+message RunPaymentIntentsRetrievalRequest {
+  // (optional) start unix timestamp
+  google.protobuf.Int64Value start_timestamp = 1;
+  // (optional) end unix timestamp
+  google.protobuf.Int64Value end_timestamp = 2;
+  // (optional) number of records to retrieve per Stripe API call
+  google.protobuf.Int32Value limit = 3;
+}
+
+// Run scheduler job response
+message RunPaymentIntentsRetrievalResponse {
+  // job result
+  google.protobuf.StringValue result = 1;
+}
+
+// Request to get open item config for given store
+message GetOpenItemConfigRequest {
+  // Store id
+  google.protobuf.Int64Value store_id = 1;
+  // device id
+  google.protobuf.StringValue device_id = 2;
+}
+
+// Open Item configuration list
+message GetOpenItemConfigResponse {
+  // List of item configs ie Food, Bar, Misc etc.
+  repeated OpenItemConfig open_item_config = 1;
+}
+
+// Request to manually create reconciled degraded order record
+message CreateManualReconciledOrdersRequest {
+  // Degraded order UUID
+  repeated google.protobuf.StringValue degraded_order_uuid = 1;
+}
+
+// Response from manually creating reconciled degraded order record
+message CreateManualReconciledOrdersResponse {}
+
+// close to Incentive proto in incentive.proto
+message DDPosPriceModificationValue {
+  // What type of price modification is being applied to the target
+  DDPosPriceModificationValueType type = 1;
+
+  // the type of the price modification
+  enum DDPosPriceModificationValueType {
+    // price modification type unspecified
+    DD_POS_PRICE_MODIFICATION_VALUE_TYPE_UNSPECIFIED = 0;
+    // price modification type percent off
+    DD_POS_PRICE_MODIFICATION_VALUE_TYPE_PERCENT_OFF = 1;
+    // price modification type flat amount off
+    DD_POS_PRICE_MODIFICATION_VALUE_TYPE_FLAT_AMOUNT_OFF = 2;
+  }
+
+  // the percent off, 20% off, 40% off
+  google.protobuf.Int32Value percent_off = 2;
+  // the flat amount off, 5 off, 10 off
+  money.MonetaryFields flat_amount_off = 3;
+  // is auto apply
+  google.protobuf.BoolValue is_auto_apply = 4;
+  // Criteria for the price modification
+  repeated Criteria criterion = 5;
+}
+
+// DD Pos Price Modification Detail
+message DDPosPriceModificationDetail {
+  // id of the price modification detail
+  google.protobuf.StringValue id = 1;
+  // value of the price modification detail
+  DDPosPriceModificationValue value = 2;
+}
+
+// DD Pos Price Modification
+message DDPosPriceModification {
+  // uuid of the price modification, will be generated by the our service during a create request, must be present during an update
+  google.protobuf.StringValue uuid = 1;
+  // name of the price modification, for example "MONDAY 10% off"
+  google.protobuf.StringValue price_modification_name = 2;
+  // description of the price modification, for example "on monday everything is 10% off before tax"
+  google.protobuf.StringValue price_modification_description = 3;
+  // is this price modification active
+  google.protobuf.BoolValue is_active = 4;
+  // what is the currency of the price modification
+  google.protobuf.StringValue currency = 5;
+  // what is the store id of the price modification created under
+  google.protobuf.StringValue store_id = 6;
+  // what is the price modification detail
+  DDPosPriceModificationDetail price_modification_detail = 7;
+  // when was this record created
+  google.protobuf.Timestamp created_at = 8;
+  // when was this record updated
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// Create In Store Price Modification
+message CreateInStorePriceModificationRequest {
+  // name of the price modification, for example "MONDAY 10% off"
+  google.protobuf.StringValue price_modification_name = 1;
+  // description of the price modification, for example "on monday everything is 10% off before tax"
+  google.protobuf.StringValue price_modification_description = 2;
+  // is this price modification active
+  google.protobuf.BoolValue is_active = 3;
+  // what is the currency of the price modification
+  google.protobuf.StringValue currency = 4;
+  // what is the store id of the price modification created under
+  google.protobuf.StringValue store_id = 5;
+  // what is the price modification detail
+  DDPosPriceModificationDetail price_modification_detail = 6;
+}
+
+// In Store Price Modification created response
+message CreateInStorePriceModificationResponse {
+  // the price modification created
+  DDPosPriceModification price_modification = 1;
+}
+
+// Update In Store Price Modification
+message UpdateInStorePriceModificationRequest {
+  // uuid of the price modification to be updated
+  google.protobuf.StringValue uuid = 1;
+  // is this price modification active
+  google.protobuf.BoolValue is_active = 2;
+  // the store id of the price modification created under,
+  // cannot be updated, provided just to make sure the price modification is updated under the correct store
+  google.protobuf.StringValue store_id = 3;
+  // name of the price modification, for example "MONDAY 10% off"
+  google.protobuf.StringValue price_modification_name = 4;
+  // description of the price modification, for example "on monday everything is 10% off before tax"
+  google.protobuf.StringValue price_modification_description = 5;
+  // is auto apply
+  google.protobuf.BoolValue is_auto_apply = 6;
+  // Criteria to be updated
+  repeated Criteria criterion = 7;
+
+  /*
+     Please consult @bonnie.wu or @moe before adding more fields for update.
+     The order transaction will be linked to applied price modifications in our db,
+     vital for financial compliance to trace back to applied discounts for DDPOS orders.
+     Hence, we will restrict updates to fields related to amount, store, etc.
+  */
+}
+
+// In Store Price Modification updated response
+message UpdateInStorePriceModificationResponse {
+  // the price modification updated
+  DDPosPriceModification price_modification = 1;
+}
+
+// Activate In Store Price Modification
+message ActivateInStorePriceModificationRequest {
+  // The price modification uuid to activate
+  google.protobuf.StringValue uuid = 1;
+  // The store id where the price modification is created for
+  google.protobuf.StringValue store_id = 2;
+}
+
+// In Store Price Modification activation response
+message ActivateInStorePriceModificationResponse {
+  // The price modification activated
+  DDPosPriceModification price_modification = 1;
+}
+
+// Deactivate In Store Price Modification
+message DeactivateInStorePriceModificationRequest {
+  // The price modification uuid to deactivate
+  google.protobuf.StringValue uuid = 1;
+  // The store id where the price modification is created for
+  google.protobuf.StringValue store_id = 2;
+}
+
+// In Store Price Modification deactivation response
+message DeactivateInStorePriceModificationResponse {
+  // The price modification deactivated
+  DDPosPriceModification price_modification = 1;
+}
+
+// Get In Store Price Modifications for store
+message GetInStorePriceModificationsForStoreRequest {
+  // Store id where the price modifications are created for
+  google.protobuf.StringValue store_id = 1;
+  // limit of the fetching
+  google.protobuf.Int32Value limit = 2;
+  // offset of the fetching
+  google.protobuf.Int32Value offset = 3;
+  // Include deactivated price modifications in the response
+  google.protobuf.BoolValue include_deactivated = 4;
+}
+
+// In Store Price Modifications response for store
+message GetInStorePriceModificationsForStoreResponse {
+  // price modifications for the store
+  repeated DDPosPriceModification dd_pos_price_modifications = 1;
+  // The total number of price modifications for this store
+  google.protobuf.Int32Value total = 2;
+  // The last price modification returned index
+  google.protobuf.Int32Value offset = 3;
+}
+
+// Get In Store Price Modification by given uuid request
+message GetInStorePriceModificationRequest {
+  // Price modification uuid that we want to retrieve
+  google.protobuf.StringValue uuid = 1;
+  // Store id where the price modification are created under
+  google.protobuf.StringValue store_id = 2;
+}
+
+// In Store Price Modification from given uuid response
+message GetInStorePriceModificationResponse {
+  // corresponding price modifications for the store from the given uuid
+  DDPosPriceModification dd_pos_price_modifications = 1;
+}
+
+// Create In Store Price Modified Transaction, to link the price modification with the order
+message CreateInStorePriceModifiedTransactionRequest {
+  // Store id where the price modifications are created for
+  google.protobuf.StringValue store_id = 1;
+  // Price modification uuid -- DEPRECATED
+  google.protobuf.StringValue price_modification_uuid = 2;
+  // Order uuid of the order where the price modification is applied on
+  google.protobuf.StringValue order_uuid = 3;
+  // transaction applied timestamp
+  google.protobuf.Timestamp applied_at = 4;
+  // Price modification uuid
+  repeated google.protobuf.StringValue price_modification_uuid_list = 5;
+}
+
+// Price modification Criteria
+message Criteria {
+  // id of the price modification detail
+  google.protobuf.StringValue uuid = 1;
+  // The type of the criterion
+  CriteriaType type = 2;
+  // Criterion value
+  oneof value {
+    // Amount
+    google.protobuf.Int32Value amount = 3;
+    // PriceModificationPaymentCriteria
+    PriceModificationPaymentCriteria payment_type_criteria = 4;
+  }
+  // Price modification criterion type
+  enum CriteriaType {
+    // Unspecified
+    CRITERIA_TYPE_UNSPECIFIED = 0;
+    // Order item name
+    CRITERIA_TYPE_MIN_SUBTOTAL = 1;
+    // Credit card payment
+    CRITERIA_TYPE_PAYMENT_METHOD = 2;
+  }
+}
+
+// Price modification payment criteria
+message PriceModificationPaymentCriteria {
+  // Payment Type
+  enum PaymentTypeCriteria {
+    // Unspecified
+    PAYMENT_TYPE_CRITERIA_UNSPECIFIED = 0;
+    // Credit Card
+    PAYMENT_TYPE_CRITERIA_CREDIT_CARD = 1;
+    // Cash
+    PAYMENT_TYPE_CRITERIA_CASH = 2;
+  }
+  // Payment type
+  PaymentTypeCriteria payment_type = 1;
+}
+
+// In Store Price Modified Transaction response
+message CreateInStorePriceModifiedTransactionResponse {
+  // Price modified transaction uuid
+  google.protobuf.StringValue price_modified_transaction_uuid = 1;
+  // Price modification uuid list
+  repeated google.protobuf.StringValue price_modified_transaction_uuids = 2;
+}
+
+// Get In Store Price Modified Transaction from given order uuid
+message GetInStorePriceModifiedTransactionsForOrderRequest {
+  // Order uuid of the order where the price modification is applied on
+  google.protobuf.StringValue order_uuid = 1;
+  // Store id where the price modifications are created for
+  google.protobuf.StringValue store_id = 2;
+}
+
+// The In Store Price Modified Transaction with the given order uuid response
+message GetInStorePriceModifiedTransactionsForOrderResponse {
+  // list of price modified transactions which were linked to this order uuid
+  repeated InStorePriceModifiedTransaction price_modified_transactions = 1;
+}
+
+// In Store Price Modified Transaction which links the price modification applied with the order it applies to
+message InStorePriceModifiedTransaction {
+  // Price modified transaction uuid
+  google.protobuf.StringValue price_modified_transaction_uuid = 1;
+  // Store id where the price modifications are created for
+  google.protobuf.StringValue store_id = 2;
+  // Price modification uuid
+  google.protobuf.StringValue price_modification_uuid = 3;
+  // Order uuid of the order where the price modification is applied on
+  google.protobuf.StringValue order_uuid = 4;
+}
+
+// Get store config request
+message GetStoreConfigRequest {
+  // Store id (primary key - required)
+  google.protobuf.StringValue store_id = 1;
+}
+
+// Device config
+message TerminalConfigResponse {
+  // Terminal uuid
+  google.protobuf.StringValue uuid = 1;
+  // POS device id
+  google.protobuf.StringValue pos_device_id = 2;
+  // Stripe terminal id
+  google.protobuf.StringValue stripe_terminal_id = 3;
+  // Ticket prefix
+  google.protobuf.StringValue ticket_prefix = 4;
+  // Is active (if false, device is not active)
+  google.protobuf.BoolValue is_active = 5;
+}
+
+// Get store config response
+message GetStoreConfigResponse {
+  // Stripe connected account id
+  google.protobuf.StringValue stripe_connected_account_id = 1;
+  // Emails
+  repeated google.protobuf.StringValue reporting_emails = 2;
+  // Device configs (if multi-device POS setup)
+  repeated TerminalConfigResponse terminals = 3;
+  // Is active (if false, store is not active)
+  google.protobuf.BoolValue is_active = 4;
+  // Whether or not tip pooling is enabled
+  google.protobuf.BoolValue is_tip_pooling_enabled = 6;
+  // Convert excess time from paid break to unpaid break
+  google.protobuf.BoolValue is_excess_paid_break_time_unpaid = 7;
+
+  reserved 5;
+  reserved "kiosk_menu_ids";
+}
+
+// Upsert device config request
+message UpsertTerminalConfigRequest {
+  // Terminal uuid (primary key - required)
+  google.protobuf.StringValue uuid = 1;
+  // POS device id (if not set - terminal will be treated as default, must set terminal ids when multiple terminals)
+  google.protobuf.StringValue pos_device_id = 2;
+  // Stripe terminal id
+  google.protobuf.StringValue stripe_terminal_id = 3;
+  // Ticket prefix
+  google.protobuf.StringValue ticket_prefix = 4;
+  // Is active (if passed as false, will deactivate device)
+  google.protobuf.BoolValue is_active = 5;
+}
+
+// Upsert store config request
+message UpsertStoreConfigRequest {
+  // Store id (primary key - required)
+  google.protobuf.StringValue store_id = 1;
+  // Emails
+  repeated string reporting_emails = 2;
+  // Terminal configs
+  repeated UpsertTerminalConfigRequest terminals = 3;
+  // Is active (if passed as false, will deactivate store config)
+  google.protobuf.BoolValue is_active = 4;
+  // Stripe connected account id
+  google.protobuf.StringValue stripe_connected_account_id = 5;
+  // Is tip pooling enabled
+  google.protobuf.BoolValue is_tip_pooling_enabled = 7;
+  // Convert excess time from paid break to unpaid break
+  google.protobuf.BoolValue is_excess_paid_break_time_unpaid = 8;
+
+  reserved 6;
+  reserved "kiosk_menu_ids";
+}
+
+// Upsert store config response
+message UpsertStoreConfigResponse {}
+
+// submit order endpoint request
+message PathfinderSubmitOrderEndpointV3Request {
+  // downstream order service request
+  order_service.DDPOSSubmitOrderRequest submit_order_request = 1;
+  // payment backfill request
+  PaymentBackFillRequest payment_backfill_request = 2;
+  // cash transaction request
+  CreateTransactionAndUpdateDrawerRequest cash_transaction_request = 3;
+  // create discount linking request
+  CreateInStorePriceModifiedTransactionRequest create_discount_linking_request = 4;
+  // (optional) Send requests to the Stripe test environment
+  google.protobuf.BoolValue stripe_test_environment = 5;
+}
+
+// submit order endpoint response v4 - support of multiple payments
+message SubmitOrderEndpointV4Request {
+  // downstream order service request
+  order_service.DDPOSSubmitOrderRequest submit_order_request = 1;
+  // payment information
+  repeated PaymentInfo payment_info = 2;
+  // discount info - order level discount
+  CreateInStorePriceModifiedTransactionRequest create_discount_linking_request = 4;
+  // (optional) Send requests to the Stripe test environment
+  google.protobuf.BoolValue stripe_test_environment = 5;
+}
+
+// submit external orders request
+message SubmitExternalOrdersRequest {
+  // external order details
+  repeated ExternalOrder order_detail = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+}
+
+// submit external orders response
+message SubmitExternalOrdersResponse {
+  // external order id
+  repeated google.protobuf.StringValue external_order_ids = 1;
+}
+
+// represents one payment for an order
+message PaymentInfo {
+  // amount charged
+  google.protobuf.Int32Value amount_charged = 1;
+
+  // tip amount
+  google.protobuf.Int32Value tip = 2;
+
+  // payment method
+  common.PaymentMethod payment_method = 3;
+
+  // payment details
+  oneof payment_type {
+    // for credit/debit card payment
+    PaymentBackFillRequest payment_backfill_request = 4;
+
+    // for cash payment
+    CreateTransactionAndUpdateDrawerRequest cash_transaction_request = 5;
+  }
+}
+
+// submit response
+message PathfinderSubmitOrderEndpointV3Response {
+  // downstream order service response
+  order_service.DDPOSSubmitOrderResponse submit_order_response = 1;
+}
+
+// submit response
+message SubmitOrderEndpointV4Response {
+  // downstream order service response
+  order_service.DDPOSSubmitOrderResponse submit_order_response = 1;
+}
+
+//  Get Price Modification for given order uuid request
+message GetPriceModificationsForOrderRequest {
+  // Price modification order uuid that we want to retrieve
+  google.protobuf.StringValue order_uuid = 1;
+  // Store id where the price modification are created under
+  google.protobuf.StringValue store_id = 2;
+}
+
+//  Price Modification from given order uuid response
+message GetPriceModificationsForOrderResponse {
+  // corresponding price modifications for the given order uuid
+  repeated DDPosPriceModification dd_pos_price_modifications = 1;
+}
+
+// Tip configuration object
+message TipConfiguration {
+  // Device ID that this tip configuration is for. Can be null.
+  google.protobuf.StringValue device_id = 1;
+  // Experience (e.g POS vs Kiosk)
+  common.Experience experience = 2;
+  // UUID of tip configuration
+  google.protobuf.StringValue uuid = 3;
+  // Should allow tips to be collected
+  google.protobuf.BoolValue should_collect_tips = 4;
+  // Array of tip that should be displayed. Normally of size 3
+  repeated google.protobuf.Int64Value suggested_percentage_tip = 5;
+  // Should have tips below a threshold be a flat rate instead of percentage
+  google.protobuf.BoolValue should_allow_flat_tip_threshold = 6;
+  // Array of flat tip that should be displayed. Normally of size 3
+  repeated google.protobuf.Int64Value suggested_flat_tip = 7;
+  // Should allow Cx to enter custom tip
+  google.protobuf.BoolValue should_allow_custom_tips = 8;
+}
+
+// UpdateTipConfiguration request
+message UpdateTipConfigurationRequest {
+  // Store ID
+  google.protobuf.StringValue store_id = 1;
+  // Tip configuration
+  TipConfiguration tip_configuration = 2;
+}
+
+// UpdateTipConfiguration response
+message UpdateTipConfigurationResponse {
+  // Tip configuration
+  TipConfiguration tip_configuration = 1;
+}
+
+// Get Kiosk Asset request
+message GetKioskAssetsRequest {
+  // Store id (required)
+  google.protobuf.StringValue store_id = 1;
+}
+
+// Get Kiosk Asset response
+message GetKioskAssetsResponse {
+  // Kiosk asset object
+  message KioskAsset {
+    // UUID of the kiosk asset
+    google.protobuf.StringValue uuid = 1;
+    // Type of kiosk asset
+    KioskAssetType asset_type = 2;
+    // URL of the kiosk asset
+    google.protobuf.StringValue image_url = 3;
+    // Photo UUID of the image in photo-service
+    google.protobuf.StringValue photo_uuid = 4;
+  }
+  // Kiosk Asset
+  repeated KioskAsset kiosk_assets = 1;
+}
+
+// Upsert Kiosk Asset request
+message UpsertKioskAssetRequest {
+  // UUID of the kiosk asset
+  google.protobuf.StringValue uuid = 1;
+  // Store id (required)
+  google.protobuf.StringValue store_id = 2;
+  // Type of kiosk asset
+  KioskAssetType asset_type = 3;
+  // URL of the kiosk asset
+  google.protobuf.StringValue image_url = 4;
+  // Photo UUID of the image in photo-service
+  google.protobuf.StringValue photo_uuid = 5;
+}
+
+// Upsert Kiosk Asset response
+message UpsertKioskAssetResponse {}
+
+// Delete Kiosk Asset request
+message DeleteKioskAssetRequest {
+  // UUID of kiosk asset to delete
+  google.protobuf.StringValue uuid = 1;
+  // Store id (required)
+  google.protobuf.StringValue store_id = 2;
+}
+
+// Delete Kiosk Asset response
+message DeleteKioskAssetResponse {}
+
+// The type of kiosk image asset
+enum KioskAssetType {
+  // Unspecified
+  KIOSK_ASSET_TYPE_UNSPECIFIED = 0;
+  // Menu banner
+  KIOSK_ASSET_TYPE_BANNER = 1;
+  // Welcome page background
+  KIOSK_ASSET_TYPE_BACKGROUND = 2;
+}
+
+// Get gift card balance request
+message GetGiftCardBalanceRequest {
+  // obfuscated gift card id
+  google.protobuf.StringValue external_gift_card_number_token = 1;
+
+  // currency (default to USD and guard against other currency types at launch)
+  google.protobuf.StringValue currency = 2;
+
+  // employee_uuid
+  google.protobuf.StringValue employee_uuid = 3;
+
+  // store id
+  google.protobuf.StringValue store_id = 4;
+
+  // experience
+  google.protobuf.StringValue experience = 5;
+}
+
+// Get gift card balance response
+message GetGiftCardBalanceResponse {
+  // balance on gift card
+  money.MonetaryFields balance = 1;
+}
+
+// Load gift card request
+message LoadGiftCardRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // order session uuid
+  google.protobuf.StringValue order_session_uuid = 2;
+  // order uuid (we may not need this)
+  google.protobuf.StringValue order_uuid = 3;
+  // cart uuid
+  google.protobuf.StringValue cart_uuid = 4;
+  // employee_uuid
+  google.protobuf.StringValue employee_uuid = 5;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 6;
+  // gift cards to load
+  repeated LoadGiftCardDetails gift_cards = 7;
+}
+
+// Load gift card request
+message LoadGiftCardResponse {
+  // success
+  message Success {
+    // loaded gift cards
+    repeated LoadedGiftCardDetails gift_cards = 1;
+  }
+  // error
+  message Error {
+    // String error code for the error.
+    string error_code = 1;
+    // error message
+    string error_message = 2;
+    // http_code
+    int32 http_code = 3;
+  }
+
+  // result is either success or error
+  oneof result {
+    // success
+    Success success = 1;
+    // error
+    Error error = 2;
+  }
+}
+
+// Requested load gift card details
+message LoadGiftCardDetails {
+  // obfuscated gift card id
+  google.protobuf.StringValue gift_card_number_token = 1;
+  // amount to load
+  money.MonetaryFields amount = 2;
+  // last 4 - optional will be used for logging
+  google.protobuf.StringValue last_4 = 3;
+}
+
+// Loaded gift cards details
+message LoadedGiftCardDetails {
+  // gift card number token
+  google.protobuf.StringValue external_gift_card_number_token = 1;
+  // current gift card value
+  money.MonetaryFields current_balance = 2;
+  // previous gift card value
+  money.MonetaryFields previous_balance = 3;
+  // last 4 - optional will be used for debugging
+  google.protobuf.StringValue last_4 = 4;
+}

@@ -1,0 +1,282 @@
+syntax = "proto3";
+package doordash.growth.notification_platform.v1;
+
+import "common/service_client_config.proto";
+import "comms-service/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/common/common.proto";
+import "growth/notification_platform/common.proto";
+import "postal_service/localization.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.growth.notification_platform";
+
+// Service definition of notification platform
+service NotificationPlatformService {
+  // Endpoint for sending single notification to Growth service
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+
+  // Endpoint for sending multiple notifications to Growth service, suggested batch size is 10 now, will update later
+  rpc SendBatchNotifications(SendBatchNotificationsRequest) returns (SendBatchNotificationsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+}
+
+// SendNotification endpoint request
+message SendNotificationRequest {
+  // reserved additional properties map reserved for sandbox debug endpoint
+  reserved 23;
+  reserved "properties";
+  // random and unique notification_request_id
+  google.protobuf.StringValue notification_request_id = 1;
+  // user_entity_id
+  google.protobuf.StringValue user_entity_id = 2;
+  // user_entity_type(ie., Cx, Dx)
+  UserEntityType user_entity_type = 3;
+  // program Id
+  google.protobuf.StringValue program_id = 4;
+  // program name
+  google.protobuf.StringValue program_name = 5;
+  // program experiment variant
+  google.protobuf.StringValue program_experiment_variant = 6;
+  // send timestamp
+  google.protobuf.Timestamp send_at = 7;
+  // scheduled time based on the time_zone below (ie., "17.5" stands for local time 17:30 PM)
+  google.protobuf.DoubleValue scheduled_at = 8;
+  // send now (ie., immediate send to bypass prioritization)
+  google.protobuf.BoolValue send_now = 9;
+  // source (ie., Iterable, FPN, Journey)
+  SourceType source = 10;
+  // channel (ie., Hub, Push, Email), Hub and Push may comes together as one notif request
+  repeated ChannelType channels = 11;
+  // message_channel (ie., Push Marketing)
+  google.protobuf.StringValue message_channel = 12;
+  // message_type (ie., Push Reminder, Push Recommendation)
+  doordash_comms_service.MessageType message_type = 13;
+  // user timeZone (ie., American/Los Angeles
+  google.protobuf.StringValue time_zone = 14;
+  // user locale (ie., en_US)
+  google.protobuf.StringValue locale = 15;
+  // notification contents
+  NotificationContents contents = 16;
+  // user email used by iterable for frequency cap(adhoc notifications needed)
+  google.protobuf.StringValue email = 17;
+  // expiresAt indicates when notification should be dropped from priority queue for non-realtime
+  google.protobuf.Timestamp expires_at = 18;
+  // message_type, will deprecate message_type field
+  NotificationMessageType notification_message_type = 19;
+  // notification audience Type
+  .growth.common.v1.NotificationAudienceType notification_audience_type = 20;
+  // metadata: this is optional and only needed for Mx role_id now, can add other metadata fields for other tenant.
+  Metadata metadata = 21;
+  // notification metadata
+  NotificationMetadata notification_metadata = 22;
+}
+
+// SendNotifications endpoint request
+message SendBatchNotificationsRequest {
+  // repeated SendNotificationRequest
+  repeated SendNotificationRequest notification_requests = 1;
+}
+
+// notification contents
+message NotificationContents {
+  // repeated NotificationContent
+  repeated NotificationContent contents = 1;
+}
+
+// content of notification
+message NotificationContent {
+  // content can be push, email, sms
+  oneof content {
+    // the content of push notification
+    PushNotificationContent push_content = 1;
+    // the content of hub notification
+    HubNotificationContent hub_content = 2;
+    // the content of email notification
+    EmailNotificationContent email_content = 3;
+  }
+}
+
+// the content of push notification
+message PushNotificationContent {
+  // reserved template_fields for V2 notification
+  reserved 10;
+  reserved "template_fields";
+  // title
+  google.protobuf.StringValue title = 1;
+  // body
+  google.protobuf.StringValue body = 2;
+  // deeplink
+  google.protobuf.StringValue deeplink = 3;
+  // imageURL
+  google.protobuf.StringValue image_url = 4;
+  // data_fields (if title and/or body is template string with placeholder fields)
+  map<string, string> data_fields = 5;
+  // schematized placeholders (if title and body are not given)
+  postal_service.v1.Placeholders placeholders = 6;
+  // push content template id in postal-service (if Placeholders is presented)
+  google.protobuf.StringValue configuration_id = 7;
+  // silent Push (Note: silent push currently only works well for iOS Devices)
+  google.protobuf.BoolValue silent_push = 8;
+  // expiresAt indicates when notification should be dropped if too long in processing
+  google.protobuf.Timestamp expires_at = 9;
+  // unique notification_uuid for 1 to 1 mapping with a notification content, used for tracking, optional
+  google.protobuf.StringValue notification_uuid = 11;
+}
+
+// the content of hub notification
+message HubNotificationContent {
+  // description
+  google.protobuf.StringValue description = 1;
+  // data_fields (if description is template string with placeholder fields)
+  map<string, string> data_fields = 2;
+  // schematized placeholders (if description is not given)
+  postal_service.v1.Placeholders placeholders = 3;
+  // hub content template id in growth-service (if Placeholders is presented)
+  google.protobuf.StringValue configuration_id = 4;
+  // custom map of data that source can send (optional)
+  google.protobuf.Struct custom = 5;
+  // Children data for hub content (contains hub carousel related info and optional)
+  repeated google.protobuf.Struct children = 6;
+  // expiresAt indicates when notification should be dropped if too long in processing
+  google.protobuf.Timestamp expires_at = 7;
+  // unique notification_uuid for 1 to 1 mapping with a notification content, used for tracking, optional
+  google.protobuf.StringValue notification_uuid = 8;
+}
+
+// the content of email notification
+message EmailNotificationContent {
+  // reserved template_fields for V2 notification
+  reserved 7;
+  reserved "template_fields";
+  // email campaign id
+  google.protobuf.StringValue template_id = 1;
+  // data fields
+  map<string, string> data_fields = 2;
+  // expiresAt indicates when notification should be dropped if too long in processing
+  google.protobuf.Timestamp expires_at = 3;
+  // list of customer email addresses
+  repeated google.protobuf.StringValue recipients_to = 4;
+  // list of cc email addresses
+  repeated google.protobuf.StringValue recipients_cc = 5;
+  // list of bcc email addresses
+  repeated google.protobuf.StringValue recipients_bcc = 6;
+  // unique notification_uuid for 1 to 1 mapping with a notification content, used for tracking, optional
+  google.protobuf.StringValue notification_uuid = 8;
+}
+
+// the metadata of User Entity used for notification sending or last mile check
+message UserMetadata {
+  // user locale (eg, en_US)
+  google.protobuf.StringValue locale = 1;
+  // user timeZone (eg, American/Los Angeles)
+  google.protobuf.StringValue time_zone = 2;
+}
+
+// the source of notification, ie., Iterable, EP, Journey
+enum SourceType {
+  // unspecified source
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  // source is Iterable
+  SOURCE_TYPE_ITERABLE = 1;
+  // source is FPN
+  SOURCE_TYPE_FPN = 2;
+  // source is Journey Workflow
+  SOURCE_TYPE_JOURNEY_WORKFLOW = 3;
+}
+
+// the type of channel
+enum ChannelType {
+  // unspecified channel
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  // channel type is push
+  CHANNEL_TYPE_PUSH = 1;
+  // channel type is notification hub
+  CHANNEL_TYPE_HUB = 2;
+  // channel type is email
+  CHANNEL_TYPE_EMAIL = 3;
+  // channel type is sms
+  CHANNEL_TYPE_SMS = 4;
+}
+
+// the Type of User Entity
+enum UserEntityType {
+  // unspecified entity type
+  USER_ENTITY_TYPE_UNSPECIFIED = 0;
+  // Consumer
+  USER_ENTITY_TYPE_CONSUMER = 1;
+  // Dasher
+  USER_ENTITY_TYPE_DASHER = 2;
+  // Merchant
+  USER_ENTITY_TYPE_MERCHANT = 3;
+  // Raw email
+  USER_ENTITY_TYPE_RAW_EMAIL = 4;
+}
+
+// Use metadata to include the role ids from Mx
+message Metadata {
+  // Mx role id is included.
+  repeated google.protobuf.Int32Value role_id = 1;
+  // Dx shift id
+  google.protobuf.Int32Value shift_id = 2;
+  // Dx content id (a.k.a delivery id)
+  google.protobuf.Int32Value content_id = 3;
+  // Dx content id, int64 for longer delivery ids
+  google.protobuf.Int64Value content_id_v2 = 4;
+  // Dx shift id with int64 support
+  google.protobuf.Int64Value shift_id_v2 = 5;
+}
+
+// Notification metadata to include campaign name and feature flags
+message NotificationMetadata {
+  // campaign name
+  google.protobuf.StringValue campaign_name = 1;
+
+  /* Interim feature flags used to control the rollout stages.
+     Once features are 100% enabled, these flags will not be required.
+     Since they are temporary flags, a free-formed map helps to simplify client-server sync.
+     Example flags include:
+     - should_use_offline_ranker_v0:
+       if true, use ranker. If false, process those notifs with is_candidate=false in PQ
+     - should_use_notification_ranker_v2:
+       if true, use sibyl ranker.
+     - is_candidate
+     - should_check_freshness
+     - should_check_store_openness
+     - should_check_store_radius
+     - should_check_promo
+  */
+  map<string, google.protobuf.BoolValue> feature_flags = 2;
+
+  // Following are fields needed to save the notification history.
+  // store id.
+  google.protobuf.StringValue store_id = 3;
+  // Notification content source, Eg, top10, TSN, offerHub, etc.
+  google.protobuf.StringValue content_source = 4;
+  // For MxP notification, promotion type is needed in notification history
+  google.protobuf.StringValue promotion_type = 5;
+  // passed from FPN to ATC for UPSS.
+  google.protobuf.StringValue notification_template_id = 6;
+}
+
+// SendNotification endpoint response
+message SendNotificationResponse {
+  // Unique Notification uuid to track successfully processed/sent notification.
+  string notification_uuid = 1;
+}
+
+// SendNotifications endpoint response
+message SendBatchNotificationsResponse {
+  // Unique Notification UUIDs to track all successfully processed/sent notifications.
+  repeated string notification_uuids = 1;
+}

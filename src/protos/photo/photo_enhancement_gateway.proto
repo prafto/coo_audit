@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package photoenhancementgateway.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "photo/photo.proto";
+
+option go_package = "photoenhancementgateway";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.photoenhancementgateway.grpc";
+
+// service that includes photo enhancement related APIs
+service PhotoEnhancementService {
+  option (doordash.api.service) = {
+    url: "photo-service-photo-enhancement-gateway.service.prod.ddsd"
+    name: "PhotoEnhancementService"
+    port: 50051
+    name_spaces: ["photo"]
+    api_key_name: "PHOTO-SERVICE-API-KEY"
+    owner: {
+      id: "photo-service-platform"
+      name: "photo"
+      slack_channel: "#ask-photo-eng"
+      email_alias: "core-mx-menu-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+  // Enhance a single by photo UUID
+  rpc EnhancePhotoByPhotoUUID(EnhancePhotoByPhotoUUIDRequest) returns (EnhancePhotoByPhotoUUIDResponse);
+  // Enhance photo by UUID asynchronously, used for FM
+  rpc EnhancePhotoByPhotoUUIDAsync(EnhancePhotoByPhotoUUIDAsyncRequest) returns (EnhancePhotoByPhotoUUIDAsyncResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {
+      post: "/photo/v1/enhance_photo_by_uuid_async"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        MX_USER,
+        DD_EMPLOYEE
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+/**
+ * Request to enhance photo
+ */
+message EnhancePhotoByPhotoUUIDRequest {
+  // UUID of the photo
+  google.protobuf.StringValue photo_uuid = 1;
+  // Json blob of the parameter to invoke the third party API
+  google.protobuf.StringValue parameters = 2;
+  // Enhancement provider type
+  EnhancementProvider enhancement_provider = 3;
+}
+
+// Response containing enhanced photo objects
+message EnhancePhotoByPhotoUUIDResponse {
+  // Array that holds enhanced photo object. It is possible that one enhancement request returns multiple photo objects
+  repeated photo.Photo photos = 1;
+}
+
+// Enum of the third party providers supported
+enum EnhancementProvider {
+  // Unspecified
+  ENHANCEMENT_PROVIDER_UNSPECIFIED = 0;
+  // Photoroom https://www.photoroom.com/api/docs/reference/87e1c15260b1f-image-editing-v2-plus-plan
+  ENHANCEMENT_PROVIDER_PHOTOROOM = 1;
+  // Claid
+  ENHANCEMENT_PROVIDER_CLAID = 2;
+}
+
+/**
+ * Request to enhance photo asynchronously, used for FM
+ */
+message EnhancePhotoByPhotoUUIDAsyncRequest {
+  // UUID of the photo
+  google.protobuf.StringValue photo_uuid = 1;
+  // Rescue type
+  photo.RescueType rescue_type = 2;
+}
+
+// Response containing workflow id of the cadence job
+message EnhancePhotoByPhotoUUIDAsyncResponse {
+  // workflow id of the cadence job
+  google.protobuf.StringValue workflow_id = 1;
+}

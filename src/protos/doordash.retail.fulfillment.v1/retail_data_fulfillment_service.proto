@@ -1,0 +1,434 @@
+syntax = "proto3";
+
+package doordash.retail.fulfillment.v1;
+
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "delivery_service/delivery_core.proto";
+import "doordash.retail.catalog.v1/fulfillment.proto";
+import "doordash.retail.common.v1/common.proto";
+import "doordash.retail.common.v1/delivery_debugger.proto";
+import "doordash.retail.order.v1/pick_pack.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+import "order/consumer_order.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.retail.fulfillment";
+
+// APIs for retail-fulfillment-data-service
+service RetailFulfillmentDataService {
+  // DB query call to update CRDB with new StoreLocation data.
+  rpc StoreItemLocationUpsert(StoreItemLocationUpsertRequest) returns (StoreItemLocationUpsertResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+  }
+  // Fetch store item locations given the specified store item IDs
+  rpc GetStoreItemLocations(GetStoreItemLocationsRequest) returns (GetStoreItemLocationsResponse);
+  // Fetch retail order by delivery uuid
+  // Note: this endpoint is for POC purpose only, please consult #eng_nvf_platform_pod before using
+  rpc GetCnGOrderByDeliveryUuid(GetCnGOrderByDeliveryUuidRequest) returns (GetCnGOrderByDeliveryUuidResponse);
+  // Upsert store's area list
+  rpc UpsertStoreItemLocationAreas(UpsertStoreItemLocationAreasRequest) returns (UpsertStoreItemLocationAreasResponse);
+  // Get store's area list
+  rpc GetStoreItemLocationAreas(GetStoreItemLocationAreasRequest) returns (GetStoreItemLocationAreasResponse);
+  // Upsert CreatePickPack to crdb
+  rpc UpsertCreatePickPack(UpsertCreatePickPackRequest) returns (UpsertCreatePickPackResponse);
+  // Get fulfillment metadata
+  rpc GetFulfillmentMetadata(GetFulfillmentMetadataRequest) returns (GetFulfillmentMetadataResponse);
+  // Upsert item_scanned_barcode to crdb item_scanned_barcode table
+  rpc UpsertItemScannedBarcode(UpsertItemScannedBarcodeRequest) returns (UpsertItemScannedBarcodeResponse);
+  // Get item_scanned_barcode from crdb item_scanned_barcode table
+  rpc GetItemScannedBarcode(GetItemScannedBarcodeRequest) returns (GetItemScannedBarcodeResponse);
+  // Get debug logs by uuid
+  rpc GetDebugLogs(GetDebugLogsRequest) returns (GetDebugLogsResponse);
+  // deduplication endpoint
+  rpc Dedupe(DedupeRequest) returns (DedupeResponse);
+}
+
+// Get debug logs request
+message GetDebugLogsRequest {
+  // Uuid to be looked up
+  string delivery_uuid = 1;
+}
+
+// Get debug logs response
+message GetDebugLogsResponse {
+  // List of logs
+  repeated LogLine log_line = 1;
+}
+
+// One line of debug log
+message LogLine {
+  // Event type
+  .doordash.retail.common.v1.EventType event_type = 1;
+  // Content
+  string content = 2;
+}
+
+// request for GetCnGOrderByDeliveryUuid
+message GetCnGOrderByDeliveryUuidRequest {
+  // delivery uuid
+  string delivery_uuid = 1;
+}
+
+// response for GetCnGOrderByDeliveryUuid
+message GetCnGOrderByDeliveryUuidResponse {
+  // shopping protocol
+  .order.ShoppingProtocol shopping_protocol = 1;
+  // delivery id
+  string delivery_id = 2;
+  // store id
+  string store_id = 3;
+  // dd order uuid
+  string dd_order_uuid = 4;
+  // dd order id
+  string dd_order_id = 5;
+  // consumer id
+  string consumer_id = 6;
+  // user id
+  string user_id = 7;
+  // is employee
+  bool is_employee = 8;
+  // order shopping status
+  .order.ShoppingStateInfo.ShoppingState shopping_state = 9;
+  // client device version
+  .common.ClientVersion client_version = 10;
+}
+
+// Store Item location Update for our services
+message StoreItemLocationUpsertRequest {
+  //required
+  string store_id = 1;
+  // Store item location entries
+  repeated StoreItemLocationEntry store_item_locations = 2;
+}
+
+// Class defining the store item location data
+message StoreItemLocationData {
+  //the aisle the item is located at
+  string aisle = 1;
+  // zone the item is located at
+  string zone = 2;
+  // Section the item is located at
+  string section = 3;
+  // Shelf the item is on
+  string shelf = 4;
+  // Which side of the aisle the item is located
+  string side = 5;
+  // Unparsed raw data that comes from merchants
+  string raw_text = 6;
+  // A specific, distinct, human-understandable location within a store
+  string area = 7;
+  // Probability score of area
+  google.protobuf.FloatValue area_probability = 8;
+  // the x,y coordinate of the item in the store
+  LocationInfo location_info = 9;
+  // item location area
+  string item_location_area = 10;
+  // ML inference data source
+  string inference_data_source = 11;
+  // additional details
+  string additional_details = 12;
+}
+
+// Enum specifying the source of item location data
+enum ItemLocationSource {
+  // Unspecified
+  ITEM_LOCATION_SOURCE_UNSPECIFIED = 0;
+  // ML taxonomy mapping v1.1
+  ITEM_LOCATION_SOURCE_ML_TAXONOMY_MAPPING_V1_1 = 1;
+  // Data scrape
+  ITEM_LOCATION_SOURCE_DATA_SCRAPE = 2;
+}
+
+// Class defining the souce of store item location data
+message StoreItemLocationSourceData {
+  // identify the aisle source
+  string aisle_source = 1;
+  // identify the zone source
+  string zone_source = 2;
+  // identify the section source
+  string section_source = 3;
+  // identify the shelf source
+  string shelf_source = 4;
+  // identify the side source
+  string side_source = 5;
+  // identify the raw text source
+  string raw_text_source = 6;
+  // identify the area source
+  string area_source = 7;
+  // identify the item location area source
+  string item_location_area_source = 8;
+}
+
+//Response message for when the item is uploaded.
+message StoreItemLocationUpsertResponse {
+  //response message after an upsert
+  string message = 1;
+}
+
+// Store item location entry containing ID + data
+message StoreItemLocationEntry {
+  // Mx item ID
+  string merchant_supplied_item_id = 1;
+  // Store item location data (To be deprecated soon)
+  StoreItemLocationData store_item_location_data = 2;
+  // Store item location data from merchant data
+  StoreItemLocationData store_item_location_merchant_data = 3;
+  // Store item location data from manual upload data
+  StoreItemLocationData store_item_location_manual_data = 4;
+  // Store item location data from inference data
+  StoreItemLocationData store_item_location_inference_data = 5;
+  // Store item location data from dasher data
+  StoreItemLocationData store_item_location_dasher_data = 6;
+}
+
+// Store item locations given the specified store item IDs
+message GetStoreItemLocationsRequest {
+  // Store ID
+  string store_id = 1;
+  // Mx item IDs
+  repeated string merchant_supplied_item_id = 2;
+}
+
+// Store item locations given the specified store item IDs
+message GetStoreItemLocationsResponse {
+  // Store ID
+  string store_id = 1;
+  // Store item location entries
+  repeated StoreItemLocationEntry store_item_locations = 2;
+}
+
+// Price info for store items
+message StoreItemPriceInfo {
+  // Currency e.g. USD
+  string currency = 1;
+  // For WI and non WI items, price seen by Cx
+  google.protobuf.Int32Value price_unit_amount = 2;
+  // For WI items only, price per unit of weight seen by Dx
+  google.protobuf.Int32Value measurement_price = 3;
+  // In feed price for WI, where purchase_type == measurement or purchase_type == measurement_unit
+  google.protobuf.Int32Value in_feed_measurement_price = 4;
+  // In feed price for rest
+  google.protobuf.Int32Value in_feed_unit_price = 5;
+  // Non Discount unit price
+  google.protobuf.Int32Value non_discount_unit_price = 6;
+  // Non Discount measurement price
+  google.protobuf.Int32Value non_discount_measurement_price = 7;
+  // Loyalty pricing - unit
+  google.protobuf.Int32Value loyalty_unit_price = 8;
+  // Loyalty pricing - measurement
+  google.protobuf.Int32Value loyalty_measurement_price = 9;
+  // In feed loyalty unit price
+  google.protobuf.Int32Value in_feed_loyalty_price = 10;
+  // In feed loyalty measurement price
+  google.protobuf.Int32Value in_feed_loyalty_measurement_price = 11;
+  // In fee non-discount unit price
+  google.protobuf.Int32Value in_feed_non_discount_price = 12;
+  // In fee non-discount measurement price
+  google.protobuf.Int32Value in_feed_non_discount_measurement_price = 13;
+}
+
+// Represents location information of an item
+message LocationInfo {
+  // X coordinate of the location
+  google.protobuf.DoubleValue location_x = 1;
+  // Y coordinate of the location
+  google.protobuf.DoubleValue location_y = 2;
+}
+
+// Store areas
+message StoreAreas {
+  // Store ID
+  string store_id = 1;
+  // Ordered list of areas
+  repeated string area = 2;
+}
+
+// Upsert store's area list
+message UpsertStoreItemLocationAreasRequest {
+  // Store areas
+  StoreAreas store_areas = 1;
+}
+
+// Response for upsert store's area list
+message UpsertStoreItemLocationAreasResponse {}
+
+// Get store's area list
+message GetStoreItemLocationAreasRequest {
+  // Store ID
+  string store_id = 1;
+}
+
+// Get store's area list
+message GetStoreItemLocationAreasResponse {
+  // Store areas
+  StoreAreas store_areas = 1;
+}
+
+// Data class
+message Data {
+  // Order message
+  message Order {
+    // Order id, generated by order service
+    string id = 1;
+    // Order uuid
+    google.protobuf.StringValue order_uuid = 2;
+    // order item
+    message OrderItem {
+      // merchant supplied id
+      string merchant_supplied_id = 1;
+      // Scan strategy
+      doordash.retail.catalog.v1.ScanStrategy scan_strategy = 2;
+      // purchase type
+      .common.marketplace_purchase.v1.PurchaseType purchase_type = 3;
+      // image url
+      string image_url = 4;
+      // measurement price
+      money.MonetaryFields measurement_price = 5;
+      // approximate sold as quantity
+      .common.Decimal approximate_sold_as_quantity = 6;
+      // measurement unit for weighted item
+      google.protobuf.StringValue measurement_unit_wi = 7;
+      // Unit_of_measurement, e.g. "qty", "ea", "each", "quantity", "package", "bag", and etc
+      string unit_of_measurement = 8;
+      // the stock level info
+      repeated .menu.StockLevelInfo stock_level_info = 9;
+      // restriction info
+      menu.RestrictionInfo restriction_info = 10;
+    }
+    // order items
+    repeated OrderItem order_items = 3;
+    // Quoted finish time
+    google.protobuf.Timestamp quoted_finish_time = 4;
+    // provider name
+    string provider_name = 5;
+    // business id
+    string business_id = 6;
+    // is checkout barcode enabled
+    bool is_checkout_barcode_enabled = 7;
+    // store information
+    .doordash.retail.common.v1.Store store = 8;
+    // Should call store order confirm in cadence workflow
+    bool should_confirm_cng_order = 9;
+    // business vertical Id
+    string business_vertical_id = 10;
+  }
+  // Order data
+  repeated Order orders = 1;
+  // Delivery audience info
+  .delivery_service.core.DeliveryAudienceInfoResponse delivery_audience_info_response = 2;
+}
+
+// UpsertCreatePickPackRequest
+message UpsertCreatePickPackRequest {
+  // Request protobuf from createPickPack
+  doordash.retail.order.v1.CreatePickPackRequest create_pick_pack_request = 1;
+  // Response of GetConsumerOrdersByDeliveryIds
+  .order_service.GetConsumerOrdersResponse get_consumer_orders_response = 2;
+  // Reserved for additional data
+  Data data = 3;
+}
+
+// UpsertCreatePickPackResponse
+message UpsertCreatePickPackResponse {}
+
+// GetFulfillmentMetadataRequest
+message GetFulfillmentMetadataRequest {
+  // Field mask
+  google.protobuf.FieldMask field_mask = 1;
+  // Delivery identifier
+  .order_service.DeliveryIdentifier delivery_identifier = 2;
+}
+
+// GetFulfillmentMetadataResponse
+message GetFulfillmentMetadataResponse {
+  // Request protobuf from createPickPack
+  doordash.retail.order.v1.CreatePickPackRequest create_pick_pack_request = 1;
+  // Response of GetConsumerOrdersByDeliveryIds
+  .order_service.GetConsumerOrdersResponse get_consumer_orders_response = 2;
+  // Reserved for additional data
+  Data data = 3;
+}
+
+// UpsertItemScannedBarcodeRequest
+message UpsertItemScannedBarcodeRequest {
+  // single request data
+  message Data {
+    // delivery uuid
+    string delivery_uuid = 1;
+    // merchant_supplied_id of either original item or substitute item
+    string merchant_supplied_id = 2;
+    // scanned_code
+    .doordash.retail.catalog.v1.Barcode scanned_barcode = 3;
+    // merchant_supplied_id of the incorrect item that was scanned, if any
+    google.protobuf.StringValue incorrect_item_ms_id = 4;
+  }
+  // batch request
+  repeated Data data = 1;
+}
+
+// UpsertItemScannedBarcodeResponse
+message UpsertItemScannedBarcodeResponse {}
+
+// GetItemScannedBarcodeRequest
+message GetItemScannedBarcodeRequest {
+  // single request data
+  message Data {
+    // delivery uuid
+    string delivery_uuid = 1;
+    // merchant_supplied_id of scanned item
+    string merchant_supplied_id = 2;
+  }
+  // batch request
+  repeated Data data = 1;
+}
+
+// UpsertItemScannedBarcodeResponse
+message GetItemScannedBarcodeResponse {
+  // single response data
+  message Data {
+    // delivery uuid
+    string delivery_uuid = 1;
+    // merchant_supplied_id of either original item or substitute item
+    string merchant_supplied_id = 2;
+    // scanned_code
+    .doordash.retail.catalog.v1.Barcode scanned_barcode = 3;
+    // merchant_supplied_id of the incorrect item that was scanned, if any
+    google.protobuf.StringValue incorrect_item_ms_id = 4;
+  }
+  // batch response
+  repeated Data data = 1;
+}
+
+// DedupeRequest
+message DedupeRequest {
+  // dedupe key
+  string dedupe_key = 1;
+  // use case
+  string use_case = 2;
+}
+
+// DedupeResponse
+message DedupeResponse {
+  // returns true if the event is not a duplicate otherwise false
+  bool can_process = 1;
+  // reason why canProcess is false; set only when canProcess is false
+  DedupeFailureReason dedupe_failure_reason = 2;
+}
+
+// DedupeFailureReason
+enum DedupeFailureReason {
+  // unspecified
+  DEDUPE_FAILURE_REASON_UNSPECIFIED = 0;
+  // the use_case specified is not supported
+  DEDUPE_FAILURE_REASON_EXPERIMENT_OFF = 1;
+  // the dudupe_key is already present the set
+  DEDUPE_FAILURE_REASON_DUPLICATE_EVENT = 2;
+}

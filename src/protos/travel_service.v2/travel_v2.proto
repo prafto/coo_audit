@@ -1,0 +1,444 @@
+syntax = "proto3";
+
+package travel_service.v2;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/travel_service.v2";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "TRAVEL_SERVICE_V2";
+option java_package = "com.doordash.rpc.travel.v2.service";
+
+// TravelService is responsible for eta and routing platform apis inside Doordash.
+service TravelService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web-travel";
+
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "client-service-name"}]
+  };
+
+  option (doordash.api.service) = {
+    name: "geo-intelligence-web-travel-v2-service"
+    url: "geo-intelligence-web-travel.service.prod.ddsd"
+    port: 50051
+    api_key_name: "TRAVEL_SERVICE_V2_API_KEY"
+    name_spaces: ["geo-intelligence"]
+    owner: {
+      name: "eta-team"
+      id: "eta-team"
+      slack_channel: "#ask-eta"
+      email_alias: "team-eta@doordash.com"
+    },
+    target_products: [
+      CX,
+      DX
+    ]
+  };
+
+  // rpc gets distance duration and polylines for given start and end lat/long coordinates for batched requests
+  rpc Directions(DirectionsRequest) returns (DirectionsResponse) {
+    //Adopting Hermes. https://doordash.atlassian.net/wiki/spaces/KP/pages/1869515134/Adopting+Hermes+Service+Reliability+Options
+    option (service_client.client_method_config).response_attempt_timeout_millis = 750;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+
+    option (google.api.http) = {
+      post: "/geo-intelligence/v2/directions"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [
+        CX_GUEST,
+        CX_USER,
+        DX_USER
+      ]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+
+  // rpc gets travel distance and duration for given start and end lat/long
+  rpc DistanceMatrix(DistanceMatrixRequest) returns (DistanceMatrixResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+
+  // rpc gets travel distance and duration for given set of start and end lat/long
+  rpc EstimateTravelInfo(EstimateTravelInfoRequest) returns (EstimateTravelInfoResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+// Business correlation identifiers for requests
+message BusinessCorrelationIds {
+  // delivery UUID
+  string delivery_uuid = 1;
+  // delivery Id
+  string delivery_id = 2;
+  // assignment Id
+  string assignment_id = 3;
+  //  cart uuid
+  string cart_uuid = 4;
+}
+
+// request context to know client and use case within the client. This mssg is primarily used for observatibility
+message RequestContext {
+  // tag string to track use-cases behind a prediction. Each client can have multiple use cases
+  string use_case = 1;
+  // tag string to help identify the calling service
+  string caller_service_name = 2;
+  // business correlation identifiers
+  BusinessCorrelationIds business_correlation_ids = 3;
+}
+
+// Precision Tier for requests
+enum PrecisionTier {
+  // un-defined
+  PRECISION_TIER_UNSPECIFIED = 0;
+  // precision X% accuracy pending analysis
+  PRECISION_TIER_1 = 1;
+  // precision Y% accuracy pending analysis
+  PRECISION_TIER_2 = 2;
+  // precision Y% accuracy pending analysis
+  PRECISION_TIER_3 = 3;
+}
+
+// message that denotes coordinate with lat and long info
+message Coordinate {
+  // latitude
+  google.protobuf.DoubleValue lat = 1;
+  // longitude
+  google.protobuf.DoubleValue lng = 2;
+}
+
+// wrapper around coordinated to include additional fields for future extensions
+message Location {
+  // coordinate
+  Coordinate coordinate = 1;
+}
+
+// Batched Requests proto for Directions
+message DirectionsRequest {
+  // deleted fields. Do not use
+  reserved 6;
+  // location
+  Location origin = 1;
+  // location
+  Location destination = 2;
+  // waypoints that need to be traversed from origin to dest
+  repeated Location waypoints = 3;
+  // Vehicle mode
+  TravelMode travel_mode = 4;
+  // timestamp (UTC) when travel begins.  If left empty, current UTC time will be used
+  google.protobuf.Timestamp departure_time = 5;
+  // Parameter to understand client
+  RequestContext request_context = 7;
+  // geometry type
+  GeometryType geometry_type = 8;
+
+  // this is the optional id that can be used to link the request and response. Also used for observability
+  // default value is empty string and created on the server side
+  string request_id = 9;
+}
+
+// Batched Response proto for Directions
+message DirectionsResponse {
+  reserved 5;
+  // In Seconds
+  google.protobuf.Int64Value duration_seconds = 1;
+  // In Meters
+  google.protobuf.Int64Value distance_meters = 2;
+  // Encoded Polyline. Polyline are only available for successful high precision tier requests
+  google.protobuf.StringValue encoded_polyline = 3;
+  // Response Status
+  // This will be deprecated in future versions as we are running few experiment now. Please use the code field
+  Status status = 4;
+  // Origin and destination of each route leg
+  repeated RouteLeg route_legs = 6;
+  // Is there a toll on the route
+  google.protobuf.BoolValue has_toll = 7;
+  // viewport bounding box of polyline
+  Bounds bounds = 8;
+
+  // this is the optional id that can be used to link the request and response
+  string response_id = 9;
+
+  // error code for directions
+  DirectionStatusCode code = 10;
+}
+
+// Travel Vendor info
+enum TravelVendor {
+  // If left unspecified, google maps directions api was used
+  TRAVEL_VENDOR_UNSPECIFIED = 0;
+  //Google
+  TRAVEL_VENDOR_GOOGLE_MAPS = 1;
+  // Haversine
+  TRAVEL_VENDOR_MAPBOX = 2;
+  // Vincenty
+  TRAVEL_VENDOR_VINCENTY = 3;
+  // OSRM
+  TRAVEL_VENDOR_OSRM = 4;
+}
+
+// Mode of Travel
+enum TravelMode {
+  // service will assume car if left unspecified
+  TRAVEL_MODE_UNSPECIFIED = 0;
+  // Car
+  TRAVEL_MODE_CAR = 1;
+  // Bicycle
+  TRAVEL_MODE_BICYCLE = 2;
+  // Walking
+  TRAVEL_MODE_WALKING = 3;
+}
+
+// Response Status Type
+enum Status {
+  // default status
+  STATUS_UNSPECIFIED = 0;
+  // Successful request
+  STATUS_OK = 1;
+  // Successful request but fallback was used
+  STATUS_OK_WITH_FALLBACK = 2;
+  // Request yielded zero results
+  STATUS_ZERO_RESULTS = 3;
+  // Request returned Not Found Response
+  STATUS_NOT_FOUND = 4;
+  // Request exceeds daily limit for client
+  STATUS_OVER_DAILY_LIMIT = 5;
+  // Request exceeds daily limit for client
+  STATUS_OVER_QUERY_LIMIT = 6;
+  // Request was denied because of wrong credentials
+  STATUS_REQUEST_DENIED = 7;
+  // Invalid Request
+  STATUS_INVALID_REQUEST = 8;
+  // The maximum allowed number of waypoints is 25, plus the origin and destination or else the status below
+  STATUS_MAX_WAYPOINTS_EXCEEDED = 9;
+  // Indicates the requested route is too long and cannot be processed. This error occurs when more complex directions are returned
+  STATUS_MAX_ROUTE_LENGTH_EXCEEDED = 10;
+  // default status chosen if error is not identified
+  STATUS_UNKNOWN_ERROR = 11;
+}
+
+// Error code for directions
+enum DirectionStatusCode {
+  // default status
+  DIRECTION_STATUS_CODE_UNSPECIFIED = 0;
+  // Successful request
+  DIRECTION_STATUS_CODE_OK = 1;
+  // Successful request but fallback was used
+  DIRECTION_STATUS_CODE_OK_WITH_FALLBACK = 2;
+  // Invalid Request
+  DIRECTION_STATUS_CODE_INVALID_REQUEST = 3;
+  // No route found
+  DIRECTION_STATUS_CODE_NO_ROUTE = 4;
+  // Internal Error
+  DIRECTION_STATUS_CODE_INTERNAL_ERROR = 5;
+}
+
+// This is the type of geometry returned by the api- polyline5 or polyline6
+enum GeometryType {
+  // If left unspecified, google maps directions api was used
+  GEOMETRY_TYPE_UNSPECIFIED = 0;
+  //Polyline5
+  GEOMETRY_TYPE_POLYLINE_5 = 1;
+  //Polyline6
+  GEOMETRY_TYPE_POLYLINE_6 = 2;
+}
+
+// Route Leg
+message RouteLeg {
+  // origin of the leg
+  Coordinate start_location = 1;
+  // destination of the leg
+  Coordinate end_location = 2;
+  // steps within the route leg
+  repeated Step steps = 3;
+  // duration of the leg
+  double duration = 4;
+  // distance of the leg
+  double distance = 5;
+}
+
+// Steps
+message Step {
+  // step polyline - only available for successful high precision requests
+  google.protobuf.StringValue step_polyline = 1;
+}
+
+// Bounds
+message Bounds {
+  // northeast boundary
+  Coordinate northeast = 1;
+  // southwest boundary
+  Coordinate southwest = 2;
+}
+
+//  Requests proto for EstimateTravelInfo
+message DistanceMatrixRequest {
+  // deleted fields. Do not use
+  reserved 6;
+  // origin locations
+  repeated Location origins = 1;
+  // origin locations
+  repeated Location destinations = 2;
+  // Vehicle mode
+  TravelMode travel_mode = 3;
+  // timestamp (UTC) when travel begins.  If left empty, current UTC time will be used
+  google.protobuf.Timestamp departure_time = 4;
+  // Parameter to understand client
+  RequestContext request_context = 5;
+
+  // this is the optional id that can be used to link the request and response. Also used for observability
+  // default value is empty string and created on the server side
+  string request_id = 7;
+}
+
+// Response proto for EstimateTravelInfo
+message DistanceMatrixResponse {
+  // list of values
+  message ListOfDouble {
+    // value
+    repeated double value = 1;
+  }
+  // durations in seconds
+  repeated ListOfDouble durations = 1;
+  // distances in meters
+  repeated ListOfDouble distances = 2;
+  // Response Status
+  // This will be deprecated in future versions as we are running few experiment now. Please use the code field
+  Status status = 3;
+  // this is the  id that can be used to link the request and response - this is the same as request_id
+  string response_id = 4;
+  // error code for distance matrix response
+  MatrixStatusCode code = 5;
+}
+
+// Error code for distance matrix response
+enum MatrixStatusCode {
+  // default status
+  MATRIX_STATUS_CODE_UNSPECIFIED = 0;
+  // Successful request
+  MATRIX_STATUS_CODE_OK = 1;
+  // Successful request but fallback was used
+  MATRIX_STATUS_CODE_OK_WITH_FALLBACK = 2;
+  // Invalid Request
+  MATRIX_STATUS_CODE_INVALID_REQUEST = 3;
+  // No route found
+  MATRIX_STATUS_CODE_NO_ROUTE = 4;
+  // Internal Error
+  MATRIX_STATUS_CODE_INTERNAL_ERROR = 5;
+}
+
+// Batched Requests proto for EstimateTravelInfo
+message EstimateTravelInfoRequest {
+  // deleted fields. Do not use
+  reserved 2;
+
+  // Individual message for estimation requests
+  message TravelEstimateRequest {
+    // origin point of travel
+    Location origin = 1;
+    // destination point of travel
+    Location destination = 2;
+    // Vehicle mode
+    TravelMode travel_mode = 3;
+    // timestamp (UTC) when travel begins.  If left empty, current UTC time will be used
+    google.protobuf.Timestamp departure_time = 4;
+  }
+
+  // batched requests
+  repeated TravelEstimateRequest requests = 1;
+
+  // Parameter to understand client
+  RequestContext request_context = 3;
+
+  // this is the optional id that can be used to link the request and response. Also used for observability
+  // default value is empty string and created on the server side
+  string request_id = 4;
+}
+
+// Batched Response proto for EstimateTravelInfo
+message EstimateTravelInfoResponse {
+  // Individual Estimation Response
+  message TravelEstimateResponse {
+    // Response Status
+    Status status = 1;
+    // In Seconds
+    google.protobuf.Int64Value duration_seconds = 2;
+    // In Meters
+    google.protobuf.Int64Value distance_meters = 3;
+
+    // error code for travel estimate response
+    TravelEstimateStatusCode code = 4;
+  }
+  // Batched Responses
+  repeated TravelEstimateResponse estimation_responses = 1;
+
+  // Overall Response
+  // This will be deprecated in future versions as we are running few experiment now. Please use the code field
+  Status status = 2;
+
+  // this is the id that can be used to link the request and response - this is the same as request_id
+  string response_id = 3;
+
+  // Overall Response status code
+  EstimateTravelInfoStatusCode code = 4;
+}
+
+// Error code for travel estimate response
+enum TravelEstimateStatusCode {
+  // default status
+  TRAVEL_ESTIMATE_STATUS_CODE_UNSPECIFIED = 0;
+  // Successful request
+  TRAVEL_ESTIMATE_STATUS_CODE_OK = 1;
+  // Successful request but fallback was used
+  TRAVEL_ESTIMATE_STATUS_CODE_OK_WITH_FALLBACK = 2;
+  // Invalid Request
+  TRAVEL_ESTIMATE_STATUS_CODE_INVALID_REQUEST = 3;
+  // No route found
+  TRAVEL_ESTIMATE_STATUS_CODE_NO_ROUTE = 4;
+  // Internal Error
+  TRAVEL_ESTIMATE_STATUS_CODE_INTERNAL_ERROR = 5;
+}
+
+// Error code for EstimateTravelInfo
+enum EstimateTravelInfoStatusCode {
+  // default status
+  ESTIMATE_TRAVEL_INFO_STATUS_CODE_UNSPECIFIED = 0;
+  // Successful request
+  ESTIMATE_TRAVEL_INFO_STATUS_CODE_OK = 1;
+  // partial results returned
+  ESTIMATE_TRAVEL_INFO_STATUS_CODE_PARTIAL_RESULTS = 2;
+  // Internal Error
+  ESTIMATE_TRAVEL_INFO_STATUS_CODE_INTERNAL_ERROR = 3;
+}

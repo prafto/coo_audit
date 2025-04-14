@@ -1,0 +1,703 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package loyalty_serivce;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "common/store_loyalty.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "loyalty_service/common.proto";
+import "loyalty_service/loyalty_external_offer.proto";
+import "loyalty_service/loyalty_program.proto";
+import "loyalty_service/merchant_loyalty.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.loyalty.doordash";
+
+// Homegrown loyalty service
+service DoorDashLoyaltyService {
+  option (service_client.client_config).service_name = "loyalty-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (doordash.api.service) = {
+    name: "loyalty-service"
+    url: "loyalty-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["loyalty"]
+    owner: {
+      name: "teams-working-with-loyalty-service"
+      // There is only one endpoint on Unified Gateway right now, so send alerting to Bbot
+      // Revisit this if that changes
+      id: "teams-working-with-loyalty-service-"
+      slack_channel: "#ask-mx-loyalty-eng"
+      email_alias: "ocl-engineering@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // return DoorDash sponsored loyalty program and consumer rewards progress
+  rpc GetDoorDashLoyalty(GetDoorDashLoyaltyRequest) returns (GetDoorDashLoyaltyResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // returns points earned by a user for each campaign in a list of campaigns
+  // called by:
+  // promotion-service
+  rpc GetLoyaltyPointsByProgramIds(GetLoyaltyPointsByProgramIdsRequest) returns (GetLoyaltyPointsByProgramIdsResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // returns program and status for each campaign and consumer id
+  // called by:
+  // feed-service
+  rpc GetLoyaltyStatusByCampaignIds(GetLoyaltyStatusByCampaignIdsRequest) returns (GetLoyaltyStatusByCampaignIdsResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // returns either homegrown loyalty or integration loyalty program and membership
+  rpc GetLoyaltyProgramAndMembership(GetLoyaltyProgramAndMembershipRequest) returns (GetLoyaltyProgramAndMembershipResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 150;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // returns rewards information for a consumer based on a given status type
+  rpc GetRewardsByStatus(GetRewardsByStatusRequest) returns (GetRewardsByStatusResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // API to update loyalty user journey stage
+  rpc UpdateLoyaltyUserJourneyStage(UpdateLoyaltyUserJourneyStageRequest) returns (UpdateLoyaltyUserJourneyStageResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  // API to get aggregate loyalty consumer data across all programs consumer has ordered at.
+  rpc GetAggregateConsumerLoyaltyData(GetAggregateConsumerLoyaltyDataRequest) returns (GetAggregateConsumerLoyaltyDataResponse);
+
+  // get external loyalty transactions for Cx with pagination support
+  // called by: feed service
+  rpc GetExternalLoyaltyTransactions(GetExternalLoyaltyTransactionsRequest) returns (GetExternalLoyaltyTransactionsResponse);
+
+  // Fetches the loyalty membership status & phone number for a given consumer & program
+  rpc FetchOCLMembershipForCx(FetchOCLMembershipForCxRequest) returns (FetchOCLMembershipForCxResponse);
+  // Opts in MP Cx to OCL
+  rpc OptInMPCxToOCL(OptInMPCxToOCLRequest) returns (OptInMPCxToOCLResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/programs/{program_id}/ocl-membership"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [CX_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // endpoint for importing third party loyalty data
+  rpc ThirdPartyLoyaltyProgramJob(ThirdPartyLoyaltyProgramJobRequest) returns (ThirdPartyLoyaltyProgramJobResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/business/{business_id}/import-loyalty-points"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  // endpoint for fetching all import files
+  rpc FetchThirdPartyLoyaltyProgramJobs(FetchThirdPartyLoyaltyProgramJobsRequest) returns (FetchThirdPartyLoyaltyProgramJobsResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/import/job-status"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [MX_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+}
+
+// Request to get the external loyalty transactions for a Cx
+message GetExternalLoyaltyTransactionsRequest {
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // program id
+  google.protobuf.StringValue program_id = 2;
+  // loyalty provider
+  common.LoyaltyProviderType loyalty_provider = 3;
+  // token used for pagination, for example it will store the created_at timestamp of the last transaction
+  google.protobuf.StringValue token = 4;
+  // limit for the number of rows to return, if not provided, default limit will be used
+  google.protobuf.Int32Value limit = 5;
+}
+
+// Response containing the external loyalty transactions for a Cx
+message GetExternalLoyaltyTransactionsResponse {
+  // loyalty transactions
+  repeated ExternalLoyaltyTransaction transactions = 1;
+  // next page token, will be null if no more to fetch
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Information of an external loyalty transaction
+message ExternalLoyaltyTransaction {
+  // transaction id
+  google.protobuf.StringValue transaction_id = 1;
+  // order uuid
+  google.protobuf.StringValue order_uuid = 2;
+  // actual points to display
+  google.protobuf.Int32Value actual_points = 3;
+  // if the order has any ineligible items for points accrual
+  google.protobuf.BoolValue has_ineligible_items = 4;
+  // transaction created at timestamp
+  google.protobuf.Timestamp transaction_date = 5;
+}
+
+// The homegrown loyalty program
+message DoorDashLoyaltyProgram {
+  // identifier for the program
+  google.protobuf.StringValue id = 1;
+  // the point system of the loyalty program
+  google.protobuf.StringValue point_system_type = 2;
+  // base point value
+  google.protobuf.StringValue point_system_base_value = 3;
+  // list of accelerators for this program
+  repeated DoorDashLoyaltyAccelerator accelerators = 4;
+  // list of promotions for this program
+  repeated DoorDashLoyaltyProgramPromotion promotions = 5;
+  // minimum spend to earn progress for a given program
+  google.protobuf.UInt32Value min_spend_for_progress = 6;
+  // reward expiration in days
+  google.protobuf.Int32Value reward_expiration_days = 7;
+  // program experience
+  common.Experience experience = 8;
+  // reward type
+  LoyaltyRewardSystemType reward_type = 9;
+  // list of required items to earn item-restricted loyalty program points
+  repeated google.protobuf.StringValue required_items_for_points_accrual = 10;
+  // program type
+  LoyaltyProgram.ProgramType program_type = 11;
+  // challenge expiration days for personalized rewards programs
+  google.protobuf.Int32Value challenge_expiration_days = 12;
+  // program expiration days after Mx cancels
+  google.protobuf.Int32Value program_expiration_days = 13;
+  // dineout rewards enabled
+  google.protobuf.BoolValue dineout_rewards_enabled = 14;
+
+  // Contains the accelerator information for a loyalty program
+  message DoorDashLoyaltyAccelerator {
+    // the segment type value
+    google.protobuf.StringValue segment_type_value = 1;
+    // segment value (can be null or un-set)
+    google.protobuf.StringValue segment_requirement_value = 2;
+    // points multiplier
+    google.protobuf.StringValue point_multiplier = 3;
+    // bonus points
+    google.protobuf.StringValue point_value = 4;
+  }
+
+  // contains program promotino informaiton
+  message DoorDashLoyaltyProgramPromotion {
+    // the campaign_id of the promotion
+    google.protobuf.StringValue campaign_id = 1;
+    // loyalty rewards promotion name
+    google.protobuf.StringValue name = 2;
+    // the points required for incentive to apply
+    google.protobuf.StringValue incentive_criteria_points = 3;
+    // the promotion type
+    PromotionType type = 4;
+    // the reward item id for free item program
+    google.protobuf.StringValue reward_item_id = 5;
+    // incentive currency
+    google.protobuf.StringValue incentive_currency = 6;
+
+    // a promotion can have two types: DOLLARS_OFF vs FREE_ITEM
+    enum PromotionType {
+      // unspecified promotion type
+      PROMOTION_TYPE_UNSPECIFIED = 0;
+      // dollars off, like $5 off cart reward
+      PROMOTION_TYPE_DOLLARS_OFF = 1;
+      // free item, like free french fries
+      PROMOTION_TYPE_FREE_ITEM = 2;
+    }
+  }
+}
+
+// The rewards progress summary
+message RewardsProgressSummary {
+  // the current points the user has for this rewards program
+  google.protobuf.StringValue current_points = 1;
+  // rewards progress for each available promo
+  PointsSummaryPerPromotion points_summary = 2;
+  // remaining days until reward expiration for each reward a user has, ascending by remaining days/reward earned date
+  repeated google.protobuf.Int32Value rewards_remaining_days_until_expiration = 3;
+
+  // Contains the points summary per promotion for rendering homegrown loyalty UI
+  message PointsSummaryPerPromotion {
+    // Points towards next available reward
+    google.protobuf.StringValue remaining_points = 1;
+    // Decimal string for the current progress on the scale of 1
+    google.protobuf.StringValue current_progress_on_scale_1 = 2;
+  }
+}
+
+// Request to get homegrown loyalty program and membership
+message GetDoorDashLoyaltyRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // optional store id
+  google.protobuf.StringValue store_id = 3;
+  // experience
+  common.Experience experience = 4;
+  // loyalty user journey name
+  google.protobuf.StringValue loyalty_user_journey_name = 5;
+}
+
+// Response to get homegrown loyalty program and membership
+message GetDoorDashLoyaltyResponse {
+  // on success, return loyalty program and rewards progress
+  message Success {
+    // loyalty program associated with reference id
+    DoorDashLoyaltyProgram program = 1;
+    // consumer rewards progress details against the program
+    RewardsProgressSummary rewards_progress_summary = 2;
+    // loyalty user journey stage
+    LoyaltyUserJourneyStage user_journey_stage = 3;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return program and membership
+    Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// Loyalty user journey stage
+message LoyaltyUserJourneyStage {
+  // stage
+  google.protobuf.UInt32Value stage = 1;
+  // number of visits
+  google.protobuf.UInt32Value num_of_visits = 2;
+  // most recently points transaction date
+  google.protobuf.Timestamp most_recent_transaction_date = 3;
+  // timestamp of stage change
+  google.protobuf.Timestamp stage_timestamp = 4;
+  // most recent order uuid
+  google.protobuf.StringValue most_recent_order_uuid = 5;
+  // number of visits after sign up, exclude guest visits made before signing up
+  google.protobuf.UInt32Value num_of_visits_after_sign_up = 6;
+}
+
+// Request to get points earned by a user across a list of programs
+message GetLoyaltyPointsByProgramIdsRequest {
+  // The consumer id for which we want to query loyalty points
+  google.protobuf.StringValue consumer_id = 1;
+  // a list of program_ids for which we want to check for loyalty points
+  repeated google.protobuf.StringValue program_ids = 2;
+  // a list of external offer details for which we want to check eligibility
+  repeated ExternalOfferDetails external_offer_details = 3;
+  // Experience for the consumer being checked
+  common.Experience experience = 4;
+
+  // external offer details
+  message ExternalOfferDetails {
+    // program_ids for which the external offer id belongs to
+    google.protobuf.StringValue program_id = 1;
+    // external_offer_ids for which we want to check for loyalty points
+    google.protobuf.StringValue external_offer_id = 2;
+  }
+}
+
+// Response to return points earned by a user across a list of programs
+message GetLoyaltyPointsByProgramIdsResponse {
+  // a map between the program_ids and the points earned the user earned for said program
+  map<string, google.protobuf.Int32Value> loyalty_points_by_program_id = 1;
+  // a mapping between a program_id and the campaign it should tied to
+  map<string, string> program_id_to_campaign_id_map = 3;
+  // a map between the external_offer_ids and the points (0 or1) depicting whether the offer is applicable or not
+  map<string, google.protobuf.Int32Value> loyalty_points_by_external_offer_id = 4;
+  // a map between the program_ids and the min_spend to earn points for the program
+  map<string, google.protobuf.Int32Value> min_spend_by_program_id = 5;
+  // a map between the program_ids and the user loyalty state at each program
+  map<string, common.loyalty.v1.UserLoyaltyStateType> user_loyalty_state_by_program_id = 6;
+  // a map between program_id and the list of remaining days until reward expiration, ascending by expiration days (earliest reward expiration is first)
+  map<string, RewardsRemainingDaysUntilExpiration> rewards_remaining_days_until_expiration_by_program_id = 7;
+  // map between program_id and the expiration date of the most recent expired reward
+  map<string, google.protobuf.Timestamp> recent_expired_reward_date_by_program_id = 8;
+  // map between program_id and the dynamically-generated title to be used in promotion-service for banners
+  map<string, google.protobuf.StringValue> dynamic_title_by_program_id = 9;
+  // map between program_id and the dynamically-generated subtitle to be used in promotion-service for banners
+  map<string, google.protobuf.StringValue> dynamic_subtitle_by_program_id = 10;
+}
+
+// wrapper for rewards_remaining_days_until_expiration list
+message RewardsRemainingDaysUntilExpiration {
+  // remaining days until reward expiration for each reward a user has, ascending by remaining days/reward earned date
+  repeated google.protobuf.Int32Value rewards_remaining_days_until_expiration = 1;
+}
+
+// Request to get loyalty program and status by campaign and cx id
+message GetLoyaltyStatusByCampaignIdsRequest {
+  // The consumer id for which we want to query loyalty points
+  google.protobuf.StringValue consumer_id = 1;
+  // a list of campaign ids for which we want to check for loyalty status
+  repeated google.protobuf.StringValue campaign_ids = 2;
+}
+
+// Response to return loyalty program and status by cx for the list of campaigns
+message GetLoyaltyStatusByCampaignIdsResponse {
+  // a map between the campaign id and the loyalty program and status
+  map<string, HomegrownLoyaltyStatus> loyalty_program_by_campaign_id = 1;
+}
+
+// Homegrown loyalty cx reward status
+message HomegrownLoyaltyStatus {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // campaign id
+  google.protobuf.StringValue campaign_id = 2;
+  // program id
+  google.protobuf.StringValue program_id = 3;
+  // loyalty rewards promotion name
+  google.protobuf.StringValue reward_name = 4;
+  // if cx has earned this reward
+  google.protobuf.BoolValue has_earned_reward = 5;
+  // the point system of the loyalty program
+  google.protobuf.StringValue point_system_type = 6;
+  // reward type
+  google.protobuf.StringValue reward_type = 7;
+}
+
+// Homegrown loyalty program (provider: DOORDASH)
+message HomegrownProgram {
+  // loyalty program associated with reference id
+  DoorDashLoyaltyProgram program = 1;
+  // consumer rewards progress details against the program
+  RewardsProgressSummary rewards_progress_summary = 2;
+}
+
+// Integration loyalty program
+message IntegrationProgram {
+  // identifier for the program
+  google.protobuf.StringValue id = 1;
+  // cms id for the program
+  google.protobuf.StringValue cms_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // loyalty_code or membership card number that consumer has
+  google.protobuf.StringValue loyalty_code = 4;
+  // loyalty external consumer id
+  google.protobuf.StringValue external_consumer_id = 5;
+}
+
+// Request to get loyalty program
+message GetLoyaltyProgramAndMembershipRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // optional store id
+  google.protobuf.StringValue store_id = 3;
+  // experience
+  common.Experience experience = 4;
+}
+
+// Response to return either homegrown or integration program
+message GetLoyaltyProgramAndMembershipResponse {
+  // on success, return loyalty program and rewards progress
+  message Success {
+    // provider type, this field decides whether this program is homegrown or integration loyalty
+    google.protobuf.StringValue provider_type = 1;
+    // loyalty program
+    oneof program {
+      // homegrown program
+      HomegrownProgram homegrown_program = 2;
+      // integration program
+      IntegrationProgram integration_program = 3;
+    }
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return program and membership
+    Success success = 1;
+    // on failure, return error
+    MerchantLoyaltyError error = 2;
+  }
+}
+
+// request to get a list of reward information by status for a particular consumer
+message GetRewardsByStatusRequest {
+  // different type of reward status that we can query for
+  enum RewardStatusType {
+    // unspecified reward status
+    REWARD_STATUS_TYPE_UNSPECIFIED = 0;
+    // unredeemed reward status
+    REWARD_STATUS_TYPE_UNREDEEMED = 1;
+  }
+  // the type of status we would like to query for
+  RewardStatusType status_type = 1;
+  // the consumer we would like to query for
+  google.protobuf.StringValue consumer_id = 2;
+  // the maximum amount of rewards to fetch
+  google.protobuf.Int32Value max_rewards = 3;
+}
+
+// response for fetching a list of rewards for a consumer based on some status
+message GetRewardsByStatusResponse {
+  // reward details
+  message Reward {
+    // the store that the reward belongs to
+    google.protobuf.StringValue store_id = 1;
+    // the name of the merchant
+    google.protobuf.StringValue merchant_name = 2;
+    // reward name or value (i.e. $5 off/ Free Pizza)
+    google.protobuf.StringValue reward_name = 3;
+    // # of points earned total
+    google.protobuf.Int32Value points_earned = 4;
+    // total available points the Cx has
+    google.protobuf.Int32Value points_balance = 5;
+    // points required to unlock the reward
+    google.protobuf.Int32Value incentive_criteria_points = 6;
+    // cumulative_points_earned - cumulative_points_redeemed > program threshold
+    google.protobuf.BoolValue has_met_program_threshold = 7;
+    // how points are calculated (e.g. subtotal, visits)
+    MerchantLoyaltyPointSystemType point_system = 8;
+    // consumer id
+    google.protobuf.StringValue consumer_id = 9;
+    // date the order was placed
+    google.protobuf.Timestamp active_date = 10;
+    // # of points earned in the Cx latest order
+    google.protobuf.Int32Value points_earned_latest = 11;
+  }
+  // a list of rewards to return to client
+  repeated Reward rewards = 1;
+}
+
+// request for updating loyalty user journey status
+message UpdateLoyaltyUserJourneyStageRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+  // experience, such as 'DOORDASH'
+  common.Experience experience = 4;
+  // journey name, such as 'store_loyalty_user_journey_v1'
+  google.protobuf.StringValue journey_name = 5;
+  // stage, such as 4
+  google.protobuf.UInt32Value stage = 6;
+}
+
+// response for updating loyalty user journey status
+message UpdateLoyaltyUserJourneyStageResponse {
+  // stage, such as 4
+  google.protobuf.UInt32Value stage = 1;
+}
+
+// first party Cx OCL membership status request
+message FetchOCLMembershipForCxRequest {
+  // customer id
+  google.protobuf.StringValue consumer_id = 1;
+  // consumer experience
+  common.Experience consumer_experience = 2;
+  // program id
+  google.protobuf.StringValue program_id = 3;
+  // store id
+  google.protobuf.StringValue store_id = 4;
+}
+
+// first party Cx OCL membership status response
+message FetchOCLMembershipForCxResponse {
+  // loyalty membership status
+  google.protobuf.BoolValue is_opt_in_ocl = 1;
+  // MP Cx phone number associated with ocl membership
+  google.protobuf.StringValue phone_number = 3;
+}
+
+// first party Cx OCL link request
+message OptInMPCxToOCLRequest {
+  // customer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // consumer experience
+  common.Experience consumer_experience = 2;
+  // program id
+  google.protobuf.StringValue program_id = 3;
+  // business id
+  google.protobuf.StringValue business_id = 4;
+  // store id
+  google.protobuf.StringValue store_id = 5;
+}
+
+// request to get aggregate consumer loyalty data given a consumer experience
+message GetAggregateConsumerLoyaltyDataRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // consumer experience
+  common.Experience consumer_experience = 2;
+}
+
+// Response for fetching aggregate consumer loyalty data given a consumer experience
+message GetAggregateConsumerLoyaltyDataResponse {
+  // Aggregation of consumer loyalty data for each program that Cx has ordered at.
+  repeated ConsumerLoyaltyData consumer_loyalty_data = 1;
+}
+
+// Consumer loyalty data bundle
+message ConsumerLoyaltyData {
+  // loyalty data in view form, with title, subtitle, and progress
+  common.loyalty.v1.StoreLoyaltyProgramData store_loyalty_program_data = 1;
+  // most ordered store at this loyalty program. Empty if not available
+  google.protobuf.StringValue most_ordered_store_id = 2;
+  // total orders at this loyalty program
+  google.protobuf.Int32Value total_orders = 3;
+  // Total redemption value across this program (not counting redemptions that were cancelled and refunded)
+  money.MonetaryFields total_redemption_value = 4;
+  // remaining days until reward expiration for each reward a user has, ascending by remaining days/reward earned date
+  repeated google.protobuf.Int32Value rewards_remaining_days_until_expiration = 5;
+  // latest date that user placed a transaction
+  google.protobuf.Timestamp last_transaction_date = 6;
+  // business id
+  google.protobuf.StringValue business_id = 7;
+  // remaining points for rewards
+  google.protobuf.Int32Value remaining_points_for_rewards = 8;
+  // how points are calculated (e.g. subtotal, visits)
+  MerchantLoyaltyPointSystemType point_system = 9;
+  // enable accrual of points or not
+  google.protobuf.BoolValue enable_accrual = 10;
+}
+
+// first party Cx OCL link response
+message OptInMPCxToOCLResponse {}
+
+// third party loyalty program job type
+enum JobType {
+  // job type unspecified
+  JOB_TYPE_UNSPECIFIED = 0;
+  // import loyalty points
+  JOB_TYPE_LOYALTY_POINTS_IMPORT = 1;
+  // send ocl onboarding notifications
+  JOB_TYPE_OCL_ONBOARDING_NOTIFICATION = 2;
+}
+
+// request body for importing third party loyalty data
+message ThirdPartyLoyaltyProgramJobRequest {
+  // job resource
+  google.protobuf.BytesValue resource = 1;
+  // name of the file
+  google.protobuf.StringValue file_name = 2;
+  // business id associated with the job
+  google.protobuf.StringValue business_id = 3;
+  // store id associated with the job
+  google.protobuf.StringValue store_id = 4;
+  // job type
+  JobType job_type = 5;
+}
+
+// response body for importing third party loyalty data
+message ThirdPartyLoyaltyProgramJobResponse {
+  // job id created
+  google.protobuf.StringValue id = 1;
+  // job status
+  StatusType status = 2;
+}
+
+// fetch all files with details
+message FetchThirdPartyLoyaltyProgramJobsRequest {
+  // provide one of the following details to fetch jobs
+  oneof details {
+    // id associated with the job
+    google.protobuf.StringValue id = 1;
+    // business id associated with the jobs
+    google.protobuf.StringValue business_id = 2;
+    // store id associated with the job
+    google.protobuf.StringValue store_id = 3;
+  }
+}
+
+// response body for fetching all files
+message FetchThirdPartyLoyaltyProgramJobsResponse {
+  // information about all running jobs
+  repeated ThirdPartyLoyaltyProgramJob job = 1;
+
+  // information about individual job
+  message ThirdPartyLoyaltyProgramJob {
+    // info of resource associated with the job
+    Resource resource = 1;
+    // status of the job
+    StatusType status = 2;
+  }
+
+  // all information associated with any third party loyalty job
+  message Resource {
+    // id of the job
+    google.protobuf.StringValue id = 1;
+    // s3 path associated with the job
+    google.protobuf.StringValue resource_path = 2;
+    // job type
+    JobType job_type = 3;
+    // timestamp when job was created
+    google.protobuf.Timestamp created_at = 4;
+    // timestamp when job was last updated
+    google.protobuf.Timestamp updated_at = 5;
+  }
+}

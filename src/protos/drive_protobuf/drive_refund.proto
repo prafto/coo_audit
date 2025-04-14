@@ -1,0 +1,432 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package com.doordash.drive.api.drive_refund.v1;
+
+import "common/date.proto";
+import "common/money.proto";
+import "doordash.api/annotations.proto";
+import "drive_protobuf/common.proto";
+import "drive_protobuf/drive_request_contexts.proto";
+import "drive_protobuf/refund_matrix.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "DriveRefundGrpcEndpoint";
+option java_package = "com.doordash.drive.api.drive_refund";
+
+// APIs for Drive Refunds
+service DriveRefundService {
+  option (.doordash.api.service) = {
+    name: "drive-refund-refund-service"
+    url: "drive-rpc.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_FOR_DRIVE"
+    owner: {
+      id: "drive-fulfillment-team"
+      name: "drive-fulfillment-team"
+      slack_channel: "#eng-drive"
+      email_alias: "drive-eng@doordash.com"
+    }
+    name_spaces: ["drive"]
+    target_products: [INTERNAL]
+  };
+  // Preview Delivery Level Refund
+  rpc PreviewDeliveryLevelRefund(PreviewDeliveryLevelRefundRequest) returns (PreviewDeliveryLevelRefundResponse);
+  // Preview Item Level Refund
+  rpc PreviewItemLevelRefund(PreviewItemLevelRefundRequest) returns (PreviewItemLevelRefundResponse) {
+    option (google.api.http) = {
+      post: "/drive/v1/refunds/itemLevel/preview"
+      body: "*"
+    };
+    option (.doordash.api.endpoint) = {
+      tier: T2
+      // Update once the endpoint is tested and prod traffic is live
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_read_c_r_issuance_policies",
+          "perm_mxa_config",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  // Create Delivery Level Refund
+  rpc CreateDeliveryLevelRefund(CreateDeliveryLevelRefundRequest) returns (CreateDeliveryLevelRefundResponse);
+  // Create Item Level Refund
+  rpc CreateItemLevelRefund(CreateItemLevelRefundRequest) returns (CreateItemLevelRefundResponse) {
+    option (google.api.http) = {
+      post: "/drive/v1/refunds/itemLevel"
+      body: "*"
+    };
+    option (.doordash.api.endpoint) = {
+      tier: T2
+      // Update when the endpoint is tested and prod traffic is live
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_read_c_r_issuance_policies",
+          "perm_mxa_config",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  // Get Refunds For An Order.
+  rpc GetRefunds(GetRefundsRequest) returns (GetRefundsResponse);
+  // Automatically determine refund eligibility and process them for an order.
+  rpc ProcessDeliveryLevelRefund(ProcessDeliveryLevelRefundRequest) returns (ProcessDeliveryLevelRefundResponse);
+  // Create refund with custom refund amount. To be used only for legacy bulk tool
+  rpc CreateRefundWithCustomRefundAmountForLegacyBulkTool(CreateRefundWithCustomRefundAmountForLegacyBulkToolRequest) returns (CreateRefundWithCustomRefundAmountForLegacyBulkToolResponse);
+  // Preview the legacy bulk refunds
+  rpc PreviewRefundWithCustomRefundAmountForLegacyBulkTool(PreviewRefundWithCustomRefundAmountForLegacyBulkToolRequest) returns (PreviewRefundWithCustomRefundAmountForLegacyBulkToolResponse);
+}
+
+// Refund Details Object
+message RefundDetails {
+  // Transaction ID
+  google.protobuf.StringValue transaction_id = 1;
+  // Delivery ID - this field is deprecated and scheduled for removal Oct 9 2021
+  google.protobuf.Int64Value delivery_id = 2;
+  // Refund rule applied if delivery level refund
+  google.protobuf.StringValue id_for_delivery_level_refund_rule_applied = 3;
+  // Currency (example: 'USD')
+  google.protobuf.StringValue currency_code = 4;
+  // Refund Type (example: ITEM_LEVEL, DELIVERY_LEVEL)
+  RefundType refund_type = 5;
+  // Total amount to refund to the merchant by DD
+  google.protobuf.Int64Value total_amount_refunded_to_merchant = 6;
+  // Tip to refund to the merchant by DD
+  google.protobuf.Int64Value tip_amount_refunded_to_merchant = 7;
+  // Drive Delivery Fee to refund to the merchant by DD
+  google.protobuf.Int64Value drive_delivery_fee_refunded_to_merchant = 8;
+  // Order Value to refund to the merchant by DD
+  google.protobuf.Int64Value order_value_refunded_to_merchant = 9;
+  // Additional value to refund to the merchant by DD
+  google.protobuf.Int64Value additional_amount_refunded_to_merchant = 10;
+  // Order Value to refund to the customer
+  google.protobuf.Int64Value order_value_to_refund_customer = 11;
+  // Tip Amount to refund to the customer
+  google.protobuf.Int64Value tip_amount_to_refund_customer = 12;
+  // Additional value to be paid to the customer
+  google.protobuf.Int64Value additional_amount_to_refund_customer = 13;
+  // Dispatch Notes
+  google.protobuf.StringValue dispatch_notes = 14;
+  // Created At Timestamp
+  google.protobuf.Timestamp created_at = 15;
+  // Created of refund
+  google.protobuf.StringValue created_by = 16;
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 17;
+  // Drive delivery fee tax refunded to merchant by DD
+  google.protobuf.Int64Value drive_delivery_fee_tax_refunded_to_merchant = 18;
+  // Flag indicates whether delivery is allowed for partner reward refund
+  bool is_allowed_for_partner_reward_reversal = 19;
+}
+
+// Refund Object
+message Refund {
+  // Reason code
+  google.protobuf.StringValue reason_code = 1;
+  // Reason comments code
+  google.protobuf.StringValue reason_comments_code = 2;
+  // Refund details
+  RefundDetails refund_details = 3;
+}
+
+// Request object for GetRefunds API
+message GetRefundsRequest {
+  // Identifier of the order.
+  oneof id {
+    int64 delivery_id = 1;
+    int64 drive_order_id = 2;
+  }
+}
+
+// Response object for GetRefunds API
+message GetRefundsResponse {
+  // Refund Details
+  repeated Refund refund_details = 1;
+}
+
+// Request object for CreateItemLevelRefund API
+message CreateItemLevelRefundRequest {
+  // Delivery ID - this field is deprecated and scheduled for removal Oct 9 2021
+  google.protobuf.Int64Value delivery_id = 1;
+  // Notes from Dispatch
+  google.protobuf.StringValue dispatch_notes = 2;
+  // Creator of refund
+  google.protobuf.StringValue created_by = 3;
+  // A list of items which have been refunded
+  repeated RefundedItem items_refunded = 4;
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 5;
+  // Source of gRPC request to create refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 6;
+  // Requester of the refund
+  com.doordash.drive.api.refund_matrix.v1.RefundRequester refund_requester = 7;
+  // Skip fraud checks
+  google.protobuf.BoolValue should_disable_fraud_checks = 8;
+}
+
+// Request object for CreateRefundWithCustomRefundAmountForLegacyBulkRefunds API
+message CreateRefundWithCustomRefundAmountForLegacyBulkToolRequest {
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 1;
+  // Notes from Dispatch
+  google.protobuf.StringValue dispatch_notes = 2;
+  // Creator of refund
+  google.protobuf.StringValue created_by = 3;
+  // The amount to refund
+  google.protobuf.Int64Value amount_to_refund = 4;
+  // Source of gRPC request to create refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 5;
+  // Refund reason
+  google.protobuf.StringValue refund_reason = 6;
+  // Submission date
+  google.protobuf.Timestamp submission_date = 7;
+  // The amount of missing and incorrect item if refund_reason is M/I
+  google.protobuf.Int64Value missing_item_amount = 8;
+  // Rule ID for Refund Matrix Rule applied
+  google.protobuf.StringValue id_for_refund_matrix_rule_applied = 9;
+}
+
+// Request object for PreviewRefundWithCustomRefundAmountForLegacyBulkTool
+message PreviewRefundWithCustomRefundAmountForLegacyBulkToolRequest {
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 1;
+  // Rule ID for Refund Matrix Rule applied
+  google.protobuf.StringValue id_for_refund_matrix_rule_applied = 2;
+  // The amount of missing and incorrect item if refund_reason is M/I
+  google.protobuf.Int64Value missing_item_amount = 3;
+  // Source of gRPC request to create refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 4;
+}
+
+// Response object for CreateItemLevel API
+message CreateItemLevelRefundResponse {
+  // Refund Class
+  RefundDetails refund_details = 1;
+  // Refund status (example: REFUND_STATUS_UNSPECIFIED, REFUND_STATUS_FULL)
+  RefundStatus refund_status = 2;
+  // List of explanations
+  repeated google.protobuf.StringValue explanations = 3;
+}
+
+// Response object for CreateRefundWithCustomRefundAmountForLegacyBulkRefunds API
+message CreateRefundWithCustomRefundAmountForLegacyBulkToolResponse {
+  // Transaction id of the refund created
+  google.protobuf.StringValue transaction_id = 1;
+  // Drive order id
+  google.protobuf.Int64Value drive_order_id = 2;
+  // Amount refunded for this delivery
+  google.protobuf.Int64Value amount_refunded = 3;
+  // Refund reason
+  google.protobuf.StringValue refund_reason = 4;
+  // Rejection Reason
+  google.protobuf.StringValue rejection_reason = 5;
+}
+
+// Response object for PreviewRefundWithCustomRefundAmountForLegacyBulkTool
+message PreviewRefundWithCustomRefundAmountForLegacyBulkToolResponse {
+  // Refund Class
+  RefundDetails refund_details = 1;
+}
+
+// Refunded Item
+message RefundedItem {
+  // Item Delivery Item ID
+  google.protobuf.Int64Value id = 1;
+  // Quantity
+  google.protobuf.Int32Value quantity = 2;
+  // ID for Refund Matrix Rule Applied to this Refunded Item
+  google.protobuf.StringValue id_for_refund_matrix_rule_applied = 3;
+}
+
+// Request object for CreateDeliveryLevelRefund API
+message CreateDeliveryLevelRefundRequest {
+  // Delivery ID - this field is deprecated and scheduled for removal Oct 9 2021
+  google.protobuf.Int64Value delivery_id = 1;
+  // Rule ID for Refund Matrix Rule applied
+  google.protobuf.StringValue id_for_refund_matrix_rule_applied = 2;
+  // Notes from Dispatch
+  google.protobuf.StringValue dispatch_notes = 3;
+  // Creator of refund
+  google.protobuf.StringValue created_by = 4;
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 5;
+  // Source of gRPC request to create refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 6;
+  // Requester of the refund
+  com.doordash.drive.api.refund_matrix.v1.RefundRequester refund_requester = 7;
+  // Skip fraud checks
+  google.protobuf.BoolValue should_disable_fraud_checks = 8;
+}
+
+// Response object for CreateDeliveryLevelResponse API
+message CreateDeliveryLevelRefundResponse {
+  // Refund Class
+  RefundDetails refund_details = 1;
+  // Refund Status to specify the refund decision
+  RefundStatus status = 2;
+  // Explanations of the refund decision for display
+  repeated string explanations = 3;
+}
+
+// Request object for PreviewDeliveryLevelRefund API
+message PreviewDeliveryLevelRefundRequest {
+  // Delivery ID - this field is deprecated and scheduled for removal Oct 9 2021
+  google.protobuf.Int64Value delivery_id = 1;
+  // Rule ID for Refund Matrix Rule applied
+  google.protobuf.StringValue id_for_refund_matrix_rule_applied = 2;
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 3;
+  // Requester of the refund
+  com.doordash.drive.api.refund_matrix.v1.RefundRequester refund_requester = 4;
+  // Skip fraud checks
+  google.protobuf.BoolValue should_disable_fraud_checks = 5;
+  // Source of gRPC request to preview refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 6;
+}
+
+// Response object for PreviewDeliveryLevelResponse API
+message PreviewDeliveryLevelRefundResponse {
+  // Refund Class
+  RefundDetails refund_details = 1;
+  // Refund Status to specify the refund decision
+  RefundStatus status = 2;
+  // Explanations of the refund decision for display
+  repeated string explanations = 3;
+}
+
+// Request object for PreviewItemLevelRefund API
+message PreviewItemLevelRefundRequest {
+  // Delivery ID - this field is deprecated and scheduled for removal Oct 9 2021
+  google.protobuf.Int64Value delivery_id = 1;
+  // A list of items which have been refunded
+  repeated RefundedItem items_refunded = 2;
+  // Drive Order Id
+  google.protobuf.Int64Value drive_order_id = 3;
+  // Requester of the refund
+  com.doordash.drive.api.refund_matrix.v1.RefundRequester refund_requester = 4;
+  // Skip fraud checks
+  google.protobuf.BoolValue should_disable_fraud_checks = 5;
+  // Source of gRPC request to create refund
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 6;
+  // Creator of refund
+  google.protobuf.StringValue created_by = 7;
+}
+
+// Response object for PreviewDeliveryLevel API
+message PreviewItemLevelRefundResponse {
+  // Refund Class
+  RefundDetails refund_details = 1;
+  // Refund status (example: REFUND_STATUS_UNSPECIFIED, REFUND_STATUS_FULL)
+  RefundStatus refund_status = 2;
+  // List of explanations
+  repeated google.protobuf.StringValue explanations = 3;
+}
+
+// Refund Type (i.e. DELIVERY_LEVEL ITEM_LEVEL)
+enum RefundType {
+  // Not specified / null this value should not be selected
+  REFUND_TYPE_UNSPECIFIED = 0;
+  // Delivery level refund
+  REFUND_TYPE_DELIVERY_LEVEL = 1;
+  // Item Level Refund
+  REFUND_TYPE_ITEM_LEVEL = 2;
+}
+
+// Request object for ProcessDeliveryLevelRefund API.
+message ProcessDeliveryLevelRefundRequest {
+  // DoorDash ID of order.
+  string doordash_drive_id = 1;
+  // List of refund requests.
+  repeated RefundRequest refund_requests = 2;
+  // Whether we want to just preview the refund or not.
+  bool is_preview = 3;
+  // Used to localize friendly formatted responses.
+  google.protobuf.StringValue locale = 4;
+  // User issuing the refund.
+  string user_id = 5;
+  // Bypass user authorization.
+  bool skip_authorization = 6;
+  // Where the refund request is coming from.
+  com.doordash.drive.api.request_contexts.v1.ProductSource source = 7;
+}
+
+// Refund request object.
+message RefundRequest {
+  // Reason code of the request.
+  string reason_code = 1;
+  // Reason comments code of the request.
+  google.protobuf.StringValue reason_comments_code = 2;
+  // A specific requested amount to refund instead of automatically determining refund amount.
+  google.protobuf.Int32Value amount_to_refund = 3;
+}
+
+// Response object for ProcessDeliveryLevelRefund API.
+message ProcessDeliveryLevelRefundResponse {
+  // List of refund results.
+  repeated RefundResult refund_results = 1;
+  // Total refund amount.
+  money.MonetaryFields total_refund_amount = 2;
+  // Localized disclaimer message about the refund for display.
+  google.protobuf.StringValue disclaimer = 3;
+  // Whether the request was a preview or not.
+  bool is_preview = 4;
+  // When the delivery completed
+  date.Date completed_date = 5;
+}
+
+// Refund result object.
+message RefundResult {
+  // Reason code of the request.
+  string reason_code = 1;
+  // Reason comments code of the request.
+  google.protobuf.StringValue reason_comments_code = 2;
+  // Localized explanations of the refund decision for display.
+  repeated string explanations = 3;
+  // How much tip to be refunded.
+  RefundAmount tip_refund = 4;
+  // How much order value to be refunded.
+  RefundAmount order_value_refund = 5;
+  // How much fee to be refunded.
+  RefundAmount delivery_fee_refund = 6;
+  // How much additional amount to be refunded to merchant
+  RefundAmount additional_amount_refunded_to_merchant = 10;
+  RefundStatus status = 7;
+  money.MonetaryFields total_refund_amount = 8;
+  // Delivery Fee Tax Refund
+  RefundAmount delivery_fee_tax_refund = 9;
+}
+
+// Refund amount object.
+message RefundAmount {
+  // Amount refunded.
+  money.MonetaryFields refund_amount = 1;
+  // How much of original amount we refunded.
+  google.protobuf.Int32Value percent_of_original = 2;
+  // Original amount
+  money.MonetaryFields original_amount = 3;
+}
+
+enum RefundStatus {
+  REFUND_STATUS_UNSPECIFIED = 0;
+  REFUND_STATUS_FULL = 1;
+  REFUND_STATUS_PARTIAL = 2;
+  REFUND_STATUS_NONE = 3;
+  REFUND_STATUS_CANNOT_AUTOMATE = 4;
+  // Processing failed for an unexpected reason.
+  REFUND_STATUS_FAILED = 5;
+}

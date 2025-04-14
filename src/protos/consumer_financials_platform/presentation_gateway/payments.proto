@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package cxfin;
+
+import "common/service_client_config.proto";
+import "consumer_financials_platform/payment_offers.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.cxfin";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Payment Dashcard
+service Payment {
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    name: "presentation-gateway"
+    url: "cxfin-payment-get-offers.service.prod.ddsd"
+    port: 50051
+    name_spaces: "cx_financials"
+    owner: {
+      id: "cx-financials-alert-monitoring"
+      name: "opex-cx-financials-platform"
+      slack_channel: "#ask-cx-financials-platform"
+      email_alias: "eng-cx-financials@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Get Payment Offers for Dashcard
+  rpc GetOffers(GetOffersRequest) returns (GetOffersResponse) {
+    option (google.api.http) = {get: "/cx_financials/v1/payments/payment_offers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      response_body: "payment_offers"
+      presentation_gateway_endpoint: true
+    };
+
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "X-EXPERIENCE-ID"},
+        {field: "dd-user-agent"},
+        {field: "serviceCall"},
+        {field: "X-CHANNEL-ID"},
+        {field: "X-DEVICE-ID"},
+        {field: "X-SESSION-ID"},
+        {field: "COOKIES"},
+        {field: "dd_device_id"},
+        {field: "jwt"},
+        {field: "IS_DEBUG"},
+        {field: "request-id"},
+        {field: "X-DEVICE-CONTEXT"}]
+    };
+  }
+}
+
+// Request
+message GetOffersRequest {
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // District ID
+  reserved 5;
+  // District ID
+  reserved "district_id";
+  // Submarket ID
+  int64 submarket_id = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+}
+
+// Response
+message GetOffersResponse {
+  // This needs to be a top level list or Empty
+  repeated doordash.consumer_financials_platform.v1.PaymentOffer payment_offers = 1;
+}

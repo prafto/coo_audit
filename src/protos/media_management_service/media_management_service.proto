@@ -1,0 +1,244 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package media_management_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "media_management_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.media_management";
+
+// service for managing video assents. initiating upload, changing status, etc
+service MediaManagementService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "media-management-service-media-management-grpc.service.prod.ddsd",
+    name_spaces: ["media_management"],
+    owner: {
+      id: "media-management-service"
+      name: "media-management-service"
+      slack_channel: "#ask-video-eng"
+      email_alias: "core-mx-menu-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).service_name = "media-management-service";
+  option (service_client.client_config).service_app = "media-management-grpc";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Method to upload videos
+  rpc InitiateVideoUpload(InitiateVideoUploadRequest) returns (InitiateVideoUploadResponse) {
+    option (google.api.http) = {
+      post: "/media_management/v1/initiate_upload"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Method to finalize the video upload, after initiating the video upload.
+  rpc FinalizeVideoUpload(FinalizeVideoUploadRequest) returns (FinalizeVideoUploadResponse) {
+    option (google.api.http) = {
+      post: "/media_management/v1/finalize_video_upload"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Method to upsert media data. Can create new media, new version, or update existing version
+  rpc UpsertMedia(UpsertMediaRequest) returns (UpsertMediaResponse) {}
+
+  // Method to upsert media entity mappings by sourced media id
+  rpc UpsertMediaEntityMappingBySourcedMediaId(UpsertMediaEntityMappingBySourcedMediaIdRequest) returns (UpsertMediaEntityMappingBySourcedMediaIdResponse) {}
+
+  // Method to query media with flexible filtering and sorting options
+  rpc QueryMedia(QueryMediaRequest) returns (QueryMediaResponse) {}
+}
+
+// Request to initiate video upload.
+message InitiateVideoUploadRequest {
+  // filename. e.g. abc.mp4
+  google.protobuf.StringValue file_name = 1;
+  // use user_id_new instead
+  google.protobuf.StringValue user_id = 2 [deprecated = true];
+  // Store id
+  google.protobuf.StringValue store_id = 3;
+  // business id
+  google.protobuf.StringValue business_id = 4;
+  // Source of the video upload
+  media_management_service.v1.VideoSource video_source = 5;
+  // userId will be injected by UG, and this should be the new field to pass instead of user_id
+  string user_id_new = 6 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response to upload a video.
+message InitiateVideoUploadResponse {
+  // The Pre signed url used to upload a video.
+  google.protobuf.StringValue presigned_url = 1;
+  // media id in MMS
+  google.protobuf.StringValue media_id = 2;
+}
+
+// Request to finalize the video upload.
+message FinalizeVideoUploadRequest {
+  // MMS media_id used to finalize the upload
+  google.protobuf.StringValue media_id = 1;
+  // video metadata
+  media_management_service.v1.VideoFileMetadata metadata = 2;
+  // userId will be injected by UG
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response to finalizing the video upload.
+message FinalizeVideoUploadResponse {}
+
+// Request message for updating media data
+message UpsertMediaRequest {
+  // @deprecated Use media_data instead
+  media_management_service.v1.Media media = 1 [deprecated = true];
+
+  // Options for the upsert operation
+  UpsertOptions options = 2;
+
+  // Operation type for the upsert
+  UpsertOperationType operation_type = 3;
+
+  // media data to be updated
+  media_management_service.v1.MediaData media_data = 4;
+}
+
+// Type of upsert operation
+enum UpsertOperationType {
+  // unspecified operation type
+  UPSERT_OPERATION_TYPE_UNSPECIFIED = 0;
+  // Create a new media
+  UPSERT_OPERATION_TYPE_CREATE_NEW = 1;
+  // Create a new version of existing media
+  UPSERT_OPERATION_TYPE_CREATE_VERSION = 2;
+  // Update existing version
+  UPSERT_OPERATION_TYPE_UPDATE = 3;
+}
+
+// Options for controlling the upsert behavior
+message UpsertOptions {
+  // Whether to trigger the media platform pipeline after upsert
+  google.protobuf.BoolValue trigger_ingestion_pipeline = 1;
+}
+
+// Response message for updating media data
+message UpsertMediaResponse {
+  // the updated media data
+  media_management_service.v1.MediaData media_data = 1;
+}
+
+// Request message for upserting media entity mapping by sourced media id
+message UpsertMediaEntityMappingBySourcedMediaIdRequest {
+  // sourced media id to map entities to
+  google.protobuf.StringValue sourced_media_id = 1;
+  // media entity mappings to be updated
+  repeated media_management_service.v1.MediaEntityMapping mappings = 2;
+}
+
+// Response message for upserting media entity mapping
+message UpsertMediaEntityMappingBySourcedMediaIdResponse {
+  // the updated media entity mappings
+  repeated media_management_service.v1.MediaEntityMapping mappings = 1;
+}
+
+// Request message for querying media with flexible filtering and sorting options
+message QueryMediaRequest {
+  // Query criteria - at least one must be specified
+  oneof query_criteria {
+    // Query by business IDs
+    BusinessIdsQuery business_ids_query = 1;
+    // Query by media IDs
+    MediaIdsQuery media_ids_query = 2;
+    // Query by user IDs
+    UserIdsQuery user_ids_query = 5;
+  }
+
+  // Optional filters
+  MediaFilters filters = 3;
+
+  // Optional sorting options
+  SortOption sort_options = 4;
+}
+
+// Query by business IDs
+message BusinessIdsQuery {
+  // business ids to query
+  repeated google.protobuf.StringValue business_ids = 1;
+}
+
+// Query by media IDs
+message MediaIdsQuery {
+  // media ids to query
+  repeated google.protobuf.StringValue media_ids = 1;
+}
+
+// Query by user IDs
+message UserIdsQuery {
+  // user ids to query
+  repeated string user_ids = 1;
+}
+
+// Media filtering options
+message MediaFilters {
+  // Filter by content types
+  repeated media_management_service.v1.ContentType content_types = 1;
+  // Filter by media status
+  media_management_service.v1.MediaStatus media_status = 2;
+  // Additional filters can be added here in the future
+}
+
+// Fields that can be sorted
+enum SortOption {
+  // unspecified sort field
+  SORT_OPTION_UNSPECIFIED = 0;
+  // Sort to match the business ids ordering in request
+  SORT_OPTION_REQUEST_BUSINESS_IDS = 1;
+}
+
+// Response message for querying media
+message QueryMediaResponse {
+  // List of media items matching the query
+  repeated media_management_service.v1.MediaData media_items = 1 [deprecated = true];
+  // List of media groups, each containing all versions of a media and its entity mappings
+  repeated media_management_service.v1.MediaGroup media_groups = 2;
+}

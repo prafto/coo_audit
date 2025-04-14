@@ -1,0 +1,298 @@
+syntax = "proto3";
+
+package assets_service.v3;
+
+import "assets_service.v3/attributes.proto";
+import "assets_service.v3/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/assets_service.v3";
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.assetsservice.v3";
+
+/*
+ * Refers to a all software assets (e.g. application, service, infra).
+ */
+message SoftwareAsset {
+  // (OUTPUT_ONLY) The DoorDash Resource Name. 'ddrn::software::<UUID>'
+  string ddrn = 1;
+  // A list of human friendly kebab-case aliases for this software asset.
+  repeated string aliases = 2;
+  // A list of subtypes that describe this software asset. Subtypes let clients expect and infer
+  // a set of Attributes on a software entity.
+  repeated string subtypes = 3;
+  // An abstract list of string labels.
+  repeated string tags = 4;
+  // The lifecycle status of the catalog entry.
+  LifeCycleStatus status = 10;
+  // T0, T1, T2, T3
+  Tier tier = 20;
+  // The domain this belongs to.
+  DdrnRef domain = 30;
+  // The owner group that owns this.
+  DdrnRef owner_group = 40;
+  // (Optional) Human friendly name of element
+  string display_name = 50;
+  // (Optional) Human friendly description of the element.
+  string description = 60;
+  // The user(s) that lead the ownership of this software asset.
+  repeated DdrnRef leads = 70;
+
+  // (OUTPUT_ONLY) The time that this catalog entity was first created.
+  google.protobuf.Timestamp created_at = 100;
+  // (OUTPUT_ONLY) The time that this catalog entity was last updated.
+  google.protobuf.Timestamp updated_at = 110;
+  // The alias of the user that last updated this entity.
+  // This is only to be used for logging and auditing purposes.
+  string updated_by_user_alias = 120;
+
+  // -------- Attributes --------
+
+  // (Optional) Kubernetes metadata.
+  KubernetesAttribute kubernetes_attribute = 1000;
+  // (Optional) Contains Component (in scope deifnitions). Only exists for backwards compatibility reasons in launching V3 APIs.
+  // Expect this Attribute to be deprecated afterwards.
+  ComponentCompatAttribute component_compat_attribute = 1001;
+  // (Optional) Attribute that holds info about
+  SourceCodeAttribute source_code_attribute = 1010;
+  // (Optional) Kubernetes metadata.
+  OnCallAttribute oncall_attribute = 1020;
+  // (Optional) Attribute that holds slack channel ID for deployment purposes.
+  DeployAttribute deploy_attribute = 1030;
+  // (Optional) Attribute that holds slack channel ID for observability purposes.
+  ObservabilityAttribute observability_attribute = 1040;
+  // (Optional) Attribute that holds insights metadata.
+  InsightsAttribute insights_attribute = 1050;
+  // (Optional) Attribute that holds platform metadata.
+  PlatformAttribute platform_attribute = 1060;
+}
+
+/*
+ * Represents Service Tiers at Doordash.
+ */
+enum Tier {
+  // The required default unspecified state for an enum.
+  TIER_UNSPECIFIED = 0;
+  // T0
+  TIER_0 = 10;
+  // T1
+  TIER_1 = 20;
+  // T2
+  TIER_2 = 30;
+  // T3
+  TIER_3 = 40;
+}
+
+/*
+ * Represents the states of a software asset's life cycle.
+ */
+enum LifeCycleStatus {
+  // The required default unspecified state for an enum.
+  LIFE_CYCLE_STATUS_UNSPECIFIED = 0;
+  // The Software asset will never be used for production at all.
+  // Used for experimental assets and hackathon projects.
+  LIFE_CYCLE_STATUS_NOT_FOR_PRODUCTION = 10;
+  // The software asset is under creation by self-serve infra.
+  // This status is usually set by non-humans.
+  LIFE_CYCLE_STATUS_PROVISIONING = 15;
+  // The software asset is under development.
+  LIFE_CYCLE_STATUS_IN_DEVELOPMENT = 20;
+  // The software asset is deployed and being used in production.
+  LIFE_CYCLE_STATUS_IN_PRODUCTION = 30;
+  // The software asset will be sunset, but is still in production.
+  LIFE_CYCLE_STATUS_DEPRECATED = 40;
+  // The software asset has been fully removed from production.
+  LIFE_CYCLE_STATUS_ARCHIVED = 50;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 ListSoftwareAssets
+ */
+message ListSoftwareAssetsRequest {
+  // reserve the first slot for a filter object.
+  reserved 1;
+  // The number of items to return. Default: 100. Max: 500
+  int32 page_size = 30;
+  // The optional pagination Token.
+  string page_token = 40;
+}
+
+/*
+ * Response for ListSoftwareAssets
+ */
+message ListSoftwareAssetsResponse {
+  // SoftwareAssets
+  repeated SoftwareAsset software_assets = 1;
+  // The next pagination Token. If this is given, it means that there are more pages.
+  string next_page_token = 2;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 GetSoftwareAsset
+ */
+message GetSoftwareAssetRequest {
+  // The identifier of the Software Asset.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+  }
+}
+
+/*
+ * Response for V3 GetSoftwareAsset
+ */
+message GetSoftwareAssetResponse {
+  // SoftwareAsset
+  SoftwareAsset software_asset = 1;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 RegisterSoftwareAsset
+ * This API is *not* idempotent.
+ * A GRPC OK response does not guarantee that the update has succeeded.
+ *
+ * When passing in DdrnRefs, we first consider the DDRN, and if it's undefined,
+ * we consider the alias.
+ */
+message RegisterSoftwareAssetRequest {
+  // The software asset entity to create.
+  SoftwareAsset software_asset = 1;
+  // The minimum severity to validate against. Default = POLICY_VIOLATION.
+  ErrorSeverity min_severity = 10;
+}
+
+/*
+ * Response for V3 RegisterSoftwareAsset
+ */
+message RegisterSoftwareAssetResponse {
+  // The newly created software asset if it exists. If this is not defined, it means a new software asset has not been registered.
+  SoftwareAsset software_asset = 1;
+  /* Validation Errors (if any). There may be 0 or 1 validation errors for each field in the given SoftwareAsset payload.
+   * This will not return validation errors less severe than 'min_severity'. */
+  repeated ValidationError validation_errors = 2;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 ValidateSoftwareAsset
+ *
+ * When passing in DdrnRefs, we first consider the DDRN, and if it's undefined,
+ * we consider the alias.
+ */
+message ValidateSoftwareAssetRequest {
+  // The software asset entity to validate.
+  SoftwareAsset software_asset = 1;
+  // The minimum severity to validate against. Default = POLICY_VIOLATION.
+  ErrorSeverity min_severity = 10;
+}
+
+/*
+ * Response for V3 ValidateSoftwareAsset
+ */
+message ValidateSoftwareAssetResponse {
+  /* Validation Errors (if any). There may be 0 or 1 validation errors for each field in the given SoftwareAsset payload.
+   * This will not return validation errors less severe than 'min_severity'. */
+  repeated ValidationError validation_errors = 1;
+}
+
+// ----------------------------------------------------------
+/*
+ * Request for V3 UpdateSoftwareAsset
+ * This API is idempotent.
+ */
+message UpdateSoftwareAssetRequest {
+  // The updated values.
+  SoftwareAsset software_asset = 1;
+  // The minimum severity to validate against. Default = POLICY_VIOLATION.
+  ErrorSeverity min_severity = 10;
+}
+
+/*
+ * Response for V3 UpdateSoftwareAsset
+ * A GRPC OK response does not guarantee that the update has succeeded.
+ */
+message UpdateSoftwareAssetResponse {
+  // The updated software asset. If this is defined, it means the update has succeeded.
+  SoftwareAsset software_asset = 1;
+  /* Validation Errors (if any). There may be 0 or 1 validation errors for each field in the given SoftwareAsset payload.
+   * This will not return validation errors less severe than 'min_severity'.
+   * Note: Validation will only be ran on fields explicitly set by the field mask. */
+  repeated ValidationError validation_errors = 10;
+}
+
+/*
+ * ----------------------------------------------------------
+ * Request for V3 UnregisterSoftwareAsset
+ * This API is idempotent.
+ *
+ * This API is ONLY meant to clean up orphaned data. It is not meant
+ * for 'deleting' old software assets. For this, you should set the
+ * lifcycle_status to 'LIFE_CYCLE_STATUS_ARCHIVED'.
+ */
+message UnregisterSoftwareAssetRequest {
+  // The identifier of the Software Asset.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+  }
+}
+
+/*
+ * Response for V3 UnregisterSoftwareAsset
+ */
+message UnregisterSoftwareAssetResponse {}
+
+/*
+ * ----------------------------------------------------------
+ * Request for V3 UnregisterSoftwareAssetTestsEntitiesOnly
+ * This API is idempotent.
+ * Throws GRPC FAILED_PRECONDITION if the entity requested for deletion is not a test entity.
+ *
+ * This API is ONLY meant to clean up orphaned *test* data. It's only meant to be used in e2e tests.
+ * API Keys will not be given to any clients.
+ */
+message UnregisterSoftwareAssetTestsEntitiesOnlyRequest {
+  // The identifier of the Software Asset.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+  }
+}
+
+/*
+ * Response for V3 UnregisterSoftwareAssetTestsEntitiesOnly
+ */
+message UnregisterSoftwareAssetTestsEntitiesOnlyResponse {}
+
+/*
+ * ----------------------------------------------------------
+ * Request for V3 UnregisterSoftwareAssetProvisioningEntitiesOnly
+ * This API is idempotent.
+ * Throws GRPC FAILED_PRECONDITION if the entity requested for deletion is not an entity with PROVISIONING
+ * as its lifecycle status.
+ *
+ * This API is ONLY meant to be used by internal infra systems that provision resources programmatically.
+ */
+message UnregisterSoftwareAssetProvisioningEntitiesOnlyRequest {
+  // The identifier of the Software Asset.
+  oneof query {
+    // DoorDash Resource Name.
+    string ddrn = 1;
+    // Alias
+    string alias = 2;
+  }
+}
+
+/*
+ * Response for V3 UnregisterSoftwareAssetProvisioningEntitiesOnly
+ */
+message UnregisterSoftwareAssetProvisioningEntitiesOnlyResponse {}

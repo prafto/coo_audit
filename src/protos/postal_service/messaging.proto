@@ -1,0 +1,835 @@
+syntax = "proto3";
+
+package postal_service.v1;
+
+import "common/notification.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/common/common.proto";
+import "message_routing_platform/message_routing.proto";
+import "postal_service/localization.proto";
+import "postal_service/postal_service_common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/postal_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.postal_service";
+
+// Service for sending push notifications, SMS/MMS, and emails.
+// Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2819953492/Postal+Service+gRPC+Endpoints#Messaging-(grpc-messaging)
+service MessagingService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Sends a push notification.
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2900099108/SendPush
+  rpc SendPush(SendPushRequest) returns (SendPushResponse);
+  // Sends a push notification.
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2900099108/SendPushV2
+  rpc SendPushV2(SendPushV2Request) returns (SendPushV2Response);
+  // Sends an SMS/MMS.
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2820803485/SendSMS
+  rpc SendSMS(SendSMSRequest) returns (SendSMSResponse);
+  // Sends an email.
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2919563514/SendEmail
+  rpc SendEmail(SendEmailRequest) returns (SendEmailResponse);
+  // Sends an email.
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/3363668638/SendEmailV2
+  rpc SendEmailV2(SendEmailV2Request) returns (SendEmailV2Response);
+  // Sends a notification hub event
+  rpc SendNotificationHub(SendNotificationHubRequest) returns (SendNotificationHubResponse);
+  // Calculate sms sent message delivered and undelivered rates in 3P providers to detect any degraded provider,
+  // and write the result into cache.
+  rpc DetectProviderStatus(DetectProviderStatusRequest) returns (DetectProviderStatusResponse);
+  // The Message Routing Platform calls this rpc to send an incoming message from a non-SMS modality (like Chat) to a downstream SMS modality.
+  rpc SendSMSByConversationIdentifier(SendSMSByConversationIdentifierRequest) returns (SendSMSByConversationIdentifierResponse);
+}
+
+// Target type
+enum TargetType {
+  // unspecified type
+  TARGET_TYPE_UNKNOWN_UNSPECIFIED = 0;
+
+  // target type number, value specified to_number
+  TARGET_TYPE_NUMBER = 1;
+
+  // target type user, value specified user_id
+  TARGET_TYPE_USER = 2;
+
+  // target type profile, value specified profile_id, recipient_type
+  TARGET_TYPE_PROFILE = 3;
+
+  // DO NOT USE: target type device_id, value specified device_ids
+  TARGET_TYPE_DEVICES = 4 [deprecated = true];
+}
+
+// Request for SendSMS RPC
+message SendSMSRequest {
+  // The phone number to send the SMS to.
+  google.protobuf.StringValue to_number = 1;
+  // The phone number that the SMS should originate from. Small use-case, eg.OptOut replies.
+  google.protobuf.StringValue from_number = 2;
+
+  // Uniquely identifies the SMS configuration.
+  // All messages have to register a configuration.
+  google.protobuf.StringValue configuration_id = 3;
+
+  // Client can provide either a user_id or profile_id for receiver.
+  // user_id represents a DoorDash User ID.
+  google.protobuf.StringValue user_id = 4;
+  // profile_id represents a Dasher/Consumer/Merchant ID.
+  google.protobuf.StringValue profile_id = 5;
+
+  // Message to send as an SMS. Client is responsible for localizing the text.
+  google.protobuf.StringValue message = 6;
+
+  // Data fields for a registered template. Client registers a template (which we localize).
+  map<string, string> data_fields = 7;
+
+  // Media for an MMS. Twilio specific.
+  repeated string media_urls = 8;
+
+  // Country code for the SMS.
+  google.protobuf.StringValue country_code = 9;
+  // Locale for the SMS.
+  google.protobuf.StringValue locale = 10;
+
+  // send sms unique identifier type
+  TargetType target_type = 11;
+
+  // experience enum
+  Experience experience = 12;
+
+  // Placeholders for a registered template. Client registers a template (which we localize).
+  Placeholders placeholders = 13;
+
+  // (Optional) Force a specific SMS provider to send the request
+  // If there is a from_number provided, we will attempt to send from the from_number using this provider no matter what
+  // Reach out to #ask-comms-platform before using this field. It should be used only in very specific circumstances
+  SmsProvider provider = 14;
+}
+
+// Response for SendSMS RPC
+message SendSMSResponse {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+  // If the SMS was successfully submitted to the provider.
+  bool success = 2;
+  // Error message if success is false.
+  string error = 3;
+}
+
+// Recipient Device Type
+enum DeviceType {
+  // DO NOT USE: Unspecified device type.
+  DEVICE_TYPE_UNSPECIFIED = 0;
+
+  // iOS device (utilizes APNs to send push notification)
+  DEVICE_TYPE_IOS = 1;
+
+  // Android device (utilizes FCM to send push notification)
+  DEVICE_TYPE_ANDROID = 2;
+}
+
+// app name, TO BE DELETED, DO NOT USE
+enum AppName {
+  // Unspecified app name
+  APP_NAME_UNSPECIFIED = 0;
+
+  // consumer app
+  APP_NAME_CONSUMER = 1;
+
+  // cavier app
+  APP_NAME_CAVIAR = 2;
+
+  // dasher app
+  APP_NAME_DASHER = 3;
+
+  // merchant app
+  APP_NAME_MERCHANT = 4;
+}
+
+// device object, TO BE DELETED, DO NOT USE
+message Device {
+  // Type of corresponding device.
+  DeviceType type = 1;
+
+  // FCM or APNs token for corresponding device.
+  string token = 2;
+
+  // device app name
+  AppName app_name = 3;
+
+  // experience enum
+  Experience experience = 4;
+}
+
+// Configuration for the push network.
+message PushNetworkConfig {
+  // Extra configuration options for push notifications bound for the FCM network.
+  google.protobuf.StringValue fcm_config = 1;
+  // Extra configuration options for push notifications bound for the APNs network.
+  google.protobuf.StringValue apns_config = 2;
+}
+
+// Communication Channel Paramter.
+message CommsChannelParams {
+  // SMS channel parameters
+  SendSMSRequest sms_params = 1;
+
+  // Push channel parameters
+  SendPushRequest push_params = 2;
+
+  // Hub channel parameters
+  SendNotificationHubRequest hub_params = 3;
+}
+
+// Request for SendPush RPC.
+message SendPushRequest {
+  // Uniquely identifies the Push configuration.
+  // All pushes have to register a configuration.
+  google.protobuf.StringValue configuration_id = 1;
+
+  // Client can provide either a user_id or profile_id for receiver.
+  // user_id represents a DoorDash User ID.
+  google.protobuf.StringValue user_id = 2;
+  // profile_id represents a Dasher/Consumer/Merchant ID.
+  google.protobuf.StringValue profile_id = 3;
+
+  // push title
+  google.protobuf.StringValue title = 4;
+
+  // Message to send as a Push. Client is responsible for localizing the text.
+  google.protobuf.StringValue message = 5;
+  // Data fields for a registered template. Client registers a template (which we localize).
+  map<string, string> data_fields = 6;
+
+  // Country code for the push.
+  google.protobuf.StringValue country_code = 7;
+  // Locale for the push.
+  google.protobuf.StringValue locale = 8;
+  // Push network config for the push notification.
+  PushNetworkConfig push_network_config = 9;
+
+  // send push unique identifier type
+  TargetType target_type = 10;
+
+  // experience enum
+  Experience experience = 11;
+
+  // DO NOT USE. To be deprecated. Devices to send the push notification to.
+  repeated Device devices = 12 [deprecated = true];
+
+  // DO NOT USE. To be deprecated. Do not send final payload to APNs/FCM
+  bool shadow_request = 13 [deprecated = true];
+
+  // (Optional) For tracking purposes.
+  // MUST be a randomly generated 128-bit UUID.  This field is sent to both
+  // APNs and FCM under the 'type' custom key, and persisted in each requests Iguazu table under the
+  // 'push_event_uuid'. If this field is not set, it will be set to the randomly generated dd_event_id
+  google.protobuf.StringValue push_event_id = 14;
+
+  // Placeholders for a registered template. Client registers a template (which we localize).
+  Placeholders placeholders = 15;
+
+  // push deeplink url
+  google.protobuf.StringValue deeplink = 16;
+
+  // push image url
+  google.protobuf.StringValue image_url = 17;
+
+  // parameters for dupe/fallback
+  CommsChannelParams other_channel_params = 18;
+
+  // optional field used to determine send push to iOS, Android, or both by default(unspecified)
+  DeviceType device_type = 19;
+
+  // (Optional) A unix timestamp (Number of seconds from Epoch on January 1st, 1970 at UTC) to specify when
+  // the push notification will be delivered. If set in the past, message is sent immediately.
+  google.protobuf.Int64Value send_at = 20;
+
+  // optional field to pass some extra key value pairs to uniquely identify push request from the Iguazu events
+  // eg. shift_id, cart_id, order_id
+  // this data will not be passed to the mobile devices, it'll be just added to the push Iguazu event so you can co-relate the push events with your some other identifiers
+  map<string, string> analytics_tags = 21;
+
+  // Uniquely identifies the Live Activity configuration.
+  // All live activity widgets have to register a configuration.
+  google.protobuf.StringValue live_activity_id = 22;
+}
+
+// Response for SendPush RPC.
+message SendPushResponse {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Request for SendPushV2 RPC.
+message SendPushV2Request {
+  // Uniquely identifies the Push campaign.
+  // The push campaign has to be created on templating service.
+  google.protobuf.StringValue notification_campaign_id = 1;
+  // user_entity_id to denote the recipient's profile id like Cx id, Dx id
+  google.protobuf.StringValue user_entity_id = 2;
+  // Data fields for a registered template. Client registers a template (which we localize).
+  google.protobuf.Struct template_fields = 3;
+}
+
+// Response for SendPushV2 RPC.
+message SendPushV2Response {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Attachment for an email.
+message Attachment {
+  // File name of the attachment.
+  string file_name = 1;
+  // Content of the attachment.
+  string content = 2;
+}
+
+// Request for SendEmail RPC.
+message SendEmailRequest {
+  // Email addresses to send the email to.
+  repeated string to = 1;
+  // Email addresses to cc in the email.
+  repeated string cc = 2;
+  // Email addresses to bcc in the email.
+  repeated string bcc = 3;
+  // Email address to send the email from.
+  google.protobuf.StringValue from = 4;
+  // Name to use for the sender of the email.
+  google.protobuf.StringValue from_name = 5;
+  // Subject of the email.
+  google.protobuf.StringValue subject = 6;
+  // Text body of the email.
+  google.protobuf.StringValue text_body = 7;
+  // HTML body of the email.
+  google.protobuf.StringValue html_body = 8;
+  // Attachments for the email.
+  repeated Attachment attachments = 9;
+  // (Optional) A unix timestamp in seconds allowing you to specify when you want your email to be delivered.
+  // If set in the past, email is sent immediately.
+  google.protobuf.Int64Value send_at = 16;
+
+  // Data fields for a particular template
+  google.protobuf.Struct template_fields = 15;
+
+  // Optional metadata to send along with the request
+  map<string, string> metadata = 12;
+
+  // Uniquely identifies the email configuration.
+  google.protobuf.StringValue configuration_id = 11;
+
+  // DO NOT USE. To be deprecated. Do not send final payload to Iterable/SendGrid.
+  bool shadow_request = 13 [deprecated = true];
+
+  // (Optional) For tracking purposes.
+  // Must be a randomly generated 128-bit UUID. This field is persisted in each request's Iguazu table entry under
+  // dd_event_id. If this field is not set, it will be set to the randomly generated UUID.
+  google.protobuf.StringValue email_event_id = 14;
+
+  // DO NOT USE. To be deprecated in favor of template_fields.
+  map<string, string> data_fields = 10 [deprecated = true];
+}
+
+// Response for SendEmail RPC.
+message SendEmailResponse {
+  // these are deleted values, do not reuse
+  reserved 2, 3;
+  // these are deleted fields, do not reuse
+  reserved "success", "error";
+
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Request for SendEmailV2 RPC.
+message SendEmailV2Request {
+  // these are deleted values, do not reuse
+  reserved 3, 5, 6, 7, 8, 9, 10, 11;
+  // these are deleted fields, do not reuse
+  reserved "notification_audience_type", "from_email", "from_name", "priority", "message_type", "sub_message_type", "cc", "bcc";
+
+  // uniquely identifies the campaign
+  google.protobuf.StringValue notification_campaign_id = 1;
+  // user_entity_id to denote the recipient's entity id
+  google.protobuf.StringValue user_entity_id = 2;
+  // template fields for a registered template
+  google.protobuf.Struct template_fields = 4;
+  // Email addresses to cc in the email. Passed from client
+  repeated google.protobuf.StringValue cc_email = 12;
+  // Email addresses to bcc in the email. Passed from client
+  repeated google.protobuf.StringValue bcc_email = 13;
+  // Email addresses of recipient. Passed from client
+  google.protobuf.StringValue to_email = 14;
+  // Locale. Passed from client
+  google.protobuf.StringValue locale = 15;
+}
+
+// Response for SendEmailV2 RPC.
+message SendEmailV2Response {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Request for SendSMSByConversationIdentifier RPC.
+message SendSMSByConversationIdentifierRequest {
+  // Idempotency key to uniquely identify this message
+  google.protobuf.StringValue idempotency_key = 1;
+  // Conversation Identifier (deliveryUuid, etc.)
+  message_routing_platform.v1.ConversationIdentifier conversation_id = 2;
+  // The source conversation participant
+  message_routing_platform.v1.MessageParticipant source_participant = 3;
+  // The destination conversation participant
+  message_routing_platform.v1.MessageParticipant destination_participant = 4;
+  // The message body of the incoming message
+  google.protobuf.StringValue message_body = 5;
+  // The media urls of the incoming message
+  repeated google.protobuf.StringValue media_urls = 6;
+}
+
+// Response for SendSMSByConversationIdentifier RPC.
+message SendSMSByConversationIdentifierResponse {
+  // Unique Message ID to track events/statuses.
+  google.protobuf.StringValue message_id = 1;
+  // If the SMS was successfully submitted to the provider.
+  bool success = 2;
+}
+
+// Used to track SMS status update through Iguazu
+// SMS Tracking: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2902360392/SMS+Tracking
+message SMSStatusUpdateEvent {
+  // internal event id, generated to represent the SMS request event
+  // or passed in manually via the `push_event_id` field in SendPush grpc endpoint
+  string dd_event_id = 1;
+
+  // sms provider name
+  string provider = 2;
+
+  // provider event id, aka provider message sid
+  string provider_event_id = 3;
+
+  // configuration id
+  string configuration_id = 4;
+
+  // status timestamp
+  google.protobuf.Timestamp status_timestamp = 5;
+
+  // message delivery status reported by provider
+  string provider_message_status = 6;
+
+  // message delivery status detail reported by provider, error details also tracked here
+  string message_status_detail = 7;
+
+  // status code
+  string status_code = 8;
+
+  // internal message status
+  string internal_message_status = 9;
+
+  // sms to number
+  string to_number = 10;
+
+  // sms from number
+  string from_number = 11;
+
+  // country code
+  string country_code = 12;
+
+  // locale
+  string locale = 13;
+
+  // user id, not profile id
+  string user_id = 14;
+
+  // profile type
+  string profile_type = 15;
+
+  // message body
+  string body = 16;
+
+  // media url
+  repeated string media_urls = 17;
+
+  // experience, doordash or caviar
+  string experience = 18;
+
+  // caller
+  string source = 19;
+
+  // number of segments sent
+  int32 num_segments = 20;
+
+  // Mobile Carrier of the recipient
+  string carrier = 21;
+
+  // MCC (Mobile Country Code) of the recipient
+  int32 mcc = 22;
+
+  // MNC (Mobile Network Code) of the recipient
+  int32 mnc = 23;
+}
+
+// Used to track push sent event through Iguazu
+// Push Tracking: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2915041281/Push+Tracking
+message PushSendEvent {
+  // internal event id, generated to represent the push request
+  string dd_event_id = 1;
+
+  // device type, ios or android
+  string device_type = 2;
+
+  // message type
+  string message_type = 3;
+
+  // configuration id
+  string configuration_id = 4;
+
+  // status timestamp
+  google.protobuf.Timestamp status_timestamp = 5;
+
+  // provider status code for push
+  string status_code = 6;
+
+  // push sent status detail, error details also tracked here
+  string message_status_detail = 7;
+
+  // country code
+  string country_code = 8;
+
+  // user id
+  string user_id = 9;
+
+  // profile type
+  string profile_type = 10;
+
+  // profile id
+  string profile_id = 11;
+
+  // experience
+  string experience = 12;
+
+  // locale
+  string locale = 13;
+
+  // title
+  string title = 14;
+
+  // message body
+  string body = 15;
+
+  // caller
+  string source = 16;
+
+  // device_token
+  string device_token = 17;
+
+  // payload
+  string payload = 18;
+
+  // internal message status
+  string internal_message_status = 19;
+
+  // deeplink url
+  string deeplink = 20;
+
+  // image url
+  string image_url = 21;
+
+  // push event id
+  string push_event_id = 22;
+
+  // tags
+  map<string, string> tags = 23;
+
+  // granular preference
+  string granular_preference = 24;
+
+  // message category
+  string message_category = 25;
+
+  //device role (i.e CONSUMER, CONSUMER_CLIP, DASHER)
+  string device_role = 26;
+}
+
+// Used to track Email status update through Iguazu
+// Email Tracking: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2919204292/Email+Tracking
+message EmailStatusUpdateEvent {
+  // internal event id, generated to represent the email request
+  string dd_event_id = 1;
+
+  // configuration id
+  string configuration_id = 2;
+
+  // status timestamp
+  google.protobuf.Timestamp status_timestamp = 3;
+
+  // email provider
+  string provider = 4;
+
+  // provider event id
+  string provider_event_id = 5;
+
+  // message delivery status reported by provider
+  string provider_message_status = 6;
+
+  // to email addresses
+  repeated string to_emails = 7;
+
+  // cc email addresses
+  repeated string cc_emails = 8;
+
+  // bcc email addresses
+  repeated string bcc_emails = 9;
+
+  // from email address
+  string from_email = 10;
+
+  // from email address name
+  string from_name = 11;
+
+  // email subject
+  string subject = 12;
+
+  // HTML body of email
+  string html_body = 13;
+
+  // text body of email
+  string text_body = 14;
+
+  // list of attachments as JSON
+  string attachments = 15;
+
+  // list of template data fields as JSON
+  string data_fields = 16;
+
+  // status code
+  string status_code = 17;
+
+  // data sent along with the request
+  string metadata = 18;
+
+  // caller
+  string source = 19;
+
+  // internal message status
+  string internal_message_status = 20;
+
+  // message delivery status detail reported by provider, error details also tracked here
+  string message_status_detail = 21;
+
+  // payload
+  string payload = 22;
+
+  // url in open and click tracking events
+  string url = 23;
+
+  // useragent in open and click tracking events
+  string useragent = 24;
+
+  // whether or not this is a shadow email status update event
+  bool shadow = 25;
+
+  // profile type: CONSUMER/DASHER
+  string profile_type = 26;
+
+  // experience: DOORDASH/CAVIAR
+  string experience = 27;
+
+  // Consumer/Dasher ID of the first receipt
+  string profile_id = 28;
+
+  // Id of in-house notification campaign
+  string notification_campaign_id = 29;
+
+  // Name of in-house notification campaign
+  string notification_campaign_name = 30;
+
+  // message_type: TRANSACTIONAL/MARKETING
+  string message_type = 31;
+
+  // this is used to track email sender ip address
+  // Only logged for send events
+  string sender_ip = 32;
+
+  // SMTP error status
+  string smtp_status = 33;
+
+  // whether or not an open event has been generated by
+  // automated email mailbox like Apple Mail Privacy Protection (MPP)
+  bool is_machine_opened = 34;
+
+  // error classification
+  string error_classification = 35;
+
+  // email type (MFA, NON_MFA, DOORDASH(Segovia), CAVIAR(Segovia))
+  string email_type = 36;
+}
+
+// Used to track masking call update event through Iguazu
+message MaskingUpdateEvent {
+  // dd event id
+  string dd_event_id = 1;
+
+  // provider event id
+  string provider_event_id = 2;
+
+  // provider name
+  string provider = 3;
+
+  // masking number
+  string masking_number = 4;
+
+  // to number
+  string to_number = 5;
+
+  // from number
+  string from_number = 6;
+
+  // to participant
+  string destination_profile_type = 7;
+
+  // from participant
+  string origin_profile_type = 8;
+
+  // call duration in seconds
+  int64 call_duration_in_seconds = 9;
+
+  // call status
+  string call_status = 10;
+
+  // text content
+  string text = 11;
+
+  // experience
+  string experience = 12;
+
+  // delivery uuid
+  string delivery_uuid = 13;
+
+  // type
+  string type = 14;
+
+  // reason to emit the event
+  string error_message = 15;
+
+  // status timestamp
+  google.protobuf.Timestamp status_timestamp = 16;
+
+  // media urls
+  string media_urls = 17;
+
+  // text sender
+  string text_sender = 18;
+}
+
+// Request for sendNotificationHub RPC.
+message SendNotificationHubRequest {
+  // Uniquely identifies the notification hub configuration.
+  // All notification hub request should have to register a configuration.
+  google.protobuf.StringValue configuration_id = 1;
+  // Client can provide either a user_id or profile_id for receiver.
+  // user_id represents a DoorDash User ID.
+  google.protobuf.StringValue user_id = 2;
+  // profile_id represents a Dasher/Consumer/Merchant ID.
+  google.protobuf.StringValue profile_id = 3;
+  // custom map of data that source can send (optional)
+  google.protobuf.Struct custom = 4;
+  // send push unique identifier type
+  TargetType target_type = 5;
+  // experience enum
+  Experience experience = 6;
+  // 'notification_hub_event_uuid'. If this field is not set, it will be set to the randomly generated dd_event_id
+  google.protobuf.StringValue notification_hub_event_id = 7;
+  // Placeholders for a registered template.
+  Placeholders placeholders = 8;
+  // Timestamp of when event is expiring (optional)
+  google.protobuf.Timestamp expiration_time = 9;
+  // Children data for hub notification (contains hub carousel related info)
+  repeated google.protobuf.Struct children = 10;
+}
+
+// Response for sendNotificationHub RPC.
+message SendNotificationHubResponse {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Detect provider status request
+message DetectProviderStatusRequest {}
+
+// Detect provider status response
+message DetectProviderStatusResponse {}
+
+// Used to track incoming SMS through Iguazu
+message IncomingSMSEvent {
+  // internal event id, generated to represent the incoming SMS event
+  string dd_event_id = 1;
+
+  // sms provider name
+  string provider = 2;
+
+  // provider event id, aka provider message sid
+  string provider_event_id = 3;
+
+  // experience, doordash or caviar
+  string experience = 4;
+
+  // country code
+  string country_code = 5;
+
+  // locale
+  string locale = 6;
+
+  // sms timestamp
+  google.protobuf.Timestamp sms_timestamp = 7;
+
+  // stop, start, help or other
+  string incoming_text_type = 8;
+
+  // end user's phone number
+  string from_number = 9;
+
+  // provider's phone number
+  string to_number = 10;
+
+  // text body
+  string body = 11;
+
+  // media urls
+  repeated string media_urls = 12;
+
+  // error type
+  string error_type = 13;
+
+  // error description
+  string error_description = 14;
+}
+
+// Used to track failed invalid requests in PS
+message FailedGrpcRequestEvent {
+  // internal event id
+  string dd_event_id = 1;
+
+  // notification channel (PUSH/SMS/EMAIL)
+  string channel = 2;
+
+  // configuration id
+  string configuration_id = 3;
+
+  // request failure reason
+  string reason = 4;
+}

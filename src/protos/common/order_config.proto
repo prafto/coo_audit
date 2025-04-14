@@ -1,0 +1,619 @@
+syntax = "proto3";
+package common.order_config.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/common";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.common";
+
+message RecurringOrderDetails {
+  enum RecurringOrderType {
+    NON_RECURRING = 0;
+    FIRST_ORDER = 1;
+    SUBSEQUENT_ORDER = 2;
+  }
+
+  // If present, this order is for a recurring delivery (referenced by this UUID). The UUID would be
+  // passed in on the CreateOrderFromCartRequest when converting the recurring delivery into a real order.
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 1;
+  // Defines the type of recurring order
+  RecurringOrderType recurring_order_type = 2;
+  // Refers to the metadata row used to create orders for a subscription
+  google.protobuf.StringValue recurring_order_template_uuid = 3;
+}
+
+// Defines the details of an order that is part of a meal train
+message MealTrainOrderDetails {
+  // The name of the meal train this order is part of
+  google.protobuf.StringValue meal_train_name = 1;
+}
+
+// The applied Price Modification
+message DDPosAppliedPriceModification {
+  // The subtotal before applying any Price Modification
+  money.MonetaryFields pre_adjusted_subtotal = 1;
+  // The amount of the discount
+  money.MonetaryFields applied_discount_amount = 2;
+  // The amount of the surcharge
+  money.MonetaryFields applied_surcharge_amount = 3;
+}
+
+// Gift card redemption information
+message DDPOSGiftCardRedemptionInfo {
+  // gift card details
+  repeated DDPOSGiftCardDetails dd_pos_gift_cards = 1;
+  // device fingerprint
+  google.protobuf.StringValue device_finger_print = 2;
+}
+
+// Gift card details
+message DDPOSGiftCardDetails {
+  // gift card number token
+  google.protobuf.StringValue gift_card_number_token = 1;
+  // gift card pin token
+  google.protobuf.StringValue gift_card_pin_token = 2;
+  // gift card last 4
+  google.protobuf.StringValue last_4 = 3;
+  // amount
+  money.MonetaryFields amount = 4;
+  // display string - optional
+  google.protobuf.StringValue gift_card_display_string = 5;
+}
+
+// Defines the details of an order that is from a DD POS
+message DDPOSOrderDetails {
+  // The PIN of the employee that submitted the order
+  google.protobuf.StringValue employee_pin = 1;
+
+  // The UUID of the employee that submitted the order (database is in zero2one service, in the employee table)
+  google.protobuf.StringValue employee_uuid = 2;
+
+  // for pathfinder degraded order playback
+  google.protobuf.Timestamp degraded_order_created_at = 3;
+
+  // The UUID of the revenue center that the order was submitted from
+  google.protobuf.StringValue revenue_center_uuid = 4;
+
+  // The name of the revenue center that the order was submitted from
+  google.protobuf.StringValue revenue_center_name = 5;
+
+  // Loyalty details (OCL)
+  common.DDPosLoyaltyDetails dd_pos_loyalty_details = 6;
+
+  // Applied price modifications
+  DDPosAppliedPriceModification dd_pos_applied_price_modifications = 7;
+
+  // Order ticket number that gets printed on tickets and receipts
+  google.protobuf.StringValue ticket_number = 8;
+
+  // (Optional) Details if this order a split payment order
+  reserved 9;
+  reserved "split_order_details";
+  repeated SplitOrderDetails split_order = 10;
+  DDPOSGiftCardRedemptionInfo gift_card_redemptions = 11;
+}
+
+// Split order status
+enum SplitOrderStatus {
+  // Unknown
+  SPLIT_ORDER_STATUS_UNSPECIFIED = 0;
+
+  // for card transactions, this split order has been authorized
+  SPLIT_ORDER_STATUS_AUTHORIZED = 1;
+
+  // for card, this split order has been captured
+  // for cash, this has been paid
+  SPLIT_ORDER_STATUS_FINALIZED = 2;
+
+  // this payment has been refunded
+  SPLIT_ORDER_STATUS_REFUNDED = 3;
+}
+
+// Split order details
+message SplitOrderDetails {
+  // payment type
+  PaymentMethod payment_type = 1;
+
+  // total amount paid
+  money.MonetaryFields amount = 2;
+
+  // tips
+  money.MonetaryFields tip = 3;
+
+  // (optional) for card payments, Stripe payment intent
+  google.protobuf.StringValue payment_intent_id = 4;
+
+  // status
+  SplitOrderStatus status = 5;
+
+  // Subtotal amount for given split.
+  money.MonetaryFields subtotal = 6;
+
+  // Tax for given split.
+  money.MonetaryFields tax = 7;
+}
+
+message ShopAnywhereOrderDetails {
+  // The item id of the price holding item
+  google.protobuf.StringValue price_holding_item_id = 1;
+  // The item id of the zero unit price item
+  google.protobuf.StringValue zero_unit_price_item_id = 2;
+  // The external store id (id mapped to Request a Restaurant db)
+  google.protobuf.StringValue external_store_id = 3;
+  // The store name
+  google.protobuf.StringValue store_name = 4;
+  // The provider name (e.g. "Trader Joe's")
+  google.protobuf.StringValue provider_name = 5;
+  // The address id of the actual store, not the order placing/dummy store
+  google.protobuf.StringValue address_id = 6;
+  // The display string of the actual store address
+  google.protobuf.StringValue address_display_string = 7;
+  // The eta padding in minutes
+  google.protobuf.Int32Value eta_padding_in_minutes = 8;
+  // The menu id that maps to the actual store hours
+  google.protobuf.StringValue store_hours_menu_id = 9;
+}
+
+message DashPartyOrderDetails {
+  // The DashParty ID
+  google.protobuf.StringValue dashparty_id = 1;
+}
+
+// Defines the configuration of an order for eg product line, consumer experience
+message OrderConfig {
+  reserved 29;
+  reserved "is_retail_pick_pack_order";
+  // Defines the mode of order fulfillment eg dasher delivered, pickup etc
+  enum FulfillmentType {
+    // Unknown
+    FULFILLMENT_TYPE_UNSPECIFIED = 0;
+    // Consumer picking up order
+    FULFILLMENT_TYPE_PICKUP = 1;
+    // Dasher performing the delivery
+    FULFILLMENT_TYPE_DX_DELIVERY = 2;
+    // Merchant does their own delivery
+    FULFILLMENT_TYPE_MX_FLEET_DELIVERY = 3;
+    // Merchant ships their order
+    FULFILLMENT_TYPE_MX_SHIPPING = 4;
+    // Consumer dining in store
+    FULFILLMENT_TYPE_DINE_IN = 5;
+    // Drone performing the delivery
+    FULFILLMENT_TYPE_DRONE_DELIVERY = 6;
+    // Virtual delivery
+    FULFILLMENT_TYPE_VIRTUAL = 8;
+    // DD_POS fulfillment
+    FULFILLMENT_TYPE_DD_POS_DINE_IN = 9;
+    // DD_POS self-serve kiosk takeout fulfillment
+    FULFILLMENT_TYPE_DD_POS_TAKE_OUT = 10;
+  }
+
+  // Defines the product / vertical the order belongs to
+  enum ProductLine {
+    // Unknown
+    PRODUCT_LINE_UNSPECIFIED = 0;
+    // Orders from Marketplace DD / Caviar apps
+    PRODUCT_LINE_MARKETPLACE = 1;
+    // Orders for Merchants who do their own delivery
+    PRODUCT_LINE_DEMANDGEN = 2;
+    // Orders through Storefront
+    PRODUCT_LINE_STOREFRONT = 3;
+    // Orders coming from partners like CFA
+    PRODUCT_LINE_EXTERNAL_CHECKOUT = 4;
+    // Orders from Drive
+    PRODUCT_LINE_DRIVE = 5;
+    // Orders through Voice UI
+    PRODUCT_LINE_VOICE = 6;
+    // Orders thru DD POS
+    PRODUCT_LINE_DD_POS = 7;
+    // Orders thru Self Serve Kiosk
+    PRODUCT_LINE_SELF_KIOSK = 8;
+    // Orders in person (outside of DD)
+    PRODUCT_LINE_DINE_OUT = 9;
+  }
+
+  // Defines if the order is an order with multiple consumers involved (expensed meals / group orders etc
+  enum GroupOrderType {
+    // Unknown
+    GROUP_ORDER_TYPE_UNSPECIFIED = 0;
+    // Group orders with multiple participants
+    GROUP_ORDER_TYPE_GROUP_ORDER = 1;
+    // Group orders where participants pay for overages
+    GROUP_ORDER_TYPE_CART_TOPPER = 2;
+    // Orders subsidized by companies for their employees
+    GROUP_ORDER_TYPE_EXPENSED_ORDER = 3;
+    // Orders subsidized by companies for their employees with multiple participants
+    GROUP_ORDER_TYPE_GROUP_EXPENSED_ORDER = 4;
+    // Group orders where participants pay for their own items
+    GROUP_ORDER_TYPE_SPLIT_BILL_ORDER = 5;
+    // Group orders subsidized by companies for their employees as creator or participant
+    GROUP_ORDER_TYPE_SPLIT_BILL_EXPENSED_ORDER = 6;
+  }
+
+  // Defines if the order has any meal gifting configuration
+  enum MealGiftingOrderType {
+    // Unknown
+    MEAL_GIFTING_ORDER_TYPE_UNSPECIFIED = 0;
+    // Order sent by consumer as gifts to others
+    MEAL_GIFTING_ORDER_TYPE_MEAL_GIFTING = 1;
+  }
+
+  // Defines if the order is a catering order
+  enum CateringOrderType {
+    // Unknown
+    CATERING_ORDER_TYPE_UNSPECIFIED = 0;
+    // marketplace catering
+    CATERING_ORDER_TYPE_MARKETPLACE_CATERING = 1;
+  }
+
+  // Defines if the order is a home chef order
+  enum HomeChefOrderType {
+    // Unknown
+    HOME_CHEF_ORDER_TYPE_UNSPECIFIED = 0;
+    // Home chef
+    HOME_CHEF_ORDER_TYPE = 1;
+  }
+
+  // Defines what items are in the package order to customize the consumer and dasher experience
+  enum PackageOrderType {
+    PACKAGE_ORDER_TYPE_UNSPECIFIED = 0;
+    // order only includes package(s) being returned using a QR code
+    PACKAGE_ORDER_TYPE_QR_CODE = 1;
+    // order only includes labeled package(s)
+    PACKAGE_ORDER_TYPE_LABEL = 2;
+    // order includes packages that are being returning using a QR code and those that are labeled
+    PACKAGE_ORDER_TYPE_QR_CODE_AND_LABEL = 3;
+  }
+
+  // Defines the type of store this order is against which can impact cx experience
+  enum OrderTarget {
+    // Unknown
+    ORDER_TARGET_UNSPECIFIED = 0;
+    // Order is from a restaurant
+    ORDER_TARGET_RESTAURANT = 1;
+    // Order is from a grocery store / provider
+    ORDER_TARGET_GROCERY = 2;
+    // Order is from a supplier store which sells bulk items to restaurants
+    // Supplier stores are guaranteed under businesses with business_vertical_id 661
+    // https://docs.google.com/document/d/1d9iRS5hHg9gdje4hxDCBi8nGCKS7MhhL9d9u8TI-3KM/edit
+    ORDER_TARGET_SUPPLIER = 3;
+  }
+
+  // Defines the consumer experience that was used for this order eg Doordash / Caviar etc
+  enum ConsumerExperience {
+    // Unknown
+    CONSUMER_EXPERIENCE_UNSPECIFIED = 0;
+    // Cx is using DD apps
+    CONSUMER_EXPERIENCE_DOORDASH = 1;
+    // Cx is using Caviar app
+    CONSUMER_EXPERIENCE_CAVIAR = 2;
+    // Cx is using Store Front web app
+    CONSUMER_EXPERIENCE_STOREFRONT = 3;
+    // Cx orders direct from Drive partner
+    CONSUMER_EXPERIENCE_DRIVE = 4;
+    // Cx orders direct from Voice Ordering UI
+    CONSUMER_EXPERIENCE_VOICE = 5;
+    // Cx orders from DD POS
+    CONSUMER_EXPERIENCE_DD_POS = 6;
+    // Cx orders from Bbot
+    CONSUMER_EXPERIENCE_BBOT = 7;
+    // Cx orders from Self Serve Kiosk
+    CONSUMER_EXPERIENCE_SELF_KIOSK = 8;
+    // Cx is paying for instore order via dineout pay
+    CONSUMER_EXPERIENCE_DINEOUT = 9;
+  }
+
+  // Defines the consumer selected delivery time asap / scheduled / no rush etc
+  enum DeliveryTime {
+    // Unknown
+    DELIVERY_TIME_UNSPECIFIED = 0;
+    // Delivery is to be done asap
+    DELIVERY_TIME_ASAP = 1;
+    // Delivery is scheduled to be delivered at a particular time in the future
+    DELIVERY_TIME_SCHEDULED = 2;
+    // Delivery is to be done asap with lower expectation on delivery time
+    DELIVERY_TIME_NO_RUSH = 3;
+    // Delivery is to be done faster than standard asap
+    DELIVERY_TIME_PRIORITY = 4;
+    // Delivery is in experiment for speed gating (priority is QDT)
+    DELIVERY_TIME_QUOTED = 5;
+    // Delivery is in experiment for speed gating (standard is QDT plus additional time)
+    DELIVERY_TIME_QUOTED_WITH_DELAY = 6;
+  }
+
+  // Defines if this order is a bundle order bundled pre or post of checkout
+  enum BundleType {
+    // Unknown
+    BUNDLE_TYPE_UNSPECIFIED = 0;
+    // Bundle orders which were bundled pre-checkout
+    BUNDLE_TYPE_PRE_CHECKOUT = 1;
+    // Bundle orders which were bundled after the first order was already checked out
+    BUNDLE_TYPE_POST_CHECKOUT = 2;
+  }
+
+  // Defines the role the order plays in the bundle order case
+  enum BundleOrderRole {
+    // Unknown
+    BUNDLE_ORDER_ROLE_UNSPECIFIED = 0;
+    // Order acts as the primary order for this bundle order
+    BUNDLE_ORDER_ROLE_PRIMARY_ORDER = 1;
+    // Order acts as a secondary bundle order for this bundle order
+    BUNDLE_ORDER_ROLE_BUNDLE_ORDER = 2;
+  }
+
+  // Defines the payment method used for this order
+  enum PaymentMethod {
+    // Unknown
+    PAYMENT_METHOD_UNSPECIFIED = 0;
+    // Cx use Credit card for payment
+    PAYMENT_METHOD_CREDIT_CARD = 1;
+    // Cx use debit bank account for payment
+    PAYMENT_METHOD_DEBIT_BANK_ACCOUNT = 2;
+    // Cx use payment withholding for payment
+    PAYMENT_METHOD_PAYMENT_WITHHOLDING = 3;
+    // Cx used cash for payment
+    PAYMENT_METHOD_CASH = 4;
+    // Cx use an unrecognized method for payment
+    PAYMENT_METHOD_UNRECOGNIZED = 5;
+    // Payment by invoicing
+    PAYMENT_METHOD_INVOICE = 6;
+    // Cx use Credit card for DDPOS payment
+    PAYMENT_METHOD_DD_POS_CREDIT_CARD = 7;
+    // Cx used cash for DDPOS payment
+    PAYMENT_METHOD_DD_POS_CASH = 8;
+    // Cx paid the order externally for DDPOS
+    PAYMENT_METHOD_DD_POS_EXTERNAL = 9;
+    // Cx used a split payment method for payment
+    PAYMENT_METHOD_SPLIT_PAYMENT = 10;
+  }
+
+  // Defines alcohol order type
+  enum AlcoholOrderType {
+    // Non-alcohol default
+    NON_ALCOHOL_ORDER = 0;
+    // Unspecified alcohol
+    DEFAULT_ALCOHOL = 1;
+    // Alcohol dual protocol
+    ALCOHOL_DUAL_PROTOCOL = 2;
+    // Non-alcohol red card protocol
+    NON_ALCOHOL_RED_CARD = 3;
+    // Alcohol red card protocol
+    ALCOHOL_RED_CARD = 4;
+    // Alcohol dual protocol item level
+    ALCOHOL_DUAL_PROTOCOL_ITEM_LEVEL = 5;
+  }
+
+  enum DDEntity {
+    // Default to DDI
+    DD_ENTITY_DDI = 0;
+    // Doordash G&C Inc
+    DD_ENTITY_DDG = 1;
+    // Unspecified
+    DD_ENTITY_UNSPECIFIED = 999;
+  }
+
+  enum TaxStrategy {
+    TAX_STRATEGY_DEFAULT = 0;
+    // Tax provided by merchants via in-store POS systems
+    TAX_STRATEGY_MERCHANT_CALCULATE = 1;
+    // DoorDash as a tax retailer
+    TAX_STRATEGY_RETAILER = 2;
+    // DoorDash as a marketplace facilitator
+    TAX_STRATEGY_FACILITATOR = 3;
+    // Merchant disables the tax charges at merchant (Red Card)
+    TAX_STRATEGY_DISABLE_TAX_CHARGE_AT_MERCHANT = 4;
+  }
+
+  // These should match the business_sub_type definitions in EDW.CNG.DIMENSION_NEW_VERTICAL_STORE_TAGS
+  enum RetailOrderType {
+    RETAIL_ORDER_TYPE_UNSPECIFIED = 0;
+    // convenience
+    RETAIL_ORDER_TYPE_CONVENIENCE = 1;
+    // grocery
+    RETAIL_ORDER_TYPE_GROCERY = 2;
+    // dashmart
+    RETAIL_ORDER_TYPE_DASHMART = 3;
+    // alcohol
+    RETAIL_ORDER_TYPE_ALCOHOL = 4;
+    // hot and prepared retail
+    RETAIL_ORDER_TYPE_HOT_AND_PREPARED = 5;
+    // pets
+    RETAIL_ORDER_TYPE_PETS = 6;
+    // flowers
+    RETAIL_ORDER_TYPE_FLOWERS = 7;
+    // electronics
+    RETAIL_ORDER_TYPE_ELECTRONICS = 8;
+    // office supplies
+    RETAIL_ORDER_TYPE_OFFICE_SUPPLIES = 9;
+    // sporting goods
+    RETAIL_ORDER_TYPE_SPORTING_GOODS = 10;
+    // baby
+    RETAIL_ORDER_TYPE_BABY = 11;
+    // beauty
+    RETAIL_ORDER_TYPE_BEAUTY = 12;
+    // home goods
+    RETAIL_ORDER_TYPE_HOME_GOODS = 13;
+    // cannabis
+    RETAIL_ORDER_TYPE_CANNABIS = 14;
+    // home improvement
+    RETAIL_ORDER_TYPE_HOME_IMPROVEMENT = 15;
+  }
+
+  // ShoppingProtocol enumerates the different ways in which orders can be picked and packed
+  enum ShoppingProtocol {
+    // Unspecified, the default if the protocol is unknown
+    SHOPPING_PROTOCOL_UNSPECIFIED = 0;
+    // The merchant will pick and pack the order
+    SHOPPING_PROTOCOL_MERCHANT_PICK = 1;
+    // The dasher will pick the order and then deliver
+    SHOPPING_PROTOCOL_DASHER_PICK = 2;
+    // An employee will pick the order
+    SHOPPING_PROTOCOL_SHOPPER_PICK = 3;
+  }
+
+  // Defines the last external touchpoint before the customer lands on our platform (DoorDash/Caviar marketplace, Pay with DoorDash APIs, Drive APIs, Storefront APIs)
+  enum ExternalChannel {
+    // Unknown
+    EXTERNAL_CHANNEL_UNSPECIFIED = 0;
+    // Cx landed on our platform using Google Food Ordering
+    EXTERNAL_CHANNEL_GOOGLE_FOOD_ORDERING = 1;
+    // Cx landed on our platform using Chick-fil-A
+    EXTERNAL_CHANNEL_CHICK_FIL_A = 2;
+    // Cx landed on our platform using Google Food Ordering redirect
+    EXTERNAL_CHANNEL_GOOGLE_FOOD_ORDERING_REDIRECT = 3;
+  }
+
+  enum AlcoholDualProtocolLevel {
+    NONE = 0;
+    STORE = 1;
+    ORDER = 2;
+    ITEM = 3;
+  }
+
+  // Defines the order payment schedule. We will allow delayed payment for particular supply chain orders.
+  // i.e. Cx doesn't have to pay when placing an order.
+  // https://docs.google.com/document/d/1jVVZsdTAr1rqdmQRU1eVQVzYpxiNodGN9Wl464_gQf8/edit?usp=sharing
+  enum PaymentSchedule {
+    PAYMENT_SCHEDULE_UNSPECIFIED = 0;
+    PAYMENT_SCHEDULE_UPFRONT = 1;
+    PAYMENT_SCHEDULE_DELAYED = 2;
+  }
+
+  // DriveOrderType enumerates the different types of drive orders
+  enum DriveOrderType {
+    // Unknown
+    DRIVE_ORDER_TYPE_UNKNOWN = 0;
+    // Classic drive orders
+    DRIVE_ORDER_TYPE_CLASSIC = 1;
+    // Drive orders that are fulfilled by DashMart
+    DRIVE_ORDER_TYPE_WITH_DASHMART_FULFILLMENT = 2;
+  }
+
+  enum SupplementalPaymentType {
+    SUPPLEMENTAL_PAYMENT_TYPE_UNSPECIFIED = 0;
+    SUPPLEMENTAL_PAYMENT_TYPE_SNAP = 1;
+    SUPPLEMENTAL_PAYMENT_TYPE_HSA_FSA = 2;
+  }
+
+  enum DeliveryOptionType {
+    DELIVERY_OPTION_TYPE_UNSPECIFIED = 0;
+    DELIVERY_OPTION_TYPE_STANDARD = 1;
+    DELIVERY_OPTION_TYPE_PRIORITY = 2;
+    DELIVERY_OPTION_TYPE_NO_RUSH = 3;
+    DELIVERY_OPTION_TYPE_SCHEDULED = 4;
+    DELIVERY_OPTION_TYPE_DEFERRED = 5;
+    DELIVERY_OPTION_TYPE_FREE_SAME_DAY = 6;
+    DELIVERY_OPTION_TYPE_GROCERY_PRO = 7;
+    DELIVERY_OPTION_TYPE_DRONE = 8;
+    DELIVERY_OPTION_TYPE_FAST = 9;
+    // for use in the speed gating experiment (2/17/2025)
+    // https://docs.google.com/document/d/1ETYxrjilkP2CsjESVQJ-TyYac8MGOKOfL8-aSQ8npnA/
+    // Delivery is in experiment for speed gating (priority is QDT)
+    DELIVERY_OPTION_QUOTED = 10;
+    // Delivery is in experiment for speed gating (standard is QDT plus additional time)
+    DELIVERY_OPTION_QUOTED_WITH_DELAY = 11;
+  }
+
+  enum OrderProfileType {
+    // cannot occur
+    ORDER_PROFILE_TYPE_UNSPECIFIED = 0;
+    // business order
+    ORDER_PROFILE_TYPE_BUSINESS_ORDER = 1;
+    // personal order
+    ORDER_PROFILE_TYPE_PERSONAL_ORDER = 2;
+  }
+
+  // DoordashInternalOrderType enumerates the different types of internal orders and can be consumed by different teams to defirintiate the order types
+  enum DoordashInternalOrderType {
+    DOORDASH_INTERNAL_ORDER_TYPE_UNSPECIFIED = 0;
+    DOORDASH_INTERNAL_ORDER_TYPE_DASHMART_MICROFULFILLMENT = 1;
+  }
+
+  // Defines the mode of order fulfillment eg dasher delivered, pickup etc
+  FulfillmentType fulfillment_type = 1;
+  // Defines the product / vertical the order belongs to
+  ProductLine product_line = 2;
+  // Defines if the order is an order with multiple consumers involved (expensed meals / group orders etc
+  GroupOrderType group_order_type = 3;
+  // Defines if the order has any meal gifting configuration
+  MealGiftingOrderType meal_gifting_order_type = 4;
+  // Defines the type of store this order is against which can impact cx experience
+  OrderTarget order_target = 5;
+  // Defines the consumer experience that was used for this order eg Doordash / Caviar etc
+  ConsumerExperience consumer_experience = 6;
+  // Defines the consumer selected delivery time asap / scheduled / no rush etc
+  DeliveryTime delivery_time = 7;
+  // Defines the payment method used for this order
+  PaymentMethod payment_method = 8;
+  // Defines if this order is a bundle order bundled pre or post of checkout
+  BundleType bundle_type = 9;
+  // Defines the role the order plays in the bundle order case
+  BundleOrderRole bundle_order_role = 10;
+  // Defines the type of alcohol order
+  AlcoholOrderType alcohol_order_type = 11;
+  // Which DoorDash entity (DDI, DDG, etc.) the merchant signed contract with
+  DDEntity dd_entity = 12;
+  // What tax strategy we apply on this order. Deprecated in favor of repeated tax_strategies field below.
+  TaxStrategy tax_strategy = 13;
+  // business vertical of a retail order
+  RetailOrderType retail_order_type = 14;
+  // shopping protocol of a retail order
+  ShoppingProtocol shopping_protocol = 15;
+  // Defines the last external touchpoint before the customer lands on our platform (DoorDash/Caviar marketplace, Pay with DoorDash APIs, Drive APIs, Storefront APIs)
+  ExternalChannel external_channel = 16;
+  // Defines if the order is a catering order
+  CateringOrderType catering_order_type = 17;
+  // What tax strategies we applied on this order. An order could have multiple tax strategies in the case of
+  // item-level dual protocol where the alcohol and non-alcohol portions of the order have different tax calculations.
+  repeated TaxStrategy tax_strategies = 18;
+
+  AlcoholDualProtocolLevel alcohol_dual_protocol_level = 19;
+
+  // Keeping this value for backwards-compatibility until all code is migrated to use recurring_order_details
+  google.protobuf.StringValue recurring_delivery_upcoming_order_uuid = 20;
+
+  // Defines the type of recurring order
+  RecurringOrderDetails recurring_order_details = 21;
+
+  // Order type of a drive order
+  DriveOrderType drive_order_type = 22;
+
+  // Payment schedule for a supply chain order
+  PaymentSchedule payment_schedule = 23;
+
+  repeated SupplementalPaymentType supplemental_payment_types = 24;
+
+  DeliveryOptionType delivery_option_type = 25;
+
+  // Defines if the order is a home chef order
+  HomeChefOrderType home_chef_order_type = 26;
+
+  PackageOrderType package_order_type = 27;
+
+  // If present, this order is a part of the meal train.
+  MealTrainOrderDetails meal_train_order_details = 28;
+
+  google.protobuf.BoolValue is_retail_pick_pack = 30;
+
+  google.protobuf.BoolValue is_cx_curbside = 31;
+
+  // If present, this order is a DD POS order, and this contains relevant data associated with the order.
+  DDPOSOrderDetails dd_pos_order_details = 32;
+
+  google.protobuf.Int64Value business_vertical_id = 33;
+
+  OrderProfileType order_profile_type = 34;
+
+  // If present, this will contain some internal doordash information associated with the order.
+  DoordashInternalOrderType doordash_internal_order_type = 35;
+
+  // If present, this is an Shop Anywhere / Concierge order, will contain some internal doordash information associated with the order.
+  ShopAnywhereOrderDetails shop_anywhere_order_details = 36;
+
+  // If present, this is a DashParty order, will contain DashParty info, such as DashParty ID.
+  DashPartyOrderDetails dashparty_order_details = 37;
+}

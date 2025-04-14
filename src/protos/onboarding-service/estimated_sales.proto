@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package doordash_onboarding_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "onboarding-service/onboarding_platform.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.estimated_sales";
+
+// Service used to get Estimated Sales in an area
+service EstimatedSalesService {
+  // The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+
+  // specify service
+  option (doordash.api.service) = {
+    name: "onboarding-service-web"
+    name_spaces: ["onboarding"]
+    port: 50051
+    api_key_name: "ONBOARDING-SERVICE-API-KEY"
+    owner: {
+      id: "onboarding-service"
+      name: "onboarding-service"
+      slack_channel: "#ask-ssmo"
+      email_alias: "mx-acquisition-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+
+  // API to get Estimated Sales based on ip address or physical address
+  rpc GetEstimatedSales(GetEstimatedSalesRequest) returns (GetEstimatedSalesResponse) {
+    option (google.api.http) = {get: "/onboarding/v1/estimated_sales"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [NONE]
+      target_products: [MX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 6000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 2
+      }
+    };
+  }
+}
+
+// Message for GetEstimatedSalesRequest
+message GetEstimatedSalesRequest {
+  // address
+  google.protobuf.StringValue address = 1;
+  // vertical type
+  EstimatedSalesVerticalType vertical = 2;
+  // city, eg San Jose
+  google.protobuf.StringValue city = 3 [
+    // inject dd-city header into field
+    (doordash.api.inject_from_headers) = {
+      field: "dd-city",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // state abbreviation, eg CA
+  google.protobuf.StringValue region_code = 4 [
+    // inject dd-region-code header into field
+    (doordash.api.inject_from_headers) = {
+      field: "dd-region-code",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // state, eg California
+  google.protobuf.StringValue region = 5 [
+    // inject dd-region header into field
+    (doordash.api.inject_from_headers) = {
+      field: "dd-region",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // country code, eg US
+  google.protobuf.StringValue country_code = 6 [
+    // inject dd-country-code header into field
+    (doordash.api.inject_from_headers) = {
+      field: "dd-country-code",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+}
+
+// Successful Result with Estimated Sales Data
+message EstimatedSales {
+  // Estimates sales lower value
+  google.protobuf.Int64Value estimated_sales_min = 1;
+  // Estimates sales upper value
+  google.protobuf.Int64Value estimated_sales_max = 2;
+  // Area name (DEPRECATED)
+  google.protobuf.StringValue area = 3 [deprecated = true];
+  // Vertical Type
+  EstimatedSalesVerticalType vertical = 4;
+  // city
+  google.protobuf.StringValue city = 5;
+  // state abbreviation (DEPRECATED)
+  google.protobuf.StringValue region_code = 6 [deprecated = true];
+  // country
+  google.protobuf.StringValue country = 7;
+  // aggregation type
+  SalesAggregationLevel aggregation_level = 8;
+  // full state name (note this is not the same as SalesAggregationLevel.REGION
+  // which is an internal definition of a geographic area)
+  google.protobuf.StringValue region = 9;
+}
+
+// Message for GetEstimatedSalesResponse
+message GetEstimatedSalesResponse {
+  // Response should contain either data or error message
+  oneof result {
+    // Details of estimated sales
+    EstimatedSales estimated_sales = 1;
+    // Failure reason
+    Error error = 2;
+  }
+}
+
+// Vertical Types
+enum EstimatedSalesVerticalType {
+  // Unknown
+  ESTIMATED_SALES_VERTICAL_TYPE_UNSPECIFIED = 0;
+  // Restaurant
+  ESTIMATED_SALES_VERTICAL_TYPE_RESTAURANT = 1;
+  // Grocery
+  ESTIMATED_SALES_VERTICAL_TYPE_GROCERY = 2;
+  // Alcohol
+  ESTIMATED_SALES_VERTICAL_TYPE_ALCOHOL = 3;
+  // Convenience
+  ESTIMATED_SALES_VERTICAL_TYPE_CONVENIENCE = 4;
+  // Pet
+  ESTIMATED_SALES_VERTICAL_TYPE_PET = 5;
+  // Flower
+  ESTIMATED_SALES_VERTICAL_TYPE_FLOWER = 6;
+  // Retail
+  ESTIMATED_SALES_VERTICAL_TYPE_RETAIL = 7;
+}
+
+// Aggregation type of the data underling the estimated sales range
+enum SalesAggregationLevel {
+  // should not be used
+  SALES_AGGREGATION_LEVEL_UNSPECIFIED = 0;
+  // starting point - eg CA: Concord / Pleasant Hill
+  SALES_AGGREGATION_LEVEL_STARTING_POINT = 1;
+  // submarket - eg East Bay
+  SALES_AGGREGATION_LEVEL_SUBMARKET = 2;
+  // geographic region - eg Northern California (note - this is NOT the same as state in the US)
+  SALES_AGGREGATION_LEVEL_REGION = 3;
+  // country - eg United States
+  SALES_AGGREGATION_LEVEL_COUNTRY = 4;
+}

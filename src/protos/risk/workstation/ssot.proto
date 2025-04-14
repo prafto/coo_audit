@@ -1,0 +1,153 @@
+syntax = "proto3";
+// buf:lint:ignore PACKAGE_SAME_DIRECTORY
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package risk.workstation;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import 'risk/services/cx_service.proto';
+import 'risk/ssot/risk_event.proto';
+
+option go_package = "workstationpb";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "SSOTProto";
+option java_package = "com.doordash.risk.proto.workstation";
+
+/**
+ * Service that exposes SSOT/entity timeline/RiskEvent data
+ * to Fraud Workstation.
+ *
+ * SSOT data consists of interaction events between various
+ * "entities" (think Cx, Dx, Mx, but also card, ...) and
+ * DoorDash. Those events are collected in "timelines".
+ * Timelines are indexed by "entity id", ie each entity has
+ * their own timeline of events. Events are indexed by
+ * event id and sorted by time on the timelines.
+ *
+ * NOTE: for all methods in this services, the returned
+ * events are not sorted in any particular order.
+ */
+// SSOTService
+service SSOTService {
+  // Retrieve events on the timeline in a time range
+  // for a given entity, and only returns event. These
+  // events only have RiskEvent ids, not the full RiskEvent
+  // data.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetTimeline(GetTimelineRequest) returns (GetTimelineResponse);
+
+  // Retrieve "hydrated" risk events given event ids, ie
+  // "full" RiskEvent data.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+
+  // All in one, takes an entity id and time range and returns
+  // "hydrated" risk events.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetTimelineEvents(GetTimelineRequest) returns (GetEventsResponse);
+}
+
+/**
+ * Fraud Workstation client request for timeline events.
+ *
+ * The client passes in a given entity id (and type)
+ * as well as time window, and this should return
+ * the corresponding timeline events. Note that these
+ * will not be full RiskEvent, but will contain
+ * RiskEvent ids that can be used in a further
+ * query to get the full RiskEvent data.
+ */
+// GetTimelineRequest
+message GetTimelineRequest {
+  // Entity id (can be Cx, Dx, card...)
+  // contains entity type and entity id value
+  risk.ssot.Identifier entity_id = 1;
+  // Start of timeframe to retrieve events
+  google.protobuf.Timestamp start_time = 2;
+  // End of timeframe to retrieve events
+  google.protobuf.Timestamp end_time = 3;
+}
+
+/**
+ * Timeline event, which is an "abbreviated"
+ * version of the RiskEvent: it contains only
+ * the type, time and id of a RiskEvent.
+ */
+// TimelineEvent
+message TimelineEvent {
+  // RiskEvent type: CHECKOUT, LOGIN, ...
+  google.protobuf.StringValue event_type = 1;
+  // RiskEvent id
+  google.protobuf.StringValue event_id = 2;
+  // RiskEvent timestamp
+  google.protobuf.Timestamp event_time = 3;
+}
+
+/**
+ * All the RiskEvents on an entity timeline
+ * of events, corresponding to a GetTimelineRequest.
+ *
+ * Note that the event order is undefined. They
+ * may not be in chronological or id order.
+ */
+// GetTimelineResponse
+message GetTimelineResponse {
+  // events
+  repeated risk.workstation.TimelineEvent events = 1;
+}
+
+/**
+ * Note that the event order is undefined. They
+ * may not be in chronological or id order.
+ */
+// GetEventsRequest
+message GetEventsRequest {
+  // event_ids
+  repeated google.protobuf.StringValue event_ids = 1;
+}
+
+/**
+ * Note that the event order is undefined. They
+ * may not be in chronological or id order.
+ */
+// GetEventsResponse
+message GetEventsResponse {
+  // risk_events
+  repeated risk.workstation.RiskEvent risk_events = 1;
+}
+
+/**
+ * A RiskEvent for SSOT/entity timelines,
+ * as seen by Fraud workstation.
+ *
+ * The event id is part of the timeline
+ * of each entity that has an identifier
+ * in this event.
+ *
+ * NOTE this is not exactly the same event
+ * *format* as we store in the rest of SSOT
+ * (see risk_event.proto), but it is exactly
+ * the same data.
+ */
+// RiskEvent
+message RiskEvent {
+  // Event id
+  google.protobuf.StringValue event_id = 1;
+  // Event type (CHECKOUT, LOGIN, ...)
+  // This should be same as event.payloadCase
+  google.protobuf.StringValue event_type = 2;
+  // This is event context
+  // Adds IP, device details and other details
+  // that may not be in the event itself
+  google.protobuf.StringValue event_context = 3;
+  // Event timestamp
+  google.protobuf.Timestamp event_time = 4;
+  // All the entity identifiers that are
+  // extracted by SSOT for this event
+  repeated risk.ssot.Identifier identifiers = 5;
+  // The CxEvent in this RiskEvent
+  CxEvent event = 10;
+}

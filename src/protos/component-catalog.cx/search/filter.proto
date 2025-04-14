@@ -1,0 +1,150 @@
+syntax = "proto3";
+package component_catalog.cx.search.v1;
+
+import "component-catalog.common/prism/shared/icon.proto";
+import "component-catalog.common/shared/components/image.proto";
+import "component-catalog.cx/nv/retail/common/swatch.proto";
+import "doordash.api/field_validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/component-catalog.cx/search";
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.component_catalog.cx.search";
+
+// Used to display a pill filter.
+message Filter {
+  // REQUIRED
+  // An identifier for the filter. (e.g. deals-fill, price_range)
+  google.protobuf.StringValue filter_id = 1;
+  // REQUIRED
+  // The display name to use for the filter. Should be localized. (e.g. "Deals")
+  google.protobuf.StringValue display_name = 2;
+  // REQUIRED
+  // The type of the filter (e.g. range, binary)
+  FilterType filter_type = 3;
+  // The allowed values for non-binary filters
+  repeated FilterValue allowed_values = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Default values to select when displaying the modal.
+  repeated FilterValue default_values = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Can be used to drive filter selection from backend.
+  BackendSelection backend_selection = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Used when the filter_type is range to denote which the direction of the range (e.g. over or under).
+  RangeDirection range_direction = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // At a time only one filter can be selected from a group of binary filters with the same radio_group_id.
+  google.protobuf.StringValue radio_group_id = 8;
+  // Attributes to use for logging.
+  google.protobuf.Struct logging = 9 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // Icon to show (if any).
+  // DEPRECATED: Use filter_icon instead
+  component_catalog.common.prism.shared.v1.Icon icon = 10 [
+    (doordash.api.validate.rules).missing_value = {action: IGNORE},
+    deprecated = true
+  ];
+  // An identifier used to identify the filter on BE.
+  // Does not necessarily need to be unique across filter objects in the same response.
+  // If populated, FE should use this value as the `id` in the query param of the request.
+  // Otherwise, the filter_id should be used.
+  // https://docs.google.com/document/d/1dcEnIJXYT-6VspvyPxfFhugFxOmD1IEqD_7PNyWZu8k/edit#heading=h.3ada8ljz0lws
+  google.protobuf.StringValue backend_filter_id = 11;
+  // Either an icon or a color swatch, to display on the pill filter.
+  // Can be extended to other image types in the future.
+  oneof image {
+    // a color swatch
+    component_catalog.cx.nv.retail.common.v1.Swatch swatch = 12;
+    // an icon (usually a string id, mapped to an asset in client code)
+    component_catalog.common.prism.shared.v1.Icon filter_icon = 13;
+    // a remote image
+    component_catalog.common.shared.components.v1.RemoteImage remote_image = 18;
+  }
+  // The subtitle of the filter
+  // Displayed on filter bottom sheets to provide additional information
+  // about the filter (e.g. for range or collection filters)
+  google.protobuf.StringValue subtitle = 14;
+  // Description text for the filter
+  // Prepended to the pill filter cell to provide more information about
+  // the filter selection
+  // e.g. for the Delivery fees filter, when a value is selected, the pill filter
+  // will show "Delivery fees: Under $3" instead of just "Under $3"
+  google.protobuf.StringValue description = 15;
+  // The "any" value of a range filter
+  // This is the all-inclusive value which will be selected on the slider when the filter is unselected
+  // (e.g. no results are filtered out)
+  FilterValue any_value = 16 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+  // This is used to generate the time selector UI
+  TimeSelectorConfig time_selector_config = 17;
+}
+
+// The type of filter. Helps to define the constrains on how the filter query can be constructed.
+enum FilterType {
+  // Default value for proto conformance. Should never actually be used.
+  FILTER_TYPE_UNSPECIFIED = 0;
+  // A simple on / off type e.g. the Pickup filter
+  FILTER_TYPE_BINARY = 1;
+  // Supports filtering over a range of values. e.g. a 'Ratings' filter w/ lower bounds of 3 stars
+  FILTER_TYPE_RANGE = 2;
+  // A sort rating type allows a user to pick one from a list of predefined sorts. e.g. a 'Sort' filter w/ 'eta', 'rating', and 'popularity' options
+  FILTER_TYPE_SORT = 3;
+  // Supports constructing a filter from a collection of values
+  // e.g. a 'Price' filter might allow a user to select one or more of '$', '$$', and '$$$' cost stores to filter for
+  FILTER_TYPE_COLLECTION = 4;
+  // Allows Cx to select a single value from a list of allowed values. UI will be radio button selection.
+  FILTER_TYPE_RADIO = 5;
+  // Allows Cx to select a multiple values from a list of allowed values. UI will be checkbox selection.
+  FILTER_TYPE_CHECKBOX = 6;
+  // Filter on category L2 (legacy category pill filters)
+  // Filter Id needs to be set to the L2 id as well
+  FILTER_TYPE_L2 = 7;
+  // Allows Cx to filter by store open hours. UI will be a time selector
+  FILTER_TYPE_OPEN_HOURS = 8;
+}
+
+// Used for range filters to indicate which part of the scale they cover
+enum RangeDirection {
+  // Default value for proto conformance. Should never actually be used.
+  RANGE_DIRECTION_UNSPECIFIED = 0;
+  // The range filter is `over` type, e.g. it includes the current value and values above it
+  RANGE_DIRECTION_OVER = 1;
+  // The range filter is `under` type, e.g. it includes the current value and values below it.
+  RANGE_DIRECTION_UNDER = 2;
+  // Inclusive between. This enum values implies lower and upper bound are both set.
+  RANGE_DIRECTION_BETWEEN = 3;
+}
+
+// Can be used to drive filter selection from backend.
+// Information about whether the filter should be selected.
+message BackendSelection {
+  // true if clients should pre-select the given filter
+  // false if clients should not preselect the given filter, or unselect it if it's currently selected
+  // this whole object (BackendSelection) should be unpopulated if client should just manage the selection state of the filter.
+  google.protobuf.BoolValue is_selected = 1;
+  // For non-binary filters - values that should be preselected, if any. Can be used to drive filter selection from backend.
+  repeated FilterValue selected_values = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// A value for the filter which has a user displayable name and an internal value.
+message FilterValue {
+  // the user facing representation of the filter value
+  // example: a display name for a possible 'Sort' value might be 'Fastest', 'Most Popular', etc
+  google.protobuf.StringValue display_name = 1;
+  // an internally identifying string for the filter value which will be used to send to BE when the filter is selected
+  google.protobuf.StringValue query_value = 2;
+  // The user facing string used to represent that this is the filter's currently selected value
+  // e.g. for range filters, this text will be shown above the slider when this value is selected
+  google.protobuf.StringValue selected_display_text = 3;
+}
+
+// custom filed for time selection UI
+message TimeSelectorConfig {
+  // the interval between time selections in minutes
+  google.protobuf.Int32Value interval_minutes = 1;
+  // total range of time selection in days
+  google.protobuf.Int32Value range_days = 2;
+  // time pre-selection if other than first available time
+  google.protobuf.Timestamp preselect_time_utc = 3;
+  // first available time for selection
+  google.protobuf.Timestamp first_available_time_utc = 4;
+  // timezone
+  google.protobuf.StringValue timezone = 5;
+}

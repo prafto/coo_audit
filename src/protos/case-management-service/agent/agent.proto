@@ -1,0 +1,1069 @@
+syntax = "proto3";
+
+package case_management_service.agent.v1;
+
+import "case-management-service/common.proto";
+import "case-management-service/message.proto";
+import "case-management-service/queue/queue.proto";
+import "case-management-service/routing_profile/routing_profile.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.casemanagement.agent";
+
+// Service for Agent Management
+service AgentManagementService {
+  option (doordash.api.service) = {
+    name: "case-management-service"
+    url: "case-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["case-management-service"]
+    api_key_name: "CASE_MANAGEMENT_SERVICE_API_KEY_FOR_UNIFIED_GATEWAY"
+    owner: {
+      id: "opex-platform-for-managing-cases"
+      name: "case-management-service"
+      slack_channel: "#ask-case-management-platform"
+      email_alias: "team-case-management@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Loads an agent
+  rpc FetchAgent(FetchAgentRequest) returns (FetchAgentResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/agents/{agent_id}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Loads an agent, if no match will attempt to create it from salesforce
+  rpc FetchSalesforceAgent(FetchSalesforceAgentRequest) returns (FetchSalesforceAgentResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agent/salesforce-agent"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Sets an agent active status
+  rpc MarkAgentActiveStatus(MarkAgentActiveStatusRequest) returns (MarkAgentActiveStatusResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/{agent_id}/status"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Agent status heartbeat
+  rpc AgentHeartbeat(AgentHeartbeatRequest) returns (AgentHeartbeatResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/{agent_id}/heartbeat"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Returns the number of online agents
+  rpc FetchAgentActiveStatusBulk(FetchAgentActiveStatusBulkRequest) returns (FetchAgentActiveStatusBulkResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/agents/bulk"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // [DEPRECATED]: given a list of agentIds, start and end date range to search, return the number of their completed cases out of total cases they own
+  rpc FetchAgentCompletedCaseCountBulk(FetchAgentCompletedCaseCountBulkRequest) returns (FetchAgentCompletedCaseCountBulkResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/cases-bulk"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_specialist_supervisor",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Given a list of agentIds, start and end date range to search, return the number of their agents cases (completed, failed, expired)
+  rpc FetchAgentCasesCount(FetchAgentCasesCountRequest) returns (FetchAgentCasesCountResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/cases"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_specialist_supervisor",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Given a list of agentIds, start and end date range to search,
+  // return their average agent owned time
+  rpc FetchAverageAgentOwnedTimeBulk(FetchAverageAgentOwnedTimeBulkRequest) returns (FetchAverageAgentOwnedTimeBulkResponse);
+
+  // Fetch the offline breakdown percentages of given list of agents and queues
+  rpc FetchOfflineBreakdown(FetchOfflineBreakdownRequest) returns (FetchOfflineBreakdownResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/offline-breakdown"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_specialist_supervisor",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // fetch the list of agents via search terms
+  rpc FetchAgentList(FetchAgentListRequest) returns (FetchAgentListResponse) {
+    // Timeout after 10 seconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/list",
+      body: '*'
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // fetch the performance metric of agents and queues
+  rpc FetchPerformanceMetric(FetchPerformanceMetricRequest) returns (FetchPerformanceMetricResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/metrics"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_specialist_supervisor",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // get the timeline for an agent
+  rpc GetAgentTimeline(GetAgentTimelineRequest) returns (GetAgentTimelineResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/timeline"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_risk_workstation_specialist_supervisor",
+          "perm_risk_workstation_engineer",
+          "perm_risk_workstation_analytic",
+          "perm_risk_workstation_specialist"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get the changes to agent states during a given time range
+  rpc FetchAgentStateChanges(FetchAgentStateChangesRequest) returns (FetchAgentStateChangesResponse);
+
+  // update agent information
+  rpc UpdateAgent(UpdateAgentRequest) returns (UpdateAgentResponse);
+
+  // Loads an agent work record
+  rpc FetchAgentUnitOfWork(FetchAgentUnitOfWorkRequest) returns (FetchAgentUnitOfWorkResponse);
+
+  // Gets the units of work for an agent during a given time range
+  rpc FetchAgentUnitsOfWork(FetchAgentUnitsOfWorkRequest) returns (FetchAgentUnitsOfWorkResponse);
+
+  // Gets the direct reports of an agent (Team Lead or Supervisor)
+  rpc GetAgentDirectReports(GetAgentDirectReportsRequest) returns (GetAgentDirectReportsResponse) {
+    option (google.api.http) = {
+      post: "/case-management-service/v1/agents/direct_reports"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Reassign agents to a routing profile
+  rpc ReassignAgents(ReassignAgentsRequest) returns (ReassignAgentsResponse) {
+    option (google.api.http) = {
+      put: "/case-management-service/v1/agents/reassign"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Scheduled Reassignments
+  rpc GetScheduledOverrides(GetScheduledOverridesRequest) returns (GetScheduledOverridesResponse) {
+    option (google.api.http) = {get: "/case-management-service/v1/scheduled_overrides"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Performance Metric Type
+enum PerformanceMetricType {
+  // UNSPECIFIED
+  PERFORMANCE_METRIC_TYPE_UNSPECIFIED = 0;
+  // Average handle time
+  PERFORMANCE_METRIC_TYPE_AHT = 1;
+  // Average time to resolve
+  PERFORMANCE_METRIC_TYPE_ATTR = 2;
+  // Productivity
+  PERFORMANCE_METRIC_TYPE_PRODUCTIVITY = 3;
+  // SLA
+  PERFORMANCE_METRIC_TYPE_SLA = 4;
+  // Average Wait Time for Case Assignment
+  PERFORMANCE_METRIC_TYPE_AWTCA = 5;
+  // Average Time for Case Completion
+  PERFORMANCE_METRIC_TYPE_ATCC = 6;
+}
+
+// value type of the performance metric
+enum PerformanceMetricUnit {
+  // UNSPECIFIED
+  PERFORMANCE_METRIC_UNIT_UNSPECIFIED = 0;
+  // HOUR
+  PERFORMANCE_METRIC_UNIT_HOUR = 1;
+  // MINUTE
+  PERFORMANCE_METRIC_UNIT_MINUTE = 2;
+  // SECOND
+  PERFORMANCE_METRIC_UNIT_SECOND = 3;
+}
+
+// Request to fetch performance metric
+message FetchPerformanceMetricRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents to get their performances
+  repeated Agent agents = 3;
+  // list of queues as a filter
+  repeated google.protobuf.StringValue queue_ids = 4;
+  // type of the performance metric
+  PerformanceMetricType performance_metric_type = 5;
+}
+
+// message for performance metric
+message PerformanceMetric {
+  // metric value integer
+  google.protobuf.Int64Value value = 1;
+  // hour | minute | second
+  PerformanceMetricUnit unit = 2;
+  // type of the performance metric
+  PerformanceMetricType performance_metric_type = 3;
+  // agent - will be null when used for benchmarking
+  Agent agent = 4;
+}
+
+// Response to fetch performance metric request
+message FetchPerformanceMetricResponse {
+  // performance metric list per agent
+  repeated PerformanceMetric performance_metrics = 1;
+  // performance metric benchmark
+  PerformanceMetric performance_metric_benchmark = 2;
+}
+
+// Request to get the agents active status
+message FetchAgentActiveStatusBulkRequest {
+  // list of agents we want the active status info
+  repeated google.protobuf.StringValue agent_ids = 1;
+}
+
+// Response to get the agents active status
+message FetchAgentActiveStatusBulkResponse {
+  // list of agents and their active statuses
+  repeated AgentActiveStatus agent_active_status_list = 1;
+}
+
+// Request to fetch agent
+message FetchAgentRequest {
+  // DoorDash ID
+  google.protobuf.StringValue agent_id = 1;
+}
+
+// Response to fetch agent
+message FetchAgentResponse {
+  // Agent
+  Agent agent = 1;
+  // Current agent status
+  ActiveStatus status = 2;
+  // The current active status reason
+  google.protobuf.StringValue status_reason = 3;
+}
+
+// Request to fetch agent by email
+message FetchSalesforceAgentRequest {
+  // DoorDash ID
+  google.protobuf.StringValue agent_id = 1;
+  // email
+  google.protobuf.StringValue email = 2;
+}
+
+// Response to fetch agent by email
+message FetchSalesforceAgentResponse {
+  // Agent
+  Agent agent = 1;
+}
+
+// Agent Active Status
+enum ActiveStatus {
+  // UNSPECIFIED
+  ACTIVE_STATUS_UNSPECIFIED = 0;
+  // ONLINE
+  ACTIVE_STATUS_ONLINE = 1;
+  // OFFLINE
+  ACTIVE_STATUS_OFFLINE = 2;
+}
+
+// Source system that status is set in
+enum SourceStatusSystem {
+  // UNSPECIFIED
+  SOURCE_STATUS_SYSTEM_UNSPECIFIED = 0;
+  // Teammate Headquarters
+  SOURCE_STATUS_SYSTEM_THQ = 1;
+  // Fraud Workstation
+  SOURCE_STATUS_SYSTEM_FWS = 2;
+}
+
+// Request to set an agent active / online status
+message MarkAgentActiveStatusRequest {
+  // Agent ID
+  google.protobuf.StringValue agent_id = 1;
+  // Agent Status
+  ActiveStatus status = 2;
+  // Some identifier for the session
+  google.protobuf.StringValue session_id = 3;
+  // List of queues that the agent should be a part of.
+  repeated google.protobuf.StringValue queues = 4;
+  // Reason why agent status is changed
+  google.protobuf.StringValue reason = 5;
+  // System the agent status was set from
+  SourceStatusSystem source_system = 6;
+}
+
+// Response to set an agent active status
+message MarkAgentActiveStatusResponse {}
+
+// Agent Heartbeat Request
+message AgentHeartbeatRequest {
+  // Agent ID
+  google.protobuf.StringValue agent_id = 1;
+  // Expected Status
+  ActiveStatus expected_status = 2;
+  // Session ID
+  google.protobuf.StringValue session_id = 3;
+}
+
+// Agent Heartbeat Response
+message AgentHeartbeatResponse {
+  // Current active status
+  ActiveStatus status = 1;
+  // Current status reason
+  google.protobuf.StringValue status_reason = 2;
+  // System their status was last set in
+  SourceStatusSystem source_system = 3;
+}
+
+// Agent
+message Agent {
+  // DoorDash ID
+  google.protobuf.StringValue agent_id = 1;
+  // Salesforce ID
+  google.protobuf.StringValue salesforce_id = 2;
+  // First name of the agent
+  google.protobuf.StringValue first_name = 3;
+  // Last name of the agent
+  google.protobuf.StringValue last_name = 4;
+  // Full name of the agent
+  google.protobuf.StringValue name = 5;
+  // Email address of the agent
+  google.protobuf.StringValue email = 6;
+  // Indicates if it is believed this agent should display the amazon connect softphone on the UI.
+  google.protobuf.BoolValue enable_amazon_connect_softphone = 8;
+  // current agent status
+  ActiveStatus status = 9;
+  // current status reason
+  google.protobuf.StringValue status_reason = 10;
+  // agent type - CRIMSON
+  google.protobuf.StringValue agent_type = 11;
+  // Number of active cases
+  google.protobuf.Int64Value active_cases = 12;
+  // Default routing profile
+  case_management_service.routing_profile.v1.RoutingProfile default_routing_profile = 13;
+  // Temporary override routing profile
+  case_management_service.routing_profile.v1.RoutingProfile temporary_routing_profile = 14;
+  // Queues associated with the routing profile - if temporary exists, else default
+  repeated case_management_service.queue.v1.Queue queues = 15;
+  // agent status creation time
+  google.protobuf.Timestamp status_created_at = 16;
+  // earliest open case creation time
+  google.protobuf.Timestamp oldest_open_case_created_at = 17;
+  // concurrent capacity
+  google.protobuf.Int32Value concurrent_capacity = 18;
+  // concurrent channels, like "WEB" "CHAT,CHAT" "PHONE"
+  google.protobuf.StringValue concurrent_channels = 19;
+  // concurrency enable
+  google.protobuf.BoolValue concurrency_enabled = 20;
+  // If soft phone enabled response is returned, will provide list of security profiles
+  repeated string softphone_security_profiles = 21;
+  // agent's vendor company name
+  google.protobuf.StringValue vendor_company = 22;
+  // agent's vendor company location
+  google.protobuf.StringValue vendor_location = 23;
+  // manager's name for the given agent
+  google.protobuf.StringValue manager_name = 24;
+  // manager's email for the given agent
+  google.protobuf.StringValue manager_email = 25;
+}
+
+// Supervisor
+message Supervisor {
+  // Manager name
+  google.protobuf.StringValue manager_name = 1;
+  // Manager email address
+  google.protobuf.StringValue manager_email = 2;
+}
+
+// Agents active status
+message AgentActiveStatus {
+  // agent
+  Agent agent = 1;
+  // active status for this agent
+  ActiveStatus status = 2;
+  // reason for the status
+  google.protobuf.StringValue reason = 3;
+  // List of queues that the agent is a part of.
+  repeated google.protobuf.StringValue queues = 4;
+  // created at for the active status
+  google.protobuf.Timestamp created_at = 5;
+  // update at for the active status
+  google.protobuf.Timestamp updated_at = 6;
+  // Source system
+  SourceStatusSystem source_system = 7;
+}
+
+// [DEPRECATED] Request to get agent completed cases
+message FetchAgentCompletedCaseCountBulkRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents to get completed cases for
+  repeated Agent agents = 3;
+  // [optional] list of queue ids
+  repeated google.protobuf.StringValue queue_ids = 4;
+}
+
+// Request to get agents cases
+message FetchAgentCasesCountRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents to get completed cases for
+  repeated Agent agents = 3;
+  // [optional] list of queue ids
+  repeated google.protobuf.StringValue queue_ids = 4;
+  // type of the count
+  AgentCaseCountEnum agent_case_count_enum = 5;
+}
+
+// Response to get agents cases
+message FetchAgentCasesCountResponse {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents with their list of counts
+  repeated AgentCasesCount agent_case_counts = 3;
+}
+
+// Agent Case Count Type
+enum AgentCaseCountEnum {
+  // UNSPECIFIED
+  AGENT_CASE_COUNT_ENUM_UNSPECIFIED = 0;
+  // COMPLETED
+  AGENT_CASE_COUNT_ENUM_COMPLETED = 1;
+  // FAILED
+  AGENT_CASE_COUNT_ENUM_FAILED = 2;
+  // EXPIRED
+  AGENT_CASE_COUNT_ENUM_EXPIRED = 3;
+}
+
+// Agent and ccases and total cases they own
+message AgentCasesCount {
+  // agent
+  Agent agent = 1;
+  // cases completed count
+  google.protobuf.Int64Value completed_cases_count = 2;
+  // total cases count
+  google.protobuf.Int64Value total_cases_count = 3;
+  // case count type
+  AgentCaseCountEnum case_count_enum = 4;
+}
+
+// [DEPRECATED] Agent and completed cases and total cases they own
+message AgentCompletedCasesCount {
+  // agent
+  Agent agent = 1;
+  // cases completed count
+  google.protobuf.Int64Value completed_cases_count = 2;
+  // total cases count
+  google.protobuf.Int64Value total_cases_count = 3;
+}
+
+// [DEPRECATED] Response to get agent completed cases
+message FetchAgentCompletedCaseCountBulkResponse {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents with their list of counts
+  repeated AgentCompletedCasesCount agent_completed_case_counts = 3;
+}
+
+// Request to get average agent owned times per agent
+message FetchAverageAgentOwnedTimeBulkRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents to get completed cases for
+  repeated Agent agents = 3;
+}
+
+// Agent and completed cases and total cases they own
+message AverageAgentOwnedTime {
+  // agent
+  Agent agent = 1;
+  // average agent owned time in seconds
+  google.protobuf.Int64Value average_agent_owned_time_in_seconds = 2;
+}
+
+// Response to get average agent owned times per agent
+message FetchAverageAgentOwnedTimeBulkResponse {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents with their average agent owned time
+  repeated AverageAgentOwnedTime average_agent_owned_times = 3;
+}
+
+// offline breakdown model
+message OfflineBreakdown {
+  // offline reason
+  google.protobuf.StringValue reason = 1;
+  // offline breakdown percentage for the reason
+  google.protobuf.Int64Value offline_breakdown_percentage = 2;
+  // benchmark for the offline breakdown
+  google.protobuf.Int64Value offline_breakdown_benchmark_percentage = 3;
+}
+
+// Request to get the offline breakddown metric
+message FetchOfflineBreakdownRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // list of agents
+  repeated Agent agents = 3;
+  // [optional] list of queue ids
+  repeated google.protobuf.StringValue queue_ids = 4;
+}
+
+// Response to get the offline breakddown metric
+message FetchOfflineBreakdownResponse {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search from
+  google.protobuf.Timestamp end_date = 2;
+  // offline breakdown
+  repeated OfflineBreakdown offline_breakdown = 3;
+}
+
+// Request for fetching list of agents
+message FetchAgentListRequest {
+  // Request type for fetch list. Controls what comes back on the response.
+  enum FetchListRequestType {
+    // Unspecified. This will be the lite experience.
+    FETCH_LIST_REQUEST_TYPE_UNSPECIFIED = 0;
+    // Lite experience. Subset of fields will be returned.
+    FETCH_LIST_REQUEST_TYPE_LITE = 1;
+    // Full experience. More complex fields will be returned.
+    FETCH_LIST_REQUEST_TYPE_FULL = 2;
+  }
+  // Search terms for fetching agent list
+  AgentSearchInput search_input = 1;
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  // Vendor query for filtering agents
+  google.protobuf.StringValue vendor_domain = 3;
+  // Current agent status
+  ActiveStatus status = 4;
+  // Filter options
+  case_management_service.v1.FilterOptions filter_options = 5;
+  // Fetch type
+  FetchListRequestType fetch_list_request_type = 6;
+}
+
+// Response for fetching list of agents / supervisors
+message FetchAgentListResponse {
+  // List of the agents as a response
+  repeated Agent agents = 1;
+  // total agent count to display num of pages
+  google.protobuf.Int32Value total_count = 2;
+  // List of supervisors
+  repeated Supervisor supervisors = 3;
+}
+
+// Available search terms for fetching agents list
+message AgentSearchInput {
+  // Exact match to the agent id
+  google.protobuf.StringValue agent_id = 1;
+  // Exact match to the email address
+  google.protobuf.StringValue email = 2;
+  // Fuzzy match
+  google.protobuf.StringValue name = 3;
+}
+
+// request for getting the agent timeline
+message GetAgentTimelineRequest {
+  // start date to search from
+  google.protobuf.Timestamp start_date = 1;
+  // end date to search to
+  google.protobuf.Timestamp end_date = 2;
+  // agent to get their timeline
+  Agent agent = 3;
+  // list of queues as a filter
+  repeated google.protobuf.StringValue queue_ids = 4;
+}
+
+// agent timeline
+message AgentTimelineItem {
+  // name of the action
+  google.protobuf.StringValue action_name = 1;
+  // time when action happened
+  google.protobuf.Timestamp action_date = 2;
+  // queues the action happened for
+  repeated google.protobuf.StringValue queue_ids = 3;
+  // case id for which the action happened
+  google.protobuf.StringValue case_id = 4;
+}
+
+// response to the agent timeline request
+message GetAgentTimelineResponse {
+  // list of timeline items
+  repeated AgentTimelineItem agent_timeline = 1;
+  // agent
+  Agent agent = 2;
+}
+
+// Request to fetch agent state changes
+message FetchAgentStateChangesRequest {
+  // The start time for retrieving agent state change records
+  google.protobuf.Timestamp start = 1;
+  // The end time for retrieving agent state change records
+  google.protobuf.Timestamp end = 2;
+  // (optional) The cursor used for the next result set of the search.
+  google.protobuf.StringValue cursor = 3;
+  // (optional) The limit of how many records to retrieve in one result set.
+  google.protobuf.Int32Value limit = 4;
+}
+
+// Response to fetch agent state changes
+message FetchAgentStateChangesResponse {
+  // Agent state change events
+  repeated AgentStateChange agent_state_changes = 1;
+  // (optional) A base64 encoded PageCursor protobuf. This can be passed in a request to get the next result set.
+  google.protobuf.StringValue cursor = 2;
+
+  // PageCursor is used to store information for pagination.
+  // The PageCursor protobuf is never used directly by the API. Instead, PageToken is base64 encoded and
+  // included in the response as a string. PageCursor should be used as an opaque string - the client
+  // does not need to know how to decode or encode it. We use a protobuf so that it's easier to maintain
+  // backwards compatibility on the server.
+  message PageCursor {
+    // required - the start time in the original request.
+    google.protobuf.Timestamp start = 1;
+    // required - the end time in the original request.
+    google.protobuf.Timestamp end = 2;
+    // required - the offset of the previous page.
+    google.protobuf.Int32Value offset = 3;
+  }
+}
+
+// Agent state change record
+message AgentStateChange {
+  // The agent ID of the state change record
+  google.protobuf.StringValue agent_id = 1;
+  // The start time of the state
+  google.protobuf.Timestamp start = 2;
+  // (optional) The end time of the state
+  // This is only present if the state has ended
+  google.protobuf.Timestamp end = 3;
+  // The state, derived from the status and/or reason fields of the state change record
+  google.protobuf.StringValue state = 4;
+}
+
+// update agent request
+message UpdateAgentRequest {
+  // Agent to update
+  Agent agent = 1;
+}
+
+// update agent response
+message UpdateAgentResponse {
+  // Updated agent
+  Agent agent = 1;
+}
+
+// Get agent unit of work request
+message FetchAgentUnitOfWorkRequest {
+  // Unit of work ID
+  google.protobuf.StringValue id = 1;
+}
+
+// Get agent unit of work response
+message FetchAgentUnitOfWorkResponse {
+  // Unit of work
+  AgentUnitOfWork unit_of_work = 1;
+}
+
+// Get agent units of work request
+message FetchAgentUnitsOfWorkRequest {
+  // The start time for retrieving units of work
+  google.protobuf.Timestamp start = 1;
+  // The end time for retrieving units of work
+  google.protobuf.Timestamp end = 2;
+  // The type of timestamp to filter on
+  case_management_service.v1.TimeFilterType filter_type = 3;
+  // (optional) The cursor used for the next result set of the search.
+  google.protobuf.StringValue cursor = 4;
+  // (optional) The limit of how many records to retrieve in one result set.
+  google.protobuf.Int32Value limit = 5;
+}
+
+// Get agent units of work response
+message FetchAgentUnitsOfWorkResponse {
+  // Units of work
+  repeated AgentUnitOfWork units_of_work = 1;
+  // (optional) A base64 encoded PageCursor protobuf. This can be passed in a request to get the next result set.
+  google.protobuf.StringValue cursor = 2;
+  // PageCursor is used to store information for pagination.
+  // The PageCursor protobuf is never used directly by the API. Instead, PageToken is base64 encoded and
+  // included in the response as a string. PageCursor should be used as an opaque string - the client
+  // does not need to know how to decode or encode it. We use a protobuf so that it's easier to maintain
+  // backwards compatibility on the server.
+  message PageCursor {
+    // required - the start time in the original request.
+    google.protobuf.Timestamp start = 1;
+    // required - the end time in the original request.
+    google.protobuf.Timestamp end = 2;
+    // required - the filter type in the original request.
+    case_management_service.v1.TimeFilterType filter_type = 3;
+    // required - the offset of the previous page.
+    google.protobuf.Int32Value offset = 4;
+  }
+}
+
+// Agent unit of work
+message AgentUnitOfWork {
+  // Unit of work ID
+  google.protobuf.StringValue id = 1;
+  // Agent ID
+  google.protobuf.StringValue agent_id = 2;
+  // Case ID
+  google.protobuf.StringValue case_id = 3;
+  // Queue Name
+  google.protobuf.StringValue queue_name = 4;
+  // Channel type
+  case_management_service.v1.ChannelType channel_type = 5;
+  // State
+  case_management_service.v1.IncidentState incident_state = 6;
+  // Created at
+  google.protobuf.Timestamp created_at = 7;
+  // Updated at
+  google.protobuf.Timestamp updated_at = 8;
+  // Started at
+  google.protobuf.Timestamp started_at = 9;
+  // Ended at
+  google.protobuf.Timestamp ended_at = 10;
+  // Assigned at
+  google.protobuf.Timestamp assigned_at = 11;
+  // Tags
+  repeated google.protobuf.StringValue tags = 12;
+  // Agent Work State
+  case_management_service.v1.AgentWorkState agent_work_state = 13;
+  // First responded at
+  google.protobuf.Timestamp first_responded_at = 14;
+}
+
+// Get agent direct reports request
+message GetAgentDirectReportsRequest {
+  // Agent ID (user id) of the supervisor
+  google.protobuf.StringValue agent_id = 1;
+  // Pagination options
+  case_management_service.v1.PaginationOptions pagination_options = 2;
+  reserved 3;
+  reserved "agent_id_list";
+  // Lit of Supervisor Email Ids
+  repeated google.protobuf.StringValue supervisor_email_list = 4;
+}
+
+// Get agent direct reports response
+message GetAgentDirectReportsResponse {
+  // Direct reports
+  repeated Agent direct_reports = 1;
+}
+
+// Agent Options Ids / Email.
+message AgentsOptions {
+  // one of below
+  oneof value {
+    // List of agent IDs
+    google.protobuf.StringValue agent_ids = 1;
+    // List of agent emails
+    google.protobuf.StringValue agent_emails = 2;
+  }
+}
+
+// ReassignAgentsRequest message
+message ReassignAgentsRequest {
+  // agent emails / ids
+  repeated AgentsOptions agent_options = 1;
+  // Routing profile ID
+  string routing_profile_id = 2;
+  // Start date for reassignment
+  google.protobuf.Timestamp start_date = 3;
+  // End date for reassignment (optional)
+  google.protobuf.Timestamp end_date = 4;
+}
+
+// ReassignAgentsResponse message
+message ReassignAgentsResponse {
+  // Success status
+  google.protobuf.BoolValue success = 1;
+}
+
+// Request message for getScheduledOverrides
+message GetScheduledOverridesRequest {
+  // Vendor domain for filtering agents
+  google.protobuf.StringValue vendor_domain = 1;
+}
+
+// Response message for getScheduledOverrides
+message GetScheduledOverridesResponse {
+  // List of scheduled overrides
+  repeated ScheduledOverride scheduled_overrides = 1;
+}
+
+// ScheduledOverride message
+message ScheduledOverride {
+  // UUID
+  google.protobuf.StringValue id = 1;
+  // Agent ID
+  google.protobuf.StringValue agent_id = 2;
+  // Agent name
+  google.protobuf.StringValue agent_name = 3;
+  // Agent email
+  google.protobuf.StringValue agent_email = 4;
+  // Target routing profile - id
+  google.protobuf.StringValue target_routing_profile_id = 5;
+  // Target routing profile - name
+  google.protobuf.StringValue target_routing_profile_name = 6;
+  // Start time
+  google.protobuf.Timestamp start_time = 7;
+  // End time
+  google.protobuf.Timestamp end_time = 8;
+  // Created at timestamp
+  google.protobuf.Timestamp created_at = 9;
+  // Created by
+  google.protobuf.StringValue created_by = 10;
+}

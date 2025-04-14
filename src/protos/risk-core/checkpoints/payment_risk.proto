@@ -1,0 +1,152 @@
+syntax = "proto3";
+package risk_core.v1.checkpoints.v1;
+
+import "common/service_client_config.proto";
+import "risk-common/common.proto";
+import "risk-common/context.proto";
+import "risk-common/fulfillment.proto";
+import "risk-common/pricing.proto";
+import "risk-common/risk_api.proto";
+import "risk-common/store_item.proto";
+import "risk-core/cart.proto";
+import "risk-core/checkpoint_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.risk_core.checkpoints";
+
+/**
+   Payment Risk Service.
+   Design: https://docs.google.com/document/d/17BmC_8MXDt4mlrnLqDCL2kbpXiBsYVtKpaN86ICO-8M/edit?usp=sharing
+*/
+service PaymentRiskService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 2000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  // No retires.
+  option (service_client.client_config).retry_config.max_attempts = 1;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Evaluated
+  rpc Evaluate(PaymentRiskServiceEvaluateRequest) returns (PaymentRiskServiceEvaluateResponse);
+}
+
+/*
+   PaymentRiskService API Schema
+*/
+
+// Request model for PaymentRiskService.evaluate() service call
+message PaymentRiskServiceEvaluateRequest {
+  // Risk context contains data relevant to a user, like device information, IP addresses, sessions, etc.
+  risk.common.RiskContextSource risk_context = 1;
+  // Details of Cx Order (also aka Super Order)
+  CxOrder cx_order = 2;
+}
+
+// Response model for PaymentRiskService.evaluate() service call
+message PaymentRiskServiceEvaluateResponse {
+  // General Risk API response
+  risk.common.RiskEvaluateResponse response = 1;
+  // Legacy checkpoint response to handle the migration to Apparate project
+  CheckpointResponse legacy_checkpoint_response = 2;
+}
+
+/*
+   PaymentRiskService Data Models
+*/
+
+// Details of Cx Order (also aka Super Order)
+message CxOrder {
+  // Unique identifier for the shopping cart (also aka Super Cart).
+  string cart_uuid = 1;
+
+  // List of merchant orders associated with the Cx order.
+  repeated MxOrder mx_orders = 2;
+
+  // Information on order fulfillment options, such as delivery and pickup.
+  risk.common.Fulfillment fulfillment = 3;
+  // Information about billing like fees, taxes, promos, tips, etc.
+  Billing billing = 4;
+
+  // `custom_attributes` are designed to provide flexibility for clients to include additional order metadata
+  // that may not be covered by predefined/reserved fields. These attributes can be used for temporary experiments.
+  // Example of a custom attribute: name = "RecurringOrderType" and value = "NON_RECURRING".
+  repeated risk.common.CustomAttribute custom_attributes = 5;
+  // `reserved_attributes` are intended for attributes that have a well-defined, permanent role within the
+  // order's data structure. Example of reserved attributes: is_gift, ddfb_details.
+  ReservedAttributes reserved_attributes = 6;
+}
+
+// A merchant order associated with the Cx order
+message MxOrder {
+  // UUID for the Mx order.
+  string uuid = 1;
+  // Store details where the order was placed.
+  Store store = 2;
+
+  // List of items ordered by the consumers.
+  repeated OrderedItems ordered_items = 3;
+  // Payment intents associated with the order.
+  repeated PaymentIntent payment_intents = 4;
+}
+
+// List of items ordered by a consumer.
+message OrderedItems {
+  // ID of the consumer who ordered the items.
+  string consumer_id = 1;
+  // List of items ordered by the consumer.
+  repeated risk.common.Item items = 2;
+}
+
+// Information about billing like fees, taxes, promos, tips, etc.
+message Billing {
+  // Debit information like service fee, delivery fee, etc.
+  repeated risk.common.Debit debits = 1;
+  // Credit information like DashPass, Mx promo, 1st delivery promo, etc.
+  repeated risk.common.Credit credits = 2;
+  // The sum of each item's unit price multiplied by its quantity.
+  risk.common.MonetaryAmount subtotal = 3;
+  // Subtotal amount plus all applied debits
+  risk.common.MonetaryAmount total_before_tips = 4;
+}
+
+// Payment intents associated with the order.
+message PaymentIntent {
+  // ID of the consumer making the payment.
+  string consumer_id = 1;
+  // ID of the DD stripe card.
+  string dd_stripe_card_id = 2;
+  // Session ID for Stripe Radar.
+  string stripe_radar_session_id = 3;
+  // Total amount intended to be charged.
+  risk.common.MonetaryAmount total = 4;
+}
+
+// Reserved (permanent) attribute related to an order.
+message ReservedAttributes {
+  // Whether the order is a gift.
+  bool is_gift = 1;
+  // Details related to the DDfB team making the order.
+  risk.common.DdfbDetails ddfb_details = 2;
+  // order target enum
+  enum OrderTarget {
+    // When the order target cannot be classified or determined.
+    ORDER_TARGET_UNSPECIFIED = 0;
+    // When the restaurant order is placed.
+    ORDER_TARGET_RESTAURANT = 1;
+    // When a grocery order is placed.
+    ORDER_TARGET_GROCERY = 2;
+    // When a supplier chain order is placed.
+    ORDER_TARGET_SUPPLIER = 3;
+  }
+  // This target is used to differentiate restaurants orders from other types of orders.
+  // This is also used for exclusion of certain type of orders to go through our external vendors
+  OrderTarget order_target = 3;
+}

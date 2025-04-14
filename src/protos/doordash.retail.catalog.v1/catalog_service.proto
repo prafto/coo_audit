@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package doordash.retail.catalog.v1;
+
+import "common/service_client_config.proto";
+import "doordash.retail.catalog.common.v1/common.proto";
+import "doordash.retail.catalog.crdb.v1/product_item.proto";
+import "doordash.retail.catalog.crdb.v1/urpc_curated_information.proto";
+import "doordash.retail.catalog.crdb.v1/urpc_external_information.proto";
+import "doordash.retail.catalog.v1/common.proto";
+import "doordash.retail.catalog.v1/fulfillment.proto";
+import "doordash.retail.catalog.v1/legacy.proto";
+import "doordash.retail.catalog.v1/tool.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/doordash/retail/catalog/v1";
+// so CatalogToolService can be found
+option java_generic_services = true;
+
+/* Services Definitions */
+service CatalogService {
+  // get presigned s3 url
+  rpc GetPresignS3Url(GetPresignS3UrlRequest) returns (GetPresignS3UrlResponse);
+
+  // get the URPC merged view for MPC
+  rpc GetMergedProductItem(GetMergedProductItemRequest) returns (GetMergedProductItemResponse);
+
+  // get product items
+  rpc GetProductItemList(GetProductItemListRequest) returns (GetProductItemListResponse);
+
+  // create product items (MPCs) from raw MPC objects
+  rpc CreateProductItems(CreateProductItemsRequest) returns (CreateProductItemsResponse);
+
+  // get a list of product items for a business by dd_sics
+  rpc GetProductItemsForBusinessByDDSics(GetProductItemsForBusinessByDDSicsRequest) returns (GetProductItemsForBusinessByDDSicsResponse);
+
+  // warmup pod by sending dummy traffic
+  rpc GetStartUpProbe(GetStartUpProbeRequest) returns (GetStartUpProbeResponse);
+
+  // get start up product items (only for Catalog Service Start Up Probe)
+  rpc GetStartUpProductItems(GetStartUpProductItemsRequest) returns (GetStartUpProductItemsResponse);
+}
+
+// client enum
+enum PresignedUrlType {
+  // invalid or unknown match status
+  PRESIGNED_URL_TYPE_UNSPECIFIED = 0;
+  // catalog build workflow
+  PRESIGNED_URL_TYPE_CATALOG_BUILD_WORKFLOW = 1;
+}
+
+// item type enum
+// buf:lint:ignore ENUM_VALUE_PREFIX
+enum RetailItemType {
+  // unspecified format
+  ITEM_TYPE_UNSPECIFIED = 0;
+  // merchant catalog
+  MPC = 1;
+  // universal catalog
+  URPC = 2;
+}
+
+// metadata for generating S3 presigned URL for catalog build workflow
+message CatalogBuildWorkflowPresignedUrlMetadata {
+  // identifier - workflow ID (UUID)
+  google.protobuf.StringValue workflow_id = 1;
+  // item type (mpc vs urpc)
+  RetailItemType item_type = 2;
+  // business ID (optional, required for MPC type)
+  google.protobuf.Int64Value business_id = 3;
+}
+
+// request for GetPresignS3Url
+message GetPresignS3UrlRequest {
+  // identifier
+  google.protobuf.StringValue identifier = 1;
+  // file name
+  google.protobuf.StringValue file_name = 2;
+  // presigned url type to determine S3 bucket and metadata type
+  PresignedUrlType client_type = 3;
+  // presigned url metadata for S3 path generation
+  oneof presigned_url_metadata {
+    // metadata for PRESIGNED_URL_TYPE_CATALOG_BUILD_WORKFLOW type
+    CatalogBuildWorkflowPresignedUrlMetadata catalog_build_workflow = 4;
+  }
+}
+
+// response for GetPresignS3Url
+message GetPresignS3UrlResponse {
+  // generated pre-signed S3 url
+  google.protobuf.StringValue pre_signed_url = 1;
+}
+
+// request for GetMergedProductItem
+message GetMergedProductItemRequest {
+  // MPC with dd_sic of the URPC linked
+  doordash.retail.catalog.crdb.v1.ProductItem product_item = 1;
+}
+
+// response for GetMergedProductItem
+message GetMergedProductItemResponse {
+  // MPC after merging with the URPC linked
+  doordash.retail.catalog.crdb.v1.ProductItem merged_product_item = 1;
+}
+
+// request for GetProductItemList
+message GetProductItemListRequest {
+  // business id
+  google.protobuf.Int64Value business_id = 1;
+  // merchant supplied id
+  repeated string merchant_supplied_ids = 2;
+  // merging with urpc flag
+  google.protobuf.BoolValue merging_with_urpc = 3;
+  // if get uses follower read
+  google.protobuf.BoolValue use_follower_read = 4;
+}
+
+// response for GetProductItemList
+message GetProductItemListResponse {
+  // returned product items
+  repeated doordash.retail.catalog.crdb.v1.ProductItem product_items = 1;
+}
+
+// request for CreateProductItems
+message CreateProductItemsRequest {
+  // MPC objects
+  repeated doordash.retail.catalog.crdb.v1.ProductItem product_items = 1;
+  // merging with URPC flag
+  google.protobuf.BoolValue merging_with_urpc = 2;
+}
+
+// response for CreateProductItems
+message CreateProductItemsResponse {
+  // created MPC objects
+  repeated doordash.retail.catalog.crdb.v1.ProductItem product_items = 1;
+}
+
+// request for GetProductItemsForBusinessByDDSics
+message GetProductItemsForBusinessByDDSicsRequest {
+  // business id
+  google.protobuf.Int64Value business_id = 1;
+  // dd sics
+  repeated string dd_sics = 2;
+}
+
+// response for GetProductItemsForBusinessByDDSics
+message GetProductItemsForBusinessByDDSicsResponse {
+  // returned product items
+  repeated doordash.retail.catalog.crdb.v1.ProductItem product_items = 1;
+}
+
+// request for GetStartUpProbe
+message GetStartUpProbeRequest {
+  // used to identify the particular app for which we need to run the start up probe
+  doordash.retail.catalog.common.v1.CatalogApplicationType app = 1;
+}
+
+// response for GetStartUpProbe
+message GetStartUpProbeResponse {
+  // flag to indicate if the warmup was successful
+  google.protobuf.BoolValue ready = 1;
+}
+
+// request for GetStartUpProductItems (only for Catalog Service Start Up Probe)
+message GetStartUpProductItemsRequest {
+  // business id
+  google.protobuf.Int64Value business_id = 1;
+  // merchant supplied id
+  repeated string merchant_supplied_ids = 2;
+  // merging with urpc flag
+  google.protobuf.BoolValue merging_with_urpc = 3;
+}
+
+// response for GetStartUpProductItems (only for Catalog Service Start Up Probe)
+message GetStartUpProductItemsResponse {
+  // returned product items
+  repeated doordash.retail.catalog.crdb.v1.ProductItem product_items = 1;
+}

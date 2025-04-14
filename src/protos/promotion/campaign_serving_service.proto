@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/billing.proto";
+import "promotion/cart.proto";
+import "promotion/common.proto";
+import "promotion/criterion.proto";
+import "promotion/incentive.proto";
+import "promotion/item_campaign.proto";
+import "promotion/placement.proto";
+import "promotion/promotion.proto";
+import "promotion/service.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+//Campaign Serving Service
+service CampaignServingService {
+  option (service_client.client_config).service_name = "promotion-service";
+  option (service_client.client_config).service_app = "web";
+
+  // Fetch Placements
+  rpc GetCampaignPlacements(GetCampaignPlacementsRequest) returns (GetCampaignPlacementsResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+}
+
+// we use a common request to extend to very specific use case endpoints later on
+// in addition, we may want to use the same request when we come up with a
+// unified promotions rpc. and ultimately, a unified rpc for both promotions and placements.
+message CommonRequest {
+  // should use object from legacy promo proto
+  reserved 14;
+  reserved "market_state";
+
+  // required
+  Consumer consumer = 1;
+  // the list of placement types requested such as banners or announcement
+  repeated Placement.PlacementType placement_types = 2;
+
+  // optional filters
+  // landing page types such as vertical pages or doubledash pages
+  Placement.LandingPageType landing_page_types = 3;
+  // if these are not set, then assume all
+  repeated AppliedBy.AppliedByType applied_by_types = 5;
+  // filtering for specific incentive types like delivery fee
+  repeated IncentiveTarget.IncentiveTargetType incentive_target_types = 6;
+  // specific vertical ids such as grocery, pets, convenience, offers
+  repeated google.protobuf.StringValue vertical_ids = 8;
+
+  // required for store specific campaigns
+  repeated StoreData stores = 4;
+
+  // required for discovery based placements (hpb, carousels)
+  // currently used for GetBanners and GetCarousels for ES fetching
+  repeated google.protobuf.StringValue geohashes = 7;
+  // for single carousel view
+  repeated google.protobuf.StringValue carousel_ids = 9;
+  // for carousels
+  repeated FeedFilter feed_filter = 10;
+  // ranking config for the placements response
+  RankingConfig ranking_config = 11;
+  // Return placements of nudge campaigns if they match any type in allowed_nudgeable_reasons
+  repeated NudgeableReason allowed_nudgeable_reasons = 12;
+  // string that can be used to query items for item campaigns.
+  google.protobuf.StringValue query = 13;
+  // required for market state eligibility check
+  MarketStateCriteria.MarketStateType market_state_type = 15;
+  // currency
+  google.protobuf.StringValue currency = 16;
+  // payment context
+  PaymentContext payment_context = 17;
+}
+
+// payment context
+message PaymentContext {
+  // is card payment
+  google.protobuf.BoolValue is_card_payment = 1;
+}
+
+// Ranking config object for the placements response
+message RankingConfig {
+  // the placement ranker to be used, the default one will be used if not specified
+  google.protobuf.StringValue placement_ranker = 1;
+}
+
+// consumer object
+message Consumer {
+  // consumer id
+  google.protobuf.StringValue id = 1;
+  // consumer timezone
+  google.protobuf.StringValue timezone = 3;
+  // consumer location such as submarket
+  common.ConsumerLocation consumer_location = 5;
+  // consumer place ids
+  repeated google.protobuf.StringValue place_ids = 6;
+}
+
+// placements request
+message GetCampaignPlacementsRequest {
+  // common request
+  CommonRequest request = 1;
+}
+
+// placements response
+message GetCampaignPlacementsResponse {
+  // a list of placement objects
+  repeated Placements placements = 1;
+}
+
+// the set of placements for the given placement type
+message Placements {
+  // placement type such as home page banner or store page sticky footer
+  Placement.PlacementType type = 1;
+  // placement data for the given placement type
+  repeated CampaignPlacement campaign_placements = 2;
+}
+
+// placement data for a specific campaign and placement type
+message CampaignPlacement {
+  // campaign id
+  google.protobuf.StringValue campaign_id = 1;
+  // placement title. generally used as copy or text to show on wallet or other placements
+  google.protobuf.StringValue title = 2;
+  // campaign's description
+  google.protobuf.StringValue description = 3;
+  // placement content such as cms json objects
+  Content content = 4;
+  // used for store specific placements such as badges
+  google.protobuf.StringValue store_id = 5;
+
+  // any extra metadata required by clients.
+  // We should try to avoid putting random data here as that creates edge cases.
+  google.protobuf.Struct metadata = 6;
+
+  // sort weight to be used in determining order of placement in respective location among other placements
+  google.protobuf.Int32Value sort_order = 7;
+
+  // proto for logging (analytical events sent to iguazu)
+  PlacementResponseLogging logging = 8;
+
+  // id from membership if promotion id is empty
+  google.protobuf.StringValue ad_id = 9;
+
+  // membership id
+  google.protobuf.StringValue ad_group_id = 10;
+
+  // campaign tags that describe the campaign's category
+  repeated google.protobuf.StringValue campaign_tags = 11;
+
+  // nudgeable reasons for the nudgeable campaign
+  repeated NudgeableReason nudgeable_reasons = 12;
+
+  // incentives attached to the campaign
+  repeated Incentive incentives = 13;
+
+  // funding source of the campaign
+  google.protobuf.StringValue funding_source = 14;
+
+  // timestamp of when the campaign was created
+  google.protobuf.Timestamp created_at = 15;
+
+  // add placements
+  repeated Placement placements = 16;
+
+  // end time of the campaign
+  google.protobuf.Timestamp end_time = 17;
+
+  // enrichment id
+  google.protobuf.StringValue enrichment_id = 18;
+}
+
+// Content object used to describe the placement
+message Content {
+  // cms id or link to images displayed or carousel id
+  // used by clients to call CMS directly in case promo does not send the object back.
+  google.protobuf.StringValue content_id = 1;
+  // actual json object to help render the placements
+  google.protobuf.StringValue cms_content = 2;
+
+  // specific banner type (example: SUBSCRIPTION BANNER)
+  Placement.BannerType banner_type = 3;
+  // for cng item detail pages
+  Placement.ItemDetailPage item_detail_page = 4;
+  // used to define whether or not the content is meant to be a dashpass specific content
+  // we should try to deprecate this field
+  google.protobuf.BoolValue is_dashpass_subscriber_promo = 5;
+
+  // used for context wallet
+  common.CampaignTermAndConditionContent term_and_condition_content = 6;
+
+  // used for announcements
+  Placement.RenderType render_type = 7;
+
+  // temporary field, determines whether announcement needs to be shown only once
+  // todo: still needed? should be done by freq cap
+  // bool show_once = 6;
+
+  // used for itemCampaign
+  repeated ItemInfo item_infos = 8;
+
+  // used for itemCampaign
+  repeated Billing billings = 9;
+
+  // used for itemCampaign
+  ProductIds product_ids = 10;
+
+  // used for itemCampaign
+  repeated ItemCampaign.ItemDiscountData item_discount_data = 11;
+  /*
+     used to indicate if the campaign is click to claim and is user in claimed or unclaimed state
+     if this field is set then it means the campaign is of type click to claim campaign i.e it has 2 memberships
+      1st membership = NOT auto_apply_<campaign_id> tag (this membership is the unclaimed state, where user does not have the audience tag)
+      2nd membership = auto_apply_<campaign_id> tag (this membership is the claimed state, where user has the audience tag)
+     the flag will be set
+      to True if the campaign is claimed i.e. user has audience tag auto_apply_<campaign_id>
+      to False if the campaign is not claimed yet i.e. user does not have audience tag auto_apply_<campaign_id>
+  */
+  google.protobuf.BoolValue is_claimed = 12;
+}
+
+// standarized message format for app event logging
+message PlacementResponseLogging {
+  // campaign id
+  string campaign_id = 1;
+  // store id of the placement
+  string store_id = 2;
+  // consumer id
+  string consumer_id = 3;
+  // content id (cms content, or carousel id)
+  string content_id = 4;
+  // placement type
+  string placement_type = 5;
+
+  // optional fields
+  google.protobuf.Struct metadata = 6;
+}

@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package delivery_experience.v1;
+
+import "common/service_client_config.proto";
+import "delivery_experience/order_status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "OrderTrackerServiceProto";
+option java_package = "delivery.experience";
+option objc_class_prefix = "OrderTrackerServiceProto";
+
+/* The main OTS gRPC service. */
+service OrderTrackerService {
+  option (service_client.client_config).service_name = "grpc-order-tracker";
+  option (service_client.client_config).response_attempt_timeout_millis = 2500;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 4; //deadline exceeded
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).retry_config.initial_wait_millis = 200;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  /* Returns the order status of the requested order. */
+  rpc GetOrderStatus(GetOrderStatusRequest) returns (GetOrderStatusResponse) {}
+
+  /* Retrieves information about the status of an order, for display on the order tracking page.
+   *
+   * Serves as the primary read API for order tracking pages across Marketplace, Drive and Storefront.
+   */
+  rpc GetOrderStatusV2(GetOrderStatusV2Request) returns (GetOrderStatusV2Response) {}
+
+  /* Returns the accept order resolution. */
+  rpc AcceptERSOrderResolution(AcceptERSOrderResolutionRequest) returns (AcceptERSOrderResolutionResponse) {
+    option deprecated = true;
+    /* Based on the p99 which is ~12sec for DRS accept order resolution endpoint */
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  }
+
+  /* Returns the status of the prompt info submitted. */
+  rpc SubmitOrderPromptInfo(SubmitOrderPromptInfoRequest) returns (SubmitOrderPromptInfoResponse) {
+    option deprecated = true;
+    /* Leave room for waiting results from Order Service refund endpoint */
+    option (service_client.client_method_config).response_attempt_timeout_millis = 15000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 1000;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  }
+}
+
+/* Contains info about the requested order. */
+message GetOrderStatusRequest {
+  reserved 8;
+  reserved "platform";
+
+  /* The order UUID. (One of [order_uuid, order_cart_id, request_id] is required.) */
+  google.protobuf.StringValue order_uuid = 1;
+  /* The order cart ID. (One of [order_uuid, order_cart_id, request_id] is required.) */
+  google.protobuf.StringValue order_cart_id = 2;
+  /* The order UUID. (One of [order_uuid, order_cart_id, request_id] is required.) */
+  google.protobuf.StringValue request_id = 3;
+  /* The creator ID is needed for experiments. (Optional) */
+  google.protobuf.StringValue creator_id = 4;
+  /* The override consumer address link id. (Optional)*/
+  google.protobuf.StringValue override_consumer_address_link_id = 5;
+  // Identifies the client who initiated the call
+  google.protobuf.StringValue client_type = 6;
+  /* The consumer ID of the authenticated user making the request. This is used to enforce PII checks. Optional
+     for non-public facing API calls. */
+  google.protobuf.StringValue requester_consumer_id = 7;
+  /* The platform from which the request is made. */
+  Platform platform_type = 9;
+
+  // Platform enum to identify the source of the request
+  enum Platform {
+    // Unspecified platform
+    PLATFORM_UNSPECIFIED = 0;
+    // Request comes from Android
+    PLATFORM_ANDROID = 1;
+    // Request comes from iOS
+    PLATFORM_IOS = 2;
+    // Request comes from Web
+    PLATFORM_WEB = 3;
+  }
+
+  // The client who initiated the call to order tracking service
+  enum ClientType {
+    // Unknown client
+    CLIENT_TYPE_UNSPECIFIED = 0;
+    // Realtime ots
+    CLIENT_TYPE_REALTIME_ORDER_TRACKING = 1;
+    // android via mobile bff
+    CLIENT_TYPE_ANDROID_NON_REALTIME_ORDER_TRACKING = 2;
+    // ios via mobile bff
+    CLIENT_TYPE_IOS_NON_REALTIME_ORDER_TRACKING = 3;
+    // web via web bff
+    CLIENT_TYPE_WEB_NON_REALTIME_ORDER_TRACKING = 4;
+  }
+}
+
+/* The response with the order status. */
+message GetOrderStatusResponse {
+  /* Order UUID. */
+  OrderStatus order_status = 1;
+
+  // (Optional) The amount of time the client should wait before calling this API again.
+  google.protobuf.Duration polling_interval = 2;
+}
+
+/** The request
+*/
+message GetOrderStatusV2Request {
+  // Id to lookup the order by
+  oneof order_identifier {
+    // UUID of the consumer order
+    google.protobuf.StringValue consumer_order_uuid = 1;
+    // UUID of any merchant order within the consumer order
+    google.protobuf.StringValue merchant_order_uuid = 2;
+    // Cart ID for any merchant order within the consumer order
+    google.protobuf.StringValue merchant_cart_id = 3;
+  }
+
+  // (Optional) The locale for the request.
+  // If not present, derives a locale from the Accept-Language header.
+  google.protobuf.StringValue locale = 4;
+  // The platform which the request was made from
+  Platform platform = 5;
+  // The line of business which the request was made from
+  Client client = 6;
+  // Authentication details.
+  // Upstream callers handle authentication; OTS handles authorization
+  Authentication authentication = 7;
+
+  // Platform enum to identify the source of the request
+  enum Platform {
+    // Unspecified platform
+    PLATFORM_UNSPECIFIED = 0;
+    // Request comes from Android
+    PLATFORM_ANDROID = 1;
+    // Request comes from iOS
+    PLATFORM_IOS = 2;
+    // Request comes from Web
+    PLATFORM_WEB = 3;
+  }
+}
+
+// Which client / frontend made the request
+enum Client {
+  // Unknown
+  CLIENT_UNSPECIFIED = 0;
+  // Marketplace
+  CLIENT_MARKETPLACE = 1;
+  // Drive orders
+  CLIENT_DRIVE = 2;
+  // Storefront orders
+  CLIENT_STOREFRONT = 3;
+}
+
+// Authentication information for the request
+message Authentication {
+  // What type of authentication the client used
+  Type type = 1;
+  // The DoorDash Cx who made the request
+  google.protobuf.Int64Value consumer_id = 2;
+  // User id of the DoorDash user who made the request
+  google.protobuf.Int64Value user_id = 3;
+
+  // How the request was authenticated
+  enum Type {
+    // Do not use
+    TYPE_UNSPECIFIED = 0;
+    // for storefront
+    TYPE_NONE = 1;
+    // for marketplace
+    TYPE_CX_LOGGED_IN = 2;
+    // for drive
+    TYPE_SECURE_URL = 3;
+    // for drive barcode number
+    TYPE_INSECURE_URL = 4;
+    // for drive
+    TYPE_MFA = 5;
+  }
+}
+
+/** Contains the status for each merchant order.
+*/
+message GetOrderStatusV2Response {
+  // Data for each merchant order within this consumer order
+  repeated OrderStatus merchant_order_status = 2;
+
+  // How long the client should wait before polling the order tracking API again
+  google.protobuf.Duration polling_interval = 3;
+}
+
+/* Contains info about the accept order resolution request. */
+message AcceptERSOrderResolutionRequest {
+  option deprecated = true;
+  /* The status_req_type_uuid. (Required) */
+  google.protobuf.StringValue status_req_type_uuid = 1;
+  /* The resolution method. (Required) */
+  google.protobuf.StringValue resolution_method = 2;
+  /* The delivery UUID. (Required) */
+  google.protobuf.StringValue delivery_uuid = 3;
+  /* The problem name. (Required) */
+  google.protobuf.StringValue problem_name = 4;
+  /* The user id. (Required) */
+  google.protobuf.StringValue user_id = 5;
+}
+
+/* response for accept order resolution. */
+message AcceptERSOrderResolutionResponse {
+  option deprecated = true;
+}
+
+/* Contains info about input submitted from order prompt. */
+message SubmitOrderPromptInfoRequest {
+  option deprecated = true;
+  /* The order uuid. (Required) */
+  google.protobuf.StringValue order_uuid = 1;
+  /* The resolution reason (order prompt type). (Required) */
+  OrderPromptDetails.ResolutionReason resolution_reason = 2;
+  /* The prompt option. (Required) */
+  PromptOption prompt_option = 3;
+  /* The user id. (Optional) */
+  google.protobuf.StringValue user_id = 4;
+}
+
+/* enum for order prompt response status. */
+enum OrderPromptResponseStatus {
+  option deprecated = true;
+  // unspecified prompt option
+  ORDER_PROMPT_RESPONSE_STATUS_UNSPECIFIED = 0;
+  // cancellation response: refund success
+  ORDER_PROMPT_RESPONSE_STATUS_CANCELLATION_REFUND_SUCCESS = 1;
+  // cancellation response: already refunded
+  ORDER_PROMPT_RESPONSE_STATUS_CANCELLATION_ALREADY_REFUNDED = 2;
+}
+
+/* response for submitting order prompt info. */
+message SubmitOrderPromptInfoResponse {
+  option deprecated = true;
+  /* The prompt response status. */
+  OrderPromptResponseStatus response_status = 1;
+}

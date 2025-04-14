@@ -1,0 +1,545 @@
+syntax = "proto3";
+
+package lattice_config_manager.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lattice_config_manager/common_message_v1.proto";
+import "lattice_config_manager/common_prompt_template_v1.proto";
+import "lattice_config_manager/context_value.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/lattice_config_manager/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "lattice_config_manager.v1";
+
+/**
+   A graph config is an instance of a graph.
+   See RFC https://docs.google.com/document/d/1-Sp6TjMr9u9AgYLpYX_iZQFBIr-SKcHt-wWrvgzZpbU/edit?usp=sharing
+*/
+message GraphConfig {
+  // One of the following depending on client needs; details or complete_graph_config.
+  oneof config {
+    // Contains only the basic information of the graph_config.
+    GraphConfigDetails details = 1;
+    // A complete graph config is a graph_config that contains all fields.
+    CompleteGraphConfig complete_graph_config = 2;
+  }
+  // Information for the UI editor to render.
+  UIConfig ui_config = 3;
+}
+
+// A graph_config's details.
+message GraphConfigDetails {
+  reserved 5;
+  // Uuid for this graph_config.
+  google.protobuf.StringValue graph_config_uuid = 1;
+  // Version of this graph_config.
+  google.protobuf.Int64Value version = 2;
+  // Tags for this graph_config.
+  repeated google.protobuf.StringValue tags = 3;
+  // Name of the graph_config.
+  google.protobuf.StringValue name = 4;
+  // Created at
+  google.protobuf.Timestamp created_at = 6;
+  // Created by
+  google.protobuf.StringValue created_by = 7;
+  // Created by type (i.e. SYSTEM vs USER)
+  google.protobuf.StringValue created_by_type = 8;
+  // Metadata of the graph_config.
+  GraphConfigMetadata metadata = 9;
+}
+
+// A ui_config that contains field for ui such as the canvas editor.
+message UIConfig {
+  // Contains only the basic information of the ui_config.
+  UIConfigDetails details = 1;
+  // Body of the ui_config.
+  UIConfigBody body = 2;
+}
+
+// A graph ui_config's details.
+message UIConfigDetails {
+  // Uuid for this ui_config.
+  google.protobuf.StringValue ui_config_uuid = 1;
+  // Version of this ui_config.
+  google.protobuf.Int64Value version = 2;
+  // Tags for this ui_config.
+  repeated google.protobuf.StringValue tags = 3;
+}
+
+// Body of the graph ui_config.
+message UIConfigBody {
+  // JSON string for the React Flow editor component.
+  google.protobuf.StringValue react_flow_json = 1;
+}
+
+// A complete_graph_config is a graph_config that contains all fields.
+message CompleteGraphConfig {
+  reserved 6, 7, 8;
+  // Contains only the basic information of the graph_config.
+  GraphConfigDetails details = 1;
+  // Body of the graph_config.
+  GraphConfigBody body = 2;
+}
+
+// Extra information of graph_config
+message GraphConfigMetadata {
+  // Description of the graph_config.
+  google.protobuf.StringValue description = 1;
+
+  // Graph type of the graph_config.
+  GraphType graph_type = 2;
+}
+
+/**
+   Graph type of the graph_config.
+   GENERIC and UNSPECIFIED are equivalent.
+   GRAPH_TYPE_AGENT is used for agent graphs and can be manipulated using AgentGraphService APIs.
+*/
+enum GraphType {
+  // Unspecified graph type.
+  GRAPH_TYPE_UNSPECIFIED = 0;
+  // Agent graph type.
+  GRAPH_TYPE_AGENT = 1;
+  // Tool graph type.
+  GRAPH_TYPE_GENERIC = 2;
+}
+
+// Body of the graph_config
+message GraphConfigBody {
+  // Uuid of the root node of the graph.
+  google.protobuf.StringValue root_node_uuid = 1;
+  // Nodes in the graph.
+  repeated Node nodes = 2;
+  // Edges in the graph.
+  repeated Edge edges = 3;
+}
+
+// A node is a vertex in the graph. It is an entity that can be executed.
+message Node {
+  // Uuid for this node unique to the graph.
+  google.protobuf.StringValue node_uuid = 1;
+  // Name of the node should be unique in the graph.
+  google.protobuf.StringValue name = 2;
+  // Description of the node.
+  google.protobuf.StringValue description = 3;
+  // Type of the node
+  oneof type {
+    // A node that uses prompts as input to LLMs.
+    AgentNode agent_node = 4;
+    // A node that uses a tool.
+    ToolNode tool_node = 5;
+    // A node that holds conditional logic.
+    ConditionalNode conditional_node = 6;
+    // A node that specifies that the runner should return the response to the client.
+    ReturnDirectNode return_direct_node = 7;
+    // A tool output processor node is used to process the output of a tool.
+    ToolOutputProcessorNode tool_output_processor_node = 8;
+    // A node that runs its child nodes in parallel.
+    ParallelMergeNode parallel_merge_node = 9;
+  }
+}
+
+// An edge is a connection between two nodes in the graph and defined as a relationship.
+message Edge {
+  // Name of the edge.
+  google.protobuf.StringValue name = 1;
+  // Type of the edge.
+  google.protobuf.StringValue type = 2;
+  // Specifies where the edge starts from.
+  google.protobuf.StringValue from_node_uuid = 3;
+  // Specifies where the edge ends to.
+  google.protobuf.StringValue to_node_uuid = 4;
+}
+
+// A node that runs its child nodes in parallel.
+message ParallelMergeNode {
+  // currently empty
+}
+
+// A node that uses prompts as input to LLMs.
+message AgentNode {
+  // A list of prompts to be used for LLMs.
+  repeated Prompt prompts = 1;
+  // The LLM to be used.
+  LLM llm = 2;
+}
+
+// A prompt to be used for LLMs.
+message Prompt {
+  // Type of the prompt.
+  PromptType prompt_type = 1;
+  /**
+     The prompt template to use for the prompt.
+     When creating or updating graph_config, the active_prompt_template model should be used.
+     When getting the graph_config, the complete_prompt_template model will be returned.
+  */
+  lattice_config_manager.v1.PromptTemplate prompt_template = 2;
+}
+
+// Type of the prompt
+enum PromptType {
+  // Unspecified prompt type.
+  PROMPT_TYPE_UNSPECIFIED = 0;
+  // prompt_type system - used for system level prompts.
+  PROMPT_TYPE_SYSTEM = 1;
+  // prompt_type input - used for user input prompts.
+  PROMPT_TYPE_INPUT = 2;
+}
+
+// Bindings (using context variables) for implementing the tool calling.
+// The bindings must match the tool schema.
+// There are two type so bindings -
+// 1. Static binding of an argument to a context variable.
+// 2. LLM binding from the output of a LLM using the tool schema directly.
+// This happens if the tool call is following an AgentNode and connected with
+// HasTool relationship. **ONLY** static bindings are to be provided here.
+// LLM binding will happen automatically in the platform.
+message Binding {
+  // We will support 3 types of bindings -
+  // 1. Using constants. example - arg0 = '{"is_escalation": true}'
+  // 2. Using context variable example arg1 = 'sesion_context.initial.is_dasher'
+  // 3. Using handle bars template arg2 =
+  // '{"summary": {{session_context.message_summary}},
+  //   "is_dasher": {{sesion_context.initial.is_dasher}}
+  //  }'
+  oneof binding {
+    // Use bind_constants to do static binding of constants.
+    lattice_config_manager.v1.ContextValue constant = 1;
+    // Static binding to variable in the context.
+    google.protobuf.StringValue context_key = 2;
+    // This can be used to bind handlebars formatted template.
+    // The template can't use any partial. The template will be passed
+    // input & context.
+    google.protobuf.StringValue template = 3;
+  }
+}
+
+// A node that uses a tool.
+message ToolNode {
+  // The tool to be used.
+  Tool tool = 1;
+  // The key in the bindings is the fully qualified path of the property in
+  // the schema object. The value is one of supported binding.
+  map<string, Binding> bindings = 2;
+  // execution priority of this tool node when set up as initial_tools (e.g. in agent graph type)
+  google.protobuf.Int32Value execution_priority = 3;
+}
+
+// A tool is used to perform a certain task.
+message Tool {
+  // Uuid of the tool.
+  google.protobuf.StringValue tool_uuid = 1;
+  // Name of the tool.
+  google.protobuf.StringValue name = 2;
+  // Description of the tool.
+  google.protobuf.StringValue description = 3;
+  // Parameter schema of the tool. Must adhere to the schema definition
+  // in asgard/libraries/lattice-core/src/main/kotlin/
+  // com/doordash/lattice/core/util/toolschema/RemoteToolSchema::RemoteToolSchema
+  google.protobuf.StringValue input_parameter_schema = 4;
+  // Parameter schema of the tool. Must adhere to the schema definition
+  // in asgard/libraries/lattice-core/src/main/kotlin/
+  // com/doordash/lattice/core/util/toolschema/RemoteToolSchema::ToolOutputSchema
+  google.protobuf.StringValue output_parameter_schema = 5;
+
+  // Describes where to find the tool implementation.
+  oneof implementation {
+    // If it is a grpc tool this will provide implementation details.
+    GrpcTool grpc_tool_implementation = 6;
+    // If it is a tool that is linked in the lattice runner package, this
+    // will provide the details.
+    InPackageTool in_package_tool_implementation = 7;
+    // If it is a REST tool then provide the implementation details.
+    HTTPRestTool rest_tool_implementation = 8;
+    // Any grpc call is accessible here using ServerReflection apis. (Most asgard services).
+    // Can't use session, all the input must be part of request type.
+    GrpcDirectTool grpc_direct_tool_implementation = 9;
+  }
+}
+
+// Implementation of a tool that call a grpc method via reflection.
+// RFC: https://docs.google.com/document/d/1Nubh1iHvDof49ZxUAqA6_TX_VED8ugcitq76xjzgAjU
+message GrpcDirectTool {
+  // Service namespace of the grpc service. e.g to call "lattice-runner-api.service.prod.ddsd".
+  // put lattice-runner here.
+  google.protobuf.StringValue service_names = 1;
+  // Service app of the grpc service. For the above example this is "api".
+  google.protobuf.StringValue app_name = 2;
+  // Proto package of the service proto. e.g if the service full name is lattice_runner.v1.LatticeToolService,
+  // put lattice_runner.v1 here.
+  google.protobuf.StringValue service_package = 3;
+  // Name of the service proto message. In above example it is LatticeToolService
+  google.protobuf.StringValue service_message = 4;
+  // grpc method name. e.g if calling rpc RunTool in LatticeToolService, set this to RunTool.
+  google.protobuf.StringValue grpc_method = 5;
+  // API Keys are retrieved from Secret resolver. Pass the secret key here.
+  // Note that the API keys here are needed to access the above service from lattice.
+  google.protobuf.StringValue api_key_name = 6;
+  // Timeout in millis.
+  google.protobuf.Int32Value timeout_ms = 7;
+  // Circuit breaker config.
+  CircuitBreakerConfig circuit_breaker_config = 8;
+  // TODO: Add Transformation options and output schema.
+  // Currently output scehma are not part of tool implementation. We envision to add them as part of
+  // tool repository.
+  // TODO: Disallow calls for grpc not added to lattice tool registry.
+}
+
+// Implementation of a tool called through grpc.
+message GrpcTool {
+  // Service name implementing the lattice tool.
+  google.protobuf.StringValue service_name = 1;
+  // App name implementing the lattice tool.
+  google.protobuf.StringValue app_name = 2;
+  // host port of grpc endpoint implemntation of the tool. (e.g If the service that
+  // implemented the tool is teammate-experience-service-web, then this will be -
+  // teammate-experience-service-web.service.prod.ddsd
+  google.protobuf.StringValue host = 3;
+  // If specifying host above then also specify the port.
+  google.protobuf.Int32Value port = 4;
+  // API Keys are retrieved from Secret resolver. Pass the secret key here.
+  // Note that the API keys here are needed to access the above service from lattice.
+  google.protobuf.StringValue api_key_name = 5;
+  // Timeout in millis.
+  google.protobuf.Int32Value timeout_ms = 6;
+  // Circuit breaker config.
+  CircuitBreakerConfig circuit_breaker_config = 7;
+}
+
+// Implementation of a tool called through grpc.
+message InPackageTool {
+  // Classname of the tool linked to the lattice runner binary.
+  google.protobuf.StringValue tool_class_name = 1;
+}
+
+// Http Rest tool implementation configurations (Can be used for REST and
+// services behind UGP). The service must accept the payload json as POST.
+// So, we will not allow specifying method.
+message HTTPRestTool {
+  // URL of the http rest endpoint.
+  google.protobuf.StringValue base_url = 1;
+  // Port of the http rest endpoint.
+  google.protobuf.Int32Value port = 2;
+  // Vault key for the Api key secrets associated with the endpoint.
+  google.protobuf.StringValue api_key_name = 3;
+  // REST path.
+  google.protobuf.StringValue rest_path = 4;
+  // Circuit breaker config.
+  CircuitBreakerConfig circuit_breaker_config = 5;
+}
+
+// Configuration for the circuit breaker client to use with a given service.
+message CircuitBreakerConfig {
+  // If the circuit breaker is enabled. (Default true).
+  google.protobuf.BoolValue enabled = 1;
+  // Failure codes to ignore. (Depends on if it is a REST and gRPC).
+  repeated int32 ignore_error_codes = 2;
+  // Circuit breaker sliding window duration in seconds. (Default set to 60).
+  google.protobuf.Int32Value sliding_window_duration_secs = 3;
+  // Failure percent to trigger circuit breaker. (Default set to 50.0%)
+  google.protobuf.DoubleValue failure_percent = 4;
+}
+
+// A tool output processor node is used to process the output of a tool.
+message ToolOutputProcessorNode {
+  // The template to use to reformat the output of the previous LLM (in handlebars format)
+  google.protobuf.StringValue template = 1;
+}
+
+// Vendor of the LLM.
+enum LLMVendor {
+  // Unknown vendor.
+  LLM_VENDOR_UNSPECIFIED = 0;
+  // OpenAI vendor.
+  LLM_VENDOR_OPEN_AI = 1;
+  // Portkey virtual LLM vendor.
+  LLM_VENDOR_PORTKEY = 2;
+  // Bedrock LLM vendor. (Also supported via portkey virtual keys)
+  LLM_VENDOR_BEDROCK = 3;
+  // Gemini LLM vendor. (Also supported via portkey virtual keys)
+  LLM_VENDOR_GEMINI = 4;
+}
+
+// A large language model to be used by an agent node.
+message LLM {
+  // Vendor of the LLM.
+  LLMVendor vendor = 1;
+  // Parameters for the LLM.
+  map<string, ParameterValue> parameters = 3;
+}
+
+// A parameter value.
+message ParameterValue {
+  // Value of the parameter
+  oneof value {
+    // string value.
+    google.protobuf.StringValue string_value = 1;
+    // List of string value.
+    ParameterValueListString string_list_value = 2;
+    // int64 value.
+    google.protobuf.Int64Value int64_value = 3;
+    // List of int64 value.
+    ParameterValueListInt64 int64_list_value = 4;
+    // bool value.
+    google.protobuf.BoolValue bool_value = 5;
+    // double value.
+    google.protobuf.DoubleValue double_value = 6;
+    // List of double value.
+    ParameterValueListDouble double_list_value = 7;
+  }
+}
+
+// Parameter value the contains a list of int64 values.
+message ParameterValueListInt64 {
+  // values
+  repeated google.protobuf.Int64Value values = 1;
+}
+
+// Parameter value the contains a list of double values.
+message ParameterValueListDouble {
+  // values
+  repeated google.protobuf.DoubleValue values = 1;
+}
+
+// Parameter value the contains a list of string values.
+message ParameterValueListString {
+  // values
+  repeated google.protobuf.StringValue values = 1;
+}
+
+// A node that holds conditional logic.
+message ConditionalNode {
+  // Condition for the node.
+  Condition condition = 1;
+}
+
+// A condition for the conditional node type.
+message Condition {
+  reserved "context_property_greater_than_or_equal";
+  reserved 7;
+
+  // The type of this condition.
+  oneof type {
+    // Check if a context property exists.
+    ConditionContextPropertyExists context_property_exists = 1;
+    // Check if a context property equals a value.
+    ConditionContextPropertyEquals context_property_equals = 2;
+    // Conditional logic not.
+    ConditionNot condition_not = 3;
+    // Conditional logic if.
+    ConditionIf condition_if = 4;
+    // Conditional logic or.
+    ConditionOr condition_or = 5;
+    // Conditional logic and.
+    ConditionAnd condition_and = 6;
+    // Check if a context property is greater than a value.
+    ConditionContextPropertyGreaterThanOrEqual context_property_greater_than_or_equals = 8;
+  }
+}
+
+// Check if a context property is greater than or equal to a value.
+message ConditionContextPropertyGreaterThanOrEqual {
+  // Key of the context property.
+  google.protobuf.StringValue key = 1;
+  // Value of the context property. Must be a number.
+  lattice_config_manager.v1.ContextValue context_value = 2;
+}
+
+// Check if a context property exists.
+message ConditionContextPropertyExists {
+  // Key of the context property.
+  google.protobuf.StringValue key = 1;
+}
+
+// Check if a context property equals a value.
+message ConditionContextPropertyEquals {
+  reserved 2, 3;
+
+  // Key of the context property.
+  google.protobuf.StringValue key = 1;
+  // Value of the context property.
+  lattice_config_manager.v1.ContextValue context_value = 4;
+}
+
+// Conditional logic not.
+message ConditionNot {
+  // Condition to be negated.
+  Condition condition = 1;
+}
+
+// Conditional logic if.
+message ConditionIf {
+  // Condition to be checked.
+  Condition condition = 1;
+  // Condition to be executed if the condition is true.
+  Condition condition_then = 2;
+  // Condition to be executed if the condition is false.
+  Condition condition_else = 3;
+}
+
+// Conditional logic or.
+message ConditionOr {
+  // Conditions to be checked.
+  repeated Condition conditions = 1;
+}
+
+// Conditional logic and.
+message ConditionAnd {
+  // Conditions to be checked.
+  repeated Condition conditions = 1;
+}
+
+// Message type
+enum ReturnMessageType {
+  // Return Message type unspecified
+  RETURN_MESSAGE_TYPE_UNSPECIFIED = 0;
+  // Return message type with return
+  RETURN_MESSAGE_TYPE_RETURN = 1;
+  // Return image message type, message will contain the image CDN url
+  RETURN_MESSAGE_TYPE_IMAGE = 2;
+  // Return json message type, message will contain the json body
+  RETURN_MESSAGE_TYPE_JSON = 3;
+  // Return channel metadata action type,
+  // message will contain serialized channel metadata action message
+  // refer: conversation_intelligence_service.v1.ChannelMetadataAction
+  RETURN_MESSAGE_TYPE_CHANNEL_METADATA_ACTION = 4;
+  // Return message type with retrigger
+  // This is used to instruct client to retrigger the graph
+  RETURN_MESSAGE_TYPE_RETRIGGER = 5;
+}
+
+// message with return type
+message MessageWithReturnType {
+  // Message string return to the caller
+  google.protobuf.StringValue message = 1;
+  // Return type
+  ReturnMessageType return_type = 2;
+  // Message metadata
+  lattice_config_manager.v1.MessageMetadata metadata = 3;
+}
+
+// Type of node that specifies that the runner should return the response to the client.
+message ReturnDirectNode {
+  // The message list to return to the caller.
+  repeated google.protobuf.StringValue messages = 1;
+
+  // Any additional data to send to the caller in json format.
+  repeated ReturnDirectTag tags = 2;
+
+  // The message list to return to the caller with types.
+  repeated MessageWithReturnType messages_with_return_type = 3;
+}
+
+// Represent Tag in a return direct message.
+message ReturnDirectTag {
+  // In the return direct they will be part of the JSON object
+  // as {type: serialized_data}
+  google.protobuf.StringValue type = 1;
+  // Json serialized metadata to return.
+  google.protobuf.StringValue serialized_data = 2;
+}

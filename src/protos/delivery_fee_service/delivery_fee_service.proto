@@ -1,0 +1,478 @@
+syntax = "proto3";
+package delivery_fee_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/order_config.proto";
+import "consumer_pricing/pricing.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "delivery_fee_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.delivery_fee";
+
+service DeliveryFeeService {
+  // DEPRECATED, use GetQuoteAdjustments and GetBatchQuoteAdjustments
+  rpc GetDeliveryFees(GetDeliveryFeesRequest) returns (GetDeliveryFeesResponse) {
+    option deprecated = true;
+  }
+  // DEPRECATED, use GetQuoteAdjustments and GetBatchQuoteAdjustments
+  rpc GetServiceRate(GetServiceRateRequest) returns (GetServiceRateResponse) {
+    option deprecated = true;
+  }
+  rpc GetDistrict(GetDistrictRequest) returns (GetDistrictResponse);
+  rpc UpdateDistrict(UpdateDistrictRequest) returns (UpdateDistrictResponse);
+  rpc UpdateSubmarket(UpdateSubmarketRequest) returns (UpdateSubmarketResponse);
+  rpc UpdateStore(UpdateStoreRequest) returns (UpdateStoreResponse);
+  rpc GetStoreMaxRadius(GetStoreMaxRadiusRequest) returns (GetStoreMaxRadiusResponse);
+  rpc GetExperimentBucket(GetExperimentBucketRequest) returns (GetExperimentBucketResponse);
+  rpc CreateStoreOpportunityProducts(CreateStoreOpportunityProductsRequest) returns (CreateStoreOpportunityProductsResponse);
+  rpc GetStorefrontDeliveryFee(GetStorefrontDeliveryFeeRequest) returns (GetStorefrontDeliveryFeeResponse);
+  rpc GetStorefrontServiceRate(GetStorefrontServiceRateRequest) returns (GetStorefrontServiceRateResponse);
+  // DEPRECATED, use GetQuoteAdjustments
+  rpc GetPriorityFee(GetPriorityFeeRequest) returns (GetPriorityFeeResponse) {
+    option deprecated = true;
+  }
+  // DEPRECATED, use GetQuoteAdjustments
+  rpc GetDeliveryOptionQuote(GetDeliveryOptionQuoteRequest) returns (GetDeliveryOptionQuoteResponse) {
+    option deprecated = true;
+  }
+  rpc CalculateFees(CalculateFeesRequest) returns (CalculateFeesResponse);
+  rpc UpdateStoreLevelFeeInject(UpdateStoreLevelFeeInjectRequest) returns (UpdateStoreLevelFeeInjectResponse);
+  // DEPRECATED, use GetQuoteAdjustments
+  rpc GetSmallOrderFeeVsServiceFeeConfig(GetSmallOrderFeeVsServiceFeeConfigRequest) returns (GetSmallOrderFeeVsServiceFeeConfigResponse) {
+    option deprecated = true;
+  }
+  rpc UpdateSmallOrderFeeVsServiceFeeConfig(UpdateSmallOrderFeeVsServiceFeeConfigRequest) returns (UpdateSmallOrderFeeVsServiceFeeConfigResponse);
+
+  // This is a temporary short term solution in delivery fee service
+  // Please refer the details to https://docs.google.com/document/d/1vj7BCg0h_RZtHPkiL6eKDYf3cIUs_R8V5bW8-jP6WA4/edit#
+  rpc UpdateStoreMaxDeliveryRadius(UpdateStoreMaxDeliveryRadiusRequest) returns (UpdateStoreMaxDeliveryRadiusResponse);
+
+  rpc GetStoreOpportunityProducts(GetStoreOpportunityProductsRequest) returns (GetStoreOpportunityProductsResponse);
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsRequest/ GetBatchQuoteAdjustmentsRequest
+message GetDeliveryFeesRequest {
+  option deprecated = true;
+  // consumer location
+  common.ConsumerLocation consumer_location = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // a list of store properties
+  repeated Store stores = 3;
+  // a map of experiments(name: bucket)
+  map<string, string> experiments = 4;
+  bool is_employee = 5;
+  QuoteType quote_type = 6;
+  bool is_guest = 7;
+  bool is_group_order = 8;
+  repeated string consumer_tags = 9;
+  google.protobuf.StringValue cart_uuid = 10;
+  CxPricingRequestQuoteType cx_pricing_request_quote_type = 11;
+  google.protobuf.StringValue delivery_fee_request_uuid = 12;
+  google.protobuf.StringValue timezone = 13;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsResponse/ GetBatchQuoteAdjustmentsResponse
+message GetDeliveryFeesResponse {
+  option deprecated = true;
+  // a list of store delivery fee objects
+  repeated StoreDeliveryFee store_delivery_fees = 1;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsRequest/ GetBatchQuoteAdjustmentsRequest
+message GetServiceRateRequest {
+  option deprecated = true;
+  // consumer id, to get pricing experiment value
+  google.protobuf.StringValue consumer_id = 1;
+  // store properties, to get store id and geo values
+  Store store = 2;
+  // consumer submarket, used for exp bucketing purposes
+  google.protobuf.StringValue submarket_id = 3;
+  bool is_group_order = 4;
+  common.ConsumerLocation consumer_location = 5;
+  repeated string consumer_tags = 6;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsResponse
+message GetServiceRateResponse {
+  option deprecated = true;
+  // service rate returned (as a basis point)
+  money.BasisPoint service_rate = 1;
+  google.protobuf.StringValue tool_tip = 2;
+}
+
+message Store {
+  // store id
+  google.protobuf.StringValue id = 1;
+  // store location
+  common.StoreLocation store_location = 2;
+  // store business id
+  google.protobuf.StringValue business_id = 3;
+  // store business vertical id
+  google.protobuf.StringValue business_vertical_id = 4;
+  // if store fulfills own deliveries
+  bool fulfills_own_deliveries = 5;
+  // if store is DP-eligible
+  bool is_subscription_eligible = 6;
+}
+
+enum QuoteType {
+  UNSET = 0;
+  GENERATE_ORDER_QUOTE = 1;
+  FINALIZE_ORDER_QUOTE = 2;
+  GENERATE_BATCH_STORE_QUOTE = 3;
+}
+
+// only use for delivery fee computer event builder to recognize cx-pricing order quote request type
+// currently only allow cx-pricing generateOrderQuoteV2 and finalizeOrderQuote request to create the DeliveryFeeComputeEvent
+enum CxPricingRequestQuoteType {
+  UNSET_TYPE = 0;
+  GENERATE_ORDER_QUOTE_V2_TYPE = 1;
+  FINALIZE_ORDER_QUOTE_TYPE = 2;
+}
+
+enum AdjustmentType {
+  UNKNOWN = 0;
+  TIER_FEE = 1;
+  DBP_ADJUSTMENT = 2;
+  EXPERIMENT_ADJUSTMENT = 3;
+  CUSTOM_FEE = 4;
+  MX_OPTIMIZATION = 5;
+  WELCOME_BACK_ADJUSTMENT = 6;
+}
+
+// fees are integers in minor currency units, e.g. for USD it's in cents.
+// https://en.wikipedia.org/wiki/ISO_4217#Treatment_of_minor_currency_units_(the_%22exponent%22)
+message StoreDeliveryFee {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // base delivery fee, does not include extra_sos_delivery_fee
+  google.protobuf.Int32Value base_delivery_fee = 2;
+  // sos_delivery_fee, which is not part of the base delivery fee
+  google.protobuf.Int32Value extra_sos_delivery_fee = 3;
+  AdjustmentDetails adjustment_details = 4;
+}
+
+message AdjustmentDetails {
+  google.protobuf.BoolValue is_dbp_adjusted = 1;
+  repeated FeeAdjustmentBreakdown fee_adjustment_breakdowns = 2;
+}
+
+message FeeAdjustmentBreakdown {
+  google.protobuf.Int32Value adjustment_value = 1;
+  AdjustmentType adjustment_type = 2;
+}
+
+message GetDistrictRequest {
+  google.protobuf.StringValue district_id = 1;
+}
+
+message GetDistrictResponse {
+  google.protobuf.StringValue district_id = 1;
+  google.protobuf.Int32Value store_radius = 2;
+  google.protobuf.StringValue tiered_delivery_fee = 3;
+}
+
+message UpdateDistrictRequest {
+  google.protobuf.StringValue district_id = 1;
+  // straight-line store radius in meters
+  google.protobuf.Int32Value store_radius = 2;
+  // tiered delivery fee in json, i.e. {"1": 599, "0": 699, "3": 399, "2": 499, "5": 199, "4": 299}
+  google.protobuf.StringValue tiered_delivery_fee = 3;
+  google.protobuf.StringValue description = 4;
+  // user email who executed this update district request, i.e. "jason@doordash.com"
+  google.protobuf.StringValue updated_by_email_addr = 5;
+}
+
+message UpdateDistrictResponse {}
+
+message UpdateSubmarketRequest {
+  google.protobuf.StringValue submarket_id = 1;
+  // service rate of submarket where the store is located in
+  money.BasisPoint service_rate = 2;
+  // user email who executed this update district request, i.e. "jason@doordash.com"
+  google.protobuf.StringValue updated_by_email_addr = 3;
+}
+
+message UpdateSubmarketResponse {}
+
+message UpdateStoreRequest {
+  google.protobuf.StringValue store_id = 1;
+  // store tier level for calculating tier delivery fee
+  google.protobuf.Int32Value tier_level = 2;
+  // custom delivery fee that supersede other fees like tier fee or dbp adjustment
+  google.protobuf.Int32Value custom_delivery_fee = 3;
+  // overriding fee used for price sensitivity experiment
+  google.protobuf.Int32Value programmatic_delivery_fee = 4;
+  // submarket id of store
+  google.protobuf.StringValue submarket_id = 5;
+  // business id of store
+  google.protobuf.StringValue business_id = 6;
+  // custom service rate that overrides submarket level and default rate
+  money.BasisPoint custom_service_rate = 7;
+  // The list of columns name which this request going to update
+  repeated google.protobuf.StringValue update_fields = 8;
+  // user email who executed this update district request, i.e. "jason@doordash.com"
+  google.protobuf.StringValue updated_by_email_addr = 9;
+}
+
+message UpdateStoreResponse {}
+
+message GetStoreMaxRadiusRequest {
+  // store properties, to get store id and geo values
+  google.protobuf.StringValue store_id = 1;
+  // district ID for calculating tiered delivery fee
+  google.protobuf.StringValue district_id = 2;
+  // starting_point_id for getting expandedSelectionInput
+  google.protobuf.StringValue starting_point_id = 3;
+  // expanded straight line in meters for setting the valid range (upper bound) of max store radius
+  google.protobuf.Int32Value expanded_straight_line_meters = 4;
+  // submarket ID for calculating tiered delivery fee for different exp buckets
+  google.protobuf.StringValue submarket_id = 5;
+}
+
+message GetStoreMaxRadiusResponse {
+  // store a map of <experiment_treatment, distance>
+  map<string, int32> store_max_radii = 1;
+}
+
+message GetExperimentBucketRequest {
+  // consumer id, used for exp bucketing purposes
+  google.protobuf.StringValue consumer_id = 1;
+  // consumer submarket, used for exp bucketing purposes
+  google.protobuf.StringValue submarket_id = 2;
+}
+
+message GetExperimentBucketResponse {
+  // experiment name returned
+  google.protobuf.StringValue experiment_name = 1;
+  // treatment bucket returned
+  google.protobuf.StringValue treatment_bucket = 2;
+}
+
+message OpportunityProduct {
+  google.protobuf.StringValue opportunity_id = 1;
+  google.protobuf.StringValue opportunity_line_item_id = 2;
+  common.Experience experience = 3;
+  common.Channel channel = 4;
+  common.FulfillmentType fulfillment_type = 5;
+  common.Audience audience = 6;
+  google.protobuf.Int32Value delivery_fee = 7;
+  money.BasisPoint service_rate = 8;
+  google.protobuf.Int32Value min_order_subtotal = 9;
+  google.protobuf.Int32Value min_order_fee = 10;
+  google.protobuf.Timestamp start_time = 11;
+  google.protobuf.Timestamp end_time = 12;
+  google.protobuf.Timestamp created_at = 13;
+}
+
+message CreateStoreOpportunityProductsRequest {
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.Int64Value creator_user_id = 2;
+  repeated OpportunityProduct opportunity_products = 3;
+}
+
+message CreateStoreOpportunityProductsResponse {}
+
+message GetStoreOpportunityProductsRequest {
+  google.protobuf.Int64Value store_id = 1;
+}
+
+message GetStoreOpportunityProductsResponse {
+  repeated OpportunityProduct opportunity_products = 1;
+}
+
+message GetStorefrontDeliveryFeeRequest {
+  Store store = 1;
+}
+
+message GetStorefrontDeliveryFeeResponse {
+  google.protobuf.Int32Value delivery_fee = 1;
+}
+
+message GetStorefrontServiceRateRequest {
+  Store store = 1;
+}
+
+message GetStorefrontServiceRateResponse {
+  money.BasisPoint service_rate = 1;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsRequest
+message GetPriorityFeeRequest {
+  option deprecated = true;
+  common.ConsumerLocation consumer_location = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  Store store = 3;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsResponse instead
+message GetPriorityFeeResponse {
+  option deprecated = true;
+  bool is_priority_delivery_eligible = 1;
+  google.protobuf.Int32Value priority_fee = 2;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsRequest
+message GetDeliveryOptionQuoteRequest {
+  option deprecated = true;
+  common.ConsumerLocation consumer_location = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  Store store = 3;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsResponse instead
+message GetDeliveryOptionQuoteResponse {
+  option deprecated = true;
+  reserved 5;
+  reserved "flf_data";
+  bool is_no_rush_delivery_eligible = 1;
+  bool is_priority_delivery_eligible = 2;
+  google.protobuf.Int32Value priority_fee = 3;
+  repeated common.DeliveryOptionUnavailableReason priority_delivery_unavailable_reasons = 4;
+  google.protobuf.DoubleValue regularized_flf = 6;
+  google.protobuf.DoubleValue max_flf = 7;
+}
+
+message CalculateFeesRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue store_id = 2;
+  consumer_pricing.Cart cart = 3;
+  common.StoreLocation store_location = 4;
+  google.protobuf.StringValue locale = 5;
+  google.protobuf.StringValue consumer_submarket_id = 6;
+  common.CommonAddress store_address = 7;
+  common.order_config.v1.OrderConfig.FulfillmentType fulfillment_type = 8 [deprecated = true];
+  common.order_config.v1.OrderConfig.ConsumerExperience consumer_experience = 9 [deprecated = true];
+  common.PlatformType platform_type = 10;
+  common.FulfillmentType fulfillment = 11;
+  common.Experience experience = 12;
+  common.CommonAddress consumer_address = 13;
+  google.protobuf.BoolValue store_fulfill_own_delivery = 14;
+  google.protobuf.StringValue business_vertical_id = 15;
+  google.protobuf.StringValue business_id = 16;
+  google.protobuf.Int64Value r2c_meters = 17;
+  google.protobuf.Int64Value subtotal = 18;
+  repeated money.SupplementalPaymentAuthorizedAmount supplemental_payment_authorized_amount = 19;
+  google.protobuf.StringValue consumer_district_id = 20;
+  map<string, string> experiments = 21;
+  map<string, bool> experiments_boolean = 22;
+}
+
+message UpdateStoreLevelFeeInjectRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // fee config id, identifier of store level fee
+  google.protobuf.StringValue fee_config_id = 2;
+  // store level fee amount
+  google.protobuf.Int32Value fee_amount = 3;
+  // currency for store level fee
+  google.protobuf.StringValue currency = 4;
+  // flag for activating store level fee
+  bool alive = 5;
+  // field indicating percentage of fee
+  google.protobuf.DoubleValue fee_percentage = 6;
+  // field indicating the fee strategy
+  FeeStrategy fee_strategy = 7;
+}
+
+message UpdateStoreLevelFeeInjectResponse {}
+
+// DEPRECATED, use GetQuoteAdjustmentsRequest
+message GetSmallOrderFeeVsServiceFeeConfigRequest {
+  option deprecated = true;
+  // store id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// DEPRECATED, use GetQuoteAdjustmentsResponse instead
+message GetSmallOrderFeeVsServiceFeeConfigResponse {
+  option deprecated = true;
+  SmallOrderFeeVsServiceFeeConfig small_order_fee_vs_service_fee_config = 1;
+}
+
+message UpdateSmallOrderFeeVsServiceFeeConfigRequest {
+  SmallOrderFeeVsServiceFeeConfig small_order_fee_vs_service_fee_config = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+}
+
+message UpdateSmallOrderFeeVsServiceFeeConfigResponse {}
+
+message UpdateStoreMaxDeliveryRadiusRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // max delivery radius. Don't set the field to unset value
+  google.protobuf.Int32Value max_delivery_radius = 2;
+}
+
+message UpdateStoreMaxDeliveryRadiusResponse {}
+
+message SmallOrderFeeVsServiceFeeConfig {
+  google.protobuf.BoolValue alive = 1;
+  google.protobuf.StringValue updated_by = 2;
+  google.protobuf.BoolValue waive_sof = 3;
+  ServiceFeeConfigPolicy service_fee_config_policy = 4;
+  google.protobuf.Int32Value sof_adjustment = 5;
+  google.protobuf.Int32Value sof_min_subtotal_adjustment = 6;
+  google.protobuf.Int32Value classic_sf_min = 7;
+  google.protobuf.Int32Value dashpass_sf_min = 8;
+  google.protobuf.Int32Value classic_sf_max = 9;
+  google.protobuf.Int32Value dashpass_sf_max = 10;
+  google.protobuf.Int32Value classic_sf_flat = 11;
+  google.protobuf.Int32Value dashpass_sf_flat = 12;
+  google.protobuf.BoolValue enable_upsell = 13;
+  money.StoreServiceFeeConfigPolicy store_service_fee_config_policy = 14;
+}
+
+enum ServiceFeeConfigPolicy {
+  // unspecified
+  UNSPECIFIED = 0;
+  // enable floor service fee
+  SERVICE_FEE_MIN = 1;
+  // enable capped service fee
+  SERVICE_FEE_MAX = 2;
+  // enable flat service fee
+  SERVICE_FEE_FLAT = 3;
+  // enable ranged service fee
+  SERVICE_FEE_RANGE = 4;
+}
+
+enum FeeStrategy {
+  // unspecified
+  UNSPECIFIED_STRATEGY = 0;
+  // percentage calculated on cart subtotal
+  PERCENTAGE_SUBTOTAL = 1;
+  // flat rate fees
+  FLAT_FEE_AMOUNT = 2;
+}
+
+message CalculateFeesResponse {
+  repeated PricingFeeResult pricing_fee_results = 1;
+}
+
+message PricingFeeResult {
+  google.protobuf.StringValue config_id = 1;
+  money.FeeCategoryType fee_category_type = 2;
+  // to get localized name of the fee, displayed on receipt
+  google.protobuf.StringValue label_key = 3;
+  // builder name for complex label creation
+  google.protobuf.StringValue label_builder = 4;
+  // to get localized tooltip
+  google.protobuf.StringValue tooltip_message_key = 5;
+  // builder name for complex tooltip creation
+  google.protobuf.StringValue tooltip_message_builder = 6;
+  google.protobuf.StringValue tax_line_item_type = 7;
+  money.MonetaryFields fee_amount = 8;
+  repeated money.GenericFeeLink generic_fee_links = 9;
+  // Flag to indicate if the fee should be part of taxes and fees or should be a line item on itself
+  google.protobuf.BoolValue should_bundle_with_tax_and_fees = 10;
+  google.protobuf.Int32Value fee_units_charged = 11;
+  money.MonetaryFields unit_fee_amount = 12;
+  // field indicating what percentage the fee was charged at
+  google.protobuf.DoubleValue fee_percentage = 13;
+}

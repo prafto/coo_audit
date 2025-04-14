@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package conversation_engine_proxy.v1;
+
+import "common/service_client_config.proto";
+import "conversation_intelligence_service/conversation_intelligence_service.proto";
+import "google/protobuf/wrappers.proto";
+import "lattice_runner/session.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/conversation_engine_proxy/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.conversation_engine_proxy.rpc.api";
+
+// A proxy service that will forward the request to conversation intelligence service
+// and act as a domain transfer from conversation to intelligence service.
+// RFC: https://docs.google.com/document/d/1V6D18VhesPjr_xZVzUVCOwj-_sKuS2cbPNBOfQcCcdQ
+service ConversationEngineProxyService {
+  // Large default timeout. Due to multiple LLM calls involved. Default timeout is 5 min.
+  option (service_client.client_config).response_attempt_timeout_millis = 300000;
+  // No retries. Retrying the message is not needed as typically we can just escalate.
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+  // Conversation is turn based. Every time a user sends a message, we can potentially respond to
+  // the user in the turn using our chatbot. This grpc will run one turn which will generate
+  // one or more messages to send to the user and apply any side effects internally.
+  rpc ExecuteTurn(ExecuteTurnRequest) returns (ExecuteTurnResponse);
+}
+
+// Request for execute turn. This will wrap the request for single message send by the user.
+message ExecuteTurnRequest {
+  // Session id is created and persisted by the caller (chat platform) and should be included
+  // in every call made. Initial session creation should have already captured adding
+  // past messages to the buffer and any input data.
+  // User query.
+  conversation_intelligence_service.v1.InputMessage user_query = 1;
+
+  // A unique id of session, for example, UUID.
+  google.protobuf.StringValue session_id = 2;
+
+  // Graph execution engine. Which backend to call to execute the session.
+  GraphExecutionEngine execution_engine = 3;
+
+  // Additional content to be passed to session for this request. These are added to
+  // the session context for all the subsequent calls.
+  lattice_runner.v1.Context initial_request_context = 4;
+}
+
+// Execution engine for executing the graph.
+enum GraphExecutionEngine {
+  // Missed or unspecified.
+  GRAPH_EXECUTION_ENGINE_UNSPECIFIED = 0;
+
+  // Graph will be executed directly on lattice bypassing Ontology based routing.
+  GRAPH_EXECUTION_ENGINE_LATTICE = 1;
+
+  // Graph will use ontology service to route between agents.
+  GRAPH_EXECUTION_ENGINE_ONTOLOGY_SERVICE = 2;
+}
+
+// Response for the turn. Once we recieve this response we will close the turn and send the
+// responded message back to the user.
+// Before sending the response and session update operations will be applied.
+message ExecuteTurnResponse {
+  // The messages generated to respond the query.
+  repeated conversation_intelligence_service.v1.OutputMessage generated_messages = 1;
+  // Conversation status.
+  conversation_intelligence_service.v1.ChatbotConversationStatus conversation_status = 2;
+}

@@ -1,0 +1,152 @@
+syntax = "proto3";
+package doordash.retail.fulfillment.event.v1;
+
+import "common/money.proto";
+import "doordash.retail.catalog.v1/fulfillment.proto";
+import "doordash.retail.common.v1/common.proto";
+import "doordash.retail.dasher.v3/quantity_info.proto";
+import "doordash.retail.fulfillment.v1/retail_data_fulfillment_service.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.retail_events";
+
+// GET APIs for other services to query NV Fulfillment data
+service RetailFulfillmentAnalyticsService {
+  // Get order fulfillment details, e.g. payment amount, receipt info, order item fulfillment details, etc.
+  rpc GetOrderFulfillmentDetail(GetOrderFulfillmentDetailRequest) returns (GetOrderFulfillmentDetailResponse);
+}
+
+// Request message for GetOrderFulfillmentDetail
+message GetOrderFulfillmentDetailRequest {
+  // list of delivery UUIDs
+  repeated string delivery_uuids = 1;
+}
+
+// Response message for GetOrderFulfillmentDetail
+message GetOrderFulfillmentDetailResponse {
+  // list of order fulfillment details
+  repeated OrderFulfillmentDetail order_fulfillment_details = 1;
+}
+
+// Order fulfillment detail
+message OrderFulfillmentDetail {
+  // order identifier
+  string delivery_uuid = 1;
+  // store ID
+  string store_id = 2;
+  // amount paid to Mx on POS. In most cases it'll be Red Card swipe amount,
+  // but in the future it may come from other payment methods (e.g. QR code payment)
+  money.MonetaryFields pos_payment_amount = 3;
+  // receipt info, could be null if no receipt
+  OrderReceiptDetail receipt_detail = 4;
+  // business ID
+  google.protobuf.StringValue business_id = 5;
+  // provider name
+  google.protobuf.StringValue provider_name = 6;
+  // order item level fulfillment information
+  repeated OrderItemFulfillmentDetail fulfilled_order_items = 7;
+  // consumer ID
+  google.protobuf.StringValue consumer_id = 8;
+  // country code
+  google.protobuf.StringValue country_code = 9;
+  // receipt barcode passed from Retail Fulfillment Service
+  // For now it is extracted by FE VisionKit
+  google.protobuf.StringValue receipt_barcode = 10;
+}
+
+// Receipt detail
+message OrderReceiptDetail {
+  // list of physical receipts
+  // if no physical receipts, then empty
+  // otherwise, in most cases, only 1
+  // but in the future there could be multiple receipt images
+  repeated PhysicalReceipt physical_receipts = 1;
+
+  // physical receipts
+  message PhysicalReceipt {
+    // receipt image url
+    string image_url = 1;
+  }
+}
+
+// Order Item level fulfillment information
+message OrderItemFulfillmentDetail {
+  // human-readable name of item
+  string display_name = 1;
+  // order item identifier
+  string merchant_supplied_id = 2;
+  // for unit items, "each", "bag", "bunch", "box", etc.
+  // for weighted items, "lb", "oz", "kg", etc.
+  google.protobuf.StringValue unit_of_measurement = 3;
+  // list of fulfilled quantities, specifically, each quantity_info_type corresponds to a different quantity field
+  // some examples:
+  // QUANTITY_INFO_TYPE_QUANTITY, e.g. 2 cans of soup:
+  //   {
+  //     "quantity_info_type": "QUANTITY_INFO_TYPE_QUANTITY",
+  //     "unit_quantity": {
+  //       "quantity": 2,
+  //       "unit": "DISCRETE_QUANTITY_UNIT_QTY"
+  //     }
+  //   }
+  // QUANTITY_INFO_TYPE_MEASUREMENT, e.g. 1.5lb of (unpackaged) strawberries:
+  //   {
+  //     "quantity_info_type": "QUANTITY_INFO_TYPE_MEASUREMENT",
+  //     "measurement_quantity": {
+  //       "quantity": 1.5,
+  //       "unit": "CONTINUOUS_QUANTITY_UNIT_LB"
+  //     }
+  //   }
+  // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING, e.g. a total of 3.7lb of 2 bunches of (unpackaged) bananas
+  //   {
+  //     "quantity_info_type": "QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING",
+  //     "unit_to_measurement_quantity": {
+  //       "discrete_quantity": {
+  //         "quantity": 2,
+  //         "unit": "DISCRETE_QUANTITY_UNIT_BUNCH"
+  //       },
+  //       "continuous_quantity": {
+  //         "quantity": 3.7,
+  //         "unit": "CONTINUOUS_QUANTITY_UNIT_LB"
+  //       }
+  //     }
+  //   }
+  // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING, e.g. a total of 2.5lb of 2 packages of pre-packaged meat
+  //   {
+  //     "quantity_info_type": "QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING",
+  //     "unit_to_measurement_quantities": {
+  //       "quantity_group": [
+  //         {
+  //           "discrete_quantity": {
+  //             "quantity": 1,
+  //             "unit": "DISCRETE_QUANTITY_UNIT_PACKAGE"
+  //           },
+  //           "continuous_quantity": {
+  //             "quantity": 1.1,
+  //             "unit": "CONTINUOUS_QUANTITY_UNIT_LB"
+  //           }
+  //         },
+  //         {
+  //           "discrete_quantity": {
+  //             "quantity": 1,
+  //             "unit": "DISCRETE_QUANTITY_UNIT_PACKAGE"
+  //           },
+  //           "continuous_quantity": {
+  //             "quantity": 1.4,
+  //             "unit": "CONTINUOUS_QUANTITY_UNIT_LB"
+  //           }
+  //         }
+  //       ]
+  //     }
+  //   }
+  doordash.retail.dasher.v3.QuantityInfoV2 fulfilled_quantity_details = 4;
+  // Dasher scanned barcode for this item, which could be null
+  doordash.retail.catalog.v1.Barcode scanned_barcode = 5;
+  // in-feed price per unit of this item
+  // - For non-weighted items, it's the price per item
+  // - For weighted items, it's the price per unit of weight
+  money.MonetaryFields in_feed_price_per_unit = 6;
+  // store item price info
+  .doordash.retail.fulfillment.v1.StoreItemPriceInfo price_info = 7;
+}

@@ -1,0 +1,188 @@
+syntax = "proto3";
+package order_accuracy_service.v1;
+
+import "google/protobuf/wrappers.proto";
+import "order_accuracy_service/error.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/order_accuracy_service/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.order_accuracy";
+
+// used to add, remove and get nudges for a delivery at specific points of
+// the delivery flow (e.g. dropoff, pickup). nudges are used to provide dashers with
+// information or prompt them to take action.
+service NudgeService {
+  // adds a nudge (page_id) to a delivery given an entry point
+  rpc AddNudge(AddNudgeRequest) returns (AddNudgeResponse);
+  // removes a nudge (page_id) from a delivery given an entry point
+  rpc RemoveNudge(RemoveNudgeRequest) returns (RemoveNudgeResponse);
+  // gets a sorted list of nudges (page_ids) for a delivery given an entry point
+  rpc RetrieveNudge(RetrieveNudgeRequest) returns (RetrieveNudgeResponse);
+
+  // RPC for the clients to poll the mutation results - add/remove nudge
+  // The results are available for 30 seconds after the mutation is done.
+  rpc GetNudgeMutationResults(GetNudgeMutationResultsRequest) returns (GetNudgeMutationResultsResponse);
+}
+
+// request to add a nudges to a delivery
+message AddNudgeRequest {
+  // list of nudges to add
+  repeated Nudge add_nudge_requests = 1;
+}
+
+// response to add nudges to delivery
+message AddNudgeResponse {
+  // request id for the clients to poll the mutation results
+  google.protobuf.StringValue request_id = 2;
+
+  reserved 1;
+  reserved "add_nudge_results";
+}
+
+// request to remove nudges for a delivery
+message RemoveNudgeRequest {
+  // list of nudges to remove
+  repeated Nudge remove_nudge_requests = 1;
+}
+
+// response to remove nudges for a delivery
+message RemoveNudgeResponse {
+  // request id for the clients to poll the mutation results
+  google.protobuf.StringValue request_id = 2;
+
+  reserved 1;
+  reserved "remove_nudge_results";
+}
+
+// request to get the mutation results
+message GetNudgeMutationResultsRequest {
+  // request id the clients use to poll the mutation results
+  google.protobuf.StringValue request_id = 1;
+}
+
+// result of adding or removing a nudge
+message NudgeMutationResult {
+  // Encapsulates the result of adding or removing a nudge
+  oneof result {
+    // result of adding a nudge
+    AddNudgeResult add_nudge_result = 1;
+    // result of removing a nudge
+    RemoveNudgeResult remove_nudge_result = 2;
+  }
+}
+
+// response to get the mutation results
+message GetNudgeMutationResultsResponse {
+  // request id the clients used to poll the mutation results
+  google.protobuf.StringValue request_id = 1;
+  // list of mutation results
+  repeated NudgeMutationResult results = 2;
+}
+
+// request to get nudge for delivery
+message RetrieveNudgeRequest {
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 1;
+  // entry point to get nudge for - will be deprecated in favor of returning all eligible nudges
+  EntryPoint entry_point = 2;
+
+  reserved 4;
+  reserved "delivery_id_value";
+  reserved 5;
+  reserved "delivery_uuid";
+}
+
+// response to get nudge for delivery
+message RetrieveNudgeResponse {
+  // result contains either a business exception or the successfully retrieved page id
+  oneof result {
+    // business exception
+    Error error = 2;
+    // page id that is successfully retrieved - will  be deprecated in favor of eligible_nudges
+    google.protobuf.StringValue page_id_retrieved = 3;
+    // list of eligible nudges for given delivery
+    EligibleNudges eligible_nudges = 4;
+  }
+
+  // temporary added to support shadow mode
+  EligibleNudges shadow_eligible_nudges = 5;
+
+  reserved 1;
+  reserved "page_id";
+}
+
+// eligible nudges for a delivery
+message EligibleNudges {
+  // list of eligible nudges
+  repeated Nudge nudges = 1;
+}
+
+// nudge
+message Nudge {
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 1;
+  // page id - will be deprecated in favor of page_ids
+  google.protobuf.StringValue page_id = 2;
+  // entry point
+  EntryPoint entry_point = 3;
+  // single page id represents individual nudge
+  // multiple page ids represents carousel nudge
+  repeated google.protobuf.StringValue page_ids = 6;
+
+  reserved 4;
+  reserved "delivery_id_value";
+  reserved 5;
+  reserved "delivery_uuid";
+}
+
+// result of adding a single nudge
+message AddNudgeResult {
+  // result contains either a business exception or the successfully added nudge
+  oneof result {
+    // business exception
+    Error error = 3;
+    // nudge that is successfully added
+    Nudge nudge_added = 4;
+  }
+
+  reserved 1;
+  reserved "nudge";
+  reserved 2;
+  reserved "success";
+}
+
+// result of removing a single nudge
+message RemoveNudgeResult {
+  // result contains either a business exception or the successfully removed nudge
+  oneof result {
+    // business exception
+    Error error = 3;
+    // nudge that is successfully added
+    Nudge nudge_removed = 4;
+  }
+
+  reserved 1;
+  reserved "nudge";
+  reserved 2;
+  reserved "success";
+}
+
+// entry points for where nudges are shown
+enum EntryPoint {
+  // unspecified
+  ENTRY_POINT_UNSPECIFIED = 0;
+  // pickup - tap "Arrived at store"
+  ENTRY_POINT_PICKUP = 1;
+  // dropoff - Dx enters Cx geofence or taps "Arrived at customer"
+  ENTRY_POINT_DROPOFF = 2;
+  // dropoff photo
+  ENTRY_POINT_DROPOFF_PHOTO = 3;
+  // dropoff tasks - tap "Complete delivery steps" or "Continue" at dropoff
+  ENTRY_POINT_DROPOFF_TASKS = 4;
+  // going to cx - tap "Confirm pickup"
+  ENTRY_POINT_GOING_TO_CX = 5;
+
+  reserved 6;
+  reserved "ENTRY_POINT_CONTINUE_AT_DROPOFF";
+}

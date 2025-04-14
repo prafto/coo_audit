@@ -1,0 +1,219 @@
+syntax = "proto3";
+package smart_scale.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_outer_classname = "Menu";
+option java_package = "com.doordash.rpc.smart_scale";
+
+// Menu related smart scale RPCs
+service SmartScaleMenuService {
+  option (doordash.api.service) = {
+    name: "SmartScaleMenuService"
+    url: "smart-scale-service-web-internal.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["smart-scale-service-web-internal"]
+    api_key_name: "SMART_SCALE_SERVICE_API_KEY"
+    owner: {
+      name: "smart-scale"
+      id: "smart-scale-team"
+      slack_channel: "#ask-smart-scale"
+      email_alias: "smart-scale-sw-eng@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  // Get menu revision history
+  rpc GetMenuRevisionHistory(GetMenuRevisionHistoryRequest) returns (GetMenuRevisionHistoryResponse) {
+    option (google.api.http) = {get: "/smart-scale-service-web-internal/v1/store/{store_id}/menu-revision-history"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  // Menu construction trigger
+  rpc ConstructMenuForStores(ConstructMenuForStoresRequest) returns (ConstructMenuForStoresResponse);
+  // List detailed menu revision history
+  rpc ListDetailedMenuRevisionHistory(ListDetailedMenuRevisionHistoryRequest) returns (ListDetailedMenuRevisionHistoryResponse) {
+    option (google.api.http) = {get: "/smart-scale-service-web-internal/v1/store/{store_id}/detailed-menu-revision-history"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DD_EMPLOYEE]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Get menu revision history request
+message GetMenuRevisionHistoryRequest {
+  // Unique ID (int64) of the store
+  int64 store_id = 1;
+  // Type of menu revision
+  MenuRevisionType menu_revision_type = 2;
+  // (Optional) Max number of revisions to return (default 100)
+  // Revisions will be returned in reverse chronological order
+  google.protobuf.Int32Value max_revisions = 3;
+}
+
+// Type of menu revision
+enum MenuRevisionType {
+  // Unspecified (default)
+  MENU_REVISION_TYPE_UNSPECIFIED = 0;
+  // TSV snapshot
+  MENU_REVISION_TYPE_TSV = 1;
+  // Menu json snapshot
+  MENU_REVISION_TYPE_JSON = 2;
+}
+
+// Get menu revision history response
+message GetMenuRevisionHistoryResponse {
+  // List of menu revisions ordered in reverse chronological order
+  repeated MenuRevision menu_revisions = 1;
+}
+
+// Menu revision
+message MenuRevision {
+  // Filename is in the format
+  // <store_id>_menu_snapshot_weekly_<yyyy-mm-dd>.tsv or
+  // <store_id>_menu_snapshot_daily_<yyyy-mm-dd>.tsv
+  string filename = 1;
+  // Timestamp of the menu revision
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// Menu construction request
+message ConstructMenuForStoresRequest {
+  // Unique IDs (int64) of the store
+  repeated int64 store_id = 1;
+}
+
+// Menu construction response (empty)
+message ConstructMenuForStoresResponse {}
+
+// Request to list detailed menu revision history, paginated by day
+message ListDetailedMenuRevisionHistoryRequest {
+  // Store ID to retrieve menu revisions for
+  int64 store_id = 1;
+  // Total number of days to return revisions for in a single response
+  int32 count = 2;
+  // Offset in number of days for pagination
+  int32 offset = 3;
+}
+
+// Response for list detailed menu revision history
+message ListDetailedMenuRevisionHistoryResponse {
+  // List of revisions for a store
+  repeated DailyMenuRevision daily_revisions = 1;
+  // Total count of days that a store has menu revisions for
+  int32 total_days_count = 2;
+}
+
+// Menu revisions grouped by the date of revision
+message DailyMenuRevision {
+  // Date of revision in YYYY-MM-DD format
+  string date = 1;
+  // List of revisions for a given date
+  repeated DetailedMenuRevision revisions = 2;
+  // S3 file name of the snapshot that captures these changes
+  // Points to either:
+  // 1. Next day's snapshot (for changes within last week)
+  // 2. Weekly snapshot (for older changes)
+  google.protobuf.StringValue s3_file_name = 3;
+}
+
+// Detailed menu revision
+message DetailedMenuRevision {
+  // ID of the user who made the revision
+  google.protobuf.Int64Value updated_by_id = 1;
+  // Name of the user who made the revision
+  google.protobuf.StringValue updated_by_user_name = 2;
+  // Interface that the revision was made through
+  RevisionSource source = 3;
+  // Type of revision
+  RevisionType revision_type = 4;
+  // Name of the revised item/option
+  string product_name = 5;
+  // Created at timestamp of the revision
+  google.protobuf.Timestamp created_at = 6;
+  // Details of what changed in the revision
+  oneof change_details {
+    // Item/option weight change
+    WeightChange weight_change = 7;
+    // Object tag status change
+    ObjectChange object_change = 8;
+    // Display name change
+    DisplayNameChange display_name_change = 9;
+    // Non weighing object status change
+    NonWeighingObjectChange non_weighing_object_change = 10;
+  }
+}
+
+// Source of the revision
+enum RevisionSource {
+  // Unspecified source
+  REVISION_SOURCE_UNSPECIFIED = 0;
+  // Revision made through bulk upload tool
+  REVISION_SOURCE_BULK_UPLOAD = 1;
+  // Revision made through menu tool UI
+  REVISION_SOURCE_MENU_TOOL = 2;
+}
+
+// Type of revision
+enum RevisionType {
+  // Unspecified revision type
+  REVISION_TYPE_UNSPECIFIED = 0;
+  // Weight change
+  REVISION_TYPE_WEIGHT_CHANGE = 1;
+  // Object tag change
+  REVISION_TYPE_OBJECT_CHANGE = 2;
+  // Display name change
+  REVISION_TYPE_DISPLAY_NAME_CHANGE = 3;
+  // Non weighing object change
+  REVISION_TYPE_NON_WEIGHING_OBJECT_CHANGE = 4;
+}
+
+// Change in item/option weight values
+message WeightChange {
+  // Old weight values in grams
+  repeated double old_weight_grams = 1;
+  // New weight values in grams
+  repeated double new_weight_grams = 2;
+}
+
+// Change in object tag status
+message ObjectChange {
+  // Old object tag status
+  google.protobuf.BoolValue old_is_object = 1;
+  // New object tag status
+  google.protobuf.BoolValue new_is_object = 2;
+}
+
+// Change in display name
+message DisplayNameChange {
+  // Old display name
+  google.protobuf.StringValue old_display_name = 1;
+  // New display name
+  google.protobuf.StringValue new_display_name = 2;
+}
+
+// Change in non weighing object status
+message NonWeighingObjectChange {
+  // Old is non weighing object status
+  google.protobuf.BoolValue old_is_non_weighing_object = 1;
+  // New is non weighing object status
+  google.protobuf.BoolValue new_is_non_weighing_object = 2;
+}

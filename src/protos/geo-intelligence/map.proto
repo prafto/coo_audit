@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package geo_intelligence.map.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/geo_intelligence";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "Map";
+option java_package = "geo.intelligence.map.proto";
+
+// Serves maps and map-related things.
+// WARNING: This service is under development. Breaking changes may still be made. Contact the Address + Geospatial
+// Platform Team before using.
+service MapService {
+  option (service_client.client_config).service_name = "geo-intelligence";
+  option (service_client.client_config).service_app = "web";
+
+  // Requests the creation of a static map image
+  rpc StaticImage(StaticImageRequest) returns (StaticImageResponse);
+}
+
+// An icon provided by the client
+message CustomIcon {
+  // URL serving the custom icon image. By default, the anchor point of a custom icon is the bottom center of the
+  // icon image.
+  string url = 4;
+}
+
+// Size of preset icon. Support varies by platform.
+enum IconSize {
+  // No icon size specified. A default will be used.
+  ICON_SIZE_UNSPECIFIED = 0;
+  // Google Static Maps API "tiny"
+  // MapBox Static Images API "s"
+  ICON_SIZE_TINY = 1;
+  // Google Static Maps API "small"
+  // MapBox Static Images API "s"
+  ICON_SIZE_SMALL = 2;
+  // Google Static Maps API "mid"
+  // MapBox Static Images API "l"
+  ICON_SIZE_MEDIUM = 3;
+  // Google Static Maps API default
+  // MapBox Static Images API "l"
+  ICON_SIZE_LARGE = 4;
+}
+
+// A color.
+message Color {
+  // Color definition.
+  oneof definition {
+    // Hexadecimal color code in format `RGB` (3 digits) or `RRGGBB` (6 digits).
+    string hex_code = 1;
+  }
+}
+
+// An icon provided by the service
+message PresetIcon {
+  // A well-known name that corresponds to an icon
+  string name = 1;
+  // A single-character label to be rendered within in the marker icon. One of: A-Z, 0-9.
+  string label = 2;
+  // Icon color.
+  Color color = 3;
+  // Icon size
+  IconSize size = 4;
+}
+
+// A point on the map
+message Point {
+  // Latitude in degrees. Between -90 and 90, inclusive.
+  double latitude = 1;
+  // Longitude in degrees. Between -180 and 180, inclusive.
+  double longitude = 2;
+}
+
+// A collection of points
+message Points {
+  // One or more points
+  repeated Point points = 1;
+}
+
+// One or more markers sharing an icon
+message Markers {
+  // Locations using the marker
+  repeated Point points = 1;
+  // An optional icon for the marker. If unset, a default will be used.
+  oneof icon {
+    // A preset icon provided by the platform
+    PresetIcon preset = 2;
+    // Custom marker image
+    CustomIcon custom = 3;
+  }
+}
+
+// A path consisting of two or more points on the map
+message Path {
+  // How the path is defined
+  oneof definition {
+    // A polyline encoded in
+    // [Encoded Polyline Algorithm Format](https://developers.google.com/maps/documentation/utilities/polylinealgorithm)
+    string encoded_polyline = 1;
+    // Two or more points
+    Points points = 2;
+  }
+  // Stroke width.
+  google.protobuf.FloatValue stroke_width = 3;
+  // Color for the path stroke.
+  Color stroke_color = 4;
+  // Stroke opacity with 0 meaning transparent and 1 meaning opaque.
+  google.protobuf.FloatValue stroke_opacity = 5;
+  // Color for the path fill. Only applicable if the path is closed.
+  Color fill_color = 6;
+  // Fill opacity with 0 meaning transparent and 1 meaning opaque. Only applicable if the path is closed.
+  google.protobuf.FloatValue fill_opacity = 7;
+}
+
+// A map overlay
+message Overlay {
+  // Content of the overlay
+  oneof content {
+    // Zero or more markers
+    Markers markers = 1;
+    // Zero or more paths
+    Path path = 2;
+  }
+}
+
+// A geographic bounding box
+message BoundingBox {
+  // The southwest corner of the bounding box
+  Point southwest = 1;
+  // The northeast corner of the bounding box
+  Point northeast = 2;
+}
+
+// A center point with a zoom level that controls magnification of objects
+message CenterZoom {
+  // The center of the viewport
+  Point center = 1;
+  // An integer zoom level. Larger numbers mean more magnification.
+  // 0: planet
+  // 3: continent
+  // 10: city
+  // 15: street
+  // 20: building
+  // 22 (maximum): part of a building
+  // Both [Google](https://developers.google.com/maps/documentation/maps-static/start#Zoomlevels) and
+  // [Mapbox](https://docs.mapbox.com/help/glossary/zoom-level/) support zoom levels from 0 through 22.
+  uint32 zoom = 2;
+}
+
+// Automatic viewport
+message Automatic {}
+
+// Scale of the output image.
+enum ImageScale {
+  // No scale specified. A default will be used.
+  IMAGE_SCALE_UNSPECIFIED = 0;
+  // The image will contain the requested number of pixels.
+  IMAGE_SCALE_NORMAL = 1;
+  // The image will contain double the pixels so it is suitable for high-density displays.
+  IMAGE_SCALE_DOUBLE = 2;
+}
+
+// Provider-specific parameters
+message ProviderSpecificParameters {
+  // Mapbox parameters
+  message Mapbox {
+    // Mapbox style name. This must be one of the [publicly documented styles](https://docs.mapbox.com/api/maps/styles/)
+    // owned by Mapbox's predefined user `mapbox`. Default to `streets-v12` if omitted.
+    string style = 1;
+  }
+
+  // Mapbox-specific parameters. These are ignored when other providers are used.
+  Mapbox mapbox = 1;
+}
+
+// A request for a static map image
+message StaticImageRequest {
+  // The viewport determines what is visible in the final image. If unset, `automatic` will be assumed.
+  oneof viewport {
+    // A rectangular bounding box
+    BoundingBox bounding_box = 1;
+    // Zoom around a center point
+    CenterZoom center_zoom = 2;
+    // Determine viewport automatically based on markers/paths
+    Automatic automatic = 3;
+  }
+  // Zero or more overlays in desired draw order. Mapbox honors draw order. Google does not.
+  repeated Overlay overlays = 4;
+  // Width of image in pixels. Between 1 and 1280.
+  uint32 width_pixels = 5;
+  // Height of image in pixels. Between 1 and 1280.
+  uint32 height_pixels = 6;
+  // Image scale.
+  ImageScale scale = 7;
+  // Provider-specific parameters
+  ProviderSpecificParameters provider_specific_parameters = 8;
+}
+
+// Response to a request for a static map image
+message StaticImageResponse {
+  // Static map image bytes
+  bytes image_bytes = 1;
+  // Media type of the image
+  string media_type = 2;
+}

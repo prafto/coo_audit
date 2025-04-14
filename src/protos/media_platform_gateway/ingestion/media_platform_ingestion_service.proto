@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package media_platform_gateway.ingestion.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "media_platform_gateway/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/media/ingestion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.media_platform_gateway";
+
+// The GRPC service that holds APIs to ingest media.
+service MediaPlatformIngestionService {
+  // Asynchronously processes media via URL downloading, the returned URLs are not guaranteed to be
+  // renderable, but only after the async process finishes.
+  rpc ProcessMediaViaURLAsync(ProcessMediaViaURLAsyncRequest) returns (ProcessMediaViaURLAsyncResponse);
+
+  // Asynchronously processes media from byte array, the returned URLs are not guaranteed to be
+  // renderable, but only after the async process finishes.
+  rpc ProcessMediaAsync(ProcessMediaAsyncRequest) returns (ProcessMediaAsyncResponse);
+
+  // Generate a pre-signed S3 URL for media uploading
+  rpc GetPreSignedUrlForUpload(GetPreSignedUrlForUploadRequest) returns (GetPreSignedUrlForUploadResponse);
+
+  // Resume pipeline, clients call this API after they review and approve
+  // the media in a pipeline that needs human review
+  rpc ResumePipeline(ResumePipelineRequest) returns (ResumePipelineResponse);
+
+  // Cancel pipeline, clients call this API after they review and reject
+  // the media in a pipeline that needs human review
+  rpc CancelPipeline(CancelPipelineRequest) returns (CancelPipelineResponse);
+}
+
+// Request object of asynchronously ingesting media.
+message ProcessMediaAsyncRequest {
+  // The name of the pipeline used for ingestion.
+  google.protobuf.StringValue pipeline_name = 1;
+  // The version of the pipeline used for ingestion.
+  google.protobuf.Int32Value pipeline_version = 2;
+  // The input media file.
+  MediaSourceRaw media_file = 3;
+  // The usecase of the underlying media
+  media_platform_gateway.v1.UseCase use_case = 4;
+  // The type of the media
+  media_platform_gateway.v1.Type type = 5;
+
+  // Optional.
+  // If not provided, fallback to global defaults.
+  media_platform_gateway.v1.Domain domain = 1001;
+  // Pipeline dynamic parameters.
+  repeated PipelineDynamicParameter pipeline_dynamic_parameters = 1002;
+  // Client specific context
+  google.protobuf.StringValue request_context = 1003;
+}
+
+// Response object of asynchronously ingesting media.
+message ProcessMediaAsyncResponse {
+  // The internal entity that represents the ingested media.
+  media_platform_gateway.v1.Media media = 1;
+  // The job entity that represents the execution of the pipeline to ingest the media.
+  media_platform_gateway.v1.MediaJob media_job = 2;
+
+  // Optional
+  // Client specific context if provided in the request
+  google.protobuf.StringValue request_context = 1001;
+}
+
+// Request object of asynchronously ingesting media.
+message ProcessMediaViaURLAsyncRequest {
+  // The name of the pipeline used for ingestion.
+  google.protobuf.StringValue pipeline_name = 1;
+  // The version of the pipeline used for ingestion.
+  google.protobuf.Int32Value pipeline_version = 2;
+  // The URL to download the media from.
+  MediaSourceURL media_source_url = 3;
+  // The usecase of the underlying media
+  media_platform_gateway.v1.UseCase use_case = 4;
+  // The type of the media
+  media_platform_gateway.v1.Type type = 5;
+
+  // Optional.
+  // If not provided, fallback to global defaults.
+  media_platform_gateway.v1.Domain domain = 1001;
+  // Pipeline dynamic parameters.
+  repeated PipelineDynamicParameter pipeline_dynamic_parameters = 1002;
+  // Client specific context
+  google.protobuf.StringValue request_context = 1003;
+}
+
+// Response object of asynchronously ingesting media.
+message ProcessMediaViaURLAsyncResponse {
+  // The internal entity that represents the ingested media.
+  media_platform_gateway.v1.Media media = 1;
+  // The job entity that represents the execution of the pipeline to ingest the media.
+  media_platform_gateway.v1.MediaJob media_job = 2;
+  // Optional
+  // Client specific context if provided in the request
+  google.protobuf.StringValue request_context = 1001;
+}
+
+// Request for resume a pipeline, when human moderation (human in loop) is needed, this API will be called as they finish the moderation.
+// After media platform receives this request, it will prepare to resume the remaining pipeline.
+message ResumePipelineRequest {
+  // The URL to download the media from. This is needed when clients has updated the media during review/ moderation.
+  // If not provided, it will default to use the original media persisted on the media platform side.
+  MediaSourceURL media_source_url = 1;
+  // media job id to resume, in uuid format. clients get this id from the pause notification event they received
+  google.protobuf.StringValue media_job_uuid = 2;
+}
+
+// Response object of resuming the pipeline
+message ResumePipelineResponse {
+  // The media that was ingested.
+  media_platform_gateway.v1.Media media = 1;
+  // The corresponding media job
+  media_platform_gateway.v1.MediaJob media_job = 2;
+}
+
+// Request for cancel a pipeline. Called by clients when the media is rejected after review.
+// When this is triggered, the pipeline in media platform will be stopped and marked as failure.
+message CancelPipelineRequest {
+  // media job id to cancel, in uuid format. clients get this id from the pause notification event they received
+  google.protobuf.StringValue media_job_uuid = 1;
+
+  // optional fields,
+  // reason for the cancellation. i.e. why the media is rejected
+  google.protobuf.StringValue reason = 1001;
+}
+
+// Response for canceling a pipeline.
+message CancelPipelineResponse {
+  // corresponding media job
+  google.protobuf.StringValue media_job_uuid = 1;
+}
+
+// Object that represents a byte array based media file.
+message MediaSourceRaw {
+  // The byte array.
+  bytes raw = 1;
+  // Media filename with extension for processing.
+  google.protobuf.StringValue filename_with_extension = 2;
+}
+
+// Object that represents an URL based media file.
+message MediaSourceURL {
+  // The URL.
+  google.protobuf.StringValue url = 1;
+}
+
+// Object that represents parameter values of a pipeline.
+message PipelineDynamicParameter {
+  // The name of the parameter.
+  google.protobuf.StringValue name = 1;
+  // The value of the parameter.
+  google.protobuf.StringValue value = 2;
+}
+
+// Request object to generate a presigned URL for media uploading
+message GetPreSignedUrlForUploadRequest {
+  // The usecase of the media to be uploaded
+  media_platform_gateway.v1.UseCase use_case = 1;
+  // The domain of the media to be uploaded.
+  media_platform_gateway.v1.Domain domain = 2;
+
+  // Optional
+  // The file name with extension. The system will auto generate one
+  // if it is not provided.
+  google.protobuf.StringValue file_name = 1001;
+  // The duration of which the generated presigned URL is valid
+  // This value is measured in seconds, Default is 300 seconds.
+  google.protobuf.Int32Value valid_duration = 1002;
+}
+
+// Response object to generate a presigned URL for media uploading
+message GetPreSignedUrlForUploadResponse {
+  // The value of pre-signed URL to be used for uploading
+  google.protobuf.StringValue url = 1;
+  // The corresponding S3 url of the uploaded object. This should be
+  // used as the media_source_url to invoke ProcessMediaViaURLAsyncRequest
+  MediaSourceURL media_source_url = 2;
+}

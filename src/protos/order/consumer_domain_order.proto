@@ -1,0 +1,190 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package consumer_domain_order.v1;
+
+import "common/common.proto";
+import "common/consumer_domain_order.proto";
+import "common/marketplace_purchase.proto";
+import "common/order_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "consumer_domain_order_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_domain_order";
+
+// Service for managing consumer domain orders
+service ConsumerDomainOrderService {
+  // Updates a consumer domain order
+  rpc UpdateConsumerDomainOrder(UpdateConsumerDomainOrderRequest) returns (UpdateConsumerDomainOrderResponse);
+  // Cancels a consumer domain order
+  rpc CancelConsumerDomainOrder(CancelConsumerDomainOrderRequest) returns (CancelConsumerDomainOrderResponse);
+  // List consumer domain orders
+  rpc ListConsumerDomainOrders(ListConsumerDomainOrdersRequest) returns (ListConsumerDomainOrdersResponse);
+  // List consumer domain orders by Consumer ID
+  rpc ListConsumerDomainOrdersByConsumerId(ListConsumerDomainOrdersByConsumerIdRequest) returns (ListConsumerDomainOrdersByConsumerIdResponse);
+  // List consumer domain orders by IDs
+  rpc ListConsumerDomainOrdersByIds(ListConsumerDomainOrdersByIdsRequest) returns (ListConsumerDomainOrdersByIdsResponse);
+}
+
+// Request message for updating a consumer domain order
+message UpdateConsumerDomainOrderRequest {
+  // Identifier of the order to be updated
+  common.consumer_domain_order.v1.ConsumerDomainOrderIdentifier order_id = 1;
+  // Body of the update request
+  oneof request_body {
+    // Fulfillment plan for the consumer domain order
+    ConsumerDomainOrderFulfillmentPlan consumer_domain_order_fulfillment_plan = 2;
+    // CartUuid associated with the order
+    google.protobuf.StringValue cart_uuid = 3;
+  }
+  // reason for update
+  UpdateConsumerDomainOrderReason reason = 4;
+}
+
+// Update consumer order domain reason
+enum UpdateConsumerDomainOrderReason {
+  // unspecified
+  UPDATE_CONSUMER_DOMAIN_ORDER_REASON_UNSPECIFIED = 0;
+  // Full order reorder initiated proactively when deep red & RFS found better fulfillment stores
+  UPDATE_CONSUMER_DOMAIN_ORDER_REASON_FULL_PROACTIVE_AUTO_REORDER = 1;
+  // Full order reorder initiated reactively when the order is canceled due to mx/dx fulfillment issues
+  UPDATE_CONSUMER_DOMAIN_ORDER_REASON_FULL_REACTIVE_AUTO_REORDER = 2;
+  // Partial order reorder initiated automatically for INF items within the order
+  UPDATE_CONSUMER_DOMAIN_ORDER_REASON_PARTIAL_AUTO_REORDER = 3;
+}
+
+// UpdateConsumerDomainOrderResponse
+message UpdateConsumerDomainOrderResponse {}
+
+// Request message for canceling a consumer domain order
+message CancelConsumerDomainOrderRequest {
+  // Identifier of the order to be canceled
+  common.consumer_domain_order.v1.ConsumerDomainOrderIdentifier order_id = 1;
+  // reason for cancellation
+  CancellationReason cancellation_reason = 2;
+}
+
+// Response message for canceling a consumer domain order
+message CancelConsumerDomainOrderResponse {}
+
+// Fulfillment plan for a consumer domain order
+message ConsumerDomainOrderFulfillmentPlan {
+  // Nested message representing items in the fulfillment plan
+  message Item {
+    // msid
+    string merchant_supplied_id = 1;
+    // Quantity of the item to be fulfilled
+    common.QuantityInfo quantity_info = 2;
+    // Item name
+    string item_name = 3;
+    // item image url
+    string item_image_url = 4;
+    // menu item id
+    string menu_item_id = 5;
+    // purchase type
+    .common.marketplace_purchase.v1.PurchaseType purchase_type = 6;
+    // unit price
+    int64 unit_price = 7;
+    // currency
+    string currency = 8;
+    // original item info
+    OriginalItemInfo original_item = 9;
+  }
+
+  // RFS provides completely new item IDs, so we need to keep track of the original item IDs.
+  // This is required to build a hypothetical quote - the price the Cx agreed to pay—and ensure
+  // we won't surprise the Cx with a completely new price.
+  message OriginalItemInfo {
+    // store id
+    string store_id = 1;
+    // menu id
+    string menu_id = 2;
+    // menu item id
+    string menu_item_id = 3;
+    // quantity info
+    common.QuantityInfo quantity_info = 4;
+    // order item id
+    string order_item_id = 5;
+  }
+
+  // fulfillment plan
+  message Plan {
+    // store id
+    string store_id = 1;
+    // list of items
+    repeated Item items = 2;
+    // menu id
+    string menu_id = 3;
+  }
+  // Identifier of the order
+  common.consumer_domain_order.v1.ConsumerDomainOrderIdentifier order_id = 1;
+  // Version of the order
+  string order_version = 2; // this maps to the order operation code
+  // List of fulfillment plans for different stores
+  repeated Plan plans = 3;
+}
+
+// Contains all the context for why a Cx order was cancelled
+message CancellationReason {
+  // The type of cancellation
+  enum CancellationReasonCategory {
+    // Unspecified cancellation reason
+    CANCELLATION_REASON_CATEGORY_UNSPECIFIED = 0;
+    // Generic customer requested cancellation
+    CANCELLATION_REASON_CATEGORY_CUSTOMER_REQUESTED = 1;
+    // Child order was cancelled
+    CANCELLATION_REASON_CATEGORY_CHILD_ORDER_CANCELLED = 2;
+  }
+
+  // Cancellation reason category
+  CancellationReasonCategory cancellation_reason_category = 1;
+  // Cancellation reason
+  google.protobuf.StringValue message = 2;
+}
+
+// Request message for listing consumer domain orders
+message ListConsumerDomainOrdersRequest {
+  // consumer domain orders can be fetched via consumer id or order_uuids
+  oneof request_param {
+    // to get orders by consumer id
+    google.protobuf.StringValue consumer_id = 1;
+    // to get orders by consumer domain order UUIDs
+    common.consumer_domain_order.v1.ConsumerDomainOrderIdentifiersList order_uuids = 2;
+  }
+}
+
+// Request for listing consumer domain orders by consumer ID, with offset and limit
+message ListConsumerDomainOrdersByConsumerIdRequest {
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 1;
+  // limit (analogous to SQL LIMIT)
+  google.protobuf.Int32Value limit = 3;
+  // offset (analogous to SQL OFFSET)
+  google.protobuf.Int64Value offset = 4;
+}
+
+// Request for listing consumer domain orders by order UUIDs
+message ListConsumerDomainOrdersByIdsRequest {
+  // consumer domain order UUIDs
+  common.consumer_domain_order.v1.ConsumerDomainOrderIdentifiersList order_uuids = 1;
+}
+
+// Response message for listing consumer domain orders
+message ListConsumerDomainOrdersResponse {
+  // list of consumer domain orders
+  repeated common.consumer_domain_order.v1.ConsumerDomainOrder consumer_orders = 1;
+}
+
+// Response message for listing consumer domain orders by Consumer ID
+message ListConsumerDomainOrdersByConsumerIdResponse {
+  // list of consumer domain orders
+  repeated common.consumer_domain_order.v1.ConsumerDomainOrder consumer_orders = 1;
+}
+
+// Response message for listing consumer domain orders by IDs
+message ListConsumerDomainOrdersByIdsResponse {
+  // list of consumer domain orders
+  repeated common.consumer_domain_order.v1.ConsumerDomainOrder consumer_orders = 1;
+}

@@ -1,0 +1,661 @@
+syntax = "proto3";
+
+package logistics_configs_service.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "logistics_configs_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.logistics_configs_service";
+
+// config service API
+service LogisticsConfigsService {
+  // Gets configs for entities
+  rpc GetConfigsForEntities(GetConfigsForEntitiesRequest) returns (GetConfigsForEntitiesResponse);
+
+  // Get all config versions for an entity and config_type
+  rpc GetAllConfigVersionsForEntityAndConfigType(GetAllConfigVersionsForEntityAndConfigTypeRequest) returns (GetAllConfigVersionsForEntityAndConfigTypeResponse);
+
+  // Update the request's status
+  rpc UpdateConfigRequestStatus(UpdateConfigRequestStatusRequest) returns (UpdateConfigRequestStatusResponse);
+
+  // Get config requests
+  rpc GetConfigRequests(GetConfigRequestsRequest) returns (GetConfigRequestsResponse);
+
+  // Get config request details
+  rpc GetConfigRequestDetails(GetConfigRequestDetailsRequest) returns (GetConfigRequestDetailsResponse);
+
+  // Get latest (by version) active configs for entity and config type.
+  rpc GetLatestActiveConfigsForEntityAndConfigType(GetLatestActiveConfigsForEntityAndConfigTypeRequest) returns (GetLatestActiveConfigsForEntityAndConfigTypeResponse);
+
+  // create a Request to update entity configs
+  rpc UpdateEntityConfigs(UpdateEntityConfigsRequest) returns (UpdateEntityConfigsResponse);
+}
+
+// Request to update entity configs
+message UpdateEntityConfigsRequest {
+  // Request details
+  RequestInfo request_info = 1;
+  // user id who submitted the request for auditing purposes
+  User user_id = 2;
+  // name of the request
+  string name = 3;
+  // description of the usecase and metric improvement
+  string description = 4;
+  // Estimated impact of this request
+  string impact = 5;
+  // Query to validate the impact and metric improvement
+  string query = 6;
+  // entity type
+  EntityType entity_type = 7 [deprecated = true];
+  // config type
+  ConfigType config_type = 8 [deprecated = true];
+  // list of entity configs
+  repeated EntityConfigUpdate configs = 9;
+  // domain
+  Domain domain = 10;
+
+  // Request to update entity configs
+  message EntityConfigUpdate {
+    // entity id
+    string entity_id = 1;
+    // the requested operation for the entity
+    oneof operation {
+      // if the operation is to delete the entity's config value
+      google.protobuf.Empty delete = 2;
+      // if the operation is to update the entity's config value
+      Update update = 3;
+    }
+    // when this configuration will expire (optional)
+    google.protobuf.Timestamp expires_at = 4;
+    // entity type
+    EntityType entity_type = 5;
+    // config type
+    ConfigType config_type = 6;
+    // optional 2nd dimension of entity_type type to be updated
+    EntityType entity_type_2 = 7;
+    // optional 2nd dimension of entity_id to be updated
+    string entity_id_2 = 8;
+
+    // Update
+    message Update {
+      // config value
+      ConfigValue value = 1;
+    }
+  }
+}
+
+// Response to update entity configs
+message UpdateEntityConfigsResponse {
+  // Request is added back in response for tracking
+  RequestInfo request_info = 1;
+  // error
+  Error error = 2;
+
+  // Error
+  message Error {
+    // error code
+    oneof error {
+      // error code
+      string generic_error = 1;
+      // validation error
+      ValidationErrors validation_errors = 2;
+    }
+
+    // ValidationErrors
+    message ValidationErrors {
+      // list of validation errors
+      repeated ValidationError errors = 1;
+    }
+
+    // ValidationError
+    message ValidationError {
+      // entity id
+      reserved 1;
+      reserved 'entity_id';
+      // field name
+      string field = 2;
+      // error message
+      string description = 3;
+      // index of the corresponding config update in the request
+      int32 config_update_index = 4;
+    }
+  }
+}
+
+/**
+   GET CONFIG
+*/
+
+// Entities (Store, Business, Delivery) to get configs for
+message GetConfigsForEntitiesRequest {
+  // Request details
+  RequestInfo request_info = 1;
+  // Entity type for which config is requested
+  EntityType entity_type = 2;
+  // list of entity_ids to be queried
+  repeated string entity_id = 3;
+  // If list empty, all configs would be returned
+  repeated ConfigType config_type = 4;
+  // if empty, fetch config with all statuses
+  ConfigStatus config_status = 5;
+  // the domain you want to read the config from
+  Domain domain = 6;
+  // Page Request
+  PageRequest page_request = 7;
+  // optional field to order by
+  OrderBy order_by = 8;
+  // optional 2nd dimension of entity type
+  EntityType entity_type_2 = 10;
+  // list of entity_id id's 2nd dimension to be queried, must be same length as entity_id
+  //  (for partial 2d queries, the corresponding index of entity_id_2 should be an empty string)
+  repeated string entity_id_2 = 11;
+  // optional field to filter by config type string id
+  repeated string config_type_ids = 12;
+
+  // Ordering
+  message OrderBy {
+    // field to order by
+    Field field = 1;
+    // order direction
+    OrderByDirection direction = 2;
+
+    // Field
+    enum Field {
+      // UNSPECIFIED
+      FIELD_UNSPECIFIED = 0;
+      // created_at (default)
+      FIELD_CREATED_AT = 1;
+      // entity_id
+      FIELD_ENTITY_ID = 2;
+      // expiration
+      FIELD_EXPIRATION = 3;
+      // value
+      FIELD_VALUE = 4;
+      // config_type
+      FIELD_CONFIG_TYPE = 5;
+    }
+  }
+}
+
+// Contains Configs for the entities
+message GetConfigsForEntitiesResponse {
+  // Request is added back in response for tracking
+  RequestInfo request_info = 1;
+  // entity_type for which response is returned
+  EntityType entity_type = 2;
+  // list of the entity configs
+  repeated EntityConfig response_configs = 3;
+  // Page Response
+  PageResponse page_response = 4;
+  // optional 2nd dimension of entity type
+  EntityType entity_type_2 = 5;
+}
+
+// Get all versions of a config type for an entity
+message GetAllConfigVersionsForEntityAndConfigTypeRequest {
+  // Request details
+  RequestInfo request_info = 1;
+  // Entity type for which config is requested
+  EntityType entity_type = 2;
+  // entity_id to be queried
+  string entity_id = 3;
+  // config-type to be queried
+  ConfigType config_type = 4;
+  // the domain you want to read the config from
+  Domain domain = 5;
+  // optional 2nd dimension Entity type for which config is requested
+  EntityType entity_type_2 = 6;
+  // optional 2nd dimension entity_id to be queried
+  string entity_id_2 = 7;
+  // config-type string id to be queried
+  string config_type_id = 8;
+}
+
+// Contains Configs for the entities
+message GetAllConfigVersionsForEntityAndConfigTypeResponse {
+  // Request is added back in response for tracking
+  RequestInfo request_info = 1;
+  // list of the entity configs
+  repeated EntityConfig response_configs = 2;
+}
+
+// Get all latest active configs for entity and config type
+message GetLatestActiveConfigsForEntityAndConfigTypeRequest {
+  // Request details
+  RequestInfo request_info = 1;
+  // Entity type for which config is requested
+  EntityType entity_type = 2;
+  // config-type to be queried
+  ConfigType config_type = 3;
+  // the domain you want to read the config from
+  Domain domain = 4;
+  // optional 2nd dimensions entity type to be queried
+  EntityType entity_type_2 = 5;
+}
+
+// Contains Configs for the entity and config--all latest active versions
+message GetLatestActiveConfigsForEntityAndConfigTypeResponse {
+  // Request is added back in response for tracking
+  RequestInfo request_info = 1;
+  // list of the entity configs
+  repeated EntityConfig response_configs = 2;
+}
+
+// entity config structure
+message EntityConfig {
+  // config/rule-id
+  string config_id = 1;
+  // domain
+  Domain domain = 2;
+  // config_type
+  ConfigType config_type = 3;
+  // entity_id
+  string entity_id = 4;
+  // raw config string that is unparsed
+  string raw_config = 6;
+  // the parsed config in a structured consumable way
+  // config format: json etc
+  ConfigFormat config_format = 5;
+  // a config that just holds an integer value
+  ConfigValue config_value = 14;
+  // deprecated after migrating deep-red to use 'config_value'
+  reserved 11;
+  reserved 'value_config';
+  // config status
+  ConfigStatus config_status = 7;
+  // when this configuration will expire
+  google.protobuf.Timestamp expires_at = 8;
+  // when this configuration was created
+  google.protobuf.Timestamp created_at = 9;
+  // who created this configuration
+  string created_by = 10;
+  // the type the entity's id refers to
+  EntityType entity_type = 12;
+  // the version of the config
+  google.protobuf.Int32Value version = 13;
+  // request_id for this config request
+  string request_id = 15;
+  // last updated date
+  google.protobuf.Timestamp last_reviewed_at = 16;
+  // optional 2nd dimension of the entity type
+  EntityType entity_type_2 = 17;
+  // optional 2nd dimension of the entity id (not null if entity_type_2 is not null)
+  string entity_id_2 = 18;
+  // Config type's string id
+  string config_type_id = 19;
+}
+
+/**
+   GET CONFIG REQUESTS
+*/
+
+// Request to get config requests
+message GetConfigRequestsRequest {
+  // User information
+  User user = 1;
+  // Optional status to filter the requests
+  ConfigStatus config_status = 2;
+  // Request Ids to fetch specific requests
+  repeated string request_ids = 3;
+  // optional Page Request
+  PageRequest page_request = 4;
+  // optional search query that filters the requests by name
+  google.protobuf.StringValue name_contains = 5;
+  // optional user_id to filter created_by
+  google.protobuf.StringValue created_by = 6;
+  // optional field to order by
+  OrderBy order_by = 7;
+  // optional field to filter config_types
+  repeated ConfigType config_types = 8;
+  // optional field to filter config types by their string ids
+  repeated string config_type_ids = 9;
+
+  // Ordering
+  message OrderBy {
+    // field to order by
+    Field field = 1;
+    // order direction
+    OrderByDirection direction = 2;
+
+    // Field
+    enum Field {
+      // UNSPECIFIED
+      FIELD_UNSPECIFIED = 0;
+      // order by created_at
+      FIELD_CREATED_AT = 1;
+      // order by created_by
+      FIELD_CREATED_BY = 2;
+      // order by last_updated_at
+      FIELD_LAST_UPDATED_AT = 3;
+    }
+  }
+}
+
+// Response with config request objects
+message GetConfigRequestsResponse {
+  // config requests
+  repeated ConfigRequest config_requests = 1;
+  // Page Response
+  PageResponse page_response = 2;
+}
+
+// Config request record
+message ConfigRequest {
+  // Unique id representing the request
+  string request_id = 1;
+  // User information
+  User user_id = 2;
+  // Name of the request as supplied by the user
+  string name = 3;
+  // Request metadata
+  RequestMetadata request_metadata = 4;
+  // Request status
+  ConfigStatus request_status = 5;
+  // Timestamp when the request was created
+  google.protobuf.Timestamp created_at = 6;
+  // Timestamp when the record was last updated
+  google.protobuf.Timestamp last_updated_at = 7;
+  // why the request was approved or rejected
+  string status_change_reason = 8;
+  // id of the reviewer who updated the status
+  User reviewed_by = 9;
+  // # of configs in the request
+  int32 config_count = 10;
+  // config types
+  repeated ConfigType config_types = 11;
+  // config type id's
+  repeated string config_type_ids = 12;
+}
+
+// Request to get details of a config request
+message GetConfigRequestDetailsRequest {
+  // request_id to identify the config records
+  string request_id = 1;
+  // Page Request
+  PageRequest page_request = 2;
+  // optional field to order by
+  OrderBy order_by = 3;
+  // optional field to filter by entity
+  EntityType entity_type = 4;
+  // optional field to filter by config type
+  ConfigType config_type = 5;
+  // optional field to filter by 2nd dimension entity type
+  EntityType entity_type_2 = 6;
+  // optional field to filter by config type string id
+  string config_type_id = 7;
+
+  // OrderBy
+  message OrderBy {
+    // field to order by
+    Field field = 1;
+    // order direction
+    OrderByDirection direction = 2;
+
+    // OrderBy
+    enum Field {
+      // UNSPECIFIED
+      FIELD_UNSPECIFIED = 0;
+      // order by value
+      FIELD_VALUE = 1;
+      // order by entity_id
+      FIELD_ENTITY_ID = 2;
+      // order by expires_at
+      FIELD_EXPIRES_AT = 3;
+    }
+  }
+}
+
+// Request details for a given request_id
+message GetConfigRequestDetailsResponse {
+  // request_id supplied by the user
+  string request_id = 1;
+  // config records that are part of the request
+  repeated EntityConfig entity_configs = 2;
+  // Page Response
+  PageResponse page_response = 3;
+}
+
+// Metadata supplied while creating a request
+message RequestMetadata {
+  // description of the usecase and metric improvement
+  string description = 1;
+  // Estimated impact of this request
+  string impact = 2;
+  // Query to validate the impact and metric improvement
+  string query = 3;
+  // Config types requested
+  reserved 4;
+  reserved 'configs_requested';
+  // [deprecated] Entity Ids from the request
+  reserved 5;
+  reserved 'entity_ids';
+  // Entities from the request
+  reserved 6;
+  reserved 'entities';
+}
+
+/**
+   COMMON Types
+*/
+
+// A config that just holds an value
+message ConfigValue {
+  // The value for this config
+  oneof config_value {
+    // An integer value
+    int32 int_value = 1;
+    // A String value
+    string string_value = 2;
+    // A Boolean value
+    bool boolean_value = 3;
+  }
+
+  // [deprecated] A json value (use string_value instead)
+  reserved 'json_value';
+  reserved 4;
+}
+
+/**
+   ENUMS
+*/
+
+// Config status
+enum ConfigStatus {
+  // UNSPECIFIED
+  CONFIG_STATUS_UNSPECIFIED = 0;
+  // configuration has been approved
+  CONFIG_STATUS_APPROVED = 1;
+  // configuration is still pending
+  CONFIG_STATUS_PENDING = 2;
+  // configuration is being reviewed
+  CONFIG_STATUS_IN_REVIEW = 3;
+  // configuration has been rejected
+  CONFIG_STATUS_REJECTED = 4;
+  // configuration has expired
+  CONFIG_STATUS_EXPIRED = 5;
+  // configuration has been deleted
+  CONFIG_STATUS_DELETED = 6;
+  // configuration request has been cancelled
+  CONFIG_STATUS_CANCELLED = 7;
+  // configuration is in review to delete
+  CONFIG_STATUS_IN_REVIEW_FOR_DELETION = 8;
+}
+
+// CONFIG status
+enum ConfigFormat {
+  // UNSPECIFIED
+  CONFIG_FORMAT_UNSPECIFIED = 0;
+  // configs are in json format
+  CONFIG_FORMAT_JSON = 1;
+  // configs are in a single value format
+  CONFIG_FORMAT_VALUE = 2;
+  // configs are in a int value format
+  CONFIG_FORMAT_INT = 3;
+  // configs are in a string value format
+  CONFIG_FORMAT_STRING = 4;
+  // configs are in a boolean value format
+  CONFIG_FORMAT_BOOLEAN = 5;
+}
+
+// Config Types supported by platform.
+enum ConfigType {
+  // UNSPECIFIED
+  CONFIG_TYPE_UNSPECIFIED = 0;
+  // not_delivered type
+  CONFIG_TYPE_COST_OF_ND = 1;
+  // pizza_bag_weightage equipement type
+  CONFIG_TYPE_PIZZA_BAG_PREFERENCE_SCORE = 2;
+  // max batch size for a delivery
+  CONFIG_TYPE_MAX_BATCH_SIZE = 3;
+  // single store batching
+  CONFIG_TYPE_SINGLE_STORE_BATCHING = 4;
+  // tradeoff asap dasher wait
+  CONFIG_TYPE_TRADEOFF_ASAP_DASHER_WAIT = 5;
+  // w2_preferred equipement type
+  CONFIG_TYPE_W2_PREFERRED_PREFERENCE_SCORE = 6;
+  // dd polos equipement type
+  CONFIG_TYPE_DD_POLOS_PREFERENCE_SCORE = 7;
+  // specs approved equipement type
+  CONFIG_TYPE_SPECS_APPROVED_PREFERENCE_SCORE = 8;
+  // petsmart prefferred equipement type
+  CONFIG_TYPE_PETSMART_PREFERRED_PREFERENCE_SCORE = 9;
+  // pt tavern approved equipement type
+  CONFIG_TYPE_PT_TAVERN_APPROVED_PREFERENCE_SCORE = 10;
+  // store capacity
+  CONFIG_TYPE_STORE_CAPACITY = 11;
+  // tradeoff asap cost
+  CONFIG_TYPE_TRADEOFF_ASAP_COST = 12;
+  // pay experiment
+  CONFIG_TYPE_PAY_EXPERIMENT = 13;
+  // tip experiment
+  CONFIG_TYPE_TIP_EXPERIMENT = 14;
+  // ephemeral configs
+  CONFIG_TYPE_EPHEMERAL_CONFIG = 15;
+  // same store tsp batching
+  CONFIG_TYPE_SAME_STORE_TSP = 16;
+  // same store cargo size
+  CONFIG_TYPE_SAME_STORE_CARGO_SIZE = 17;
+  // Alcohol preference score
+  CONFIG_TYPE_ALCOHOL_PREFERENCE_SCORE = 18;
+  // Alcohol preference score
+  CONFIG_TYPE_PREP_TIME_EXP_STORE_GROUP_NO = 19;
+  // Shadow pay experiment
+  CONFIG_TYPE_SHADOW_PAY_EXPERIMENT = 20;
+  // Parcel exclusion zone
+  CONFIG_TYPE_PARCEL_EXCLUSION_ZONE = 21;
+  // Max time on road
+  CONFIG_TYPE_MAX_TIME_ON_ROAD = 22;
+  // Drive Mx profile for cost/quality parameters
+  CONFIG_TYPE_DRIVE_COST_QUALITY_PROFILE = 23;
+  // Item volume scaling percentage
+  CONFIG_TYPE_ITEM_VOLUME_SCALING_PCT = 24;
+  // Item weight scaling percentage
+  CONFIG_TYPE_ITEM_WEIGHT_SCALING_PCT = 25;
+  // Catering or pizza bag preference score
+  CONFIG_TYPE_CATERING_PIZZA_BAG_PREFERENCE_SCORE = 26;
+  // Grocery or catering bag preference score
+  CONFIG_TYPE_GROCERY_CATERING_BAG_PREFERENCE_SCORE = 27;
+  // parcel facility capacities
+  CONFIG_TYPE_FACILITY_CAPACITY = 28;
+  // Catering hotbag preference score
+  CONFIG_TYPE_CATERING_HOTBAG_PREFERENCE_SCORE = 29;
+  // DSD grocery preferred preference score
+  CONFIG_TYPE_DSD_GROCERY_PREFERRED_PREFERENCE_SCORE = 30;
+  // DSD CNG Australia preferred preference score
+  CONFIG_TYPE_DSD_CNG_AUSTRALIA_PREFERENCE_SCORE = 31;
+  // Cargo bike preference score
+  CONFIG_TYPE_CARGO_BIKE_PREFERENCE_SCORE = 32;
+  // Military ID preference score
+  CONFIG_TYPE_MILITARY_ID_PREFERENCE_SCORE = 33;
+  // Insulated bag preference score
+  CONFIG_TYPE_INSULATED_BAG_PREFERENCE_SCORE = 34;
+  // COD cash preference score
+  CONFIG_TYPE_COD_CASH_PREFERENCE_SCORE = 35;
+  // High subtotal preferred preference score
+  CONFIG_TYPE_HIGH_SUBTOTAL_PREFERRED_PREFERENCE_SCORE = 36;
+  // Coles liquor approved preference score
+  CONFIG_TYPE_COLES_LIQUOR_APPROVED_PREFERENCE_SCORE = 37;
+  // Coles liquor preferred preference score
+  CONFIG_TYPE_DRIVER_DOCS_ELIGIBLE_PREFERENCE_SCORE = 38;
+  // Employee preference score
+  CONFIG_TYPE_EMPLOYEE_PREFERENCE_SCORE = 39;
+  // Prep time ignore mint guardrails
+  CONFIG_TYPE_IGNORE_PREP_TIME_GUARDRAILS = 40;
+  // Require physical redcard for checkout
+  CONFIG_TYPE_REQUIRE_PHYSICAL_REDCARD = 41;
+  // Require cargo capacity check for stores and businesses
+  CONFIG_TYPE_REQUIRE_CARGO_CAPACITY_CHECK = 42;
+  // Vehicle type preference score
+  CONFIG_TYPE_VEHICLE_TYPE_PREFERENCE_SCORE = 43;
+  // Eligible controlled substance approved preference score
+  CONFIG_TYPE_ELIGIBLE_CONTROLLED_SUBSTANCE_APPROVED_PREFERENCE_SCORE = 44;
+  // Blood borne pathogen training preference score
+  CONFIG_TYPE_BLOODBORNE_PATHOGEN_TRAINING_PREFERENCE_SCORE = 45;
+  // Hazmat training preference score
+  CONFIG_TYPE_HAZ_MAT_TRAINING_PREFERENCE_SCORE = 46;
+  // Diagnostics tote preference score
+  CONFIG_TYPE_DIAGNOSTICS_TOTE_PREFERENCE_SCORE = 47;
+  // config type permissions
+  CONFIG_TYPE_CONFIG_SERVICE_PERMISSIONS = 48;
+  // Whether to ignore mx provided prep time
+  CONFIG_TYPE_IGNORE_MERCHANT_PROVIDED_PREP_TIME = 49;
+  // deprecated CONFIG_TYPE_DELIVERY_WINDOW_START_TIME_PADDING name needed correction
+  reserved 'CONFIG_TYPE_CONFIG_TYPE_DELIVERY_WINDOW_START_TIME_PADDING';
+  reserved 50;
+  // Time padding added to delivery window start time to adjust earliness score calculation
+  CONFIG_TYPE_DELIVERY_WINDOW_START_TIME_PADDING = 51;
+  // Time padding added to preferred Dx ready time to adjust earliness score calculation
+  CONFIG_TYPE_PREFERRED_DX_READY_TIME_PADDING = 52;
+  // Whether to allow dx early arrival at mx
+  CONFIG_TYPE_DASHER_EARLY_ARRIVAL_AT_MERCHANT = 53;
+  // Assumed wait time in minutes for merchant confirmation
+  CONFIG_TYPE_MERCHANT_CONFIRMATION_WAIT_TIME_MINUTES = 54;
+  // Dasher X Entity Blocklist
+  CONFIG_TYPE_DASHER_BLOCKLIST = 55;
+  // Minutes (+/-) added the delivery window end time
+  CONFIG_TYPE_DELIVERY_WINDOW_END_TIME_ADJUSTED_MINUTES = 56;
+  // Future dasher equipment score decay slope
+  CONFIG_TYPE_EQUIPPED_FUTURE_DASHER_DECAY_SLOPE = 57;
+  // Windowed DSD delivery assignment start time cap
+  CONFIG_TYPE_WINDOWED_DSD_DELIVERY_ASSIGNMENT_START_TIME_CAP = 58;
+  // The maximum time in seconds we allow order to be same store batched after dx arrives at store
+  CONFIG_TYPE_MAX_DURATION_AFTER_AT_STORE_TO_SAME_STORE_BATCH = 59;
+}
+
+// Namespaces/domains for configuration
+enum Domain {
+  // UNSPECIFIED
+  DOMAIN_UNSPECIFIED = 0;
+  // ASSIGNMENT domain
+  DOMAIN_ASSIGNMENT = 1;
+  // DASHER_EARNINGS domain
+  DOMAIN_DASHER_EARNINGS = 2;
+  // ETA domain
+  DOMAIN_ETA = 3;
+}
+
+// Request to update a Config Request's status
+message UpdateConfigRequestStatusRequest {
+  // Request details
+  RequestInfo request_info = 1;
+  // id of the request
+  string config_request_id = 2;
+  // config status
+  ConfigStatus config_status = 3;
+  // reason for why the status was changed to what it was
+  string reason = 4;
+  // user id who reviewed the request
+  User user = 5;
+}
+
+// Response for updating a Config Request's status
+message UpdateConfigRequestStatusResponse {
+  // Request details
+  RequestInfo request_info = 1;
+  // error description
+  string error = 2;
+}

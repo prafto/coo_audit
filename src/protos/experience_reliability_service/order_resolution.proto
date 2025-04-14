@@ -1,0 +1,761 @@
+syntax = "proto3";
+package experience_reliability_service.order_resolution;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "experience_reliability_service/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+service OrderResolution {
+  option (doordash.api.service) = {
+    name: "experience-reliability-service"
+    url: "cnr-platform-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["experience-reliability-service"]
+    api_key_name: "CNR_PLATFORM_API_KEY"
+    owner: {
+      id: "cnr-platform-alerts"
+      name: "cnr-platform"
+      slack_channel: "#ask-credit-refund-platform"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [
+      INTERNAL,
+      DX,
+      CX,
+      MX
+    ]
+  };
+
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // These endpoints are now all served out of cnr-platform
+  rpc CreateOrderResolutionPreview(CreateOrderResolutionPreviewRequest) returns (OrderResolutionPreview) {
+    option (google.api.http) = {
+      post: "/experience-reliability-service/v1/create-order-resolution-preview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  rpc UpdateOrderResolutionPreview(UpdateOrderResolutionPreviewRequest) returns (UpdatedOrderResolutionPreview) {
+    option (google.api.http) = {
+      post: "/experience-reliability-service/v1/update-order-resolution-preview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  rpc AcceptOrderResolutionOption(AcceptOrderResolutionOptionRequest) returns (AcceptOrderResolution) {
+    option (google.api.http) = {
+      post: "/experience-reliability-service/v1/accept-order-resolution-option"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_order_resolution_tool"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+  rpc GetOrderResolutionPreviewList(GetOrderResolutionPreviewListRequest) returns (OrderResolutionPreviewListResponse);
+  rpc GetOrderResolutionPreview(GetOrderResolutionPreviewRequest) returns (OrderResolutionPreviewResponse) {
+    option (google.api.http) = {
+      post: "/experience-reliability-service/v1/get-order-resolution-preview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_access_teammate_headquarters",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // V2 is used for the order_resolution dynamodb extraction. Where DRS calls ERS to write into cockroachdb.
+  rpc CreateOrderResolutionIssuanceTillDateV2(CreateOrderResolutionIssuanceTillDateV2Request) returns (CreateOrderResolutionIssuanceTillDateV2Response);
+  rpc BulkUpdateOrderResolutionIssuanceTillDateV2(BulkUpdateOrderResolutionIssuanceTillDateV2Request) returns (BulkUpdateOrderResolutionIssuanceTillDateV2Response);
+  rpc QueryByOrderInfoOrderResolutionIssuanceTillDateV2(QueryByOrderInfoOrderResolutionIssuanceTillDateV2Request) returns (QueryByOrderInfoOrderResolutionIssuanceTillDateV2Response);
+
+  rpc CreateOrderResolutionV2(CreateOrderResolutionV2Request) returns (CreateOrderResolutionV2Response);
+  rpc DeleteOrderResolutionV2(DeleteOrderResolutionV2Request) returns (DeleteOrderResolutionV2Response);
+  rpc GetOrderResolutionV2(GetOrderResolutionV2Request) returns (GetOrderResolutionV2Response);
+  rpc HandleOrderResolutionV2(HandleOrderResolutionV2Request) returns (HandleOrderResolutionV2Response);
+  rpc QueryOrderResolutionV2(QueryOrderResolutionV2Request) returns (QueryOrderResolutionV2Response);
+  rpc UpdateOrderResolutionNonRangeKeyFieldV2(UpdateOrderResolutionNonRangeKeyFieldV2Request) returns (UpdateOrderResolutionNonRangeKeyFieldV2Response);
+  rpc UpdateOrderResolutionV2(UpdateOrderResolutionV2Request) returns (UpdateOrderResolutionResponse);
+
+  // get handled problems from handled order_resolutions, used by beast API to display error tags on Dispatch
+  rpc GetHandledProblems(GetHandledProblemsRequest) returns (GetHandledProblemsResponse);
+
+  // get lightweight order resolution info for a list of delivery ids
+  rpc GetLightweightOrderResolutionsInBulk(GetLightweightOrderResolutionsInBulkRequest) returns (GetLightweightOrderResolutionsInBulkResponse);
+}
+
+message GetLightweightOrderResolutionsInBulkRequest {
+  // Status of the order resolution to filter by (eg, 'handled', 'pending')
+  google.protobuf.StringValue status = 1;
+  // Request type to filter by (eg, 'MISSING', 'INCORRECT')
+  google.protobuf.StringValue request_type = 2;
+  // List of delivery ids to request the order resolutions for (limit 100 per request)
+  repeated int64 delivery_ids = 3;
+}
+
+message GetLightweightOrderResolutionsInBulkResponse {
+  repeated LightweightOrderResolution order_resolutions = 1;
+}
+
+message LightweightOrderResolution {
+  // Delivery id of the order
+  string delivery_id = 1;
+  // was a CnR blocked by fraud (eg, cx is CnR abuser) - in this case there are
+  // no records in ORDER_RESOLUTION table and only record is in CREDIT_AND_REFUND_LIFECYCLE_EVENT_TABLE
+  bool was_cnr_blocked = 2;
+  // total credits given to the cx for this order
+  google.protobuf.Int32Value credits = 3;
+  // total refunds given to the cx for this order
+  google.protobuf.Int32Value refunds = 4;
+  // total charge to mx for this order
+  google.protobuf.Int32Value mxa_store_charge_till_date = 5;
+  // list of problems reported on this order - this list will be empty when
+  // CnR is blocked by fraud even though the cx might've reported problems
+  repeated LightweightProblem problems = 6;
+}
+
+message LightweightProblem {
+  // Name of the problem (eg, missing_item, wrong_order_delivered, etc)
+  google.protobuf.StringValue problem_name = 1;
+  // Customer comment attached to the reported problem
+  google.protobuf.StringValue problem_description = 2;
+  // Name of the item if the problem is reported at an item level
+  google.protobuf.StringValue item_name = 3;
+  // Order item id if the problem is reported at an item level
+  google.protobuf.Int64Value order_item_id = 4;
+  // Quantity of the item if the problem is reported at an item level
+  google.protobuf.Int32Value quantity = 5;
+}
+
+// OrderResolutionIssuanceTillDate
+
+message CreateOrderResolutionIssuanceTillDateV2Request {
+  OrderResolutionIssuanceSchema order_resolution_issuance = 1;
+}
+
+message CreateOrderResolutionIssuanceTillDateV2Response {
+  OrderResolutionIssuanceSchema order_resolution_issuance = 1;
+}
+
+message BulkUpdateOrderResolutionIssuanceTillDateV2Request {
+  repeated OrderResolutionIssuanceSchema order_resolution_issuance_list = 1;
+}
+
+message BulkUpdateOrderResolutionIssuanceTillDateV2Response {
+  repeated OrderResolutionIssuanceSchema order_resolution_issuance_list = 1;
+}
+
+message QueryByOrderInfoOrderResolutionIssuanceTillDateV2Request {
+  google.protobuf.StringValue order_info = 1;
+}
+
+message QueryByOrderInfoOrderResolutionIssuanceTillDateV2Response {
+  repeated OrderResolutionIssuanceSchema order_resolution_issuance_list = 1;
+}
+
+// OrderResolution
+
+message CreateOrderResolutionV2Request {
+  OrderResolutionPreviewResponse order_resolution_schema = 1; // required
+}
+
+message CreateOrderResolutionV2Response {
+  OrderResolutionPreviewResponse order_resolution = 1;
+}
+
+message DeleteOrderResolutionV2Request {
+  google.protobuf.Int64Value delivery_id = 1; // required
+  google.protobuf.StringValue range_key_begins_with_string = 2; // DO NOT USE
+  google.protobuf.StringValue delivery_uuid = 3; // not yet enabled
+  google.protobuf.StringValue status_reqtype_uuid = 4; // required
+}
+
+message DeleteOrderResolutionV2Response {
+  google.protobuf.BoolValue success = 1;
+}
+
+message GetOrderResolutionV2Request {
+  google.protobuf.Int64Value delivery_id = 1; // required
+  google.protobuf.StringValue status_reqtype_uuid = 2; // required
+  google.protobuf.StringValue delivery_uuid = 3; // should I add?
+}
+
+message GetOrderResolutionV2Response {
+  OrderResolutionPreviewResponse order_resolution = 1;
+}
+
+message HandleOrderResolutionV2Request {
+  OrderResolutionPreviewResponse order_resolution_schema = 1; // required
+  google.protobuf.BoolValue keep_uuid = 2;
+}
+
+message HandleOrderResolutionV2Response {
+  OrderResolutionPreviewResponse order_resolution = 1;
+}
+
+message QueryOrderResolutionV2Request {
+  google.protobuf.Int64Value delivery_id = 1; // required
+  google.protobuf.StringValue range_key_begins_with_string = 2; // required
+  google.protobuf.StringValue delivery_uuid = 3; // should I add?
+}
+
+message QueryOrderResolutionV2Response {
+  repeated OrderResolutionPreviewResponse order_resolution_list = 1;
+}
+
+message UpdateOrderResolutionNonRangeKeyFieldV2Request {
+  OrderResolutionPreviewResponse order_resolution_schema = 1; // required
+}
+
+message UpdateOrderResolutionNonRangeKeyFieldV2Response {
+  OrderResolutionPreviewResponse order_resolution = 1;
+}
+
+message UpdateOrderResolutionV2Request {
+  OrderResolutionPreviewResponse order_resolution_schema = 1; // required
+}
+
+message UpdateOrderResolutionResponse {
+  OrderResolutionPreviewResponse order_resolution = 1;
+}
+
+message OrderResolutionIssuanceSchema {
+  google.protobuf.StringValue order_info = 1; // required
+  google.protobuf.StringValue level_info = 2; // required
+  google.protobuf.Int64Value apology_credit_amount_till_date = 3;
+  google.protobuf.Int64Value credit_amount_till_date = 4;
+  google.protobuf.Int64Value refund_amount_till_date = 5;
+  repeated IssuedProblemSchema issued_problems = 6;
+  repeated IssuancePayoutDetailsSchema payout_details = 7; // required
+  google.protobuf.Int64Value loyalty_reward_refund_till_date = 8;
+  google.protobuf.Int64Value external_gift_card_refund_till_date = 9;
+  google.protobuf.Int64Value ebt_refund_till_date = 10;
+  google.protobuf.Int64Value reward_points_refund_till_date = 11;
+  google.protobuf.Int64Value hsa_fsa_refund_till_date = 12;
+}
+
+message IssuedProblemSchema {
+  google.protobuf.StringValue name = 1; // required
+  google.protobuf.Int64Value quantity = 2;
+  google.protobuf.Int64Value item_extra_id = 3;
+  google.protobuf.Int64Value apology_credit_amount_till_date = 4;
+  google.protobuf.Int64Value credit_amount_till_date = 5;
+  google.protobuf.Int64Value refund_amount_till_date = 6;
+  google.protobuf.Int64Value loyalty_reward_till_date = 7;
+  google.protobuf.Int64Value external_gift_card_refund_till_date = 8;
+  google.protobuf.Int64Value ebt_refund_till_date = 9;
+  google.protobuf.Int64Value reward_points_refund_till_date = 10;
+  google.protobuf.Int64Value hsa_fsa_refund_till_date = 11;
+}
+
+message IssuancePayoutDetailsSchema {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.BoolValue is_creator = 2;
+  google.protobuf.Int64Value apology_credit_amount_till_date = 3;
+  google.protobuf.Int64Value credit_amount_till_date = 4;
+  google.protobuf.Int64Value refund_amount_till_date = 5;
+  google.protobuf.Int64Value loyalty_reward_till_date = 6;
+  google.protobuf.Int64Value external_gift_card_refund_till_date = 7;
+  google.protobuf.Int64Value ebt_refund_till_date = 8;
+  google.protobuf.Int64Value reward_points_refund_till_date = 9;
+  google.protobuf.Int64Value hsa_fsa_refund_till_date = 10;
+}
+
+message GetOrderResolutionPreviewRequest {
+  google.protobuf.StringValue uuid = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+}
+
+message GetOrderResolutionPreviewListRequest {
+  google.protobuf.StringValue status = 1;
+  google.protobuf.StringValue request_type = 2;
+  google.protobuf.StringValue delivery_uuid = 3;
+}
+
+message AcceptOrderResolution {
+  oneof entity {
+    AcceptOrderResolutionResponse accept_order_resolution_response = 1;
+    AcceptOrderResolutionErrorResponse accept_order_resolution_error_response = 2;
+  }
+}
+
+message AcceptOrderResolutionErrorResponse {
+  reserved 1;
+  reserved "error_code";
+  google.protobuf.StringValue message = 2;
+  google.protobuf.StringValue payload = 3;
+  google.protobuf.Int32Value status_code = 4;
+  google.protobuf.StringValue error_code_string = 5;
+}
+
+message AcceptOrderResolutionResponse {
+  google.protobuf.StringValue message = 1;
+}
+
+message CreateOrderResolutionPreviewRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue source = 2;
+  google.protobuf.StringValue details = 3;
+  google.protobuf.StringValue request_type = 4;
+  repeated Problem problems = 5;
+  reserved 6;
+  reserved "metadata";
+  /* metadata will store a json string mapping of any important values of the order resolution
+     use case: if this resolution is created from chat, metadata will contain the channel url
+     note: currently the only use case for this field is the one listed above
+  */
+  map<string, string> metadata_map = 7;
+}
+
+message UpdateOrderResolutionPreviewRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue status_reqtype_uuid = 2;
+  google.protobuf.Int32Value apology_credits = 3;
+  repeated ApologyCreditsByConsumer apology_credits_by_consumer = 4;
+  google.protobuf.Int32Value refund_amount_override = 5;
+  repeated Problem problems = 6;
+  google.protobuf.StringValue source = 7;
+  DeferredIssuanceStatus deferred_issuance_status = 8;
+}
+
+message Problem {
+  google.protobuf.StringValue problem_name = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Int64Value item_extra_id = 3;
+  google.protobuf.Int64Value order_item_id = 4;
+  google.protobuf.Int32Value quantity = 5;
+  google.protobuf.StringValue metadata = 6;
+  google.protobuf.Int64Value refund_amount_override = 7;
+  // For drive deliveries, this can map to a specific rule within the problem.
+  google.protobuf.StringValue rule_id = 8;
+}
+
+message OrderResolutionPreview {
+  oneof entity {
+    OrderResolutionPreviewResponse order_resolution_preview_response = 1;
+    OrderResolutionErrorResponse order_resolution_error_response = 2;
+  }
+}
+
+message UpdatedOrderResolutionPreview {
+  oneof entity {
+    OrderResolutionPreviewResponse order_resolution_preview_response = 1;
+    OrderResolutionErrorResponse order_resolution_error_response = 2;
+  }
+}
+
+message OrderResolutionErrorResponse {
+  google.protobuf.StringValue error_code = 1;
+  google.protobuf.StringValue message = 2;
+  google.protobuf.StringValue status_code = 3;
+  google.protobuf.StringValue action_type = 4;
+  google.protobuf.StringValue status_reqtype_uuid = 5;
+  google.protobuf.Int32Value credits = 6;
+  google.protobuf.Int32Value refund = 7;
+  google.protobuf.BoolValue is_allowed_redelivery = 8;
+  google.protobuf.StringValue message_title = 9;
+  StackingProblems stacking_problems = 10;
+}
+
+/* This message is used to store invalidating problem ids that could have caused a reject request exception in the order resolution flow
+*/
+message StackingProblems {
+  repeated google.protobuf.StringValue same_problems = 1;
+  repeated google.protobuf.StringValue incompatible_problems = 2;
+}
+
+message OrderResolutionPreviewListResponse {
+  repeated OrderResolutionPreviewResponse order_resolutions = 1;
+}
+
+message OrderResolutionPreviewResponse {
+  google.protobuf.StringValue status_reqtype_uuid = 1;
+  google.protobuf.Int32Value recommended_total = 2;
+  google.protobuf.Int32Value refund_limit = 3;
+  google.protobuf.Int32Value credits_limit = 4;
+  google.protobuf.BoolValue is_allowed_redelivery = 5;
+  google.protobuf.StringValue action_type = 6;
+  google.protobuf.Int64Value apology_credits = 7;
+  repeated ApologyCreditsByConsumer apology_credits_by_consumer = 8;
+  google.protobuf.Int32Value apology_credits_max = 9;
+  CreditBreakdown credit_breakdown = 10;
+  google.protobuf.Int32Value credits = 11;
+  google.protobuf.StringValue delivery_uuid = 12;
+  google.protobuf.StringValue details = 13;
+  CreditBreakdown dispatch_error_credit_breakdown = 14;
+  google.protobuf.Int64Value dispatch_error_id = 15;
+  CreditBreakdown dispatch_error_refund_breakdown = 16;
+  repeated google.protobuf.StringValue escalation_reasons = 17;
+  google.protobuf.StringValue handled_preview_id = 18;
+  IssuanceBreakdown issuance_breakdown = 19;
+  google.protobuf.Int32Value mxa_store_charge_till_date = 20;
+  google.protobuf.Int64Value order_cart_id = 21;
+  repeated google.protobuf.StringValue problem_names = 22;
+  repeated ProblemResolution problem_resolutions = 23;
+  google.protobuf.Int64Value redelivery_id = 24;
+  CreditBreakdown refund_breakdown = 25;
+  google.protobuf.Int32Value refunds = 26;
+  google.protobuf.StringValue request_type = 27;
+  google.protobuf.StringValue resolution_method = 28;
+  google.protobuf.StringValue source = 29;
+  google.protobuf.StringValue created_at = 30;
+  google.protobuf.StringValue updated_at = 31;
+  repeated Problem problems = 32;
+  google.protobuf.StringValue currency = 33;
+  // new fields for v2 below
+  google.protobuf.Timestamp created_at_timestamp = 34;
+  google.protobuf.Int64Value created_by_id = 35;
+  google.protobuf.Int64Value delivery_id = 36; // do we need this?
+  google.protobuf.Int32Value remaining_available_refund_amount = 37;
+  google.protobuf.Timestamp updated_at_timestamp = 38;
+  google.protobuf.StringValue payment_action = 39;
+  google.protobuf.Int32Value loyalty_rewards = 40;
+  google.protobuf.Int32Value external_gift_card_refund = 41;
+  google.protobuf.Int32Value ebt_refund = 42;
+  google.protobuf.Int32Value reward_points_refund = 43;
+  google.protobuf.Int32Value hsa_fsa_refund = 44;
+  repeated PromotionDetail promotion_details = 45;
+  reserved 46;
+  reserved "dispatch_error_ids";
+  repeated google.protobuf.StringValue dispatch_error_ids_list = 47;
+  // In case we are not writing to dispatch error, but are creating transactions on the drive side.
+  repeated google.protobuf.StringValue transaction_ids_list = 48;
+  DeferredIssuanceStatus deferred_issuance_status = 49;
+  MerchantRefundBreakdown merchant_refund_breakdown = 50;
+}
+
+// Used for drive refunds
+message MerchantRefundBreakdown {
+  // Total amount to refund to the merchant by DD
+  google.protobuf.Int64Value total_amount_refunded_to_merchant = 1;
+  // Tip to refund to the merchant by DD
+  google.protobuf.Int64Value tip_amount_refunded_to_merchant = 2;
+  // Drive Delivery Fee to refund to the merchant by DD
+  google.protobuf.Int64Value drive_delivery_fee_refunded_to_merchant = 3;
+  // Order Value to refund to the merchant by DD
+  google.protobuf.Int64Value order_value_refunded_to_merchant = 4;
+  // Additional value to refund to the merchant by DD
+  google.protobuf.Int64Value additional_amount_refunded_to_merchant = 5;
+  // Drive delivery fee tax refunded to merchant by DD
+  google.protobuf.Int64Value drive_delivery_fee_tax_refunded_to_merchant = 6;
+}
+
+message ProblemResolution {
+  google.protobuf.Int32Value apology_credits = 1;
+  CreditBreakdown credit_breakdown = 2;
+  google.protobuf.Int32Value credits = 3;
+  google.protobuf.StringValue description = 4;
+  google.protobuf.BoolValue is_allowed_redelivery = 5;
+  IssuanceBreakdown issuance_breakdown = 6;
+  repeated IssuanceBreakdownByConsumerNode issuance_breakdown_by_consumer = 7;
+  google.protobuf.Int64Value item_extra_id = 8;
+  google.protobuf.StringValue item_name = 9;
+  google.protobuf.StringValue metadata = 10;
+  google.protobuf.Int32Value mxa_policy_id = 11;
+  google.protobuf.Int64Value order_item_id = 12;
+  OrderProblem order_problem = 13;
+  google.protobuf.StringValue problem_name = 14;
+  google.protobuf.Int32Value quantity = 15;
+  google.protobuf.Int32Value recommended_amount = 16;
+  google.protobuf.Int32Value recommended_apology_credits = 17;
+  google.protobuf.Int32Value recommended_credits = 18;
+  google.protobuf.Int32Value recommended_refund = 19;
+  CreditBreakdown refund_breakdown = 20;
+  google.protobuf.Int32Value refunds = 21;
+  google.protobuf.Int32Value store_charge = 22;
+  google.protobuf.StringValue uuid = 23;
+  google.protobuf.BoolValue is_refund_amount_editable = 24;
+  google.protobuf.Int64Value remaining_available_refund_amount = 25;
+  google.protobuf.Int32Value loyalty_rewards = 26;
+  google.protobuf.Int32Value external_gift_card_refund = 27;
+  google.protobuf.Int32Value ebt_refund = 28;
+  google.protobuf.Int32Value item_single_price = 29;
+  google.protobuf.FloatValue mxa_policy_applied = 30;
+  StoreChargeBreakdown store_charge_breakdown = 31;
+  google.protobuf.Int32Value reward_points_refund = 32;
+  google.protobuf.Int32Value hsa_fsa_refund = 33;
+  // MP deliveries will have paid merchant, and we can charge them with the store charge breakdown.
+  // Drive deliveries has merchants paying DD. We may need to refund them.
+  StoreChargeBreakdown store_refund_breakdown = 34;
+}
+
+message PromotionPercentage {
+  google.protobuf.Int32Value max_amount = 1;
+  google.protobuf.FloatValue percentage = 2;
+}
+
+message PromotionDetail {
+  google.protobuf.StringValue campaign_id = 1;
+  oneof entity {
+    google.protobuf.Int32Value flat_amount = 2;
+    PromotionPercentage percentage = 3;
+  }
+  google.protobuf.Timestamp expiration_date = 4;
+  google.protobuf.Int32Value min_order_amount = 5;
+  google.protobuf.Int32Value redemption_limit = 6;
+}
+
+message OrderProblem {
+  google.protobuf.StringValue description = 1;
+  google.protobuf.StringValue display_name = 2;
+  Level level = 3;
+  google.protobuf.StringValue name = 4;
+  Type type = 5;
+}
+
+message Level {
+  google.protobuf.StringValue combined_max = 1;
+  google.protobuf.StringValue credit_max = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue display_name = 4;
+  google.protobuf.StringValue name = 5;
+  google.protobuf.StringValue refund_max = 6;
+}
+
+message Type {
+  google.protobuf.StringValue description = 1;
+  google.protobuf.StringValue display_name = 2;
+  google.protobuf.StringValue name = 3;
+}
+
+message ApologyCreditsByConsumer {
+  google.protobuf.Int32Value apology_credits = 1;
+  google.protobuf.Int32Value apology_credits_max = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+}
+
+message IssuanceBreakdownByConsumerNode {
+  google.protobuf.Int64Value consumer_id = 1;
+  IssuanceBreakdown issuance_breakdown = 2;
+}
+
+message IssuanceBreakdown {
+  CreditsAndRefund credits = 1;
+  CreditsAndRefund redelivery = 2;
+  CreditsAndRefund refund = 3;
+}
+
+message CreditsAndRefund {
+  google.protobuf.Int32Value apology_credits = 1;
+  google.protobuf.Int32Value combined_credits = 2;
+  google.protobuf.Int32Value credits = 3;
+  google.protobuf.Int32Value refund = 4;
+  money.MonetaryFields apology_credits_monetary_fields = 5;
+  money.MonetaryFields credits_monetary_fields = 6;
+  money.MonetaryFields refund_monetary_fields = 7;
+  money.MonetaryFields combined_credits_monetary_fields = 8;
+  google.protobuf.Int32Value loyalty_rewards = 9;
+  money.MonetaryFields loyalty_rewards_monetary_fields = 10;
+  google.protobuf.Int32Value external_gift_card_refund = 11;
+  money.MonetaryFields external_gift_card_refund_monetary_fields = 12;
+  google.protobuf.Int32Value ebt_refund = 13;
+  money.MonetaryFields ebt_refund_monetary_fields = 14;
+  google.protobuf.Int32Value reward_points_refund = 15;
+  money.MonetaryFields reward_points_refund_monetary_fields = 16;
+  google.protobuf.Int32Value hsa_fsa_refund = 17;
+  money.MonetaryFields hsa_fsa_refund_monetary_fields = 18;
+}
+
+message CreditBreakdown {
+  google.protobuf.Int32Value apology_credit = 1;
+  google.protobuf.Int32Value dasher_fee = 2;
+  google.protobuf.Int32Value delivery_fee = 3;
+  google.protobuf.Int32Value delivery_fee_tax = 4;
+  google.protobuf.Int32Value extra_sos_delivery_fee = 5;
+  google.protobuf.Int32Value fees_tax = 6;
+  google.protobuf.Int32Value legislative_fee = 7;
+  google.protobuf.Int32Value legislative_fee_tax = 8;
+  google.protobuf.Int32Value min_order_fee = 9;
+  google.protobuf.Int32Value min_order_fee_tax = 10;
+  google.protobuf.Int32Value other = 11;
+  google.protobuf.Int32Value service_fee = 12;
+  google.protobuf.Int32Value service_fee_tax = 13;
+  google.protobuf.Int32Value subtotal = 14;
+  google.protobuf.Int32Value subtotal_tax = 15;
+  google.protobuf.Int32Value tip = 16;
+  // below are new fees
+  google.protobuf.Int64Value merchant_tip = 17;
+  google.protobuf.Int64Value loyalty_rewards = 18;
+  google.protobuf.Int64Value bag_fee = 19;
+  google.protobuf.Int64Value bag_fee_tax = 20;
+  google.protobuf.Int64Value cup_fee = 21;
+  google.protobuf.Int64Value cup_fee_tax = 22;
+  google.protobuf.Int64Value regulatory_response_fee = 23;
+  google.protobuf.Int64Value regulatory_response_fee_tax = 24;
+  google.protobuf.Int64Value retail_delivery_fee = 25;
+  google.protobuf.Int64Value retail_delivery_fee_tax = 26;
+  google.protobuf.Int64Value bottle_deposit_fee = 27;
+  google.protobuf.Int64Value bottle_deposit_fee_tax = 28;
+  google.protobuf.Int64Value dbp_expand_range_fee = 29;
+  google.protobuf.Int64Value dbp_expand_range_fee_tax = 30;
+  google.protobuf.Int64Value ebt_refund = 31;
+  google.protobuf.Int32Value priority_fee = 32;
+  google.protobuf.Int32Value priority_fee_tax = 33;
+  google.protobuf.Int32Value dasher_equity_fee = 34;
+  google.protobuf.Int32Value dasher_equity_fee_tax = 35;
+  google.protobuf.Int64Value hsa_fsa_refund = 36;
+  google.protobuf.Int64Value sf_health_mandate_fee = 37;
+  google.protobuf.Int64Value sf_health_mandate_fee_tax = 38;
+  google.protobuf.Int64Value staff_benefits_fee = 39;
+  google.protobuf.Int64Value staff_benefits_fee_tax = 40;
+  google.protobuf.Int64Value restaurant_operations_fee = 41;
+  google.protobuf.Int64Value restaurant_operations_fee_tax = 42;
+}
+
+message StoreChargeBreakdown {
+  google.protobuf.Int32Value subtotal_charged = 2;
+  StoreChargeTaxBreakdown tax_breakdown = 3;
+  StoreChargeCommissionBreakdown commission_breakdown = 4;
+}
+
+message StoreChargeTaxBreakdown {
+  google.protobuf.Int32Value unit_tax_amount = 1;
+  google.protobuf.FloatValue tax_rate = 2;
+  google.protobuf.BoolValue is_remit_tax = 3;
+  google.protobuf.Int32Value total_tax_charged = 4;
+}
+
+message StoreChargeCommissionBreakdown {
+  google.protobuf.Int32Value unit_commission_amount = 1;
+  google.protobuf.FloatValue commission_rate = 2;
+  google.protobuf.BoolValue exclude_commission = 3;
+  google.protobuf.Int32Value total_commission_charged = 4;
+}
+
+message AcceptOrderResolutionOptionRequest {
+  string status_req_type_uuid = 1;
+  string resolution_method = 2;
+  google.protobuf.StringValue delivery_uuid = 3;
+  google.protobuf.StringValue source = 4;
+  google.protobuf.BoolValue skip_email = 5;
+}
+
+message SegmentOrderResolutionPreview {
+  string status_reqtype_uuid = 1; /* Preview ID submitted to order resolution */
+  string delivery_uuid = 2; /* Delivery uuid associated with the issue */
+  string request_type = 3; /* Request type */
+  google.protobuf.StringValue currency = 4; /* Currency */
+  bool did_cx_attach_a_photo = 5; /* Did Cx submit a picture */
+  google.protobuf.StringValue action_type = 6; /* Auto approved / rejected */
+  google.protobuf.Int32Value credits = 7; /* credits */
+  google.protobuf.Int32Value refund = 8; /* refund limit*/
+  google.protobuf.BoolValue is_allowed_redelivery = 9; /* redelivery */
+  google.protobuf.StringValue error_code = 10;
+  google.protobuf.StringValue problem_details = 11;
+  google.protobuf.Int64Value store_id = 12;
+}
+
+message SegmentOrderResolutionAcceptedOption {
+  string status_reqtype_uuid = 1; /* Status reqtype uuid */
+  string accepted_resolution = 2; /* Resolution accepted by consumer */
+}
+
+message SegmentOrderResolutionAccepted {
+  string status_reqtype_uuid = 1; /* Status reqtype uuid */
+  string accepted_resolution = 2; /* Resolution accepted by consumer */
+  string delivery_uuid = 3; /* Delivery uuid */
+  string delivery_id = 4; /* Delivery id */
+  string workflow_id = 5; /* Associated workflow id */
+  string workflow_type = 6; /* Type of workflow, e.g. chatbot, agent, etc. */
+  string device = 7; /* Device, e.g. web, iOS, etc. */
+  string source = 8; /* Source of order resolution, e.g. dispatch, consumer_mobile, etc. */
+}
+
+// the request to get handled problems from handled order resolution for a delivery
+message GetHandledProblemsRequest {
+  // delivery id
+  google.protobuf.Int64Value delivery_id = 1;
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+}
+
+// the response of GetHandledProblemsRequest
+message GetHandledProblemsResponse {
+  // a list of dispatch_error_id and problems
+  repeated DispatchErrorHandledProblem dispatch_error_handled_problems = 1;
+}
+
+// the obj for dispatch_error_id and problems
+message DispatchErrorHandledProblem {
+  // dispatch_error_id
+  google.protobuf.Int64Value dispatch_error_id = 1;
+  // handled problems
+  repeated google.protobuf.StringValue handled_problems = 2;
+}
+
+// Status of deferred issuance
+enum DeferredIssuanceStatus {
+  // No deferred issuance
+  DEFERRED_ISSUANCE_STATUS_UNSPECIFIED = 0;
+  // Deferred issuance is scheduled
+  DEFERRED_ISSUANCE_STATUS_SCHEDULED = 1;
+  // Deferred issuance is cancelled
+  DEFERRED_ISSUANCE_STATUS_CANCELLED = 2;
+  // Deferred issuance is fulfilled
+  DEFERRED_ISSUANCE_STATUS_FULFILLED = 3;
+}

@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "doordash.retail.consumer.v1alpha1/pagination.proto";
+import "doordash.retail.consumer.v1alpha1/items.proto";
+
+option java_generic_services = true;
+package doordash.retail.consumer.v1alpha1;
+
+// consumer-facing APIs
+service RetailConsumerService {
+    // non-personalized, non-i18n, store item search for retail
+    // example URL: /convenience/store/<abcd-ef-123>/search
+    rpc StoreSearch(StoreSearchRequest) returns (StoreSearchResponse);
+    // non-personalized, non-i18n, store item search autocomplete for retail
+    // this is called with a blank query when first loading the search results
+    rpc StoreAutocomplete(StoreAutocompleteRequest) returns (StoreAutocompleteResponse);
+    // Temporary function for WAG rollout
+    rpc BusinessSearch(BusinessSearchRequest) returns (BusinessSearchResponse);
+
+}
+
+// Temporary function before we implement the ability to rollout stores using tools like DIME for WAG rollout.
+message BusinessSearchRequest{
+    string store_id = 1;
+}
+
+// Business Id used to check for Wag Rollout response
+message BusinessSearchResponse{
+    string business_id = 1;
+}
+
+// non-personalized store search
+// example URL: /convenience/store/<abcd-ef-123>/search
+message StoreSearchRequest {
+    // this is the raw store slug (including the seo-friendly prefix);
+    // this is an opaque value, clients should not need to parse this value
+    // ie. vons-chicken-sunnyvale-93232
+    string store_slug = 1;
+    // pass the client-specified query params
+    // if we want to control what search controls are shown
+    // to the user on this page, issue a query with this unset
+    // (this is different from a blank query)
+    StoreSearchSearchParams search_params = 2;
+    // additionally, pass the raw search params (if any) of the landing page
+    // these params are typically discarded (since are overridden by search_params)
+    // but it allows us to search special landing pages (ie. sale page)
+    // which may not have a corresponding filter/etc on the UI
+    // ie. ?q=abc&special_params=1
+    google.protobuf.StringValue raw_search = 3;
+    // specify the pagination params (page size determined by first/last)
+    PaginationArgs pagination = 4;
+}
+
+// non-personalized store search response; use cases:
+// - 
+message StoreSearchResponse {
+    // return the canonical url for this search (can be used for sharing)
+    // and/or rewriting the url in the address bar
+    string url = 1;
+    // TODO: store info
+    // this should override the extracted landing page search values
+    // if specified
+    google.protobuf.StringValue raw_search = 2;
+    // options for rendering the search page
+    // and search controls
+    StoreSearchOptions search_options = 3;
+    // summary of the search results
+    // if there are no search results, this is null
+    StoreSearchSummary search_summary = 4;
+    // actual search results
+    repeated StoreSearchEdge edges = 5; 
+    PageInfo pageInfo = 6;
+    
+}
+
+// rendering options
+message StoreSearchOptions {
+    // if set, hide the search query on the landing page
+    bool hide_search_query = 1;
+    // if set, override the prompt in the search query box
+    string search_prompt = 2;
+    // TODO: controls over what search controls are shown to the user
+}
+
+// summary of search results
+message StoreSearchSummary {
+    // total number of items in the results
+    // this will be null if total items is not available
+    google.protobuf.Int32Value total_count = 1;
+    // TODO: facets, suggestions, etc.
+}
+
+// individual items in the store search results
+// including a cursor
+message StoreSearchEdge {
+    // opaque cursor pointing to this particular item
+    // useful for preserving scroll position
+    string cursor = 1;
+    // item details
+    RetailItem item = 2;
+}
+
+// non-personalized store search autocomplete
+// should mostly match StoreSearchRequest, except pagination and ordering args
+message StoreAutocompleteRequest {
+    // this is the raw store slug (including the seo-friendly prefix);
+    // this is an opaque value, clients should not need to parse this value
+    // ie. vons-chicken-sunnyvale-93232
+    string store_slug = 1; // /convenience/store/<abcd-ef-123>/search
+    // pass the client-specified query params
+    StoreSearchSearchParams search_params = 2;
+    // additionally, pass the raw search params (if any) of the landing page
+    // these params are typically discarded (since are overridden by search_params)
+    // but it allows us to search special landing pages (ie. sale page)
+    // which may not have a corresponding filter/etc on the UI
+    // ie. ?q=abc&special_params=1
+    string raw_search = 3;
+}
+
+// autocomplete response
+// client can fill in sections (hide if empty)
+// and/or truncate at will
+message StoreAutocompleteResponse {
+    // list of sections/query suggestions for the user
+    repeated AutocompleteLineItem line_items = 1;
+}
+
+
+// backend controls UI for autocomplete page
+message AutocompleteLineItem {
+    // line item type
+    enum LineItemType {
+        // unspecified item type
+        ITEM_TYPE_UNSPECIFIED = 0;
+        // suggested query
+        ITEM_TYPE_QUERY_SUGGESTION = 1;
+        // suggested
+        ITEM_TYPE_SECTION_HEADER = 2;
+    }
+    // only one of these will be occupied
+    // don't use oneof becaue adding to that is
+    // not backwards compatible
+    LineItemType line_item_type = 1;
+    // query suggestion
+    AutocompleteQuerySuggestion query_suggestion = 2;
+    // section header
+    AutocompleteSectionHeader section_header = 3;
+    // future support for items
+    // AutocompleteItem item = 4;
+}
+
+// representation of structured formatting, ref:
+// https://developers.google.com/places/web-service/autocomplete#place_autocomplete_results
+message AutocompleteQuerySuggestion {
+    // supported display icons for autocomplte suggestions
+    enum AutocompleteIcon {
+        // unspecified autocomplete icon
+        AUTOCOMPLETE_ICON_UNSPECIFIED = 0;
+        // search icon
+        AUTOCOMPLETE_ICON_SEARCH = 1;
+    }
+    // unique identifier for the suggestion
+    // can be used for tracking purposes
+    string id = 1;
+    // display icon
+    AutocompleteIcon icon = 2;
+    // search params structure
+    StoreSearchSearchParams search_params = 3;
+    // arbitrary search query
+    string raw_search = 4;
+    // any url we want
+    string url = 5;
+    // human-readable name
+    string description = 6;
+    // optional structured formatting for the matched result
+    AutocompleteStructuredFormatting structured_formatting = 7;
+}
+
+// section header
+message AutocompleteSectionHeader {
+    // type of the section header
+    enum SectionType {
+        // unspecified section type
+        SECTION_TYPE_UNSPECIFIED = 0;
+        // just a plain header
+        SECTION_TYPE_HEADER = 1;
+        // recent search placeholder
+        // client will populate with N recent searches from the user
+        SECTION_TYPE_RECENT_SEARCHES = 2;
+    }
+    // unique identifier, used for analytics
+    string id = 1;
+    // optional placeholder type
+    SectionType section_type = 2;
+    // display text
+    string display = 3;
+}
+
+// structured formatting for autocomplete results
+message AutocompleteStructuredFormatting {
+    // matched substrings to highlight
+    message MatchedSubstrings {
+        // number of characters to highlight
+        int32 length = 1;
+        // offset in the text
+        int32 offset = 2;
+    }
+    // main display text
+    string main_text = 1;
+    // matched substrings to highlight in the main text
+    repeated MatchedSubstrings main_text_matched_substring = 2;
+    // contextual information, ie. category
+    // string secondary_text = 3;
+}
+
+// NOTE: ensure we are using google.protobuf. wrappers if we
+// want to tell the difference between null and default value
+message StoreSearchSearchParams {
+    // search query, should be set to a blank string normally
+    string q = 1;
+    // TODO filtering, sort
+}

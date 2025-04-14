@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+package doordash.retail.order.v1;
+
+import "buf/validate/validate.proto";
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "doordash.retail.common.v1/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/merchant_order.proto";
+
+option java_generic_services = true;
+
+// Pick/pack service for integration with merchant order-service
+// Design doc: https://drd.sh/rfCTC9/
+service PickPackService {
+  option (service_client.client_config).service_name = "pick-pack-service";
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+
+  // Create a PickPack workflow
+  rpc CreatePickPack(CreatePickPackRequest) returns (CreatePickPackResponse);
+}
+
+// CreatePickPack request body
+message CreatePickPackRequest {
+  // Idempotency key to de-duplicate retries
+  string idempotency_key = 1;
+  // Order details for this specific order
+  OrderDetail order_detail = 2 [(buf.validate.field).required = true];
+  // Substitution preferences for this pick-pack workflow
+  repeated SubstitutionPreference preferences = 3;
+}
+
+// Response to creating a PickPack
+message CreatePickPackResponse {
+  // NULL when StoreOrderConfirm shouldn’t be called
+  order_service.StoreOrderConfirmRequest store_order_confirm_request = 1;
+}
+
+// OrderDetail is the high-level request object
+message OrderDetail {
+  // Deliery id for this order detail
+  string delivery_id = 1;
+  // Delivery uuid associated with this order detail
+  string delivery_uuid = 2;
+  // Is ASAP, ie. whether this order is scheduled or not
+  google.protobuf.BoolValue is_asap = 3;
+  // Scheduled delivery time, if a scheduled order
+  google.protobuf.Timestamp scheduled_delivery_time = 4;
+  // List of orders, can be multiple for group orders
+  repeated Order orders = 5;
+  // Loyalty details of consumer
+  LoyaltyDetails loyalty_details = 6;
+  // Whether or not the order requires staging (for customer pickup)
+  google.protobuf.BoolValue staging_required = 7;
+  // Drive order attributes for the order
+  DriveOrderAttributes drive_order_attributes = 8;
+  // Order version ID
+  common.v1.Identifier order_version = 9;
+
+  // Details specific to DriveOrder
+  message DriveOrderAttributes {
+    // Different Dasher payment types at Point of Sale
+    enum CheckoutPaymentMethod {
+      // Dasher payment method is unspecified
+      CHECKOUT_PAYMENT_METHOD_UNSPECIFIED = 0;
+      // Dasher uses a red-card at Point of Sale.
+      CHECKOUT_PAYMENT_METHOD_RED_CARD = 1;
+      // Dasher uses a barcode at Point of Sale.
+      CHECKOUT_PAYMENT_METHOD_BARCODE = 2;
+    }
+    // Fulfillment method for the order
+    enum OrderFulfillmentMethod {
+      // Unspecified fulfillment method
+      ORDER_FULFILLMENT_METHOD_UNSPECIFIED = 0;
+      // Dx shops and stages the item for customer pickup
+      ORDER_FULFILLMENT_METHOD_SHOP_STAGE = 1;
+      // Dx shops and delivers the item to the customer
+      ORDER_FULFILLMENT_METHOD_SHOP_DELIVER = 2;
+      // Dx shops and delivers the item to the store associate
+      ORDER_FULFILLMENT_METHOD_SHOP_HANDOFF = 3;
+    }
+    // Checkout payment method to be used at Point of Sale
+    CheckoutPaymentMethod checkout_payment_method = 1;
+    // Estimated value of the order
+    money.MonetaryFields estimated_order_subtotal = 2;
+    // External Delivery ID sent by the Merchant at order creation
+    google.protobuf.StringValue external_delivery_id = 3;
+    // Checkout Barcode sent by the Merchant at order creation
+    google.protobuf.StringValue checkout_barcode = 4;
+    // Audit bypass code sent by the Merchant at order creation
+    google.protobuf.StringValue audit_bypass_code = 5;
+    // fulfillmentMethod for the order
+    OrderFulfillmentMethod fulfillment_method = 6;
+  }
+
+  // LoyaltyDetails contains consumer loyalty info
+  message LoyaltyDetails {
+    // Entered by consumer during linking
+    string loyalty_code = 1;
+    // Returned by merchant during code validation
+    google.protobuf.StringValue external_loyalty_code = 2;
+    // External consumer id in merchant system
+    google.protobuf.StringValue external_loyalty_consumer_id = 3;
+  }
+}
+
+// Consumer is a person who placed an Order
+message Consumer {
+  // Consumer id
+  string id = 1;
+  // Last name or surname
+  google.protobuf.StringValue last_name = 2;
+  // First or given name
+  google.protobuf.StringValue first_name = 3;
+  // Consumer's phone number
+  google.protobuf.StringValue phone_number = 4;
+  // Consumer's email address
+  google.protobuf.StringValue email = 5;
+  // User id, associated to but different to the consumer id
+  string user_id = 6;
+  // Customer Client Version
+  .common.ClientVersion version = 7;
+}
+
+// Order is a list of order items for a consumer
+message Order {
+  // Order id, generated by order service
+  string id = 1;
+  // Consumer associated with this order
+  Consumer consumer = 2;
+  // List of order items contained within this order
+  repeated OrderItem order_items = 3;
+  // Store id where order was placed
+  string store_id = 4;
+  // Shopping protocol, ie. dasher vs. shopper pick et al
+  .order.ShoppingProtocol shopping_protocol = 5;
+  // Order uuid
+  google.protobuf.StringValue order_uuid = 6;
+
+  // External order id provided by merchant
+  google.protobuf.StringValue external_order_id = 7;
+
+  // Order attributes for a Shop Anywhere order
+  ShopAnywhereAttributes shop_anywhere_attributes = 8;
+
+  // Order attributes for a Shop Anywhere order
+  message ShopAnywhereAttributes {
+    // The estimated subtotal of the order
+    money.MonetaryFields estimated_subtotal = 1;
+  }
+
+  // OrderItem represents an instance of a menu item
+  message OrderItem {
+    // Order item id, generated by order service
+    string id = 1;
+    // Name of this item
+    google.protobuf.StringValue name = 2;
+    // Quantity for this item desired to be picked
+    google.protobuf.Int32Value quantity = 3;
+    // Unit price for this item
+    money.MonetaryFields unit_price = 4;
+    // purchase type
+    .common.marketplace_purchase.v1.PurchaseType purchase_type = 5;
+    // purchase quantity
+    .common.QuantityInfo purchase_quantity = 6;
+    // Corresponding menu item
+    .common.MenuItem menu_item = 9;
+    // Order version ID, for DYF items expected to be higher than the original items
+    common.v1.Identifier order_version = 10;
+    // Special instructions from customers - currently Drive orders only
+    google.protobuf.StringValue special_instructions = 11;
+    // Action signifying whether quantity above represents addition or reduction
+    enum QuantityActionType {
+      // Unspecified and/or invalid
+      QUANTITY_ACTION_TYPE_UNSPECIFIED = 0;
+      // Quantity fields above represent addition
+      QUANTITY_ACTION_TYPE_ADD = 1;
+      // Quantity fields above represent reduction
+      QUANTITY_ACTION_TYPE_REMOVE = 2;
+    }
+    // Quantity action
+    QuantityActionType quantity_action = 12;
+    // Grocery Item Modifiers
+    repeated order_service.ItemExtra item_extras = 13;
+    // Prescription info for this item if the order is from a pharmacy store
+    .common.PrescriptionItemInfo prescription_item_info = 14;
+  }
+}
+
+// Substitution preference order model
+message SubstitutionPreference {
+  // dd menu item id of original item
+  string original_menu_item_id = 1;
+  // list of selected substitution items
+  repeated string substitution_menu_item_ids = 2 [deprecated = true];
+  // out-of-stock preference of item (substitute, contact me, or refund)
+  OutOfStockPreference oos_preference = 3;
+  // list of substitution item ids
+  repeated SubstitutionItemId substitution_item_ids = 4;
+  // list of quantity info for the substitution item, one to one mapping with substitution_item_ids
+  repeated .common.QuantityInfo substitution_item_quantities = 5;
+
+  // item out-of-stock preference types
+  enum OutOfStockPreference {
+    // unspecified
+    OUT_OF_STOCK_PREFERENCE_UNSPECIFIED = 0;
+    // substitute
+    OUT_OF_STOCK_PREFERENCE_SUBSTITUTE = 1;
+    // contact me
+    OUT_OF_STOCK_PREFERENCE_CONTACT_ME = 2;
+    // refund
+    OUT_OF_STOCK_PREFERENCE_REFUND = 3;
+    // generic_category
+    OUT_OF_STOCK_PREFERENCE_GENERIC_CATEGORY = 4;
+  }
+
+  // identifier for a substitution item and metadata relating to it
+  message SubstitutionItemId {
+    // identifier for the substitution item
+    string id = 1;
+    // type of id for the substitution item
+    IdType id_type = 2;
+    // source of the substitution item id
+    IdSource id_source = 3;
+
+    // the type of identifier for the substitution item id
+    enum IdType {
+      // unspecified
+      ID_TYPE_UNSPECIFIED = 0;
+      // dd menu item id
+      ID_TYPE_MENU_ITEM_ID = 1;
+      // dd menu item group id
+      ID_TYPE_MERCHANT_SUPPLIED_ITEM_ID = 2;
+    }
+
+    // the source of the substitution item id
+    enum IdSource {
+      // unspecified
+      ID_SOURCE_UNSPECIFIED = 0;
+      // dd
+      ID_SOURCE_CUSTOMER_APPROVED = 1;
+      // merchant
+      ID_SOURCE_MERCHANT_RECOMMENDED = 2;
+    }
+  }
+}

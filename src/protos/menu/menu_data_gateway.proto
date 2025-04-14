@@ -1,0 +1,360 @@
+syntax = "proto3";
+
+package menudatagateway;
+
+import "common/common.proto";
+import "common/experiment.proto";
+import "common/inventory.proto";
+import "common/service_client_config.proto";
+import "doordash.retail.serving.v1/retail_product.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menudatagateway/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menudatagateway.grpc";
+
+// Menu Data Gateway APIs.
+service DataGateway {
+  // more details about hermes client option definition:
+  // https://github.com/doordash/dd-util-java/wiki/Hermes#service-definition
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 40;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 12000;
+
+  // API to return list of Retail Product Entities given store and merchant supplied ids.
+  rpc GetRetailProductsByMerchantSuppliedIds(GetRetailProductsByMerchantSuppliedIdsRequest) returns (GetRetailProductsByMerchantSuppliedIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "menu-data-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "data-gateway";
+  }
+
+  // API to return list of Retail Product Entities given store and item ids.
+  rpc GetRetailProductsByItemIds(GetRetailProductsByItemIdsRequest) returns (GetRetailProductsByItemIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of ms and item ids
+  rpc GetAllEntityIdsByStore(GetAllEntityIdsByStoreRequest) returns (GetAllEntityIdsByStoreResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of Retail Product Entities given store and merchant supplied ids.
+  // Different from GetRetailProductsByMerchantSuppliedIds, this API is used for offline streaming use cases, and returns more attributes from catalog service but also has higher latency.
+  rpc GetRetailProductsByMerchantSuppliedIdsForStreaming(GetRetailProductsByMerchantSuppliedIdsForStreamingRequest) returns (GetRetailProductsByMerchantSuppliedIdsForStreamingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of Retail Product Entities given store and item ids. This is used for offline streaming use cases, and returns more attributes from catalog service.
+  // Different from GetRetailProductsByItemIds, this API is used for offline streaming use cases, and returns more attributes from catalog service but also has higher latency.
+  rpc GetRetailProductsByItemIdsForStreaming(GetRetailProductsByItemIdsForStreamingRequest) returns (GetRetailProductsByItemIdsForStreamingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of Retail Product Entities for fulfillment given store and item ids
+  rpc GetRetailProductsByItemIdsForFulfillment(GetRetailProductsByItemIdsForFulfillmentRequest) returns (GetRetailProductsByItemIdsForFulfillmentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of Retail Product Entities for fulfillment given store and merchant supplied ids
+  rpc GetRetailProductsByMerchantSuppliedIdsForFulfillment(GetRetailProductsByMerchantSuppliedIdsForFulfillmentRequest) returns (GetRetailProductsByMerchantSuppliedIdsForFulfillmentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of Retail Product Entities given store and barcodes
+  rpc GetRetailProductsByBarcodesForFulfillment(GetRetailProductsByBarcodesForFulfillmentRequest) returns (GetRetailProductsByBarcodesForFulfillmentResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of merchant catalog entries by given business id and merchant catalog ids
+  rpc GetMerchantCatalogsByIds(GetMerchantCatalogsByIdsRequest) returns (GetMerchantCatalogsByIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of merchant catalog entries by given business id and barcodes
+  rpc GetMerchantCatalogsByBarcodes(GetMerchantCatalogsByBarcodesRequest) returns (GetMerchantCatalogsByBarcodesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+}
+
+// GetRetailProductsByMerchantSuppliedIdsRequest - request payload to fetch retail products based on store id and merchant supplied ids
+// Retail stores contain single inventory.
+// Multiple inventories (menus) are rare for a retail store and we'd need to add additional
+// request_context that could hold some request meta data in future.
+message GetRetailProductsByMerchantSuppliedIdsRequest {
+  // Store id
+  string store_id = 1;
+  // Merchant supplied ids for the retail products.
+  // API should throw the error message if the number of mx_supplied_ids
+  // exceeds the maximum supported size of 200
+  repeated string mx_supplied_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+  // Consumer context required for A/B experiments
+  common.experiment.v1.ConsumerContext consumer_context = 4;
+}
+
+// GetRetailProductsByMerchantSuppliedIdsResponse - response retail products payload obtained by searching on store id and merchant supplied ids.
+message GetRetailProductsByMerchantSuppliedIdsResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// RetailProductResponse - wrapper payload that holds retail product and additional information to the caller
+message RetailProductResponse {
+  /**
+     * Additional information to the caller about the search result
+     * and where the a product was not found.
+     *
+     * For endpoints relying on Merchant Supplied Ids and DDSIC identifiers based contracts,
+     *   1. If an item exists in menu (inventory) and catalog -> RESULT_INFO_OK
+     *   2. Not exists in menu (inventory)
+            (a) MSID mapping [MSID->ItemId] was NOT found in menu -> RESULT_INFO_NOT_FOUND
+            (b) MSID mapping [MSID->ItemId] was found but the menu item details was not retrieved in Menu
+                and we retrieved Catalog details for MSID  -> RESULT_INFO_INVENTORY_NOT_FOUND
+     *   3. Not exists in catalog only, and only exist in menu (inventory) -> RESULT_INFO_CATALOG_NOT_FOUND
+     *   4. Not exists in either menu [only MSID->ItemId mapping was found] AND catalog -> RESULT_INFO_NOT_FOUND
+     *
+     * For endpoints relying on Menu Item Ids based contracts
+     *   1. We look up an item id in menu (inventory) service, if not found -> RESULT_INFO_NOT_FOUND
+     *   2. Then we look up an item id in catalog service, if not found -> RESULT_INFO_CATALOG_NOT_FOUND
+     *   3. Then the item id exist in both services -> RESULT_INFO_OK
+  */
+  enum ResultInfo {
+    // Default retail product search result info
+    RESULT_INFO_UNSPECIFIED = 0;
+    // Retail product was not found intersection of both Catalog and Inventory.
+    // This could also originate when the internal product identifier(ddsic, msid) mapping
+    // did not yield menu item identifier. The internal errors will be handled by Grpc status codes.
+    // If the store is not found in the menu DB it will return GRPC NOT_FOUND code.
+    RESULT_INFO_NOT_FOUND = 1;
+    // Retail product was not found in the Inventory
+    RESULT_INFO_CATALOG_NOT_FOUND = 2;
+    // Retail product was not found in the Catalog
+    RESULT_INFO_INVENTORY_NOT_FOUND = 3;
+    // Retail product was found
+    RESULT_INFO_OK = 4;
+  }
+  // Search result additional information
+  ResultInfo result_info = 1;
+  // Retail product entity
+  doordash.retail.serving.v1.RetailProduct retail_product = 2;
+}
+
+// GetRetailProductsByItemIdsRequest - request payload to fetch retail products based on store id and item ids
+// Retail stores contain single inventory.
+// Multiple inventories (menus) are rare for a retail store and we'd need to add additional
+// request_context that could hold some request meta data in future.
+message GetRetailProductsByItemIdsRequest {
+  // Store id
+  string store_id = 1;
+  // Item ids for the retail products.
+  // API should throw the error message if the number of item_ids
+  // exceeds the maximum supported batch size of 200
+  repeated string item_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+  // Consumer context required for A/B experiments
+  common.experiment.v1.ConsumerContext consumer_context = 4;
+}
+
+// GetRetailProductsByItemIdsResponse - response retail products payload obtained by searching on store id and item ids.
+message GetRetailProductsByItemIdsResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GetAllEntityIdsByStoreRequest
+message GetAllEntityIdsByStoreRequest {
+  // Store id
+  string store_id = 1;
+}
+
+// GetAllEntityIdsByStoreResponse
+message GetAllEntityIdsByStoreResponse {
+  // menu id
+  google.protobuf.StringValue menu_id = 1;
+  // entity id combo
+  repeated EntityIdCombo entity_id_combo = 2;
+}
+
+// EntityIdCombo
+message EntityIdCombo {
+  // menu item id
+  google.protobuf.StringValue menu_item_id = 1;
+  // merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 2;
+}
+
+// GetRetailProductsByItemIdsForStreamingRequest
+message GetRetailProductsByItemIdsForStreamingRequest {
+  // Store id.
+  string store_id = 1;
+  // Item ids for the retail products.
+  repeated string item_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+}
+
+// GetRetailProductsByItemIdsForStreamingResponse
+message GetRetailProductsByItemIdsForStreamingResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GetRetailProductsByMerchantSuppliedIdsForStreamingRequest
+message GetRetailProductsByMerchantSuppliedIdsForStreamingRequest {
+  // Store id.
+  string store_id = 1;
+  // Merchant supplied ids for the retail products.
+  repeated string ms_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+}
+
+// GetRetailProductsByMerchantSuppliedIdsForStreamingResponse
+message GetRetailProductsByMerchantSuppliedIdsForStreamingResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GTIN formats of barcode
+// buf:lint:ignore ENUM_VALUE_PREFIX
+// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+enum GtinFormat {
+  // unspecified format
+  UNSPECIFIED = 0;
+  // UPCA
+  UPCA = 1;
+  // UPCE
+  UPCE = 2;
+  // EAN8
+  EAN8 = 3;
+  // EAN13
+  EAN13 = 4;
+  // GTIN14
+  GTIN14 = 5;
+  // ISBN10
+  ISBN10 = 6;
+  // ISBN13
+  ISBN13 = 7;
+  // PLU
+  PLU = 8;
+  // UNKNOWN
+  UNKNOWN = 9;
+}
+
+// representation of the barcode of an item
+message Barcode {
+  // string of code numbers - can have leading zeros
+  string code = 1;
+  // format of the barcode
+  GtinFormat format = 2;
+}
+
+// GetRetailProductsByItemIdsForFulfillmentRequest
+message GetRetailProductsByItemIdsForFulfillmentRequest {
+  // Store id
+  string store_id = 1;
+  // API should throw the error message if the number of item ids
+  // exceeds the maximum supported size of 200
+  repeated string item_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+}
+
+// GetRetailProductsByItemIdsForFulfillmentResponse
+message GetRetailProductsByItemIdsForFulfillmentResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GetRetailProductsByMerchantSuppliedIdsForFulfillmentRequest
+message GetRetailProductsByMerchantSuppliedIdsForFulfillmentRequest {
+  // Store id
+  string store_id = 1;
+  // API should throw the error message if the number of mx_supplied_ids
+  // exceeds the maximum supported size of 200
+  repeated string ms_ids = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+}
+
+// GetRetailProductsByMerchantSuppliedIdsForFulfillmentResponse
+message GetRetailProductsByMerchantSuppliedIdsForFulfillmentResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GetRetailProductsByBarcodesForFulfillmentRequest
+message GetRetailProductsByBarcodesForFulfillmentRequest {
+  // Store id.
+  string store_id = 1;
+  // API should throw the error message if the number of barcodes
+  // exceeds the maximum supported size of 200
+  repeated Barcode barcodes = 2;
+  // The serving time to compute any orderability
+  google.protobuf.Int64Value serving_time = 3;
+  // should query historical data
+  bool should_query_historical_data = 4;
+}
+
+// GetRetailProductsByBarcodesForFulfillmentResponse
+message GetRetailProductsByBarcodesForFulfillmentResponse {
+  // Retail product responses
+  repeated RetailProductResponse retail_product_responses = 1;
+}
+
+// GetMerchantCatalogsByIdsRequest
+message GetMerchantCatalogsByIdsRequest {
+  // business id
+  string business_id = 1;
+  // merchant catalog id
+  repeated string merchant_catalog_ids = 2;
+}
+
+// GetMerchantCatalogsByIdsResponse
+message GetMerchantCatalogsByIdsResponse {
+  // merchant catalog response map
+  // key: merchant catalog id
+  // value: merchant catalog response (single retail_catalog)
+  map<string, MerchantCatalogResponse> merchant_catalog_response_map = 1;
+}
+
+message MerchantCatalogResponse {
+  // merchant catalog fetch result info
+  enum ResultInfo {
+    // Default enum
+    RESULT_INFO_UNSPECIFIED = 0;
+    // merchant catalog not found
+    RESULT_INFO_NOT_FOUND = 1;
+    // merchant catalog was found
+    RESULT_INFO_OK = 4;
+  }
+  // Result Info
+  ResultInfo result_info = 1;
+  // Retail product entity list for both one-to-one or one-to-many use cases
+  // one-to-one (i.e. 1 RetailCatalog per input): GetMerchantCatalogsByIds
+  // one-to-many (i.e. >=1 RetailCatalogs per input): GetMerchantCatalogsByBarcodes
+  repeated doordash.retail.serving.v1.RetailCatalog retail_catalogs = 2;
+}
+
+// GetMerchantCatalogsByBarcodesRequest
+message GetMerchantCatalogsByBarcodesRequest {
+  // business id
+  string business_id = 1;
+  // gtn14 formatted barcode
+  repeated string gtn14_code = 2;
+}
+
+// GetMerchantCatalogsByBarcodesResponse
+message GetMerchantCatalogsByBarcodesResponse {
+  // merchant catalog response map
+  // key: gtn14 formatted barcode
+  // value: merchant catalog response (can be more than 1 retail_catalog)
+  map<string, MerchantCatalogResponse> merchant_catalog_response_map = 1;
+}

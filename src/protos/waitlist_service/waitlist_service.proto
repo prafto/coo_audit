@@ -1,0 +1,543 @@
+syntax = "proto3";
+
+package waitlist_service.v1;
+
+import "common/common.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "wait_list_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.wait_list";
+
+// Service with defined endpoints for WaitList Service
+service WaitlistService {
+  option (doordash.api.service) = {
+    name: "waitlist-service-web"
+    url: "waitlist-service-web.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_WAITLIST_SERVICE"
+    owner: {
+      id: "drive-parcels"
+      name: "drive"
+      slack_channel: "#eng-parcels-drive"
+      email_alias: "drive-eng-parcel-plus@doordash.com"
+    }
+    name_spaces: ["waitlist"]
+    vertical_domains: [DX]
+    target_products: [DX]
+  };
+
+  // Join WaitList endpoint
+  rpc JoinWaitList(JoinWaitListRequest) returns (JoinWaitListResponse) {
+    option (google.api.http) = {
+      post: "/dx/waitlist/v1/join"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+  // Get WaitList endpoint
+  rpc GetWaitListDetails(GetWaitListDetailsRequest) returns (GetWaitListDetailsResponse) {
+    option (google.api.http) = {get: "/dx/waitlist/v1/details"};
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+  // Leave WaitList endpoint
+  rpc LeaveWaitList(LeaveWaitListRequest) returns (LeaveWaitListResponse) {
+    option (google.api.http) = {
+      post: "/dx/waitlist/v1/leave"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // Update Entity-type-offers-only mode endpoint
+  rpc UpdateEntityTypeOffersOnlyMode(UpdateEntityTypeOffersOnlyModeRequest) returns (UpdateEntityTypeOffersOnlyModeResponse) {
+    option (google.api.http) = {
+      post: "/dx/waitlist/v1/offers_only_mode"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // Update Entity-type-notify-me mode endpoint
+  rpc UpdateEntityTypeNotifyMeMode(UpdateEntityTypeNotifyMeModeRequest) returns (UpdateEntityTypeNotifyMeModeResponse) {
+    option (google.api.http) = {
+      post: "/dx/waitlist/v1/notify_me"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // Bulk Join WaitList endpoint
+  rpc BulkJoinWaitListWithOverride(BulkJoinWaitListWithOverrideRequest) returns (BulkJoinWaitListWithOverrideResponse);
+  // Get WaitListed dashers endpoint
+  rpc GetWaitListedDashersForEntities(GetWaitListedDashersForEntitiesRequest) returns (GetWaitListedDashersForEntitiesResponse);
+  // Update assignment for WaitListed Dasher
+  rpc UpdateWaitListedDasherAssignment(UpdateWaitListedDasherAssignmentRequest) returns (UpdateWaitListedDasherAssignmentResponse);
+  // Returns whether the dasher has reached max declines as per the waitlist runtime config
+  rpc HasReachedMaxDeclines(HasReachedMaxDeclinesRequest) returns (HasReachedMaxDeclinesResponse);
+  // Get waitlist config for entity
+  rpc GetEntityWaitlistConfig(GetEntityWaitlistConfigRequest) returns (GetEntityWaitlistConfigResponse);
+  // Update waitlist config for entity
+  rpc UpdateEntityWaitlistConfig(UpdateEntityWaitlistConfigRequest) returns (UpdateEntityWaitlistConfigResponse);
+  // Endpoint to fetch all the waitlist given the dasher ID and location
+  rpc GetWaitlists(GetWaitlistsRequest) returns (GetWaitlistsResponse);
+  // Endpoint to fetch top ranked dashers that we want to whitelist to Go Online
+  rpc GetGoOnShiftEligibleDashers(GetGoOnShiftEligibleDashersRequest) returns (GetGoOnShiftEligibleDashersResponse);
+}
+
+// Entity Type for the waitList
+enum EntityType {
+  // Unspecified state
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // WaitList will be at the facility level for Parcel deliveries
+  ENTITY_TYPE_FACILITY = 1;
+  // For pilot launches/ experiment where we have a limited set of Dxs,
+  // we can use a waitlist which is at market_id level to allow for SP-agnostic assignments
+  // Important NOTE: This entity type should be used with caution and only when Ops is ok with high D2R and R2C distances since the area of a market is very large.
+  // For starter, This is being done for Quest diagnostics launch - https://docs.google.com/document/d/1bYoLwA1colZEhCaPup-D7nN84DV8UcJ8mFp1eE1r7x0/edit?tab=t.0#heading=h.sywrhijuh6z6
+  ENTITY_TYPE_MARKET = 2;
+}
+
+// WaitList Availability status to denote the current state of WaitList
+enum WaitlistAvailability {
+  // Unspecified state
+  WAITLIST_AVAILABILITY_UNSPECIFIED = 0;
+  // WaitList is currently unavailable
+  WAITLIST_AVAILABILITY_UNAVAILABLE = 1;
+  // WaitList is currently open. Dasher can join the WaitList
+  WAITLIST_AVAILABILITY_OPEN = 2;
+  // WaitList is currently closed. Dashers won't be able to join the waitlist
+  WAITLIST_AVAILABILITY_CLOSED = 3;
+}
+
+// Enum to denote the offer likelihood for the Dasher based on Waitlist
+enum OfferLikelihood {
+  // Unspecified state
+  OFFER_LIKELIHOOD_UNSPECIFIED = 0;
+  // Driver is not likely to get an assignment based on their position in waitlist
+  OFFER_LIKELIHOOD_NOT_LIKELY = 1;
+  // Driver may get an assignment based on their position in waitlist
+  OFFER_LIKELIHOOD_MAYBE = 2;
+  // Driver is likely to get an assignment based on their position in waitlist
+  OFFER_LIKELIHOOD_LIKELY = 3;
+}
+
+// Enum to denote different dasher events in the context of waitlist
+enum DasherEventType {
+  // Unspecified state
+  DASHER_EVENT_TYPE_UNSPECIFIED = 0;
+  // Dasher assigned event
+  DASHER_EVENT_TYPE_ASSIGNED = 1;
+  // Dasher confirmed assignment event
+  DASHER_EVENT_TYPE_CONFIRMED_ASSIGNMENT = 2;
+  // Dasher unassigned event
+  DASHER_EVENT_TYPE_UNASSIGNED = 3;
+}
+
+// Enum to denote the entity-type-offers-only mode that dasher has set
+enum EntityTypeOffersOnlyMode {
+  // did not find the entity-type-offers-only mode for the dasher (Can be a new runner, or runner who never joined the waitlist)
+  ENTITY_TYPE_OFFERS_ONLY_MODE_UNSPECIFIED = 0;
+  // found the entity-type-offers-only mode persisted as turned ON
+  ENTITY_TYPE_OFFERS_ONLY_MODE_ENABLED = 1;
+  // found the entity-type-offers-only mode persisted as turned OFF
+  ENTITY_TYPE_OFFERS_ONLY_MODE_DISABLED = 2;
+}
+
+// Enum to denote the notification preference that dasher has set
+enum EntityTypeNotifyMe {
+  // did not find the notification preference for the dasher (Can be a new runner, or runner who never joined the waitlist)
+  ENTITY_TYPE_NOTIFY_ME_UNSPECIFIED = 0;
+  // found the notification preference persisted as turned ON
+  ENTITY_TYPE_NOTIFY_ME_ENABLED = 1;
+  // found the notification preference persisted as turned OFF
+  ENTITY_TYPE_NOTIFY_ME_DISABLED = 2;
+}
+
+// Enum to denote the status of a dasher to make deliveries
+enum DasherStatus {
+  // did not find DasherStatus type for dasher
+  DASHER_STATUS_UNSPECIFIED = 0;
+  // Dasher status for LCSP DAs
+  DASHER_STATUS_LCSP_RUNNER = 1;
+  // Dasher status for top dashers
+  DASHER_STATUS_PREFERRED = 2;
+  // Dasher status for new dashers
+  DASHER_STATUS_NEW_RUNNER = 3;
+  // Dasher status for general dashers
+  DASHER_STATUS_NON_PREFERRED = 4;
+  // Dasher status for blocked dasher
+  DASHER_STATUS_BLOCKED = 5;
+  // Dasher status for dashers who do not meet min requirements
+  DASHER_STATUS_INELIGIBLE_REQUIREMENTS = 6;
+}
+
+// Preferences that the runner has set
+message RunnerPreferences {
+  // Deprecated: Flag to indicate if the runner has set the parcel-only mode
+  reserved 1;
+  reserved "parcel_only_mode";
+  // Flag to indicate if the runner has set the entity-type-offers-only mode
+  EntityTypeOffersOnlyMode entity_type_offers_only_mode = 2;
+  // Flag to indicate if the runner has set the notification preference
+  EntityTypeNotifyMe entity_type_notify_me = 4;
+  // Vehicle ID which dasher wants to use for waitlist
+  google.protobuf.Int64Value vehicle_id = 3;
+}
+
+// Waitlist status
+message WaitlistStatus {
+  // WaitlistAvailability determines whether a waitlist is available and if it is available, whether the waitlist is currently open or closed.
+  WaitlistAvailability waitlist_availability = 1;
+  // Flag to indicate if the waitlist is full
+  google.protobuf.BoolValue is_waitlist_full = 2;
+}
+
+// Average order earnings for the waitlist offer
+message AverageOrderEarnings {
+  // estimated min pay for the likely waitlist offer
+  google.protobuf.Int64Value estimated_pay_min = 1;
+  // estimated max pay for the likely waitlist offer
+  google.protobuf.Int64Value estimated_pay_max = 2;
+  // average order earnings range as a string (ex: "$65-120")
+  google.protobuf.StringValue average_order_earnings_range = 3;
+  // max mileage for the waitlist offer
+  google.protobuf.Int64Value mileage_max = 4;
+  // delivery by time for the waitlist offer
+  google.protobuf.StringValue delivery_by = 5;
+}
+
+// Entity object for waitlist
+message WaitListEntity {
+  // Entity type for the waitlist
+  EntityType entity_type = 1;
+  // Entity Identifier for the waitlist
+  string entity_id = 2;
+}
+
+// Join waitlist request
+message JoinWaitListRequest {
+  // Entity Type for which JoinWaitlist is requested
+  EntityType entity_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Entity Identifier for which JoinWaitlist is requested
+  string entity_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // DasherId for the dasher requesting to join the waitlist
+  google.protobuf.StringValue dasher_id = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Location of the dasher requesting to join the waitlist
+  common.Location dasher_location = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // runner preferences
+  RunnerPreferences runner_preferences = 5 [
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+}
+
+// Dasher to join waitlist
+message WaitlistDasher {
+  // Dasher ID of the dasher to add to waitlist
+  google.protobuf.StringValue dasher_id = 1;
+  // runner preferences
+  RunnerPreferences runner_preferences = 2;
+}
+
+// Bulk Join waitlist with override request
+message BulkJoinWaitListWithOverrideRequest {
+  // Entity Type for which JoinWaitlist is requested
+  EntityType entity_type = 1;
+  // Entity Identifier for which JoinWaitlist is requested
+  string entity_id = 2;
+  // List of DasherIds for the dasher requesting to join the waitlist
+  repeated google.protobuf.StringValue dasher_ids = 3;
+  // offset days
+  google.protobuf.Int64Value offset_days = 4;
+  // List of dashers
+  repeated WaitlistDasher dashers = 5;
+}
+
+// Bulk Join Waitlist with override response
+message BulkJoinWaitListWithOverrideResponse {}
+
+// Join watilist response
+message JoinWaitListResponse {
+  reserved 13;
+  reserved "runner_status";
+  // Entity type for the waitlist
+  EntityType entity_type = 1;
+  // Entity Identifier for the waitlist
+  string entity_id = 2;
+  // DasherID for watilist details response
+  google.protobuf.StringValue dasher_id = 3;
+  // Current status of waitlist
+  WaitlistStatus waitlist_status = 4;
+  // Number of offers available at the waitlist entity for the day
+  google.protobuf.Int64Value available_offers = 5;
+  // Number of Drivers already on the waitlist
+  google.protobuf.Int64Value drivers_waiting = 6;
+  // Current rank of the Driver on the waitlist if the Driver is on the waitlist
+  google.protobuf.Int64Value current_rank = 7;
+  // The likelihood of getting an offer
+  OfferLikelihood offer_likelihood = 8;
+  // estimated pickup start time for the Driver on the waitlist
+  google.protobuf.Timestamp estimated_pickup_start_time = 9;
+  // estimated pickup end time for the Driver on the waitlist
+  google.protobuf.Timestamp estimated_pickup_end_time = 10;
+  // Average order earnings based on the waitlist entity
+  AverageOrderEarnings average_order_earnings = 11;
+  // runner preferences
+  RunnerPreferences runner_preferences = 12;
+  // dasher status of qualification for deliveries
+  DasherStatus dasher_status = 14;
+}
+
+// Get waitlist details request
+message GetWaitListDetailsRequest {
+  // Entity type for the waitlist
+  EntityType entity_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Entity Identifier for the waitlist
+  string entity_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // DasherID requesting the waitlist details
+  google.protobuf.StringValue dasher_id = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Get waitlist details response
+message GetWaitListDetailsResponse {
+  reserved 15;
+  reserved "runner_status";
+  // Entity type for the waitlist
+  EntityType entity_type = 1;
+  // Entity Identifier for the waitlist
+  string entity_id = 2;
+  // DasherID for watilist details response
+  google.protobuf.StringValue dasher_id = 3;
+  // Current status of waitlist
+  WaitlistStatus waitlist_status = 4;
+  // Number of offers available at the waitlist entity for the day
+  google.protobuf.Int64Value available_offers = 5;
+  // Number of Drivers already on the waitlist
+  google.protobuf.Int64Value drivers_waiting = 6;
+  // Current rank of the Driver on the waitlist if the Driver is on the waitlist
+  google.protobuf.Int64Value current_rank = 7;
+  // The likelihood of getting an offer
+  OfferLikelihood offer_likelihood = 8;
+  // estimated pickup start time for the Driver on the waitlist
+  google.protobuf.Timestamp estimated_pickup_start_time = 9;
+  // estimated pickup end time for the Driver on the waitlist
+  google.protobuf.Timestamp estimated_pickup_end_time = 10;
+  // Average order earnings based on the waitlist entity
+  AverageOrderEarnings average_order_earnings = 11;
+  // pickup address for the waitlist enabled entity
+  common.CommonAddress pickup_address = 12;
+  // waitlist open time
+  google.protobuf.Timestamp waitlist_open_time = 13;
+  // runner preferences
+  RunnerPreferences runner_preferences = 14;
+  // dasher status of qualification for deliveries
+  DasherStatus dasher_status = 16;
+}
+
+// Leave waitlist request
+message LeaveWaitListRequest {
+  // Entity Type for which JoinWaitlist is requested
+  EntityType entity_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Entity Identifier for which JoinWaitlist is requested
+  string entity_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // DasherId for the dasher requesting to join the waitlist
+  google.protobuf.StringValue dasher_id = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for leaving wait list
+message LeaveWaitListResponse {}
+
+// Get waitlisted dashers request
+message GetWaitListedDashersForEntitiesRequest {
+  // List of waitlist entities to fetch waitlist details for
+  repeated WaitListEntity waitlist_entities = 1;
+}
+
+// waitlist dasher response by entity level
+message WaitListedDasherByEntityResponse {
+  // Entity for the waitlist
+  WaitListEntity waitlist_entity = 1;
+  // Dasher responses for the dashers for this entity in the waitlist
+  repeated WaitListedDasherResponse waitlisted_dasher_responses = 2;
+}
+
+// waitlist dasher response
+message WaitListedDasherResponse {
+  // dasher ID of the dasher in the waitlist
+  google.protobuf.StringValue dasher_id = 1;
+  // Current rank of the dasher on the waitlist
+  google.protobuf.Int64Value current_rank = 2;
+  // dasher waitlist preferences
+  RunnerPreferences runner_preferences = 3;
+}
+
+// Get waitlisted dashers response
+message GetWaitListedDashersForEntitiesResponse {
+  // List of waitlisted dashers
+  repeated WaitListedDasherByEntityResponse waitlisted_dasher_by_entity_responses = 1;
+}
+
+// update waitlist dasher assignment request
+message UpdateWaitListedDasherAssignmentRequest {
+  // dasher ID to update the waitlist assignment for
+  google.protobuf.StringValue dasher_id = 1;
+  // entity of the waitlist to update assignment
+  EntityType entity_type = 2;
+  // entity ID to update waitlist assigment for
+  string entity_id = 3;
+  // Either delivery_uuid or force_batch_id for the assignment depending on the entity
+  google.protobuf.StringValue assigned_entity_id = 4;
+  // assigned at timestamp for the assignment
+  google.protobuf.Timestamp assigned_at = 5;
+  // is the assignment a dasher confirmed assingment or just an offer
+  google.protobuf.BoolValue is_confirmed_assignment = 6;
+  // event type behind update dasher assignment request
+  DasherEventType event_type = 7;
+}
+
+// update waitlist dasher assignment response
+message UpdateWaitListedDasherAssignmentResponse {}
+
+// request to check if the dasher has reached max declines
+message HasReachedMaxDeclinesRequest {
+  // Entity type for the waitlist
+  EntityType entity_type = 1;
+  // Entity Identifier for the waitlist
+  string entity_id = 2;
+  // Dasher ID of the dasher who's declines is being checked
+  google.protobuf.StringValue dasher_id = 3;
+}
+
+// response indicating if dasher has reached max declines
+message HasReachedMaxDeclinesResponse {
+  // Flag to indicate if the dasher has reached max declines
+  bool has_reached_max_declines = 1;
+}
+
+// request to get entity's waitlist config
+message GetEntityWaitlistConfigRequest {
+  // Type of entity
+  EntityType entity_type = 1;
+  // Entity identifier
+  string entity_id = 2;
+}
+
+// entity waitlist config response
+message GetEntityWaitlistConfigResponse {
+  // Type of entity
+  EntityType entity_type = 1;
+  // Entity identifier
+  string entity_id = 2;
+  // Waitlist config of the entity
+  google.protobuf.StringValue metadata = 3;
+}
+
+// request to update entity's waitlist config
+message UpdateEntityWaitlistConfigRequest {
+  // Type of entity
+  EntityType entity_type = 1;
+  // Entity identifier
+  string entity_id = 2;
+  // New waitlist config for entity
+  google.protobuf.StringValue metadata = 3;
+}
+
+// update entity waitlist config response
+message UpdateEntityWaitlistConfigResponse {}
+
+// Update Entity-type-offers-only Mode request
+message UpdateEntityTypeOffersOnlyModeRequest {
+  // Entity Type for which UpdateEntityTypeOffersOnlyMode is requested
+  EntityType entity_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // DasherId for the dasher requesting to update the entity-type-offers-only mode
+  google.protobuf.StringValue dasher_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // entity-type-offers-only mode that the dasher wants to set
+  EntityTypeOffersOnlyMode entity_type_offers_only_mode = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Update Entity-type-offers-only Mode response
+message UpdateEntityTypeOffersOnlyModeResponse {}
+
+// Update notify me preference request
+message UpdateEntityTypeNotifyMeModeRequest {
+  // Entity Type for which UpdateNotifyMe is requested
+  EntityType entity_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // DasherId for the dasher requesting to update notify me preferences
+  google.protobuf.StringValue dasher_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Flag indicating whether the dasher wants to be notified
+  google.protobuf.BoolValue entity_type_notify_me = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for updating notify me preferences
+message UpdateEntityTypeNotifyMeModeResponse {}
+
+// request to GetWaitlists endpoint
+message GetWaitlistsRequest {
+  // Entity type for which we need to get waitlists
+  EntityType entity_type = 1;
+  // Dasher ID for which we need to get waitlists that they have joined
+  google.protobuf.StringValue dasher_id = 2;
+  // Location around which we need to get waitlists
+  common.Location location = 3;
+}
+
+// response for GetWaitlists endpoint
+message GetWaitlistsResponse {
+  // Sorted list of waitlists based on request parameters like dasher_id, location, etc.
+  repeated GetWaitListDetailsResponse waitlist_details = 1;
+}
+
+// request to GetGoOnShiftEligibleDashers endpoint
+message GetGoOnShiftEligibleDashersRequest {
+  // starting_point_ids
+  repeated google.protobuf.Int64Value starting_point_ids = 1;
+  // Only search for dashers who can go on shift because they are on a waitlist for this entity type
+  EntityType entity_type = 2;
+}
+
+// each starting_point_id will have a list of dasher_ids that can go on shift from that starting point
+message DasherIdsForStartingPointId {
+  // starting_point_id
+  google.protobuf.Int64Value starting_point_id = 1;
+
+  // dasher_ids
+  repeated google.protobuf.StringValue dasher_ids = 2;
+}
+
+// response to GetGoOnShiftEligibleDashers endpoint
+message GetGoOnShiftEligibleDashersResponse {
+  // dasher_ids_for_starting_point_id
+  repeated DasherIdsForStartingPointId dasher_ids_for_starting_point_id = 1;
+}

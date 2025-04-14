@@ -1,0 +1,257 @@
+syntax = "proto3";
+package identity_service;
+
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+/*
+ * Request for creating a new organization
+ */
+message CreateOrganizationRequest {
+  // Name of the organization
+  string name = 1;
+  // SSO provider for the organization
+  SSOProvider provider = 2;
+}
+
+/*
+ * Response for creating a new organization
+ */
+message CreateOrganizationResponse {
+  // ID of the organization
+  string id = 1;
+}
+
+/*
+ * Request for updating an organization
+ */
+message UpdateOrganizationRequest {
+  // mandatory organization ID
+  string id = 1;
+  // enable SSO, can only be true, false will be rejected
+  google.protobuf.BoolValue enable_sso = 2;
+  // enable SCIM
+  google.protobuf.BoolValue enable_scim = 3;
+  // optional SSO configuration
+  SSOConfiguration sso_config = 4;
+  // optional active protocol
+  Protocol active_protocol = 5;
+}
+
+/*
+ * Response for updating an organization
+ */
+message UpdateOrganizationResponse {
+  // organization object
+  Organization organization = 1;
+}
+
+/*
+ * Request for getting an organization
+ */
+message GetOrganizationRequest {
+  // must specify either id or domain
+  oneof identifier {
+    // organization ID
+    google.protobuf.StringValue id = 1;
+    // organization domain
+    google.protobuf.StringValue domain = 2;
+  }
+}
+
+/*
+ * Response for getting an organization
+ * returns the whole organization object
+ */
+message GetOrganizationResponse {
+  // organization object
+  Organization organization = 1;
+}
+
+/*
+ * Request for adding a domain to organization
+ * This kicks off the domain verification flow
+ */
+message AddOrganizationDomainRequest {
+  // mandatory organization ID
+  string organization_id = 1;
+  // domains we want to add, only unique domains will be added
+  repeated string domains = 2;
+}
+
+/*
+ * Response for adding a domain to organization
+ */
+message AddOrganizationDomainResponse {
+  // returns domains with txt records to use for verification
+  repeated UnverifiedDomain unverified_domains = 1;
+}
+
+/*
+ * Request for getting organization domains
+ */
+message GetOrganizationDomainRequest {
+  // mandatory organization ID
+  string organization_id = 1;
+}
+
+/*
+ * Response for getting organization domains
+ */
+message GetOrganizationDomainResponse {
+  // verified domains
+  repeated string verified_domains = 1;
+  // unverified domains
+  repeated UnverifiedDomain unverified_domains = 2;
+}
+
+/*
+ * Request for verifying the domain
+ */
+message VerifyOrganizationDomainRequest {
+  // mandatory organization ID
+  string organization_id = 1;
+  // domain to verify
+  string domain = 2;
+  // optional used by admin for testing, skips dns verification and adds directly to db
+  google.protobuf.BoolValue skip_verification = 3;
+}
+
+/*
+ * Response for verifying the domain via dns
+ * returns simple OK if successful
+ */
+message VerifyOrganizationDomainResponse {}
+
+/*
+ * Unverified domain includes a txt record the domain owner must use to verify domain
+ */
+message UnverifiedDomain {
+  // domain name
+  string domain = 1;
+  // txt record to add for verification
+  string txt_record = 2;
+}
+
+/*
+ * Organization object
+ */
+message Organization {
+  // ID of the organization
+  string id = 1;
+  // Name of the organization
+  string name = 2;
+  // SSO Provider
+  SSOProvider provider = 3;
+  // whether SSO is enabled
+  bool enable_sso = 4;
+  // whether SCIM is enabled
+  bool enable_scim = 5;
+  // SSO Configuration
+  SSOConfiguration sso_config = 6;
+  // active protocol
+  Protocol active_protocol = 7;
+  // verified domains (optional return field)
+  repeated google.protobuf.StringValue verified_domains = 8;
+}
+
+/*
+ * SSO Configuration
+ */
+message SSOConfiguration {
+  // OIDC Configuration
+  OIDCConfiguration oidc_configuration = 1;
+  // SAML Configuration
+  SAMLConfiguration saml_configuration = 2;
+}
+
+/*
+ * SSO Provider
+ */
+enum SSOProvider {
+  // SSO Provider unspecified
+  SSO_PROVIDER_UNSPECIFIED = 0;
+  // Okta SSO Provider
+  SSO_PROVIDER_OKTA = 1;
+}
+
+/*
+ * Protocol type for SSO
+ */
+enum Protocol {
+  // Protocol unspecified
+  PROTOCOL_UNSPECIFIED = 0;
+  // OIDC Protocol
+  PROTOCOL_OIDC = 1;
+  // SAML Protocol
+  PROTOCOL_SAML = 2;
+}
+
+/*
+ * OIDCConfiguration
+ */
+message OIDCConfiguration {
+  // Client ID
+  google.protobuf.StringValue client_id = 1;
+  // Client Secret
+  google.protobuf.StringValue client_secret = 2;
+  // IDP URL
+  google.protobuf.StringValue idp_url = 3;
+}
+
+/*
+ * SAMLConfiguration
+ */
+message SAMLConfiguration {
+  // Define fields for SAMLConfiguration when available
+}
+
+/*
+ * Service containing endpoints for managing organizations
+ */
+service OrganizationManagementService {
+  /*
+   * Creates a new organization.
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   */
+  rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse) {}
+
+  /*
+   * Updates an existing organization.
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   * If the organization is not found, a NOT_FOUND error will be returned.
+   */
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (UpdateOrganizationResponse) {}
+
+  /*
+   * Gets an existing organization.
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   * If the organization is not found, a NOT_FOUND error will be returned.
+   */
+  rpc GetOrganization(GetOrganizationRequest) returns (GetOrganizationResponse) {}
+
+  /*
+   * Request to add a domain to the organization
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   * If the organization is not found, a NOT_FOUND error will be returned.
+   */
+  rpc AddOrganizationDomain(AddOrganizationDomainRequest) returns (AddOrganizationDomainResponse) {}
+
+  /*
+   * Get organization domain
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   * If the organization is not found, a NOT_FOUND error will be returned.
+   */
+  rpc GetOrganizationDomain(GetOrganizationDomainRequest) returns (GetOrganizationDomainResponse) {}
+
+  /*
+   * Verify organization domain and add it to the database
+   * Need API Key/token for internal-identity-service with of at-least "ADMIN" scope.
+   * If the organization is not found, a NOT_FOUND error will be returned.
+   */
+  rpc VerifyOrganizationDomain(VerifyOrganizationDomainRequest) returns (VerifyOrganizationDomainResponse) {}
+}

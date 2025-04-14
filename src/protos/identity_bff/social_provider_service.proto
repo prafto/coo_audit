@@ -1,0 +1,102 @@
+syntax = "proto3";
+package identity_bff.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "identity/authentication.proto";
+import "identity/user_management_service.proto";
+import "identity_bff/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity_bff";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity_bff";
+
+// Request body for LoginUser endpoint
+message LoginUserRequest {
+  // code used in exchange for token
+  google.protobuf.StringValue exchange_code = 1;
+  // enum denoting social provider
+  identity_service.Provider provider = 2;
+  // id denoting which client is associated with user
+  google.protobuf.StringValue client_id = 3;
+}
+
+// Response body for LoginUser endpoint
+message LoginUserResponse {
+  // Success
+  message Success {
+    // Access token returned for user
+    google.protobuf.StringValue token = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return transaction identifier
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+// Request body for LoginUserBypassingOTP endpoint
+message LoginUserBypassingOTPRequest {
+  // optional phone number of external loyalty user - not needed if storefront_user_id provider
+  google.protobuf.StringValue phone = 1;
+  // optional email address of external loyalty user - not needed if storefront_user_id provider
+  google.protobuf.StringValue email = 2;
+  // optional first name of external loyalty user - not needed if storefront_user_id provider
+  google.protobuf.StringValue first_name = 3;
+  // optional last name of external loyalty user - not needed if storefront_user_id provider
+  google.protobuf.StringValue last_name = 4;
+  // external identifier of external loyalty user
+  google.protobuf.StringValue external_user_id = 5;
+  // enum denoting social provider
+  identity_service.Provider provider = 6;
+  // if user id is present, we can log them in. If user_id is not present, we need to create a storefront user
+  google.protobuf.StringValue storefront_user_id = 7;
+}
+
+// Response body for LoginUserBypassingOTP endpoint
+message LoginUserBypassingOTPResponse {
+  // Success
+  message Success {
+    // Auth-Token that is issued against external loyalty client.
+    identity_service.AuthToken token = 1;
+    // Response payload that contains user information
+    identity_service.UserInfo user = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success payload
+    Success success = 1;
+    // on failure, return error
+    Error error = 2;
+  }
+}
+
+/*
+ * SocialProvider service contains APIs dealing with external social providers
+ * and Storefront that are mapped to DoorDash users.
+ * All of the requests should contain the following header:
+ * `Tenant-Id` representing business id to support multi-tenancy
+ */
+service SocialProviderBFFService {
+  /* This API logs in a user given a social provider based on tenant id
+   * For storefront case, if storefront user doesn't exist,
+   * it will be created and linked to DD user
+   * In case of errors it can returns:
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc LoginUser(LoginUserRequest) returns (LoginUserResponse);
+
+  /* This API logs in a user given external loyalty user information
+   * 400 bad request. eg: invalid user id format
+   * 401 for invalid token
+   * 403 token with insufficient privileges
+   * 500 for any internal server errors
+   */
+  rpc LoginUserBypassingOTP(LoginUserBypassingOTPRequest) returns (LoginUserBypassingOTPResponse);
+}

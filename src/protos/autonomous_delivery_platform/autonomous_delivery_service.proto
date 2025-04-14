@@ -1,0 +1,674 @@
+syntax = "proto3";
+
+package autonomous_delivery_platform.v1;
+
+import "autonomous_delivery_platform/autonomous_vehicle.proto";
+import "autonomous_delivery_platform/common.proto";
+import "autonomous_delivery_platform/delivery_details.proto";
+import "common/common.proto";
+import "common/order_config.proto";
+import "delivery_experience/order_status.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.autonomous_delivery_platform.v1";
+
+// Service that handles autonomous delivery logic
+service AutonomousDeliveryService {
+  // Unified Gateway Service Definitions
+  option (doordash.api.service) = {
+    name: "AutonomousDeliveryService"
+    url: "autonomous-delivery-platform-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["delivery"]
+    owner: {
+      id: "doordash-labs-commercial-team",
+      name: "av-delivery",
+      slack_channel: "#eng-autonomous-delivery-platform",
+      email_alias: "foundry-eng@doordash.com",
+    }
+    target_products: [AUTONOMOUS_DELIVERY]
+  };
+  // Shadow APIs from autonomousVehicleService
+  rpc UpdateProviderVehicleStatus(UpdateProviderVehicleStatusRequest) returns (UpdateProviderVehicleStatusResponse);
+  // Create Robot contract type AV dashers in bulk operation
+  rpc BulkCreateAvDashers(BulkCreateAvDashersRequest) returns (BulkCreateAvDashersResponse);
+  // Clean Robot Dasher State
+  rpc CleanRobotDasherState(CleanRobotDasherStateRequest) returns (CleanRobotDasherStateResponse);
+  // Get autonomous delivery delivery details
+  rpc GetAutonomousDeliveries(GetAutonomousDeliveriesRequest) returns (GetAutonomousDeliveriesResponse);
+  // Get av context - called by order-service on checkout page to display av related information
+  rpc GetAvContext(GetAvContextRequest) returns (GetAvContextResponse);
+  // Consumer opting out of AV for current order
+  rpc ConsumerOptOutCurrentOrder(ConsumerOptOutCurrentOrderRequest) returns (ConsumerOptOutCurrentOrderResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/v1/consumer_opt_out_current_order"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+  }
+  // Consumer opt out in the pre-checkout
+  rpc ConsumerOptOut(ConsumerOptOutRequest) returns (ConsumerOptOutResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/v1/consumer_opt_out"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+  }
+  // Consumer removes opt out in the pre-checkout
+  rpc ConsumerRemoveOptOut(ConsumerRemoveOptOutRequest) returns (ConsumerRemoveOptOutResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/v1/consumer_remove_opt_out"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+  }
+
+  // Get more information about autonomous delivery
+  rpc LearnMoreAboutAutonomousDelivery(LearnMoreAboutAutonomousDeliveryRequest) returns (LearnMoreAboutAutonomousDeliveryResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      get: "/autonomous_delivery/v1/learn_more"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+  }
+
+  // Unlock cargo for a delivery
+  rpc UnlockCargo(UnlockCargoRequest) returns (UnlockCargoResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/v1/unlock_cargo"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 125000
+      }
+    };
+  }
+
+  // Submit autonomous order context
+  rpc SubmitAutonomousOrderContext(SubmitAutonomousOrderContextRequest) returns (SubmitAutonomousOrderContextResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/v1/submit_autonomous_order_context"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+  }
+
+  // Rollback in progress deliveries
+  rpc RollbackInProgressDeliveries(RollbackInProgressDeliveriesRequest) returns (RollbackInProgressDeliveriesResponse);
+
+  // Get feed eligible quick checkout product metadata given user context
+  rpc GetFeedQuickCheckoutProductInfo(GetFeedQuickCheckoutProductInfoRequest) returns (GetFeedQuickCheckoutProductInfoResponse);
+}
+
+// Request from feed containing user context
+message GetFeedQuickCheckoutProductInfoRequest {
+  // Id of the consumer
+  string consumer_id = 1;
+  // Submarket id of the consumer
+  google.protobuf.StringValue submarket_id = 2;
+  // Latitude of the consumer location
+  google.protobuf.DoubleValue consumer_lat = 3;
+  // Longitude of the consumer location
+  google.protobuf.DoubleValue consumer_lng = 4;
+}
+
+// Response about feed quick checkout module
+message GetFeedQuickCheckoutProductInfoResponse {
+  // Info about a given store
+  message Store {
+    // Store id
+    int64 id = 1;
+    // Store name
+    string name = 2;
+  }
+  // Store info
+  Store store = 1;
+  // Display string for special instruction
+  google.protobuf.StringValue special_instructions = 2;
+  // ETA info string to display on client e.g. "5-10 min"
+  string eta_display_info = 3;
+  // Deeplink to drone vertical page
+  string view_all_stores_deeplink = 4;
+  // total price of the item in cents
+  int32 total_price_cents = 5;
+  // Currency of the price
+  string currency = 6;
+  // Info about items to display in quick checkout module
+  message Item {
+    // Quantity
+    int32 quantity = 1;
+    // Substitution preference
+    string substitution_preference = 2;
+    // Price of the item in cents
+    int32 unit_price_cents = 4;
+    // Currency of the price
+    string currency = 5;
+    // Menu item info
+    message MenuItem {
+      // Menu item id
+      string id = 1;
+      // Menu item name
+      string name = 2;
+      // Menu item description
+      string description = 3;
+      // Id of the menu
+      string menu_id = 4;
+      // Menu item img url
+      google.protobuf.StringValue image_url = 5;
+    }
+    // Menu item
+    MenuItem menu_item = 7;
+  }
+  // Item infos to display in module
+  repeated Item items = 9;
+}
+
+// Request to unlock cargo for a delivery
+message UnlockCargoRequest {
+  // Unique identifier for the delivery
+  string delivery_uuid = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+// Response to UnlockCargoRequest
+message UnlockCargoResponse {}
+
+// Autonomous Details request
+message GetAutonomousDeliveriesRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // A postal address for delivery location
+  common.CommonAddress delivery_address = 2;
+  // Store ID for the order
+  int64 store_id = 3;
+  // A postal address for store
+  common.CommonAddress store_address = 4;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 5;
+  // Client Device context - includes submit platform and app version
+  common.ClientDeviceCtx client_device_context = 6;
+  // Order Cart ID
+  google.protobuf.StringValue order_cart_id = 7;
+  // Delivery option type
+  common.DeliveryOptionType delivery_option_type = 8;
+  // Delivery address address id
+  google.protobuf.StringValue delivery_address_id = 9;
+}
+
+// Autonomous Details response
+message GetAutonomousDeliveriesResponse {
+  // Autonomous details
+  repeated AutonomousDelivery autonomous_deliveries = 1;
+}
+
+// Autonomous Details
+message AutonomousDelivery {
+  // Provider
+  Provider provider = 1;
+  // Vehicle type
+  AvType vehicle_type = 2;
+  // Viewable delivery option type
+  common.DeliveryOptionType viewable_delivery_option_type = 3;
+  // Delivery zone details
+  DeliveryZoneDetails delivery_zone_details = 4;
+  // Safety details
+  SafetyDetails safety_details = 5;
+  // Terms details
+  TermsDetails terms_details = 6;
+  // Cart Benefits details
+  CartBenefitsDetails cart_benefits_details = 7;
+  // Opt out options details
+  OptOutOptionsDetails opt_out_options_details = 8;
+}
+
+// Opt out options details
+message OptOutOptionsDetails {
+  // Start icon name
+  google.protobuf.StringValue start_icon_name = 1;
+  // Title
+  google.protobuf.StringValue title = 2;
+  // Body
+  google.protobuf.StringValue body = 3;
+  // Link link to robot delivery learn more page
+  delivery_experience.v1.DeepLink deep_link = 4;
+  // If it is at opted out state
+  bool is_opt_out = 5;
+  // Pre-checkout opt out bottle sheet
+  PreCheckoutOptOutBottomSheet pre_checkout_opt_out_bottom_sheet = 6;
+}
+
+// Pre checkout opt out bottom sheet
+message PreCheckoutOptOutBottomSheet {
+  // Check out preview modal
+  delivery_experience.v1.DefaultListView preview_opt_out_modal = 1;
+  // Bottom sheet of opt out reasons
+  DisplayReasons opt_out_reasons_bottom_sheet = 2;
+}
+
+// Reassign preference selection
+message ReassignPreferenceSelection {
+  // Title
+  google.protobuf.StringValue title = 2;
+  // Options
+  repeated ReassignOption options = 3;
+}
+
+// Reassign option
+message ReassignOption {
+  // Reassign option title
+  google.protobuf.StringValue title = 1;
+  // Reassign option identifier
+  google.protobuf.StringValue identifier = 2;
+  // Whether option is pre-selected
+  bool is_selected = 3;
+  // Whether to include tip modal with option
+  bool include_tip_modal = 4;
+}
+
+// Consumer opt out request
+message ConsumerOptOutCurrentOrderRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // UUID of the cart - populate either cart or delivery UUID
+  google.protobuf.StringValue cart_uuid = 2;
+  // UUID of the delivery
+  google.protobuf.StringValue delivery_uuid = 3;
+  // Opt out reason selection
+  OptOutReasonSelection opt_out_reason_selection = 4;
+}
+
+// Consumer opt out reason selection
+message OptOutReasonSelection {
+  // Category ID
+  google.protobuf.StringValue category_id = 1;
+  // Reason ID
+  google.protobuf.StringValue reason_id = 2;
+  // Reason text
+  google.protobuf.StringValue reason_text = 3;
+}
+
+// Consumer opt out response
+message ConsumerOptOutCurrentOrderResponse {}
+
+// Consumer opt out request
+message ConsumerOptOutRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // Av type
+  string av_type = 2;
+  // Opt out reason selection
+  OptOutReasonSelection opt_out_reason_selection = 3;
+}
+
+// Consumer opt out response
+message ConsumerOptOutResponse {}
+
+// Consumer removes opt out request
+message ConsumerRemoveOptOutRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // Av type
+  string av_type = 2;
+}
+
+// Consumer remove opt out response
+message ConsumerRemoveOptOutResponse {}
+
+// Request to update vehicle status for a given provider
+message UpdateProviderVehicleStatusRequest {
+  // Provider request is from
+  Provider provider = 1;
+  // Vehicle Status update request
+  UpdateVehicleStatusRequest request = 2;
+}
+
+// Response to update vehicle status for a given provider
+message UpdateProviderVehicleStatusResponse {
+  // Vehicle Status update response
+  UpdateVehicleStatusResponse response = 1;
+}
+
+// Request to create AV dashers
+message BulkCreateAvDashersRequest {
+  // Number of dashers to create
+  int32 num_dashers = 1;
+  // Optional prefix provided to be prefixed to the dasher name / email that will get generated
+  google.protobuf.StringValue prefix = 2;
+  // Starting point of the dashers being created
+  int64 starting_point_id = 3;
+  // Latitude of the dasher location
+  double latitude = 4;
+  // Longitude of the dasher location
+  double longitude = 5;
+  // Phone number of dasher
+  google.protobuf.StringValue dasher_phone_number = 6;
+  // Whether to insert newly created dashers into the database
+  google.protobuf.BoolValue insert_into_db = 7;
+  // ID of provider associated with robot dasher
+  google.protobuf.StringValue provider_id = 8;
+}
+
+// Response to bulk creation of AV dashers
+message BulkCreateAvDashersResponse {
+  // List of created dasher ids
+  repeated int64 dasher_ids = 1;
+}
+
+// Request to clean robot dasher state
+message CleanRobotDasherStateRequest {
+  // Flag to check all dashers. If true, other fields set will be ignored
+  google.protobuf.BoolValue check_all_dasher = 1;
+
+  // Set following fields to clean dashers. All set fields will be processed; fields are options (i.e. unset fields will mean field not processed).
+  // i.e. setting both dasher_ids and starting_point_ids will clean dashers in dasher_ids and in starting_point_ids
+
+  // List of Dasher IDs to clean
+  repeated google.protobuf.Int64Value dasher_ids = 2;
+  // List of Starting Points to clean dashers in
+  repeated google.protobuf.Int64Value starting_point_ids = 3;
+}
+
+// Response to bulk creation of AV dashers
+message CleanRobotDasherStateResponse {}
+
+// Learn More page request
+message LearnMoreAboutAutonomousDeliveryRequest {
+  // Provider
+  Provider provider = 1;
+  // The flow where learn more is triggered: PRE_CHECKOUT, POST_CHECKOUT
+  google.protobuf.StringValue flow = 2 [(doordash.api.client.optional) = true];
+}
+
+// Learn More page response
+message LearnMoreAboutAutonomousDeliveryResponse {
+  // Provider
+  Provider provider = 1;
+  // Header image url
+  google.protobuf.StringValue header_image_url = 2;
+  // Page title
+  string title = 3;
+  // reserved the index of display_modules
+  reserved 4;
+  // reserved the field name of display_modules
+  reserved "display_modules";
+  // Learn more content
+  repeated DisplayModule learn_more_content = 5;
+  // Opt-out content
+  repeated DisplayModule opt_out_content = 6;
+  // Opt-out bottom sheet
+  repeated DisplayModule opt_out_bottom_sheet = 7;
+  // Opt-out reasons bottom sheet
+  DisplayReasons opt_out_reasons_bottom_sheet = 8;
+}
+
+// Display content fields:
+
+// Display module
+message DisplayModule {
+  // Sort order
+  int32 sort_order = 2;
+  // Content
+  TextContent text_content = 3;
+}
+
+// Text content
+message TextContent {
+  // Title
+  google.protobuf.StringValue title = 1;
+  // Body
+  google.protobuf.StringValue body = 2;
+}
+
+// Structure for displaying reasons
+message DisplayReasons {
+  // Header content
+  HeaderContent header = 1;
+  // Content
+  Content content = 2;
+  // Completion content
+  repeated DisplayContent completion_content = 3;
+}
+
+// Header content
+message HeaderContent {
+  // Content
+  TextContent text_content = 1;
+}
+
+// Content
+message Content {
+  // Reason options
+  repeated ReasonOption options = 1;
+}
+
+// Reason option
+message ReasonOption {
+  // ID
+  string id = 1;
+  // Button
+  Button button = 2;
+  // Details
+  Details details = 3;
+}
+
+// Button
+message Button {
+  // Start icon name
+  google.protobuf.StringValue start_icon_name = 1;
+  // Text
+  google.protobuf.StringValue text = 2;
+  // Button type
+  delivery_experience.v1.ButtonType type = 3;
+}
+
+// Details
+message Details {
+  reserved 3, 4;
+  reserved "list", "text_view";
+
+  // Header content
+  HeaderContent header = 1;
+  // Selection error message
+  google.protobuf.StringValue selection_error = 2;
+  // Reason list
+  ReasonList list_field = 5;
+  // Text view
+  TextView text_view_field = 6;
+}
+
+// Text view
+message TextView {
+  // Placeholder
+  google.protobuf.StringValue placeholder = 1;
+}
+
+// Reason list
+message ReasonList {
+  // Selection type
+  SelectionType selection_type = 1;
+  // Reason items
+  repeated Reason items = 2;
+}
+
+// Selection type
+enum SelectionType {
+  // Unspecified
+  SELECTION_TYPE_UNSPECIFIED = 0;
+  // Single selection
+  SELECTION_TYPE_SINGLE = 1;
+}
+
+// Reason
+message Reason {
+  // ID
+  google.protobuf.StringValue id = 1;
+  // Text
+  google.protobuf.StringValue text = 2;
+}
+
+// Image content
+message ImageContent {
+  // Image URL
+  google.protobuf.StringValue url = 1;
+}
+
+// Display content
+message DisplayContent {
+  reserved 2, 3;
+  reserved "text_content", "image_content";
+
+  // Sort order
+  int32 sort_order = 1;
+  // Text content
+  TextContent text_content_field = 4;
+  // Image content
+  ImageContent image_content_field = 5;
+}
+
+// Request to clean up in progress ADP deliveries
+message RollbackInProgressDeliveriesRequest {
+  // Marketplace
+  enum Marketplace {
+    // Unspecified marketplace
+    MARKETPLACE_UNSPECIFIED = 0;
+    // DoorDash marketplace
+    MARKETPLACE_DOORDASH = 1;
+    // Wolt marketplace
+    MARKETPLACE_WOLT = 2;
+    // All marketplaces
+    MARKETPLACE_ALL = 3;
+  }
+  // Marketplace to run job over all in progress deliveries
+  Marketplace marketplace = 1;
+  // DoorDash Delivery IDs to clean up, if Marketplace UNSPECIFIED
+  repeated google.protobuf.StringValue dd_delivery_ids = 2;
+  // Wolt Delivery IDs to clean up, if Marketplace UNSPECIFIED
+  repeated google.protobuf.StringValue wolt_delivery_ids = 3;
+}
+
+// Response to clean up in progress ADP deliveries
+message RollbackInProgressDeliveriesResponse {}
+
+// Request from order-service to ADP on checkout page for Av Information
+message GetAvContextRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // Delivery location address
+  common.CommonAddress delivery_address = 2;
+  // Delivery address id
+  google.protobuf.StringValue delivery_address_id = 3;
+  // Store ID for the order
+  int64 store_id = 4;
+  // Store address
+  common.CommonAddress store_address = 5;
+  // Business id of the store
+  google.protobuf.StringValue business_id = 6;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 7;
+  // Cassandra cart uuid of the cart. It's same as carnival cart id.
+  google.protobuf.StringValue cart_uuid = 8;
+  // Items in the cart
+  repeated CartItem cart_items = 9;
+  // Delivery option type
+  common.DeliveryOptionType selected_delivery_option_type = 10;
+  // Client Device context - includes submit platform and app version
+  common.ClientDeviceCtx client_device_context = 11;
+  // App experience (i.e. DoorDash, Caviar)
+  google.protobuf.StringValue app_experience = 12;
+}
+
+// Av Information to send to order service to pass to client for displaying on checkout page
+message GetAvContextResponse {
+  // AvContext
+  AvContext av_context = 1;
+}
+
+// Av Context
+message AvContext {
+  // String of Provider GRPC value
+  string provider = 1;
+  // Provider name
+  google.protobuf.StringValue provider_name = 2;
+  // String of Vehicle type GRPC value
+  string vehicle_type = 3;
+  // Delivery Option context
+  AvDeliveryOption av_delivery_option = 4;
+  // Delivery zone details
+  DeliveryZoneDetails delivery_zone_details = 5;
+  // Safety details
+  SafetyDetails safety_details = 6;
+  // Terms details
+  TermsDetails terms_details = 7;
+  // Cart Benefits details
+  CartBenefitsDetails cart_benefits_details = 8;
+  // Opt out options details
+  OptOutOptionsDetails opt_out_options_details = 9;
+  // Reassign preference
+  ReassignPreferenceSelection reassign_preference_selection = 10;
+}
+
+// Av Delivery Option context
+message AvDeliveryOption {
+  // Av Delivery Status
+  enum AvDeliveryStatus {
+    // Unspecified
+    AV_DELIVERY_STATUS_UNSPECIFIED = 0;
+    // Available
+    AV_DELIVERY_STATUS_AVAILABLE = 1;
+    // Unavailable but still show option
+    AV_DELIVERY_STATUS_UNAVAILABLE_SHOW_OPTION = 2;
+    // Unavailable and hide option
+    AV_DELIVERY_STATUS_UNAVAILABLE_HIDE_OPTION = 3;
+  }
+  // Whether to display option
+  bool should_display_option = 1;
+  // Delivery option status
+  AvDeliveryStatus av_delivery_status = 2;
+  // Message to be displayed to the consumer if delivery option unavailable
+  google.protobuf.StringValue unavailable_display_message = 3;
+  // Text that appears next to valid delivery option
+  google.protobuf.StringValue valid_option_description = 4;
+  // Start of ETA range to display to Cx during checkout
+  google.protobuf.Timestamp asap_time_start_range = 5;
+  // End of ETA range to display to Cx during checkout
+  google.protobuf.Timestamp asap_time_end_range = 6;
+}

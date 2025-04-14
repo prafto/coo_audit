@@ -1,0 +1,378 @@
+syntax = "proto3";
+package doordash.growth.notification_hub.v1;
+
+import "common/service_client_config.proto";
+import "facet/facet_response.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.growth.notification_hub";
+
+// Service definition of notification hub
+service NotificationHubService {
+  // Endpoint to fetch consumer hub notifications
+  rpc GetConsumerNotificationHubEvents(GetConsumerNotificationHubEventsRequest) returns (GetConsumerNotificationHubEventsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+  // Endpoint to check if consumer has new notifications
+  rpc CheckConsumerNewNotificationHubEvents(CheckConsumerNewNotificationHubEventsRequest) returns (CheckConsumerNewNotificationHubEventsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+  // Endpoint to mark notification status as read
+  rpc UpdateNotificationReadStatus(UpdateNotificationReadStatusRequest) returns (UpdateNotificationReadStatusResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+  // Endpoint to create consumer notification for hub
+  rpc CreateConsumerNotification(CreateConsumerNotificationRequest) returns (CreateConsumerNotificationResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+  // Internal debug endpoint to check notification content in cx_hub_notification table
+  rpc DebugNotification(DebugNotificationRequest) returns (DebugNotificationResponse);
+}
+
+// client request to mark notification as read
+message UpdateNotificationReadStatusRequest {
+  // List of unique ids of notifications
+  repeated google.protobuf.StringValue notification_ids = 1;
+  // action to signify which action to take for notifs
+  // optional for mvp for clients. BE can use "markUnread"
+  // to mark notifs as unread for testing. Will be extended
+  // in future for actual use cases
+  google.protobuf.StringValue action = 2;
+  // Id of the consumer
+  google.protobuf.StringValue consumer_id = 3;
+}
+
+// Response of marking notification as read
+message UpdateNotificationReadStatusResponse {}
+
+// client request to check if consumer has new notifs
+message CheckConsumerNewNotificationHubEventsRequest {
+  // Id of the consumer
+  google.protobuf.StringValue consumer_id = 1;
+  // optional field as of now for this endpoint
+  google.protobuf.Int32Value submarket_id = 2;
+}
+
+// Response of checking if consumer has new notifications
+message CheckConsumerNewNotificationHubEventsResponse {
+  // True or false if consumer has new notifications
+  bool has_new_notifications = 1;
+  // total number of notifs cx has
+  google.protobuf.Int32Value num_items = 2;
+  // total number of unread notifs cx has
+  google.protobuf.Int32Value num_unread_items = 3;
+  // True or false if bell badge is skipped
+  google.protobuf.BoolValue skip_bell_badge = 4;
+}
+
+// Client request to get consumer hub page
+message GetConsumerNotificationHubEventsRequest {
+  // Id of the consumer
+  google.protobuf.StringValue consumer_id = 1;
+  // optional field as of now for this endpoint
+  google.protobuf.Int32Value submarket_id = 2;
+  // optional field as of now for this endpoint
+  google.protobuf.StringValue country_short_name = 3;
+  // Encoded cursor for pagination
+  google.protobuf.StringValue cursor = 4;
+  // Cx lat
+  google.protobuf.DoubleValue lat = 5;
+  // Cx lng
+  google.protobuf.DoubleValue lng = 6;
+  // Cx district
+  google.protobuf.Int64Value district_id = 7;
+  // Cx timezone
+  google.protobuf.StringValue time_zone = 8;
+}
+
+// Response of getting consumer hub page
+message GetConsumerNotificationHubEventsResponse {
+  // Lego response of getting notification hub
+  facet.v1.GetFacetFeedResponse get_facet_feed_response = 1;
+}
+
+// grpc method which postal-service will use to create consumer notif
+message CreateConsumerNotificationRequest {
+  // Unique id of notification
+  google.protobuf.StringValue notification_id = 1;
+  // Consumer ID for which hub notification hub event is being published
+  google.protobuf.StringValue consumer_id = 2;
+  // template id for notif config
+  google.protobuf.StringValue template_id = 3;
+  // custom map of data that source can send (optional)
+  google.protobuf.Struct custom = 4;
+  // Placeholders for a registered template
+  LocalizePlaceholders placeholders = 5;
+  // Timestamp of when event is expiring
+  google.protobuf.Timestamp expiration_time = 6;
+  // Children data for hub notification (contains hub carousel related info)
+  repeated google.protobuf.Struct children = 7;
+}
+
+// send notif id in response back to postal-service
+message CreateConsumerNotificationResponse {
+  // Unique id of the notification
+  google.protobuf.StringValue notification_id = 1;
+  // Total number of unread notifications this consumer has.
+  google.protobuf.Int32Value num_unread_items = 2;
+}
+
+// debug request
+message DebugNotificationRequest {
+  // required; to ensure querying with index & hitting minimal crdb range
+  string consumer_id = 1;
+  // optional; if empty, then return all notifs under cx id
+  repeated string notification_ids = 2;
+}
+
+// debug response
+message DebugNotificationResponse {
+  // list of notifs
+  repeated DebugNotification notifications = 1;
+}
+
+// debug response notif
+message DebugNotification {
+  // cx id
+  string consumer_id = 1;
+  // notif creation time
+  DebugTimestamp created_at = 2;
+  // notif expiration time
+  DebugTimestamp expire_at = 3;
+  // notif id
+  string id = 4;
+  // pushed model notif template id
+  string template_id = 5;
+  // metadata gzipped bytes hash
+  int32 content_hash = 6;
+  // metadata json string
+  string content_json = 7;
+  // notif first viewed time
+  DebugTimestamp viewed_at = 8;
+  // notif to be deleted time
+  DebugTimestamp delete_at = 9;
+  // notif latest update time
+  DebugTimestamp updated_at = 10;
+}
+
+// debug timestamp
+message DebugTimestamp {
+  // human readable date & time
+  string datetime = 1;
+  // epoch seconds & nanos
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// Placeholders to be localized
+message LocalizePlaceholders {
+  // names that need to be localized
+  repeated Name names = 1;
+  // money that need to be localized
+  repeated Money money = 2;
+  // dates that need to be localized
+  repeated Date dates = 3;
+  // times that need to localized
+  repeated Time times = 4;
+  // date times that need to be localized
+  repeated DateTime date_times = 5;
+  // time ranges that need to be localized
+  repeated TimeRange time_ranges = 6;
+  // addresses that need to localized
+  repeated Address addresses = 7;
+  // key value pair that does not need localization
+  repeated NonlocalizableString non_localizable_strings = 8;
+  // deprecated, do not use
+  DescriptionTranslations description_translations = 9 [deprecated = true];
+  // translations provided by client, e.g. generated AI translations
+  repeated ClientTranslation client_translations = 10;
+}
+
+// To localize name placeholders in notification templates. All fields are mandatory
+message Name {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // the given name of the person
+  string given_name = 2;
+  // the family name of the person
+  string family_name = 3;
+  // the format to be used
+  NameFormat format_type = 4;
+  // the profile to be used
+  Profile profile = 5;
+}
+
+// To localize monetary placeholders in notification templates. All fields are mandatory
+message Money {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // the amount of minor units.
+  // e.g, if `currencyCode` is `"USD"`, then 1 unit is 1 US cent.
+  int64 unit_amount = 2;
+  // the 3-letter currency code defined in ISO 4217.
+  // (https://en.wikipedia.org/wiki/ISO_4217)
+  string currency = 3;
+  // the number of digits after the decimal separator.
+  // Can be looked up from the "Active codes" section on
+  // https://en.wikipedia.org/wiki/ISO_4217
+  // For example, if `currencyCode` is `"USD"`, then 2 decimal places are
+  bool concise = 4;
+}
+
+// To localize address placeholders in notification templates. All fields are mandatory
+message Address {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // the ID of the address
+  int64 address_id = 2;
+}
+
+// To localize date placeholders in notification templates. All fields are mandatory
+message Date {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // the timestamp for the date
+  google.protobuf.Timestamp timestamp = 2;
+  // timezone of the date
+  string timezone = 3; // e.g. 'US/Pacific', 'Asia/Tokyo'
+  // format to be used for the date
+  DateTimeFormat format_type = 4;
+}
+
+// To localize time placeholders in notification templates. All fields are mandatory
+message Time {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // timestamp for the time
+  google.protobuf.Timestamp timestamp = 2;
+  // timezone of the time
+  string timezone = 3; // e.g. 'US/Pacific', 'Asia/Tokyo'
+  // format to be used for the time
+  DateTimeFormat format_type = 4;
+}
+
+// To localize datetime placeholders in notification templates. All fields are mandatory
+message DateTime {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // timestamp for the datetime
+  google.protobuf.Timestamp timestamp = 2;
+  // timezone of te datetime
+  string timezone = 3; // e.g. 'US/Pacific', 'Asia/Tokyo'
+  // format to be used for the datetime
+  DateTimeFormat format_type = 4;
+}
+
+// To format time range in notifications e.g. 3:00 PM-3:30 PM
+message TimeRange {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // the start timestamp
+  google.protobuf.Timestamp timestamp_start = 2;
+  // the end timestamp
+  google.protobuf.Timestamp timestamp_end = 3;
+  // timezone of the timerange
+  string timezone = 4; // e.g. 'US/Pacific', 'Asia/Tokyo'
+}
+
+// For translation from client side
+message ClientTranslation {
+  // name of the placeholder string
+  google.protobuf.StringValue placeholder_name = 1;
+  // mapping from locale to translation string
+  map<string, string> translations = 2;
+}
+
+// Deprecated, do not use
+message DescriptionTranslations {
+  // name of the placeholder string
+  google.protobuf.StringValue placeholder_name = 1;
+  // es-US translation
+  google.protobuf.StringValue en_us = 2;
+  // es-US translation
+  google.protobuf.StringValue es_us = 3;
+  // en-CA translation
+  google.protobuf.StringValue en_ca = 4;
+  // fr-CA translation
+  google.protobuf.StringValue fr_ca = 5;
+  // en-AU translation
+  google.protobuf.StringValue en_au = 6;
+  // en-NZ translation
+  google.protobuf.StringValue en_nz = 7;
+}
+
+// string value placeholder
+message NonlocalizableString {
+  // name of the placeholder string
+  string placeholder_name = 1;
+  // value of the placeholder string
+  string value = 2;
+}
+
+// To format names in notifications
+enum NameFormat {
+  // unspecified format
+  NAME_FORMAT_UNSPECIFIED = 0;
+  // short format e.g. Hi Foo
+  NAME_FORMAT_SHORT_NAME = 1;
+  // full e.g. Hi Foo Bar
+  NAME_FORMAT_FULL_NAME = 2;
+  // full privatized e.g. Hi Foo B
+  NAME_FORMAT_FULL_PRIVATIZED_ABBREVIATED = 3;
+}
+
+// To format date/time in notifications
+enum DateTimeFormat {
+  // unspecified format, FORMAT_SHORT is used in this case
+  DATE_TIME_FORMAT_UNSPECIFIED = 0;
+  // e.g. Date: 2/23/21 Time: 3:00 PM DateTime: 2/23/21, 3:00 PM
+  DATE_TIME_FORMAT_SHORT = 1;
+  // e.g. Date: Feb 23, 2021 Time: 3:00:00 PM DateTime: Feb 23, 2021, 3:30:00 PM
+  DATE_TIME_FORMAT_MEDIUM = 2;
+  // e.g. Tue, Feb 23
+  DATE_TIME_FORMAT_DAY_AND_DATE_SHORT = 3;
+}
+
+// To format names in notifications
+enum Profile {
+  // Unspecified
+  PROFILE_UNSPECIFIED = 0;
+  // Use this when referring to a consumer
+  PROFILE_CONSUMER = 1;
+  // Use this when referring to a dasher
+  PROFILE_DASHER = 2;
+}
+
+// origin notification type to decouple from template_id
+// because same template_id could be used for multiple origin notification types
+enum OriginNotificationType {
+  // Unspecified
+  ORIGIN_NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  // evergreen ten hottest origin notification type
+  ORIGIN_NOTIFICATION_TYPE_TEN_HOTTEST = 1;
+  // evergreen Under X Dollar Delivery origin notification type
+  ORIGIN_NOTIFICATION_TYPE_UNDER_X_DOLLAR_DELIVERY = 2;
+  // evergreen Try Something New origin notification type
+  ORIGIN_NOTIFICATION_TYPE_TRY_SOMETHING_NEW = 3;
+  // evergreen National Favorite origin notification type
+  ORIGIN_NOTIFICATION_TYPE_NATIONAL_FAVORITE = 4;
+  // evergreen Popular Local Restaurants origin notification type
+  ORIGIN_NOTIFICATION_TYPE_POPULAR_LOCAL_RESTAURANTS = 5;
+  // evergreen Inspired By Your Past Orders notification type
+  ORIGIN_NOTIFICATION_TYPE_INSPIRED_BY_YOUR_PAST_ORDERS = 6;
+  // evergreen Now On DoorDash origin notification type
+  ORIGIN_NOTIFICATION_TYPE_NOW_ON_DOORDASH = 7;
+  // MxP origin notification type
+  ORIGIN_NOTIFICATION_TYPE_MXP = 8;
+}

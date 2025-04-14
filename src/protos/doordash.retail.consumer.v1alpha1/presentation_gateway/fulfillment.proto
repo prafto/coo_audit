@@ -1,0 +1,229 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package retail_cx;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.retail.consumer.v1alpha1/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.retail";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// NVFulfillment host the PG NV fulfillment endpoints
+service NVFulfillment {
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    name: "presentation-gateway"
+    url: "retail-cx-nv-fulfillment-get-retail-order-by-delivery-uuid.service.prod.ddsd"
+    port: 50051
+    name_spaces: "nv-retail"
+    // TODO this should be the NV team, but PG is shadow testing atm
+    owner: {
+      id: "presentation-gateway"
+      name: "presentation-gateway-platform"
+      slack_channel: "#presentation-gateway-platform"
+      email_alias: "presentation-gateway@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // GetRetailOrderByDeliveryUuid returns the retail order by delivery UUID
+  rpc GetRetailOrderByDeliveryUuid(GetRetailOrderByDeliveryUuidRequest) returns (GetRetailOrderByDeliveryUuidResponse) {
+    option (google.api.http) = {get: "/nv-retail/v1/retail/order"};
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "platform"}]
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      presentation_gateway_endpoint: true
+    };
+  }
+}
+
+// GetRetailOrderByDeliveryUuidRequest
+message GetRetailOrderByDeliveryUuidRequest {
+  //  delivery UUID of the order
+  google.protobuf.StringValue delivery_uuid = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// GetRetailOrderByDeliveryUuidResponse
+message GetRetailOrderByDeliveryUuidResponse {
+  // items_need_review
+  repeated ReviewItem items_need_review = 1;
+  // items_substituted
+  repeated SubstitutedItem items_substituted = 2;
+  // items_refunded
+  repeated OrderItem items_refunded = 3;
+  // items_found
+  repeated FoundItem items_found = 4;
+  // items_pending
+  repeated OrderItem items_pending = 5;
+  // item_state_groups
+  map<string, int32> item_state_groups = 6;
+}
+
+//  ReviewItem
+message ReviewItem {
+  // oos_item
+  OrderItem oos_item = 1;
+  // recommended_subs
+  repeated StoreItem recommended_subs = 2;
+  // review_state
+  string review_state = 3;
+  // recommended_subs_quantities
+  repeated QuantityInfoV3 recommended_subs_quantities = 4;
+}
+
+// QuantityInfoV3
+message QuantityInfoV3 {
+  // this value is set for items with purchaseType = unit (Cx) / unit_to_measurement (Cx)
+  doordash.retail.consumer.v1alpha1.QuantityInfoV3.DiscreteQuantity discrete_quantity = 1;
+  // this value is set for items with purchaseType = measurement (Cx) / unit_to_measurement (Dx)
+  doordash.retail.consumer.v1alpha1.QuantityInfoV3.ContinuousQuantity continuous_quantity = 2;
+  // type of quantity info
+  string quantity_info_type = 3;
+}
+
+//  SubstitutedItem
+message SubstitutedItem {
+  //  oos_item
+  OrderItem oos_item = 1;
+  //  substitution_item
+  StoreItem substitution_item = 2;
+}
+
+// FoundItem
+message FoundItem {
+  // found_item
+  OrderItem found_item = 1;
+  //  quantity_adjusted
+  google.protobuf.StringValue quantity_adjusted = 2;
+}
+
+// OrderItem
+message OrderItem {
+  // order_item_uuid
+  string order_item_uuid = 1;
+  // store_item
+  StoreItem store_item = 2;
+  //  oos_preference
+  OutOfStockPreference oos_preference = 3;
+}
+
+//  Enum OutOfStockPreference
+// buf:lint:ignore ENUM_VALUE_PREFIX
+// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+enum OutOfStockPreference {
+  //  UNSPECIFIED
+  UNSPECIFIED = 0;
+  //  SUBSTITUTE
+  SUBSTITUTE = 1;
+  //  CONTACT_ME
+  CONTACT_ME = 2;
+  //  REFUND
+  REFUND = 3;
+  //  REFUND_AND_SUBSTITUTE
+  GENERIC_CATEGORY = 4;
+}
+
+//  StoreItem
+message StoreItem {
+  //  menu_item_id
+  int64 menu_item_id = 1;
+  //  merchant_supplied_id
+  string merchant_supplied_id = 2;
+  //  name
+  string name = 3;
+  //  quantity
+  google.protobuf.StringValue quantity = 4;
+  //  price
+  SubstitutionMonetaryFields price = 5;
+  //  photo_url
+  string photo_url = 6;
+  // purchase_type
+  google.protobuf.StringValue purchase_type = 7;
+  // unit
+  google.protobuf.StringValue unit = 8;
+  //  unit_fulfilled
+  google.protobuf.StringValue unit_fulfilled = 9;
+  //  price_fulfilled
+  SubstitutionMonetaryFields price_fulfilled = 10;
+  //  approximate_unit_weight
+  google.protobuf.DoubleValue approximate_unit_weight = 11;
+  //  badges
+  repeated ConvenienceProductBadge badges = 12;
+  //  unique_id
+  string unique_id = 13;
+  //  price_list
+  repeated RetailProductItemPriceInfo price_list = 14 [(doordash.api.nullable) = true];
+  //  total_price
+  SubstitutionMonetaryFields total_price = 15;
+  //  price_per_string
+  google.protobuf.StringValue price_per_string = 16;
+}
+
+//  RetailProductItemPriceInfo
+message RetailProductItemPriceInfo {
+  //   price_type
+  google.protobuf.StringValue price_type = 1;
+  //  price
+  google.protobuf.Struct price = 2; // TODO verify if this equivalent to `JsonNode?` in Kotlin
+  //  display_string
+  google.protobuf.StringValue additional_display_string = 3;
+}
+
+//  SubstitutionMonetaryFields
+message SubstitutionMonetaryFields {
+  //    unit_amount
+  int32 unit_amount = 1;
+  //  currency
+  string currency = 2;
+  //    display_string
+  string display_string = 3;
+  //    decimal_places
+  int32 decimal_places = 4;
+}
+
+//  ConvenienceProductBadge
+message ConvenienceProductBadge {
+  //  type
+  google.protobuf.StringValue type = 1;
+  //  text
+  google.protobuf.StringValue text = 2;
+  //  background_color
+  google.protobuf.StringValue background_color = 3;
+  //  placement
+  google.protobuf.StringValue placement = 4;
+  //  dls_tag_size
+  google.protobuf.StringValue dls_tag_size = 5;
+  //  dls_tag_style
+  google.protobuf.StringValue dls_tag_style = 6;
+  //  dls_tag_type
+  google.protobuf.StringValue dls_tag_type = 7;
+  //  dls_text_style
+  google.protobuf.StringValue dls_text_style = 8;
+  //  leading_icon
+  google.protobuf.StringValue leading_icon = 9;
+  //  leading_icon_size
+  google.protobuf.Int32Value leading_icon_size = 10;
+  //  trailing_icon
+  google.protobuf.StringValue trailing_icon = 11;
+  //  trailing_icon_size
+  google.protobuf.Int32Value trailing_icon_size = 12;
+}

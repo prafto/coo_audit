@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package risk_dispute_service.services.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/risk_dispute_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.risk_dispute_service.services";
+
+// Service that handles disputing flow
+service RiskDisputeService {
+  option (doordash.api.service) = {
+    name: "risk-dispute-service"
+    url: "risk-dispute-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "risk",
+      "dispute"
+    ]
+    owner: {
+      name: "risk-payment-fraud"
+      id: "risk-payment-fraud"
+      slack_channel: "#payment-fraud-alerts"
+      email_alias: "payment_fraud_engineering@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Webhook endpoint for handling Braintree dispute events
+  rpc HandleBraintreeDisputeEvent(HandleBraintreeDisputeEventRequest) returns (HandleBraintreeDisputeEventResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/dispute/braintree"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [CX]
+    };
+  }
+
+  // Webhook endpoint for handling Stripe dispute events
+  rpc HandleStripeDisputeEvent(HandleStripeDisputeEventRequest) returns (HandleStripeDisputeEventResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/dispute/stripe"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [CX]
+    };
+  }
+}
+
+/*
+   Incoming event request from Stripe to webhook endpoint
+*/
+message HandleStripeDisputeEventRequest {
+  // Webhook signature header (Stripe-Signature)
+  // https://docs.stripe.com/webhooks?lang=java&verify=check-signatures-library
+  google.protobuf.StringValue signature = 1 [(doordash.api.inject_from_headers) = {
+    field: "Stripe-Signature",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+
+  // Raw request body - needs to be in this format for signature verification with Stripe SDK
+  string raw_body = 2;
+}
+
+// Response sent to Stripe from webhook endpoint
+message HandleStripeDisputeEventResponse {
+  // Unique identifier for the event
+  string event_id = 1;
+  // Status of processing, e.g., "success" or "failure"
+  string status = 2;
+  // Optional message for error tracking or additional info
+  string message = 3;
+}
+
+/*
+   Incoming event request from BT to webhook endpoint:
+   https://developer.paypal.com/braintree/docs/reference/general/webhooks/dispute/java
+*/
+message HandleBraintreeDisputeEventRequest {
+  // Webhook signature from request body (NOT headers)
+  string bt_signature = 1;
+
+  // Encoded webhook event payload from request body- needs to be parsed through braintree SDK
+  // https://developer.paypal.com/braintree/docs/guides/webhooks/parse/java
+  string bt_payload = 2;
+}
+
+// Response sent to Braintree from webhook endpoint
+message HandleBraintreeDisputeEventResponse {
+  // Unique identifier for the event
+  string event_id = 1;
+  // Status of processing, e.g., "success" or "failure"
+  string status = 2;
+  // Optional message for error tracking or additional info
+  string message = 3;
+}

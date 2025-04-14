@@ -1,0 +1,494 @@
+syntax = "proto3";
+
+package zero2one.v1;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/credit_v1.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.zero2one";
+
+// DashParty service
+service DashPartyService {
+  option (doordash.api.service) = {
+    url: "zero2one-dashparty.service.prod.ddsd"
+    name: "zero2one-dashparty-service"
+    port: 50051
+    name_spaces: ["dashparty"]
+    owner: {
+      id: "swat-team"
+      name: "swat-team"
+      slack_channel: "#ask-swat-eng"
+      email_alias: "swat-eng-team@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Deposit DashParty Credits
+  rpc DepositDashPartyCredits(DepositDashPartyCreditsRequest) returns (DepositDashPartyCreditsResponse);
+
+  // Get the available DashParties to display for homepage carousel
+  rpc GetDashPartyHomepageCarousel(GetDashPartyHomepageCarouselRequest) returns (GetDashPartyHomepageCarouselResponse);
+
+  // Get the DashParty information for order preview, post since we need to send a nested message in the request
+  rpc GetDashPartyPreviewOrder(GetDashPartyPreviewOrderRequest) returns (GetDashPartyPreviewOrderResponse) {
+    option (google.api.http) = {
+      post: "/dashparty/v1/order_preview"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+
+  // Get the DashParty Bottom Sheet
+  rpc GetDashPartyBottomSheet(GetDashPartyBottomSheetRequest) returns (GetDashPartyBottomSheetResponse) {
+    option (google.api.http) = {get: "/dashparty/v1/bottom_sheet"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+// the request of endpoint DepositDashPartyCredits
+message DepositDashPartyCreditsRequest {
+  // if this is true, we will print more logs, if not provided we will consider this as false
+  google.protobuf.BoolValue is_debug = 2;
+  // the list of dashparty orders to deposit credits to
+  repeated DashPartyOrder dashparty_orders = 3;
+  // deprecated fields
+  reserved 1;
+  reserved "order_uuids";
+}
+
+// dashparty order
+message DashPartyOrder {
+  // order uuid
+  google.protobuf.StringValue order_uuid = 1;
+  // dashparty id
+  google.protobuf.StringValue dashparty_id = 2;
+}
+
+// the response of endpoint DepositDashPartyCredits
+message DepositDashPartyCreditsResponse {
+  // mapping of order uuid to success context
+  map<string, Success> success_results = 1;
+  // mapping of order uuid to failure context
+  map<string, Failure> failure_results = 2;
+
+  // deposit success context
+  message Success {
+    // deposited credits information
+    doordash.payin.credit.v1.CreditUnit credit_unit = 1;
+    // push notification message id
+    google.protobuf.StringValue push_notification_message_id = 2;
+    // status
+    google.protobuf.StringValue credit_deposit_status = 3;
+  }
+
+  // deposit failure context
+  message Failure {
+    // relevant error code
+    google.protobuf.StringValue error_code = 1;
+    // relevant error message
+    google.protobuf.StringValue error_message = 2;
+  }
+}
+
+// the request of endpoint GetDashPartyBottomSheet
+message GetDashPartyBottomSheetRequest {
+  // Store ID we need to show the bottom sheet for
+  string store_id = 1;
+
+  // id of the Consumer we need to show the bottom sheet for
+  string consumer_id = 2;
+
+  // submarket id
+  google.protobuf.StringValue submarket_id = 3;
+
+  // consumer location lat
+  google.protobuf.DoubleValue consumer_lat = 4;
+
+  // consumer location lng
+  google.protobuf.DoubleValue consumer_lng = 5;
+
+  // type of the page where this bottom sheet is going to show at
+  BottomSheetPageType page_type = 6;
+
+  // business name
+  google.protobuf.StringValue business_name = 7;
+
+  // if FE knows which dashparty this consumer is in
+  google.protobuf.StringValue dashparty_id = 8;
+
+  // whether cx has an ongoing dashparty cart, if exists, we know they joined the dashparty
+  google.protobuf.BoolValue has_dashparty_cart = 9;
+
+  /*
+     for postcheckout bottom sheet, will be order_uuid of the current order cx just made
+     this is to tackle a possible race condition when cx just made an order under the dashparty
+     but the kafka event hasn't been processed yet so our db won't have the dashparty order row created
+  */
+  google.protobuf.StringValue order_uuid = 10;
+
+  // id of the User we need to show the bottom sheet for
+  string user_id = 11 [(doordash.api.inject_id) = USER_ID];
+
+  // The 3-letter currency code defined in ISO 4217.
+  google.protobuf.StringValue currency = 12;
+
+  // different page types of the dashparty progress
+  enum BottomSheetPageType {
+    // unspecified
+    BOTTOM_SHEET_PAGE_TYPE_UNSPECIFIED = 0;
+    // store page
+    BOTTOM_SHEET_PAGE_TYPE_STORE_PAGE = 1;
+    // post order
+    BOTTOM_SHEET_PAGE_TYPE_POST_CHECKOUT = 2;
+  }
+}
+
+// the response of endpoint GetDashPartyBottomSheet
+message GetDashPartyBottomSheetResponse {
+  // the content of the bottom sheet, the existence of this declares if there is a dashparty or not
+  DashPartyBottomSheet dashparty_bottom_sheet = 1;
+}
+
+// the content of the bottom sheet
+message DashPartyBottomSheet {
+  // info of the current dashparty
+  DashPartyInfo dashparty_info = 1;
+
+  // title
+  google.protobuf.StringValue title = 2;
+
+  // subtitle
+  google.protobuf.StringValue subtitle = 3;
+
+  // terms and conditions disclaimer url
+  google.protobuf.StringValue terms_and_conditions_url = 4;
+
+  // dashpass condition text of the bottomsheet
+  google.protobuf.StringValue dashpass_condition_text = 5;
+
+  // dashparty milestones to display on the bottomsheet
+  repeated DashPartyMilestone milestones = 6;
+
+  // if this consumer is eligible for dashpass_credits back
+  google.protobuf.BoolValue is_eligible_for_dashpass_credits_back = 7;
+
+  // whether has reached max participants, only be used for post checkout bottom sheets
+  google.protobuf.BoolValue has_reached_max_participants = 8;
+
+  // list of action buttons to show in the bottom sheet
+  repeated BottomSheetActionButton action_buttons = 9;
+
+  // list of action buttons to show in the ... section at right top corner of bottom sheet
+  // empty means no ... should be shown, the button style won't matter here since it will be shown in a list view
+  // each of them will have a button leading icon.
+  repeated BottomSheetActionButton more_buttons = 10;
+
+  // whether cx already submitted an order under the same dashparty
+  // for FE to not create another cart if this is true
+  google.protobuf.BoolValue order_submitted = 11;
+
+  // Button that describes the actions to take on the bottom sheet
+  message BottomSheetActionButton {
+    // Text on the button
+    google.protobuf.StringValue button_text = 1;
+    // Style of the button
+    ButtonType button_type = 2;
+    // type of the action, "start_ordering", "leave", etc...
+    ActionType action_type = 3;
+    // Leading icon in front of the button text, if null then no icon will be shown
+    google.protobuf.StringValue button_leading_icon = 4;
+
+    // Identifies the type of button that should be displayed on the bottom sheet
+    enum ButtonType {
+      // required by linter
+      BUTTON_TYPE_UNSPECIFIED = 0;
+
+      // Red action button, white text
+      BUTTON_TYPE_PRIMARY = 1;
+
+      // Grey action button, black text
+      BUTTON_TYPE_TERTIARY = 2;
+
+      // White action button, dark grey foreground
+      BUTTON_TYPE_PLAIN = 3;
+    }
+
+    // Identifies the type of action for buttons on the bottom sheet
+    enum ActionType {
+      // required by linter
+      ACTION_TYPE_UNSPECIFIED = 0;
+
+      // join dashparty action
+      ACTION_TYPE_JOIN_DASHPARTY = 1;
+
+      // leave dashparty action
+      ACTION_TYPE_LEAVE_DASHPARTY = 2;
+
+      // invite others action
+      ACTION_TYPE_INVITE = 3;
+
+      // start ordering action
+      ACTION_TYPE_START_ORDERING = 4;
+
+      // close sheet action
+      ACTION_TYPE_CLOSE = 5;
+
+      // get dashpass action
+      ACTION_TYPE_GET_DASHPASS = 6;
+    }
+  }
+}
+
+// basic information of the current dashparty
+message DashPartyInfo {
+  // ID of the dashparty
+  google.protobuf.StringValue dashparty_id = 1;
+
+  // Current participants in the dashparty
+  repeated DashPartyParticipant participants = 2;
+
+  // expiration time
+  google.protobuf.Timestamp expired_at = 3;
+}
+
+// basic information of the current participant
+message DashPartyParticipant {
+  // consumer id of the current participant
+  google.protobuf.StringValue consumer_id = 1;
+
+  // profile picture url of the current participant
+  google.protobuf.StringValue profile_picture_img_url = 2;
+}
+
+// the milestone of the DashParty
+message DashPartyMilestone {
+  // percentage off, "5" for 5%
+  google.protobuf.Int32Value percentage_off = 1;
+
+  // description of the dashparty progress, ex: "Tina has unlocked 5%..."
+  google.protobuf.StringValue description_text = 2;
+
+  // current milestone status
+  DashpartyProgressStatus status = 3;
+
+  // different status of the dashparty progress
+  enum DashpartyProgressStatus {
+    // unspecified
+    DASHPARTY_PROGRESS_STATUS_TYPE_UNSPECIFIED = 0;
+    // unlocked
+    DASHPARTY_PROGRESS_STATUS_TYPE_UNLOCKED = 1;
+    // current step, ongoing
+    DASHPARTY_PROGRESS_STATUS_TYPE_IN_PROGRESS = 2;
+    // locked
+    DASHPARTY_PROGRESS_STATUS_TYPE_LOCKED = 3;
+  }
+}
+
+// The request of endpoint GetDashPartyPreviewOrder
+message GetDashPartyPreviewOrderRequest {
+  // The consumer id
+  google.protobuf.StringValue consumer_id = 1;
+
+  // The DashParty id
+  google.protobuf.StringValue dashparty_id = 2;
+
+  // The submarket id
+  google.protobuf.StringValue submarket_id = 3;
+
+  // The current subtotal of the order
+  money.MonetaryFields subtotal = 4;
+
+  // same value as PreviewOrderResponseV2::contains_alcohol_item, if true, consumer's cart contains alcohol item
+  google.protobuf.BoolValue contains_alcohol_item = 5;
+}
+
+// The response of endpoint GetDashPartyPreviewOrder
+message GetDashPartyPreviewOrderResponse {
+  // DashParty info
+  DashPartyInfo dashparty_info = 1;
+
+  // The credits back details
+  DashPartyCreditsBackDetails dashparty_creditsback_details = 2;
+
+  // The DashParty disclaimer
+  google.protobuf.StringValue disclaimer = 3;
+
+  // Benefits warning message
+  google.protobuf.StringValue dashparty_benefits_warning = 4;
+}
+
+// The credits back details
+message DashPartyCreditsBackDetails {
+  // The current amount of the credits
+  money.MonetaryFields current_amount = 1;
+
+  // The max potential amount of the credits subtotal
+  money.MonetaryFields maximum_amount = 2;
+
+  // The description for DashParty credits
+  google.protobuf.StringValue description = 3;
+}
+
+// Request for GetDashPartyHomepageCarousel
+message GetDashPartyHomepageCarouselRequest {
+  // Consumer ID of the consumer who is viewing homepage
+  string consumer_id = 1;
+
+  // Submarket id of the consumer
+  google.protobuf.StringValue submarket_id = 2;
+
+  // lat of the consumer
+  google.protobuf.DoubleValue consumer_lat = 4;
+
+  // lng of the consumer
+  google.protobuf.DoubleValue consumer_lng = 5;
+
+  // Optional: place ids to skip additional geo intel call
+  // Helps reduce an RPC call to PlaceService
+  repeated string place_ids = 6;
+
+  // Optional: tell us if a user has dashpass
+  // Helps reduce an RPC call to SubscriptionService
+  google.protobuf.BoolValue has_dashpass = 7;
+}
+
+// Response for GetDashPartyHomepageCarousel
+message GetDashPartyHomepageCarouselResponse {
+  // title of the homepage carousel
+  google.protobuf.StringValue carousel_title = 1;
+
+  // description of the homepage carousel
+  google.protobuf.StringValue carousel_description = 2;
+
+  // terms and conditions disclaimer url
+  google.protobuf.StringValue terms_and_conditions_url = 3;
+
+  // list of dashparty cards to show in the homepage carousel
+  repeated DashPartyCard dashparty_cards = 4;
+
+  // terms and conditions disclaimer text to add to carousel description
+  google.protobuf.StringValue terms_and_conditions_text = 5;
+}
+
+// DashParty card to display in the homepage carousel
+message DashPartyCard {
+  reserved 1, 4, 5, 6;
+  reserved "store_id", "button_text", "dashpass_condition_text", "milestones";
+
+  // information about the dashparty
+  // Use data here for DashPartyStatus
+  DashPartyInfo dashparty_info = 2;
+
+  // text such as "Meera and 3 others are in the DashParty"
+  // Use data here for DashPartyStatus
+  google.protobuf.StringValue participation_status_text = 3;
+
+  // footer button for this dashparty
+  FooterButton footer_button = 7;
+
+  // Store information for this dashparty
+  StoreInfo store_info = 8;
+
+  // content on the back side of the store card
+  FlippedContent flipped_content = 9;
+
+  // Set iso8601 time of when this dashparty will end
+  google.protobuf.StringValue timer_expiration_date = 10;
+
+  // Optional: If specified, the card will flip to the back side after this many seconds
+  google.protobuf.FloatValue flip_after_delay_seconds = 11;
+
+  // ----------------------------------
+  // Substructs
+  // ----------------------------------
+
+  // Store information for this dashparty
+  message StoreInfo {
+    // store_name is the name of the store or business for where to redeem this deal
+    google.protobuf.StringValue store_id = 1;
+
+    // store_name is the name of the store or business for where to redeem this deal
+    google.protobuf.StringValue store_name = 2;
+
+    // image_url is the image to show in the cell
+    google.protobuf.StringValue image_url = 3;
+
+    // rating is the store ratings
+    Rating rating = 4;
+
+    // eta is the delivery eta for the store
+    google.protobuf.StringValue eta = 5;
+
+    // distance is the distance between cx and the store
+    google.protobuf.StringValue distance = 6;
+  }
+
+  // details about a store's rating
+  message Rating {
+    // store rating
+    google.protobuf.FloatValue average_rating = 1;
+
+    // store rating string
+    google.protobuf.StringValue number_of_ratings_display_string = 2;
+  }
+
+  // footer button information
+  message FooterButton {
+    // button text
+    google.protobuf.StringValue text = 1;
+
+    // button uri
+    google.protobuf.StringValue uri = 2;
+  }
+
+  // content on the back side of the store card
+  message FlippedContent {
+    // Title of the flipped context
+    google.protobuf.StringValue title = 1;
+
+    // Subtitle of the flipped context
+    google.protobuf.StringValue subtitle = 2;
+
+    // Leading icon infront subtitle of the flipped context
+    google.protobuf.StringValue subtitle_leading_icon = 3;
+
+    // dashparty milestones to display on the bottomsheet
+    repeated DashPartyMilestone milestones = 4;
+
+    // if this consumer is eligible for dashpass_credits back
+    google.protobuf.BoolValue is_eligible_for_dashpass_credits_back = 5;
+  }
+}

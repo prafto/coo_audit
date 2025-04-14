@@ -1,0 +1,1245 @@
+syntax = "proto3";
+package experience_reliability_service.workflow_platform_api;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "experience_reliability_service/cnr_policy.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+/**
+   PLEASE PUT ADDITIONS TO THE WORKFLOW PLATFORM API IN /workflow_platform/workflow_platform.proto
+   THIS FILE SHOULD NOT BE HOLDING ANY NEW PROTOS
+*/
+service WorkflowPlatformAPI {
+  option (doordash.api.service) = {
+    name: "workflow-platform"
+    url: "workflow-platform-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["workflow-platform"]
+    api_key_name: "WORKFLOW_PLATFORM_UG_API_KEY"
+    owner: {
+      id: "workflow-platform-alerts"
+      name: "workflow-platform"
+      slack_channel: "#ask-workflow-platform-eng"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "Sub-client-service-name"}]
+  };
+
+  // These APIs are now all served out of workflow-platform
+  // returns the list of automated steps (system decision, consequence, copy values) that are available in the workflow platform
+  rpc GetDecisionLibrary(GetDecisionLibraryRequest) returns (DecisionLibrary);
+  rpc GetWorkflowData(GetWorkflowDataRequest) returns (WorkflowData) {
+    option (google.api.http) = {get: "/workflow-platform/v1/workflows"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_support_workflow_configurator",
+          "perm_support_workflow_configurator_view_only"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        p99_latency: 3
+      }
+    };
+  }
+  rpc GetWorkflowConfigData(GetWorkflowConfigDataRequest) returns (SupportWorkflow) {
+    option (google.api.http) = {get: "/workflow-platform/v1/workflows/{workflow_id}/config"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_support_workflow_configurator",
+          "perm_support_workflow_configurator_view_only",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        p99_latency: 10
+      }
+    };
+  }
+  rpc GetWorkflowChangeLog(GetWorkflowChangeLogRequest) returns (WorkflowChangeLog) {
+    option (google.api.http) = {get: "/workflow-platform/v1/workflows/{workflow_id}/changelogs"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_support_workflow_configurator",
+          "perm_support_workflow_configurator_view_only"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        p99_latency: 3
+      }
+    };
+  }
+
+  // DEPRECATED: DO NOT USE FOR NEW FEATURES, USE ExecuteContextBasedWorkflowV2 INSTEAD
+  rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse) {
+    // default is 10 seconds. This is a long timeout and should be adjusted. We just want to see
+    // if random cancellation grpc errors go away with this config.
+    // main contributions of long latency are the Stripe API calls.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+  }
+
+  // DEPRECATED: DO NOT USE, USE ExecuteContextBasedWorkflowV2 INSTEAD
+  rpc ExecuteContextBasedWorkflow(ExecuteContextBasedWorkflowRequest) returns (ExecuteContextBasedWorkflowResponse) {
+    // default is 10 seconds. This is a long timeout and should be adjusted. We just want to see
+    // if random cancellation grpc errors go away with this config.
+    // main contributions of long latency are the Stripe API calls.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+  }
+
+  // the new version of context based workflow execution, ExecuteContextBasedWorkflow would be deprecated in favor of this one
+  rpc ExecuteContextBasedWorkflowV2(ExecuteContextBasedWorkflowV2Request) returns (ExecuteContextBasedWorkflowV2Response) {
+    // default is 10 seconds. This is a long timeout and should be adjusted. We just want to see
+    // if random cancellation grpc errors go away with this config.
+    // main contributions of long latency are the Stripe API calls.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+    option (google.api.http) = {
+      post: "/workflow-platform/v1/workflows/execute-v2"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        DD_USER,
+        CLIENT_TOKEN
+      ]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_support_workflow_tool_access",
+          "perm_risk_workstation"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [
+        INTERNAL,
+        IVR
+      ]
+    };
+  }
+
+  rpc CreateOrUpdateWorkflowData(CreateOrUpdateWorkflowDataRequest) returns (CreateOrUpdateWorkflowDataResponse) {
+    option (google.api.http) = {
+      post: "/workflow-platform/v1/workflows/upsert"
+      body: "*"
+    };
+    // increasing the default timeout for the validateWorkflow APi
+    option (service_client.client_method_config).response_attempt_timeout_millis = 90000;
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_support_workflow_configurator"]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        p99_latency: 3
+      }
+    };
+  }
+  // clone an existing workflow to create a new one with exact same config data, this could be helpful on A/B testing of complex workflow (like OSI)
+  rpc CloneWorkflowConfigData(CloneWorkflowConfigDataRequest) returns (CloneWorkflowConfigDataResponse);
+  // validate a workflow
+  rpc ValidateWorkflowData(ValidateWorkflowDataRequest) returns (ValidateWorkflowDataResponse) {
+    option (google.api.http) = {
+      post: "/workflow-platform/v1/workflows/{workflow_id}/validate"
+      body: "*"
+    };
+    // increasing the default timeout for the validateWorkflow APi
+    option (service_client.client_method_config).response_attempt_timeout_millis = 90000;
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_support_workflow_configurator",
+          "perm_support_workflow_configurator_view_only"
+        ]
+      }
+      authentication_config: {enable_okta_verification: true}
+      target_products: [INTERNAL]
+      slo_config: {
+        critical_alerts_enabled: false
+        p99_latency: 60
+      }
+    };
+  }
+
+  // TODO: Remove once GetAutomationLogEntries is fully replaced by GetNodeExecutionEvents
+  rpc GetAutomationLogEntries(GetAutomationLogEntriesRequest) returns (AutomationLogEntriesResponse);
+
+  // create workflow comments
+  rpc CreateComment(CreateCommentRequest) returns (CreateCommentResponse);
+  // get workflow comments
+  rpc GetComments(GetCommentsRequest) returns (GetCommentsResponse);
+  // get workflow comments summary
+  rpc GetWorkflowCommentsSummary(GetWorkflowCommentsSummaryRequest) returns (GetCommentsSummaryResponse);
+  // update workflow comments
+  rpc UpdateComment(UpdateCommentRequest) returns (UpdateCommentResponse);
+  // delete workflow comments
+  rpc DeleteComment(DeleteCommentRequest) returns (DeleteCommentResponse);
+
+  // Get workflow initial contexts; clients can use this endpoint to check if they have the required contexts to initiate ExecuteContextBasedWorkflowV2 call.
+  rpc GetWorkflowInitialContexts(GetWorkflowInitialContextsRequest) returns (GetWorkflowInitialContextsResponse);
+}
+
+message GetWorkflowInitialContextsRequest {
+  // workflow id
+  int32 workflow_id = 1;
+}
+
+message GetWorkflowInitialContextsResponse {
+  // list of context names e.g. delivery_id, dasher_id, etc.
+  repeated google.protobuf.StringValue initial_contexts = 1;
+}
+
+message CustomInputFieldMetadata {
+  // Label provided when building the manual decision node in a workflow
+  string label = 1;
+  // display label to be used by the UI code to display the label on front end
+  string display_label = 2;
+  // Enum for the allowed data type. To be used to give a drop down selection in UI
+  CustomInputFieldDataType data_type = 3;
+  // if this field is a mandatory filed
+  bool is_required = 4;
+  // List of extra validation Rule that can be added
+  repeated ValidationRule validation_rules = 5;
+}
+
+message ValidationRule {
+  // Enum for type of validation currently allowed in the platform
+  ValidationType validation_type = 1;
+  // parameter on which the rule is to be applied on
+  string parameter = 3;
+}
+
+enum ValidationType {
+  // no validation
+  VALIDATION_UNKNOWN = 0;
+  // MIN numeric value validation
+  MIN_VALUE = 1;
+  // Max numeric value validation
+  MAX_VALUE = 2;
+  //max Length validation for Text
+  MAX_LENGTH = 3;
+  //max Length validation for Text
+  MIN_LENGTH = 4;
+}
+
+enum CustomInputFieldDataType {
+  // Added the _FIELD as we already have few enums that use STRING ,INT etc
+  // UNKNOWN_DATATYPE
+  DATATYPE_UNKNOWN = 0;
+  // Text Datatype
+  STRING_FIELD = 1;
+  // int Datatype
+  INTEGER_FIELD = 2;
+  // float datatype
+  FLOAT_FIELD = 3;
+  //Select Field Data type . To be used specifically for Dispatch UI to generate a drop down . data passed will still be string
+  SELECT_FIELD = 4;
+}
+
+message CreateOrUpdateWorkflowDataResponse {
+  int32 workflow_id = 1;
+}
+
+message GetWorkflowConfigDataRequest {
+  int32 workflow_id = 1;
+  // optional
+  string change_log_uuid = 2;
+  // optional
+  string version_number = 3;
+  //optional
+  string status = 4;
+}
+
+message CreateOrUpdateWorkflowDataRequest {
+  // Optional, id is created for you when creating a new workflow
+  int32 workflow_id = 1;
+  // Displayed in workflow config UI and to agents
+  string workflow_name = 2;
+  // CONSUMER, MERCHANT, or DASHER
+  string audience_type = 3;
+  // Displayed in the workflow config UI
+  string description = 4;
+  // optional
+  string status = 5;
+  // optional, used by UI to decide how to display
+  string ui_position_config = 6;
+  // Should have at least one node
+  repeated SupportWorkflowNode routing_config = 7;
+  // userId of the person who created this workflow
+  int64 created_by_id = 8;
+  // What type of user this is designed for
+  SupportWorkflowUserType user_type = 9;
+  // workflow names paired with its locale
+  repeated LocalWorkflowInfo local_workflow_info = 10;
+  // user name
+  string created_by_user = 11;
+  // description when updating a workflow
+  string change_log_description = 12;
+  // list of user_id for allowed users to test drafts
+  repeated string allow_list = 13;
+  // list of ContextType. We're making this as String because we'll move the enum to datastore soon.
+  repeated google.protobuf.StringValue initial_contexts = 14;
+  // if workflow is stale and should be hidden.
+  // Should only be used during update. While creation this will default to false
+  // Deprecated
+  bool is_hidden = 15 [deprecated = true];
+  // optional: current version of this workflow.
+  // If present, all test suites and their scenarios will be copied over to the updated version of this workflow.
+  string version_number = 16;
+  // if true the UI will use the new Flow library to render the information
+  bool is_new_flow_library_enabled = 17;
+}
+
+// workflow name, description with its locale
+message LocalWorkflowInfo {
+  string workflow_name = 1; // Never Delivered, Nunca entregado
+  string description = 2; // user input, along with name
+  string locale = 3; // en-US, es-US
+}
+
+message SupportWorkflow {
+  int32 id = 1;
+  string workflow_name = 2;
+  string audience_type = 3;
+  string description = 4;
+  string status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  string ui_position_config = 8;
+  repeated SupportWorkflowNode routing_config = 9;
+  int64 created_by_id = 10;
+  SupportWorkflowUserType user_type = 11;
+  repeated LocalWorkflowInfo local_workflow_info = 12;
+  repeated string allow_list = 13;
+
+  // list of ContextType. We're making this as String because we'll move the enum to datastore soon.
+  repeated google.protobuf.StringValue initial_contexts = 14;
+  // Deprecated.
+  bool is_hidden = 15 [deprecated = true];
+  string version_number = 16; // version of the workflow in format <major>.<minor> e.g. 1.0, 13.1, 15.7
+  // if true the UI will use the new Flow library to render the information
+  bool is_new_flow_library_enabled = 17;
+  // uuid counterpart of workflow_id
+  google.protobuf.StringValue workflow_uuid = 18;
+}
+
+enum NodeOutputLayout {
+  BUTTON = 0;
+  RADIO = 1;
+}
+
+// Deprecating soon. Please reach out to our team channel before adding an entry here.
+enum SupportWorkflowUserType {
+  AGENT = 0;
+  SELF_HELP = 1;
+  CHAT = 2;
+  IVR = 3;
+  CNR_POLICY = 4;
+  CNG_FULFILLMENT = 5;
+  DYNAMIC_MENUS = 6;
+  WORKFLOW_TEST_FRAMEWORK = 7; // for type of workflows to be used for test configurations,
+  FRAUD_WS = 8; // for type of workflows to be used for fraud workstation,
+  PROACTIVE_OUTREACH_SIGNALS = 9; // check [WFPLAT-168] for context
+  PICASSO = 10; // Picasso type workflows
+  DASHER_NUDGE = 11; // Used for Dasher Nudge workflows
+  CMP = 12; // Used for CMP workflows
+  SAFETY = 13; // Used for Safety workflows
+  REVIEW_QUEUE_AUTOMATED_ACTION = 14; // these workflows will be use solely for creating automated actions for FWS review queues
+  DRIVE = 15; // Drive use-cases
+}
+
+enum NodeStateSegmentEvent {
+  UNKNOWN = 0;
+  START = 1;
+  MIDDLE = 2; // indicates we're in the middle of the workflow
+  MIDDLE_BEFORE_WORKFLOW_JUMP = 3; // indicates that we're about to do a workflow jump
+  END = 4;
+}
+
+enum Platform {
+  UNKNOWN_PLATFORM = 0;
+  IOS = 1;
+  ANDROID = 2;
+  WEB = 3;
+}
+
+enum AudienceType {
+  UNKNOWN_AUDIENCE_TYPE = 0;
+  CONSUMER = 1;
+  DASHER = 2;
+  MERCHANT = 3;
+  SHOPPER = 4;
+}
+
+enum DeliveryState {
+  UNKNOWN_DELIVERY_STATE = 0;
+  DELIVERED = 1;
+  ABANDONED = 2;
+  CANCELLED = 3;
+  IN_PROGRESS = 4;
+}
+
+message Tag {
+  google.protobuf.StringValue value = 1;
+}
+
+message SupportWorkflowNode {
+  // UUID, required
+  string id = 1;
+  // manual_decision, system_decision, consequence, workflow_jump, cnr_policy, generic data node
+  string type = 2;
+  // displayName, used by UI in workflow configurer tool
+  string name = 3;
+  // Deprecated
+  string message_agent = 4;
+  // Deprecated
+  string message_consumer = 5;
+  // optional
+  repeated NodeOutput outputs = 6;
+  // optional, only used by a subset of consequence nodes
+  repeated NodeArgumentValue arguments = 7;
+  // optional, only used by workflow jump
+  google.protobuf.Int32Value next_workflow_id = 8;
+  // optional, only used by workflow jump
+  string next_workflow_node_id = 9;
+  // Title and text which are displayed in the UI. Contains one item per locale.
+  repeated ManualDecision user_locale_manual_decision_data = 10;
+  // optional, used to display more complicated components in the UI
+  repeated NodeDirective directives = 11;
+  // used to control how the UI is displayed
+  NodeOutputLayout layout = 12;
+  // optional, used to allow entering at a specific node by name (instead of id)
+  string external_id = 13;
+  // cnr policy details node
+  experience_reliability_service.cnr_policy.v1.CnRPolicy cnr_policy = 14;
+  //generic data
+  GenericData generic_data = 15;
+
+  reserved 16;
+
+  reserved 17;
+  reserved 18;
+  reserved 19;
+  reserved 20;
+  // optional, If true, node contains rich text.
+  bool is_rich_text_enabled = 21;
+  //List of custom input fields metadata
+  repeated CustomInputFieldMetadata custom_input_fields_metadata = 22;
+
+  // list of tag associated with the nodes
+  repeated Tag tags = 23;
+}
+
+//generic data node
+message GenericData {
+  //contents
+  google.protobuf.StringValue content = 1;
+}
+
+message ManualDecision {
+  // For example en_US
+  string locale = 1;
+
+  // Title which is displayed to the user. Only used by self-help
+  string title = 2;
+
+  // Text which is displayed to the user.
+  // To display a copy_value, use template strings like this: "Hello {consumer_name}"
+  string content = 3;
+
+  // JSON stringified Rich text editor state [Lexical.js]. Used on the client for View and Edit operations
+  string rich_text = 5;
+
+  // Stringified HTML, with inline styles for any client to consume
+  string html_string = 6;
+}
+
+message RichText {
+  string content = 1;
+}
+
+message NodeArgumentValue {
+  string name = 1;
+  string type = 2;
+  string value = 3;
+}
+
+message ExecuteWorkflowRequest {
+  int32 workflow_id = 1;
+  // Optional, uses the first node if it is not provided.
+  string node_id = 2;
+  // Required, id of the delivery
+  string delivery_id = 3;
+  // Used for logging
+  ExecuteWorkflowSessionData session_data = 4;
+  ExecuteWorkflowRequestMetadata metadata = 5;
+  google.protobuf.StringValue delivery_uuid = 6;
+  // Optional node id to execute. If specified, cannot specify node_id. Only applicable for CHAT types.
+  string node_external_id = 7;
+}
+
+message ExecuteContextBasedWorkflowRequest {
+  int32 workflow_id = 1;
+
+  // Optional, uses the first node if it is not provided.
+  string node_id = 2;
+
+  WorkflowContext workflow_context = 3;
+
+  // Used for logging
+  ExecuteWorkflowSessionData session_data = 4;
+  ExecuteWorkflowRequestMetadata metadata = 5;
+
+  // Optional node id to execute. If specified, cannot specify node_id. Only applicable for CHAT types.
+  string node_external_id = 6;
+}
+
+message ExecuteContextBasedWorkflowV2Request {
+  int32 workflow_id = 1; // TO BE DEPRECATED. Prepare to use workflow_uuid.
+
+  // Optional, uses the first node if it is not provided.
+  string node_id = 2;
+
+  repeated WorkflowContextV2 workflow_contexts = 3;
+
+  // Used for logging
+  ExecuteWorkflowSessionData session_data = 4;
+  ExecuteWorkflowRequestMetadata metadata = 5;
+
+  // Optional node id to execute. If specified, cannot specify node_id. Only applicable for CHAT types.
+  string node_external_id = 6;
+
+  // Optional. If present, it will execute specifically against this version_number.
+  // <major>.<minor> e.g. 1.0, 13.1, 15.7
+  string version_number = 7;
+  // Map of CustomInputFieldValue mapped to the label name
+  map<string, CustomInputFieldValue> custom_input_field_values = 8;
+
+  // uuid counterpart of workflow_id
+  google.protobuf.StringValue workflow_uuid = 9;
+
+  // optional: allow getting of nodes execution history. Currently only enabled when execution lands on a generic data node.
+  google.protobuf.BoolValue get_previous_node_executions = 10;
+}
+
+//This is the message that will be used to pass custom fields and their value across the platform
+message CustomInputFieldValue {
+  //Metadata about the  custom input fields
+  CustomInputFieldMetadata custom_input_field_metadata = 1;
+  //value of the  custom input fields
+  string custom_value = 2;
+}
+
+// This is a list of context_name for WorkflowContextV2, that are predefined and used by ERS team
+// any new context_name has to avoid naming conflict with the names listed here.
+enum ContextType {
+  CONTEXT_TYPE_UNKNOWN = 0;
+  ANY = 1;
+  DELIVERY_ID = 2;
+  DELIVERY_UUID = 3;
+  CONSUMER_ID = 4;
+  DASHER_ID = 5;
+  THQ_CASE_ID = 6; // The identifier for the THQ support case
+  TEST_CONFIG_UUID = 7 [deprecated = true]; // Do not use.
+  STORE_ID = 8; // merchant's store_id
+  ORDER_ID = 9;
+  ORDER_UUID = 10;
+  WORKFLOW_TEST_EXECUTION_RESULT_UUID = 11; // uuid of the test execution result; replaces TEST_CONFIG_UUID
+  CMP_CASE_ID = 12; // case id for CMP use case
+  CHAT_CHANNEL_ID = 13; // chat channel id for chat-platform use-cases
+  RECOMMENDATION_UUID = 14; // recommendation uuid for MOS use-cases
+  TASK_GROUP_UUID = 15; // task group uuid for task native use-cases
+}
+
+message WorkflowContextV2 {
+  string context_name = 1;
+  string context_value = 2;
+}
+
+message WorkflowContext {
+  // Context fields (only one is required for the specific workflow context)
+  oneof context {
+    google.protobuf.StringValue consumer_id = 1;
+    google.protobuf.StringValue dasher_id = 2;
+    google.protobuf.StringValue merchant_id = 3;
+    google.protobuf.StringValue applicant_id = 4;
+    google.protobuf.StringValue email_address = 5;
+  }
+}
+
+message ExecuteWorkflowRequestMetadata {
+  google.protobuf.StringValue selected_output_node_id = 1;
+  google.protobuf.StringValue json_payload = 2;
+}
+
+message ExecuteWorkflowSessionData {
+  string workflow_request_id = 1;
+  google.protobuf.Timestamp workflow_start_time = 2;
+  string manual_decision_id = 3;
+  string manual_decision_name = 4;
+  google.protobuf.Timestamp manual_decision_start_time = 5;
+  repeated WorkflowSessionResult workflow_session_result = 6;
+}
+
+message WorkflowSessionResult {
+  google.protobuf.StringValue key = 1;
+  google.protobuf.StringValue value = 2;
+}
+
+message ExecuteWorkflowResponse {
+  string node_id = 1;
+  string workflow_name = 2;
+  string message_agent = 3;
+  string message_consumer = 4;
+  repeated NodeOutput outputs = 5;
+  ExecuteWorkflowSessionData session_data = 6;
+  int32 workflow_id = 7;
+  string content = 8;
+  string title = 9;
+  repeated NodeDirective directives = 10;
+  NodeOutputLayout layout = 11;
+  experience_reliability_service.cnr_policy.v1.CnRPolicy cnr_policy = 12;
+  GenericData generic_data = 13;
+  string node_name = 14;
+  string node_type = 15;
+  string rich_text_content = 16;
+  bool is_rich_text_enabled = 17;
+}
+
+message ExecuteContextBasedWorkflowResponse {
+  string node_id = 1;
+  string workflow_name = 2;
+  string message_agent = 3;
+  string message_consumer = 4;
+  repeated NodeOutput outputs = 5;
+  ExecuteWorkflowSessionData session_data = 6;
+  int32 workflow_id = 7;
+  string content = 8;
+  string title = 9;
+  repeated NodeDirective directives = 10;
+  NodeOutputLayout layout = 11;
+}
+
+message ExecuteContextBasedWorkflowV2Response {
+  string node_id = 1;
+  string workflow_name = 2;
+  string message_agent = 3;
+  string message_consumer = 4;
+  repeated NodeOutput outputs = 5;
+  ExecuteWorkflowSessionData session_data = 6;
+  int32 workflow_id = 7;
+  string content = 8;
+  string title = 9;
+  repeated NodeDirective directives = 10;
+  NodeOutputLayout layout = 11;
+  repeated WorkflowContextV2 workflow_contexts = 12;
+  string node_name = 13;
+  string node_type = 14;
+  string rich_text_content = 15;
+  bool is_rich_text_enabled = 16;
+  experience_reliability_service.cnr_policy.v1.CnRPolicy cnr_policy = 17;
+  GenericData generic_data = 18;
+  string version_number = 19; // version of the workflow in format <major>.<minor> e.g. 1.0, 13.1, 15.7
+  //List of custom input fields metadata
+  repeated CustomInputFieldMetadata custom_input_fields_metadata = 20;
+  repeated Tag tags = 21;
+  google.protobuf.StringValue workflow_uuid = 22;
+  // log entries for previous automation executions
+  // populating this is gated by workflow-platform team and can be enabled per use-case.
+  repeated AutomationLogEntry previous_node_executions = 23;
+  string node_external_id = 24; // external id of the node, CHAT use-case only and should be used internally (no edge clients)
+}
+
+message NodeDirective {
+  string name = 1;
+}
+
+message NodeOutput {
+  string value = 1;
+  string next_node_id = 2;
+  string id = 3;
+  repeated UserLocaleValue user_locale_values = 4;
+  string subtitle = 5;
+
+  // the type of the next node (system_decision, consequence, manual_decision, etc.)
+  string next_node_type = 6;
+
+  // Used during workflow execution
+  NextNodeAdditionalInfo next_node_additional_info = 7; // additional information about the next node
+}
+
+message NextNodeAdditionalInfo {
+  // the name of the next node
+  google.protobuf.StringValue name = 1;
+  // will be populated if the next node is a GenericData node.
+  GenericData generic_data = 2;
+}
+
+message UserLocaleValue {
+  string locale = 1;
+  string content = 2;
+  string subtitle = 3;
+}
+
+message GetWorkflowDataRequest {
+  bool exclude_hidden = 1 [deprecated = true];
+  // optional, if present, will only return workflows mapped to these workflow_uuids
+  repeated google.protobuf.StringValue workflow_uuids = 2;
+}
+
+message WorkflowData {
+  repeated SupportWorkflow workflows = 1;
+}
+
+message GetDecisionLibraryRequest {}
+
+message DecisionLibrary {
+  repeated Consequence consequences = 1;
+  repeated Decision decisions = 2;
+  repeated CopyValue copy_values = 3;
+  repeated NodeLanguage languages = 4;
+  repeated Directive directives = 5;
+}
+
+message Directive {
+  string name = 1;
+  string display_name = 2;
+  // First user type the directive is associated with. For backwards compatibility.
+  SupportWorkflowUserType user_type = 3;
+  // List of user types that the directive is applicable for.
+  repeated SupportWorkflowUserType user_types = 4;
+}
+
+message NodeLanguage {
+  string name = 1;
+  string display_name = 2;
+}
+
+// Automation object. Only one node at a time can be set.
+message Automation {
+  // the node for this automation.
+  oneof node {
+    experience_reliability_service.workflow_platform_api.Consequence consequence = 1;
+    experience_reliability_service.workflow_platform_api.Decision decision = 2; // system decisions
+    experience_reliability_service.workflow_platform_api.CopyValue copy_value = 3;
+  }
+}
+
+message Consequence {
+  string name = 1;
+  string display_name = 2;
+  message Argument {
+    string name = 1;
+    string display_name = 2;
+    string type = 3;
+    repeated ArgumentValue values = 4;
+    message ArgumentValue {
+      string name = 1;
+      string display_name = 2;
+    }
+  }
+  repeated Argument arguments = 3;
+  bool is_deprecated = 4;
+  string description = 5;
+
+  string namespace = 6; // This will be used to identify which service to call when executing the automation.
+  // Also will be used to help identify automations that have similar library_name across services
+  repeated google.protobuf.StringValue tags = 7; // any string that can be used as a filter
+  // this will be useful if we want to group
+  // automations for specific tags like
+  // (never_delivered, cancellation, etc.)
+
+  repeated google.protobuf.StringValue input_contexts = 8; // required contexts for this automation.
+  repeated google.protobuf.StringValue output_contexts = 9; // possible output contexts
+
+  // optional.
+  repeated Automation node_dependencies = 10; // Used in validation to ensure node_dependencies appear in the path before this node.
+
+  // optional
+  bool has_own_validation = 11; // Set this to true if we need to hit ValidateAutomation endpoint for this node.
+  // This field is needed so we don't unnecessarily hit ValidateAutomation on each node.
+}
+
+message Decision {
+  string name = 1;
+  string display_name = 2;
+  message DecisionOutput {
+    string name = 1;
+    string display_name = 2;
+  }
+  repeated DecisionOutput outputs = 3;
+  message Argument {
+    string name = 1;
+    string display_name = 2;
+    string type = 3;
+    repeated ArgumentValue values = 4;
+    message ArgumentValue {
+      string name = 1;
+      string display_name = 2;
+    }
+  }
+  repeated Argument arguments = 4;
+  bool is_deprecated = 5;
+  string description = 6;
+
+  string namespace = 7; // This will be used to identify which service to call when executing the automation.
+  // Also will be used to help identify automations that have similar library_name across services
+  repeated google.protobuf.StringValue tags = 8; // any string that can be used as a filter
+  // this will be useful if we want to group
+  // automations for specific tags like
+  // (never_delivered, cancellation, etc.)
+
+  repeated google.protobuf.StringValue input_contexts = 9; // required contexts for this automation.
+  repeated google.protobuf.StringValue output_contexts = 10; // possible output contexts
+
+  // Used in validation to ensure node_dependencies appear in the path before this node.
+  repeated Automation node_dependencies = 11; // optional.
+
+  // optional
+  bool has_own_validation = 12; // Set this to true if we need to hit ValidateAutomation endpoint for this node.
+  // This field is needed so we don't unnecessarily hit ValidateAutomation on each node.
+}
+
+message CopyValue {
+  string name = 1;
+  string display_name = 2;
+  bool is_deprecated = 3;
+  string description = 4;
+
+  string namespace = 7; // This will be used to identify which service to call when executing the automation.
+  // Also will be used to help identify automations that have similar library_name across services
+  repeated google.protobuf.StringValue tags = 8; // any string that can be used as a filter
+  // this will be useful if we want to group
+  // automations for specific tags like
+  // (never_delivered, cancellation, etc.)
+
+  repeated google.protobuf.StringValue input_contexts = 9; // required contexts for this automation.
+
+  // Used in validation to ensure node_dependencies appear in the path before this node.
+  repeated Automation node_dependencies = 10; // optional.
+
+  // optional
+  bool has_own_validation = 11; // Set this to true if we need to hit ValidateAutomation endpoint for this node.
+  // This field is needed so we don't unnecessarily hit ValidateAutomation on each node.
+  message Argument {
+    string name = 1;
+    string display_name = 2;
+    string type = 3;
+    repeated ArgumentValue values = 4;
+    message ArgumentValue {
+      string name = 1;
+      string display_name = 2;
+    }
+  }
+  repeated Argument arguments = 12;
+}
+
+enum WorkflowStepExecutionMetadataType {
+  // place holder of any unknown type of Metadata
+  EXECUTION_STEP_UNKNOWN_METADATA = 0;
+  // metadata related to custom Input Fields key and value
+  // during an execution step
+  EXECUTION_STEP_CUSTOM_INPUT_FIELD_METADATA = 1;
+  // metadata related to context data
+  // during an execution step
+  EXECUTION_STEP_CONTEXT_METADATA = 2;
+  // metadata related to type of error thrown by an automation
+  // and first line of the stack trace during execution step
+  EXECUTION_STEP_AUTOMATION_ERROR_METADATA = 3;
+  // metadata related to Arguments passed to an automation
+  // and their configured values during execution step
+  EXECUTION_STEP_AUTOMATION_ARGUMENTS_METADATA = 4;
+  // metadata related to Output values  generated after execution of an automation
+  EXECUTION_STEP_AUTOMATION_OUTPUT_METADATA = 5;
+  // metadata related to any type of error encountered by anything other than an automation
+  EXECUTION_STEP_GENERAL_ERROR_METADATA = 6;
+  // metadata related to any type of copy value encountered during a manual node processing
+  EXECUTION_STEP_COPY_VALUE_METADATA = 7;
+  // any kind of additional metadata information that a automation wants us to persist
+  EXECUTION_STEP_AUTOMATION_ADDITIONAL_METADATA = 8;
+}
+
+message WorkflowStepExecutionMetadata {
+  // enum to classify the type of metadata
+  WorkflowStepExecutionMetadataType workflow_step_execution_metadata_type = 1;
+  // metadata key
+  google.protobuf.StringValue key = 2;
+  // metadata value
+  google.protobuf.StringValue value = 3;
+}
+
+// will use existing SEGMENT_EVENTS.SERVER_EVENTS_PRODUCTION.SUPPORT_WORKFLOW_STEP
+message SupportWorkflowSegmentEvent {
+  string workflow_name = 1;
+  int64 delivery_id = 2;
+  string event = 3; // not used
+  string real_timestamp = 4;
+  string user_id = 5;
+  string current_decision_name = 6;
+  string request_id = 7;
+  int32 workflow_id = 8;
+  string workflow_step_type = 9;
+  string source = 10; // hard-coded as "ERS" in ERS when sending the event.
+
+  // this will be the next node id of the system decision.
+  string current_decision_output = 11; // only being populated if the current node is a system decision;
+
+  repeated NodeArgumentValue arguments = 12;
+  string error_message = 13; // error message if an error occurred and if e.message is available, else it's empty.
+  string policy_name = 14; // policy_name from the current's node argumentList
+  string next_node_id = 15; // next node id if available, otherwise empty
+  bool is_error = 16; // this is set to true if an error occurred while executing the current node.
+  NodeStateSegmentEvent node_state = 17; // provides the current state of the node
+  SupportWorkflowUserType user_type = 18;
+  AudienceType audience_type = 19;
+  Platform platform = 20;
+  DeliveryState delivery_state = 21;
+  repeated NodeDirective directives = 22;
+  string platform_version = 23;
+  repeated WorkflowContextV2 contexts = 24;
+  // workflow version for which the segment was created
+  string workflow_version = 25;
+  // current node id for which the segment was created
+  string node_id = 26;
+  //list of all workflow step metadata encountered
+  repeated WorkflowStepExecutionMetadata workflow_step_execution_metadata = 27;
+  // list of tags associated with the steps
+  repeated Tag tags = 28;
+  // workflow_uuid
+  string workflow_uuid = 29;
+  // this is the tenant_id under which the workflow is being executed
+  google.protobuf.StringValue tenant_id = 30;
+}
+
+message CloneWorkflowConfigDataRequest {
+  int32 workflow_id = 1;
+  // userId of the person who cloned this workflow
+  int64 created_by_id = 2;
+  // user name
+  string created_by_user = 3;
+}
+
+message CloneWorkflowConfigDataResponse {
+  int32 workflow_id = 1;
+}
+
+message CxPickupReportPriceMismatchSegmentEvent {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // delivery id
+  google.protobuf.StringValue delivery_id = 2;
+  // consumer explanation of price difference
+  google.protobuf.StringValue consumer_explanation = 3;
+  // item id
+  google.protobuf.StringValue item_id = 4;
+  // price of item listed on DoorDash for pickup
+  google.protobuf.Int32Value item_original_price = 5;
+  // price of item in the store
+  google.protobuf.Int32Value item_instore_price = 6;
+  // when event was created
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message CxFeedbackWorkflowSegmentEvent {
+  // delivery id
+  google.protobuf.StringValue delivery_id = 1;
+  // free form text field
+  google.protobuf.StringValue text_field = 2;
+  // workflow id
+  google.protobuf.StringValue workflow_id = 3;
+  // generic placeholder for additional id
+  google.protobuf.StringValue reference_id = 4;
+  // when event was created
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message GetWorkflowChangeLogRequest {
+  // required, workflow id
+  int32 workflow_id = 1;
+}
+
+message WorkflowChangeEntry {
+  enum WorkflowStatus {
+    // Draft, revertible
+    DRAFT = 0;
+    // Archived, previous archived version, revertible
+    ARCHIVED = 1;
+    // Published, current live version
+    PUBLISHED = 2;
+    // Archived draft, previous unpublished drafts, not revertible
+    ARCHIVED_DRAFT = 3;
+    // Deprecated, not revertible
+    DEPRECATED = 4;
+    // Currently latest draft
+    LATEST_DRAFT = 5;
+    // Deleted, revertible
+    DELETED = 6;
+  }
+
+  string change_log_uuid = 1;
+  int32 workflow_id = 2;
+  string version_number = 3;
+  WorkflowStatus workflow_status = 4;
+  string description = 5;
+  int64 created_by_id = 6;
+  string created_by_name = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message WorkflowChangeLog {
+  repeated WorkflowChangeEntry change_log = 1;
+}
+
+message ValidateWorkflowDataRequest {
+  // Optional, id is created for you when creating a new workflow
+  int32 workflow_id = 1;
+  // Displayed in workflow config UI and to agents
+  string workflow_name = 2;
+  // CONSUMER, MERCHANT, or DASHER
+  string audience_type = 3;
+  // Displayed in the workflow config UI
+  string description = 4;
+  // optional
+  string status = 5;
+  // optional, used by UI to decide how to display
+  string ui_position_config = 6;
+  // Should have at least one node
+  repeated SupportWorkflowNode routing_config = 7;
+  // userId of the person who created this workflow
+  int64 created_by_id = 8;
+  // What type of user this is designed for
+  SupportWorkflowUserType user_type = 9;
+  // workflow names paired with its locale
+  repeated LocalWorkflowInfo local_workflow_info = 10;
+  // user name
+  string created_by_user = 11;
+
+  // list of ContextType. We're making this as String because we'll move the enum to datastore soon.
+  repeated google.protobuf.StringValue initial_contexts = 12;
+
+  // the current version of this workflow.
+  string version_number = 13;
+}
+
+message WorkflowValidationMessage {
+  enum ValidationResultType {
+    //validation error
+    ERROR = 0;
+    // validation warning
+    WARNING = 1;
+  }
+
+  ValidationResultType type = 1;
+  // error or warning message text
+  string text = 2;
+  // workflow node id
+  string node_id = 3;
+  // manual_decision, system_decision, consequence, workflow_jump
+  string node_type = 4;
+  // workflow node name. This will be used by UI to display error/warning messages
+  string node_name = 5;
+  // workflow_id where the node belongs. Can be a default value when validate endpoint is hit without saving the new workflow first.
+  int32 workflow_id = 6;
+  // workflow_version
+  string version_number = 7;
+  // workflow_uuid
+  string workflow_uuid = 8;
+}
+
+message ValidateWorkflowDataResponse {
+  bool is_valid = 1;
+  repeated WorkflowValidationMessage validation_messages = 2;
+}
+
+// TODO: Remove once GetAutomationLogEntries is fully replaced by GetNodeExecutionEvents
+message GetAutomationLogEntriesRequest {
+  AutomationLogEntryContext context = 1;
+}
+
+// TODO: Remove once GetAutomationLogEntries is fully replaced by GetNodeExecutionEvents
+message AutomationLogEntryContext {
+  // combination of context and id
+  oneof context_id {
+    google.protobuf.StringValue delivery_uuid = 1;
+    google.protobuf.StringValue consumer_id = 2;
+  }
+}
+
+// TODO: Remove once GetAutomationLogEntries is fully replaced by GetNodeExecutionEvents
+message AutomationLogEntriesResponse {
+  repeated AutomationLogEntry entries = 1;
+}
+
+// TODO: Remove once GetAutomationLogEntries is fully replaced by GetNodeExecutionEvents
+message AutomationLogEntry {
+  AutomationLogEntryContext context = 1;
+  google.protobuf.Int64Value workflow_id = 2;
+  // generated when we executeWorkflow the first time
+  google.protobuf.StringValue request_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.StringValue node_uuid = 5;
+  google.protobuf.StringValue node_library_name = 6;
+  google.protobuf.StringValue node_display_name = 7;
+  // system_decision, consequence, copy_value, etc.
+  google.protobuf.StringValue node_type = 8;
+
+  // holds the actual result or an error_message. This will be empty for a workflow jump node
+  NodeLibraryExecutionResult node_library_execution_result = 9;
+
+  google.protobuf.StringValue workflow_name = 10;
+  google.protobuf.Int64Value source_workflow_id = 11;
+  google.protobuf.StringValue source_workflow_name = 12;
+
+  // arguments of the node
+  repeated NodeArgumentValue node_arguments = 13;
+}
+
+message NodeLibraryExecutionResult {
+  google.protobuf.StringValue result = 1;
+  // denotes whether result was an error
+  bool is_error_message = 3;
+}
+
+enum ComponentType {
+  COMPONENT_TYPE_UNKNOWN = 0;
+  NODE = 1;
+  EDGE = 2;
+}
+
+message WorkflowComment {
+  // id of the created comment
+  google.protobuf.StringValue comment_id = 1;
+  // id of the component comment is attached to
+  google.protobuf.StringValue component_id = 2;
+  // type of component (node, edge)
+  ComponentType component_type = 3;
+  // id of the workflow comment is in
+  google.protobuf.Int32Value workflow_id = 4;
+  // id of the user who commented
+  google.protobuf.StringValue user_id = 5;
+  // name of the user who commented
+  google.protobuf.StringValue user_name = 6;
+  // email of the user who commented
+  google.protobuf.StringValue user_email = 7;
+  // comment text
+  google.protobuf.StringValue text = 8;
+  // time comment was created
+  google.protobuf.Timestamp created_at = 9;
+  // time comment was updated
+  google.protobuf.Timestamp updated_at = 10;
+  // boolean represented whether comment is resolved
+  google.protobuf.BoolValue is_resolved = 11;
+}
+
+message CreateCommentRequest {
+  google.protobuf.StringValue component_id = 1;
+  ComponentType component_type = 2;
+  google.protobuf.Int32Value workflow_id = 3;
+  google.protobuf.StringValue text = 4;
+  google.protobuf.BoolValue is_resolved = 5;
+}
+
+message CreateCommentResponse {
+  WorkflowComment comment = 1;
+}
+
+message GetCommentsRequest {
+  google.protobuf.StringValue component_id = 1;
+  google.protobuf.Int32Value workflow_id = 2;
+}
+
+message GetCommentsResponse {
+  repeated WorkflowComment comments = 1;
+}
+
+message ComponentSummary {
+  google.protobuf.StringValue component_id = 1;
+  google.protobuf.BoolValue is_resolved = 5;
+}
+
+message GetWorkflowCommentsSummaryRequest {
+  google.protobuf.Int32Value workflow_id = 1;
+}
+
+message GetCommentsSummaryResponse {
+  // list of distinct component_ids within a workflow
+  repeated ComponentSummary component_summaries = 1;
+}
+
+message UpdateCommentRequest {
+  // id of the updated comment
+  google.protobuf.StringValue comment_id = 1;
+  // id of the component comment is attached to
+  google.protobuf.StringValue component_id = 2;
+  // id of the workflow comment is in
+  google.protobuf.Int32Value workflow_id = 3;
+  // updated comment text
+  google.protobuf.StringValue text = 4;
+}
+
+message UpdateCommentResponse {
+  WorkflowComment comment = 1;
+}
+
+message DeleteCommentRequest {
+  // id of the deleted comment
+  google.protobuf.StringValue comment_id = 1;
+  // id of the component comment is attached to
+  google.protobuf.StringValue component_id = 2;
+  // id of the workflow comment is in
+  google.protobuf.Int32Value workflow_id = 3;
+}
+
+message DeleteCommentResponse {}

@@ -1,0 +1,276 @@
+syntax = "proto3";
+package smart_scale.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "smart_scale/common.proto";
+import "smart_scale/smart_scale.proto";
+
+option java_generic_services = true;
+option java_outer_classname = "Orders";
+option java_package = "com.doordash.rpc.smart_scale";
+
+// Service for managing smart scale orders
+service SmartScaleOrderService {
+  option (doordash.api.service) = {
+    name: "smart-scale-service-orders-grpc"
+    url: "smart-scale-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "smart-scale-service",
+      "smart-scale"
+    ]
+    api_key_name: "SMART_SCALE_SERVICE_API_KEY"
+    owner: {
+      name: "smart-scale-orders"
+      id: "smart-scale-team"
+      slack_channel: "#ask-smart-scale"
+      email_alias: "smart-scale-sw-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+  // Get order details for Drive and MP orders, include item object details for MP orders
+  rpc GetOrderDetail(GetOrderDetailRequest) returns (GetOrderDetailResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/smart-scale-service/v1/get_order_detail"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+
+  // Update order details for non-marketplace orders
+  rpc UpdateMerchantProvidedOrderDetail(UpdateMerchantProvidedOrderDetailRequest) returns (UpdateMerchantProvidedOrderDetailResponse) {
+    option (google.api.http) = {
+      post: "/smart-scale/v1/order-detail"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        MX_USER,
+        CLIENT_TOKEN
+      ]
+      target_products: [MX]
+    };
+  }
+}
+
+// Request to update order details
+message UpdateMerchantProvidedOrderDetailRequest {
+  // The channel where this order is placed. If not provided, it will default to drive order.
+  OrderChannel channel = 1 [(doordash.api.client.optional) = true];
+  // A unique identifier for this order.
+  string order_id = 2;
+  // Order items
+  repeated Item order_items = 3;
+
+  // Order channel enum
+  enum OrderChannel {
+    // Unspecified order channel
+    ORDER_CHANNEL_UNSPECIFIED = 0;
+    // Drive order channel
+    ORDER_CHANNEL_DRIVE = 1;
+  }
+
+  // Order item
+  message Item {
+    // Item name
+    string name = 1;
+    // Item quantity
+    int32 quantity = 2;
+    // Item external ID
+    google.protobuf.StringValue external_id = 3;
+    // Sub-level items associated with the parent, such as side options and modifiers.
+    repeated Item sub_items = 4;
+  }
+}
+
+// Response to update order details
+message UpdateMerchantProvidedOrderDetailResponse {
+  // Empty response
+}
+
+// Request to get order details, includes object details for Martketplace orders
+message GetOrderDetailRequest {
+  // Unique ID (string) of the delivery
+  string delivery_uuid = 1;
+  // Unique ID (int64) of the store
+  int64 store_id = 2;
+  // Channel type of the order
+  Channel channel = 3;
+}
+
+// Response to get order details, includes object details for Marketplace orders
+message GetOrderDetailResponse {
+  // Delivery_uuid of the order
+  string delivery_uuid = 1;
+  // Order detail payload
+  SmartScaleOrderDetailPayload order_detail_payload = 2;
+}
+
+// Smart scale order detail payload
+message SmartScaleOrderDetailPayload {
+  // Order details
+  SmartScaleOrderDetail order_detail = 1;
+  // Dasher info
+  DasherInfo dasher_info = 2;
+  // Robot info
+  RobotProviderDetails robot_provider_details = 3 [(doordash.api.client.optional) = true];
+}
+
+// Smart scale order details
+message SmartScaleOrderDetail {
+  // Unique ID (string) of the order
+  string delivery_uuid = 1;
+  // Display ID. For Drive orders this is set to an external order reference if present
+  string display_id_text = 2;
+  // Unique ID (int64) of the store
+  int64 store_id = 3;
+  // Customer name localized
+  string customer_name_localized = 4;
+  // Order Channel (Drive, MP, or 3P)
+  Channel channel = 5;
+  // Order type
+  OrderType order_type = 6;
+  // Fulfillment type
+  OrderFulfillmentType fulfillment_type = 7;
+  // Estimated pickup time
+  google.protobuf.Timestamp estimated_pickup_time = 8;
+  // Order item count. Uses item_object_count if available, otherwise falls back to item_count from core DD services
+  int32 item_count = 9;
+  // Item details for Marketplace orders, should be unset for Drive orders
+  ItemDetails item_details = 10;
+  // Placeholder content if the order does not have item details
+  PlaceholderContent placeholder_content = 11;
+  // Order management URL for POS plugin
+  google.protobuf.StringValue live_order_management_url = 12;
+  // Gift info, contains recipient and sender data. If order isn't a gift order, this will be null
+  GiftInfo gift_info = 13;
+}
+
+// Placeholder content for when information is not available
+message PlaceholderContent {
+  // Localized placeholder text
+  google.protobuf.StringValue localized_placeholder_text = 1;
+}
+
+// Type/Stage of the order
+enum OrderType {
+  // Unspecified order state
+  ORDER_TYPE_UNSPECIFIED = 0;
+  // Order needs action
+  ORDER_TYPE_NEED_ACTION = 1;
+  // Order is in kitchen
+  ORDER_TYPE_IN_KITCHEN = 2;
+  // Order is ready for pickup
+  ORDER_TYPE_READY = 3;
+  // Order is completed
+  ORDER_TYPE_COMPLETED = 4;
+}
+
+// Dasher info
+message DasherInfo {
+  // Unique ID (string) of the dasher
+  string dasher_id = 1;
+  // Timestamp of dasher arrival at the store
+  google.protobuf.Timestamp dasher_at_store_time = 2;
+  // Dasher ETA in seconds
+  google.protobuf.Int32Value dasher_eta_seconds = 3;
+}
+
+// Contains fields for item details and item object details, only available for Marketplace orders
+message ItemDetails {
+  // Items retrieved from merchant-order-service
+  repeated OrderDetailItem order_detail_items = 1;
+  // Object details
+  repeated ItemObjectDetail item_object_details = 2;
+}
+
+// Order detail item from merchant-order-service
+message OrderDetailItem {
+  // Unique ID (string) of the item
+  string item_id = 1;
+  // Item name
+  string item_name = 2;
+  // Item quantity
+  int32 item_quantity = 3;
+  // Menu item details
+  MenuItem menu_item = 4;
+  // Extras associated with the item
+  repeated ItemExtra item_extras = 5;
+}
+
+// Menu item information
+message MenuItem {
+  // Unique ID (string) of the menu item
+  string menu_item_id = 1;
+  // Category title
+  google.protobuf.StringValue category_title = 2;
+  // Internal SKU of the menu item
+  google.protobuf.StringValue store_internal_sku = 3;
+  // Merchant supplied ID for the item
+  google.protobuf.StringValue menu_item_msi = 4;
+}
+
+// Item extra info from DD core order service
+message ItemExtra {
+  // ID (string) of the extra
+  string extra_id = 1;
+  // Title of the extra
+  string extra_title = 2;
+  // Merchant supplied ID for the extra
+  google.protobuf.StringValue extra_msi = 3;
+  // Extra options
+  repeated ItemOption extra_options = 4;
+}
+
+// Option info from merchant-order-service
+message ItemOption {
+  // Option ID
+  string option_id = 1;
+  // Option name
+  string option_name = 2;
+  // Quantity of the option
+  int32 option_quantity = 3;
+  // Merchant supplied ID for the option
+  google.protobuf.StringValue option_msi = 4;
+  // Nested extras
+  repeated NestedItemExtra nested_item_extras = 5;
+}
+
+// Nested extra info from DD core order service
+message NestedItemExtra {
+  // ID of nested extra
+  string nested_extra_id = 1;
+  // Nested extra title
+  string nested_extra_title = 2;
+  // Merchant supplied ID for the nested extra
+  google.protobuf.StringValue nested_extra_msi = 3;
+  // Nested options
+  repeated NestedItemOption nested_item_options = 4;
+}
+
+// Nested option info from DD core order service
+message NestedItemOption {
+  // Nested option ID
+  string nested_option_id = 1;
+  // Nested option name
+  string nested_option_name = 2;
+  // Merchant supplied ID for the nested option
+  google.protobuf.StringValue nested_option_msi = 3;
+  // Nested option quantity
+  int32 nested_option_quantity = 4;
+}

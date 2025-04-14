@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package doordash.banking_service.mosaic;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.banking_service.mosaic";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Application
+service Application {
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+
+  option (doordash.api.service) = {
+    port: 50051
+    name: "crimson-application"
+    url: "dasher-financial-api.service.prod.ddsd"
+    name_spaces: [
+      "crimson-application",
+      "crimson"
+    ]
+    owner: {
+      id: "payments-payout-service"
+      name: "payments-payout-service"
+      slack_channel: "#ask-eng-payout"
+      email_alias: "dx-financials-eng@doordash.com"
+    }
+    target_products: [DX]
+  };
+
+  // application flow for crimson application
+  rpc GetFlow(GetFlowRequest) returns (GetFlowResponse) {
+    option (google.api.http) = {get: "/crimson/v1/get_application_flow/{page_type}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+        availability_objective: 99.0
+        ddrn: "ddrn::group::1798"
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+
+  // USPS mailing address validation bottom sheet
+  rpc CreateMailingAddressBottomSheet(CreateMailingAddressBottomSheetRequest) returns (CreateMailingAddressBottomSheetResponse) {
+    option (google.api.http) = {
+      post: "/crimson/v1/submit_mailing_address_for_validation"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+        availability_objective: 99.0
+        ddrn: "ddrn::group::1798"
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+// request for application flow
+message GetFlowRequest {
+  // The dasher id of the request - this will be injected by unified gateway
+  google.protobuf.StringValue dasher_id = 1 [(doordash.api.inject_id) = DX_ID];
+  // page_type so we know starting at which page to send
+  google.protobuf.StringValue page_type = 2;
+  // platform of DX
+  google.protobuf.StringValue platform = 3 [(doordash.api.inject_from_headers) = {
+    field: "platform",
+    injection_rule: {
+      cast_type: "nullable_string",
+      conversions: [
+        DECODE_BASE64,
+        JSON
+      ]
+    }
+  }];
+}
+
+// response for application flow
+message GetFlowResponse {
+  // map that maps page_type to LegoPageResponse
+  map<string, lego.response.v1.LegoPageResponse> application_pages = 1;
+}
+
+// request for mailing address bottom sheet
+message CreateMailingAddressBottomSheetRequest {
+  // The dasher id of the request - this will be injected by unified gateway
+  google.protobuf.StringValue dasher_id = 1 [(doordash.api.inject_id) = DX_ID];
+  // address lines
+  reserved 2, 3, 9;
+  // address line keywords
+  reserved "address_line_1", "address_line_2", "country";
+  // city
+  google.protobuf.StringValue city = 4;
+  // state
+  google.protobuf.StringValue state = 5;
+  // zip_code
+  google.protobuf.StringValue zip_code = 6;
+  // address_line1
+  google.protobuf.StringValue address_line1 = 7;
+  // address_line2
+  google.protobuf.StringValue address_line2 = 8;
+  // country_code
+  google.protobuf.StringValue country_code = 10;
+  // from screen
+  google.protobuf.StringValue from_screen = 11;
+}
+
+// response for mailing address bottom sheet
+message CreateMailingAddressBottomSheetResponse {
+  // mailing bottom sheet
+  reserved 1;
+  // mailing bottom sheet
+  reserved "mailing_bottom_sheet";
+  // returns map of pages for mailing address validation
+  map<string, lego.response.v1.LegoPageResponse> application_pages = 2;
+}

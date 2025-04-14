@@ -1,0 +1,373 @@
+syntax = "proto3";
+
+package risk_platform.cnr_photo_validation.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "google/api/annotations.proto";
+import 'google/protobuf/timestamp.proto';
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.risk_platform";
+
+// Service for validating and tagging CNR photos using sibyl models
+service CnrPhotoProofService {
+  option (doordash.api.service) = {
+    name: "risk-gateway-web"
+    url: "risk-gateway-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["risk"]
+    owner: {
+      name: "risk-c-r-fraud"
+      id: "risk-c-r-fraud"
+      slack_channel: "#ask-cx-fraud"
+      email_alias: "fraud-cx-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Validates CNR photos and returns pass/fail/error for each photo
+  rpc ValidateCnrPhotos(ValidateCnrPhotosRequest) returns (ValidateCnrPhotosResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/cnr_photo_proof/validate"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 8000;
+  }
+
+  // Queries for CNR photo details and links for a given entity ID
+  rpc GetCnrPhotoProof(GetCnrPhotoProofRequest) returns (GetCnrPhotoProofResponse) {
+    option (google.api.http) = {get: "/risk/v1/cnr_photo_proof"};
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // TODO -- API in development, do not call
+  // Queries for CNR photo details and links for a given list of entity IDs
+  rpc GetCnrPhotoProofBatch(GetCnrPhotoProofBatchRequest) returns (GetCnrPhotoProofBatchResponse);
+}
+
+// Request to validate CNR photos
+message ValidateCnrPhotosRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // request type (e.g. wrong order delivered, missing and incorrect, poor food quality)
+  google.protobuf.StringValue request_type = 3;
+  // photo purpose (e.g. receipt photo, order photo)
+  PhotoPurpose photo_purpose = 4;
+  // validation use case (e.g. wrong order delivered receipt photo, photo upload quality tagging)
+  PhotoValidationUseCase validation_use_case = 5;
+  // list of photos to validate
+  repeated ValidationPhoto photos = 6;
+}
+
+// Response for validating CNR photos
+message ValidateCnrPhotosResponse {
+  // list of photo validation results
+  repeated PhotoValidationResult photo_validation_results = 1;
+}
+
+// Single photo to validate
+message ValidationPhoto {
+  // photo bytes
+  bytes photo_bytes = 1;
+  // item id
+  google.protobuf.Int64Value item_id = 2;
+  // sub problem type
+  google.protobuf.StringValue sub_problem_type = 3;
+}
+
+// Single photo validation result
+message PhotoValidationResult {
+  // sibyl predictor name
+  google.protobuf.StringValue predictor_name = 1;
+  // validation result
+  PhotoValidationResultStatus status = 2;
+}
+
+// Entity type (the key for mapping entity id, see GetCnrPhotoProofRequest for usage)
+enum CnrPhotoEntityType {
+  // Unspecified entity type
+  CNR_PHOTO_ENTITY_TYPE_UNSPECIFIED = 0;
+  // Delivery id entity type
+  CNR_PHOTO_ENTITY_TYPE_DELIVERY_ID = 1;
+  // Consumer entity type
+  CNR_PHOTO_ENTITY_TYPE_CONSUMER_ID = 2;
+  // Delivery UUID entity type
+  CNR_PHOTO_ENTITY_TYPE_DELIVERY_UUID = 3;
+  // Case ID entity type
+  CNR_PHOTO_ENTITY_TYPE_CASE_ID = 4;
+}
+
+// Query level (the key results to get photos for, see GetCnrPhotoProofRequest for usage)
+enum CnrPhotoQueryLevel {
+  // Unspecified entity level
+  CNR_PHOTO_QUERY_LEVEL_UNSPECIFIED = 0;
+  // Delivery level entity
+  CNR_PHOTO_QUERY_LEVEL_DELIVERY = 1;
+  // Consumer level entity
+  CNR_PHOTO_QUERY_LEVEL_CONSUMER = 2;
+}
+
+// GetCnrPhotoProofRequest
+// Example usage:
+//    To get all historical photos for a consumer tied to a given delivery ID
+//    Pass in CNR_PHOTO_QUERY_LEVEL_CONSUMER and CNR_PHOTO_ENTITY_TYPE_DELIVERY_ID
+// Another Example usage:
+//    To get all photos for a delivery tied to a given case ID
+//    Pass in CNR_PHOTO_QUERY_LEVEL_DELIVERY and CNR_PHOTO_ENTITY_TYPE_CASE_ID
+message GetCnrPhotoProofRequest {
+  // Entity type
+  CnrPhotoEntityType entity_type = 12;
+  // Entity id
+  google.protobuf.StringValue entity_id = 13;
+  // Query level
+  CnrPhotoQueryLevel query_level = 14;
+  // Problem type - Optional
+  google.protobuf.StringValue problem_type = 3;
+  // Sub problem type - Optional
+  google.protobuf.StringValue sub_problem_type = 4;
+  // Photo purpose - Optional
+  PhotoPurpose photo_purpose = 5;
+  // Photo source - Optional
+  PhotoSource photo_source = 6;
+  // Start timestamp to retrieve records - Optional (default L60d)
+  google.protobuf.Timestamp from = 7 [
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+  // End timestamp to retrieve records - Optional (default now)
+  google.protobuf.Timestamp to = 8 [
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+  // Upper limit on number of photo details to return (default 10)
+  google.protobuf.Int32Value limit = 9;
+
+  // DEPRECATED FIELDS - DO NOT USE
+  // Consumer id to query
+  google.protobuf.StringValue consumer_id = 1 [deprecated = true];
+  // List of delivery uuids - optional
+  repeated google.protobuf.StringValue delivery_uuids = 2 [
+    deprecated = true,
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+  // List of delivery ids - optional
+  repeated google.protobuf.StringValue delivery_ids = 10 [
+    deprecated = true,
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+  // Case id - optional, if case ids are provided, we will add in the associated delivery ids from the cases
+  repeated google.protobuf.StringValue case_ids = 11 [
+    deprecated = true,
+    (doordash.api.client.nullable) = true,
+    (doordash.api.client.optional) = true
+  ];
+}
+
+// GetCnrPhotoProofResponse
+message GetCnrPhotoProofResponse {
+  // result
+  oneof result {
+    // list of details + links list
+    CnrPhotoProofDetailsWithLinksList cnr_photo_proof_details_with_links_list = 1;
+    // error if any occurred
+    CnrPhotoProofError error = 2;
+  }
+}
+
+// Request to get CNR photo details and links
+// The request will merge the list of delivery uuids and delivery ids to query on
+// If consumer id is not provided, the combination of delivery uuids and delivery ids must not be empty
+message GetCnrPhotoProofBatchRequest {
+  // Entity type
+  CnrPhotoEntityType entity_type = 1;
+  // Entity id
+  google.protobuf.StringValue entity_ids = 2;
+  // Problem type - optional
+  google.protobuf.StringValue problem_type = 3;
+  // Sub problem type - optional
+  google.protobuf.StringValue sub_problem_type = 4;
+  // Photo purpose - optional
+  PhotoPurpose photo_purpose = 5;
+  // Photo source - optional
+  PhotoSource photo_source = 6;
+  // Start timestamp to retrieve records - optional (default 60 days ago)
+  google.protobuf.Timestamp from = 7;
+  // End timestamp to retrieve records - optional (default now)
+  google.protobuf.Timestamp to = 8;
+  // Upper limit on number of photo details to return - optional (default 10)
+  google.protobuf.Int32Value limit = 9;
+}
+
+// Response for getting CNR photo details and links
+message GetCnrPhotoProofBatchResponse {
+  // result list
+  repeated GetCnrPhotoProofResponse results = 1;
+}
+
+// List of details with links. Required because protobuf cannot support repeated field directly in a oneOf block
+message CnrPhotoProofDetailsWithLinksList {
+  // List of cnr photo proof details with links
+  repeated CnrPhotoProofDetailsWithLinks cnr_photo_proof_details_with_links = 1;
+}
+
+// CNR photo proof details object
+message CnrPhotoProofDetails {
+  // delivery id
+  google.protobuf.StringValue delivery_id = 1;
+  // user id
+  google.protobuf.StringValue user_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // problem type
+  google.protobuf.StringValue problem_type = 4;
+  // sub problem type
+  google.protobuf.StringValue sub_problem_type = 5;
+  // item id
+  google.protobuf.Int64Value item_id = 6;
+  // photo purpose
+  PhotoPurpose photo_purpose = 7;
+  // description
+  google.protobuf.StringValue description = 8;
+  // photo source
+  PhotoSource photo_source = 9;
+  // created at
+  google.protobuf.Timestamp created_at = 10;
+  // updated at
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// CNR photo link object
+message CnrPhotoLink {
+  // photo url
+  google.protobuf.StringValue photo_url = 1;
+  // photo uuid
+  google.protobuf.StringValue photo_uuid = 2;
+  // file name with extension
+  google.protobuf.StringValue file_name_with_extension = 3;
+  // explicit content detection status
+  ExplicitContentDetectionStatus explicit_content_detection_status = 4;
+  // is photo expired (there is TTL on photo S3 storage)
+  bool expired = 5;
+}
+
+// CNR photo proof details with links
+message CnrPhotoProofDetailsWithLinks {
+  // cnr photo proof details
+  CnrPhotoProofDetails cnr_photo_proof_details = 1;
+  // list of photo links
+  repeated CnrPhotoLink cnr_photo_links = 2;
+}
+
+// Error details object for cnr photo proof
+message CnrPhotoProofError {
+  // error code
+  CnrPhotoProofErrorCode error_code = 1;
+  // error message
+  string error_message = 2;
+}
+
+// Error codes for cnr photo proof
+enum CnrPhotoProofErrorCode {
+  // Unspecified error
+  CNR_PHOTO_PROOF_ERROR_CODE_UNSPECIFIED = 0;
+  // Invalid parameter
+  CNR_PHOTO_PROOF_ERROR_CODE_INVALID_PARAMETER = 1;
+}
+
+// Photo purpose - What the photo is depicting
+enum PhotoPurpose {
+  // PHOTO_PURPOSE_UNSPECIFIED - Unspecified photo purpose
+  PHOTO_PURPOSE_UNSPECIFIED = 0;
+  // PHOTO_PURPOSE_RECEIPT_PHOTO - photo is of receipt
+  PHOTO_PURPOSE_RECEIPT_PHOTO = 1;
+  // PHOTO_PURPOSE_ORDER_ITEM_PHOTO - photo is of order
+  PHOTO_PURPOSE_ORDER_PHOTO = 2;
+  // PHOTO_PURPOSE_RETURN_RECEIPT_PHOTO - photo is of return receipt
+  PHOTO_PURPOSE_RETURN_RECEIPT_PHOTO = 3;
+}
+
+// Photo purpose - Where the photo came from
+enum PhotoProofSource {
+  // PHOTO_PROOF_SOURCE_UNSPECIFIED - Unspecified photo proof source
+  PHOTO_PROOF_SOURCE_UNSPECIFIED = 0;
+  // PHOTO_PROOF_SOURCE_SELF_HELP - photo is from self help flow
+  PHOTO_PROOF_SOURCE_SELF_HELP = 1;
+  // PHOTO_PROOF_SOURCE_CHAT_BOT - photo is from chat bot (deprecated)
+  PHOTO_PROOF_SOURCE_CHAT_BOT = 2;
+  // PHOTO_PROOF_SOURCE_SELF_HELP_APPEAL - photo is from self help appeal flow
+  PHOTO_PROOF_SOURCE_SELF_HELP_APPEAL = 3;
+  // PHOTO_PROOF_SOURCE_CHAT - photo is from chat
+  PHOTO_PROOF_SOURCE_CHAT = 4;
+}
+
+// Photo source (was photo captured from chat, self help, etc.)
+enum PhotoSource {
+  // unspecified
+  PHOTO_SOURCE_UNSPECIFIED = 0;
+  // self help
+  PHOTO_SOURCE_SELF_HELP = 1;
+  // chat photos
+  PHOTO_SOURCE_CHAT = 2;
+}
+
+// photo validation use case
+enum PhotoValidationUseCase {
+  // unspecified
+  PHOTO_VALIDATION_USE_CASE_UNSPECIFIED = 0;
+  // photo feedback loop for WOD receipt photo - "Received someone else's order"
+  PHOTO_VALIDATION_USE_CASE_WOD_RECEIPT_PHOTO_FEEDBACK = 1;
+  // photo upload quality tagging
+  PHOTO_VALIDATION_USE_CASE_PHOTO_UPLOAD_QUALITY_TAGGING = 2;
+  // photo feedback loop for MNI food/item photo - "Missing and incorrect item"
+  PHOTO_VALIDATION_USE_CASE_MNI_PHOTO_FEEDBACK = 3;
+  // photo feedback loop for PFQ food/item photo - "Item quality issues"
+  PHOTO_VALIDATION_USE_CASE_PFQ_PHOTO_FEEDBACK = 4;
+}
+
+// photo validation result status from sibyl
+enum PhotoValidationResultStatus {
+  // unspecified
+  PHOTO_VALIDATION_RESULT_STATUS_UNSPECIFIED = 0;
+  // pass
+  PHOTO_VALIDATION_RESULT_STATUS_PASS = 1;
+  // fail
+  PHOTO_VALIDATION_RESULT_STATUS_FAIL = 2;
+  // error
+  PHOTO_VALIDATION_RESULT_STATUS_ERROR = 3;
+}
+
+// explicit content detection status
+enum ExplicitContentDetectionStatus {
+  // unspecified
+  EXPLICIT_CONTENT_DETECTION_STATUS_UNSPECIFIED = 0;
+  // in progress
+  EXPLICIT_CONTENT_DETECTION_STATUS_IN_PROGRESS = 1;
+  // explicit content not detected
+  EXPLICIT_CONTENT_DETECTION_STATUS_EXPLICIT_CONTENT_NOT_DETECTED = 2;
+  // explicit content detected
+  EXPLICIT_CONTENT_DETECTION_STATUS_EXPLICIT_CONTENT_DETECTED = 3;
+  // failed
+  EXPLICIT_CONTENT_DETECTION_STATUS_FAILED = 4;
+}

@@ -1,0 +1,325 @@
+syntax = "proto3";
+
+package robot.v1;
+
+import "autonomous_partner_api/doordash_endpoints_common.proto";
+import "google/protobuf/timestamp.proto";
+import "robot/common.proto";
+import "robot/map_feature.proto";
+import "robot/mission.proto";
+import "robot/robot.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.robot.v1";
+
+// The directive results updates the next directive in the robot checkin
+// response Next Id: 5
+message DirectiveResults {
+  // Directive result to signal completion/failure of an active directive
+  enum TerminationResult {
+    // Unspecified
+    TERMINATION_RESULT_UNSPECIFIED = 0;
+    // Signals that a directive has been completed
+    TERMINATION_RESULT_COMPLETED = 1;
+    // Signals that a directive has failed
+    TERMINATION_RESULT_FAILED = 2;
+  }
+  // Signals how the mission was completed
+  enum CompletionMethod {
+    // Unspecified
+    COMPLETION_METHOD_UNSPECIFIED = 0;
+    // The mission is completed via a direct pickup by the Cx
+    COMPLETION_METHOD_CX_DIRECT = 1;
+    // The mission is to be completed with the help of an LO
+    COMPLETION_METHOD_INTERNAL_HANDOFF = 2;
+  }
+  // Directive result to signal completion/failure of an active directive
+  enum FailureAction {
+    // Unspecified
+    FAILURE_ACTION_UNSPECIFIED = 0;
+    // Signals that there's no action to be taken. E.g No food has been loaded.
+    FAILURE_ACTION_NO_ACTION = 1;
+    // Signals that the order is to be disposed
+    FAILURE_ACTION_DISPOSE = 2;
+    // Signals that the order will be dropped off by an employee
+    FAILURE_ACTION_INTERNAL_HANDOFF = 3;
+  }
+
+  // Includes additional info on how mission was completed or failed
+  message TerminationMetadata {
+    // One of reasons for mission termination
+    oneof termination_metadata_one_of {
+      // How the mission was completed
+      CompletionMethod completion_method = 1;
+      // Further action that needs to be taken on the mission's order
+      FailureAction failure_action = 2;
+    }
+
+    // If failure_action is set, this field will contain the reason for the
+    // failure. This is used for operators to thread the failure reason from RAC
+    // to ADP to surface the reason for the failure.
+    autonomous_partner_api.doordash_endpoints_common.DeliveryFailure delivery_failure = 3;
+  }
+
+  // Result of the mission directive
+  message MissionResult {
+    reserved 4, 3, 5;
+    reserved "failure_reason", "completion_method", "failure_action";
+    // Terminate the mission directive
+    TerminationResult termination_result = 1;
+    // Mission directive id
+    string id = 2;
+    // Mission termination reason
+    TerminationMetadata termination_reason = 6;
+  }
+
+  // Result of the hatch directive
+  message HatchResult {
+    // Terminate the hatch directive
+    TerminationResult termination_result = 1;
+  }
+  // Result of the route directive
+  message RouteResult {
+    // Terminate the route directive
+    TerminationResult termination_result = 1;
+  }
+
+  // Result of the mission directive
+  MissionResult mission_result = 1 [deprecated = true];
+  // Results of the mission directives (1 active, 0 or more pending)
+  repeated MissionResult mission_results = 4;
+  // Result of the hatch directive
+  HatchResult hatch_result = 2;
+  // Result of the route directive
+  RouteResult route_result = 3;
+}
+
+// The MissionDirective defines how a mission should be executed on the robot
+// Next ID: 16
+message MissionDirective {
+  // reserved - previously deprecated
+  reserved 2 to 5;
+  reserved "pickup_lat", "pickup_lon", "dropoff_lat", "dropoff_lon";
+
+  // State overrides are used when the server wants to signal a state changes
+  // that originates from other sources that is not the robot (e.g. cancellation
+  // from ADP) This state will take priority over the local robot state
+  enum MissionStateOverride {
+    // Unspecified
+    MISSION_STATE_OVERRIDE_UNSPECIFIED = 0;
+    // Fails robot mission state
+    MISSION_STATE_OVERRIDE_FAILED = 1;
+  }
+
+  // Enum describing the status of the mission directive.
+  enum MissionDirectiveStatus {
+    // Unspecified
+    MISSION_DIRECTIVE_STATUS_UNSPECIFIED = 0;
+    // This mission directive is for the Robot's current mission.
+    MISSION_DIRECTIVE_STATUS_ACTIVE = 1;
+    // This mission directive is for a pending(e.g queued) Robot's mission.
+    MISSION_DIRECTIVE_STATUS_PENDING = 2;
+  }
+
+  // State override
+  MissionStateOverride state_override = 6;
+  // Mission directive id
+  string id = 7;
+  // Pickup location
+  Location pickup_location = 8;
+  // Dropoff location
+  Location dropoff_location = 9;
+  // Id of the merchant. This is empty when we're creating an FC-initiated
+  // mission.
+  string merchant_id = 10;
+  // The type of mission this is. Used as a metrics filter.
+  MissionType mission_type = 11;
+  // The current mission_state of the robot known by LFS.
+  // This is used by the Robot during recovery(e.g stack restart) to identify
+  // what its previous mission state was before it went down.
+  MissionState observed_mission_state = 12;
+  // Name of the merchant delivery originates from
+  string merchant_name = 14;
+  // The status of the mission directive. E.g Active or Pending
+  MissionDirectiveStatus status = 15;
+  // Name of the customer for this mission
+  string customer_name = 16;
+}
+
+// HatchDirective defines the desired hatch state
+message HatchDirective {
+  // Hatch State
+  enum HatchState {
+    // Hatch is unspecified
+    HATCH_STATE_UNSPECIFIED = 0;
+    // Open the hatch
+    HATCH_STATE_OPEN = 1;
+    // Close the hatch
+    HATCH_STATE_CLOSE = 2;
+  }
+  // Desired state of the hatch
+  HatchState state = 1;
+}
+
+// Mission state request contains the next desired mission state
+message MissionStateRequest {
+  // The state to transition to; only supports transition to READY and NOT_READY
+  MissionState to_state = 1;
+  // When the state change was requested
+  google.protobuf.Timestamp requested_at = 2;
+}
+
+// During robot checkin requests, the inclusion of this message defines what map
+// features the robot has already cached and helps the backend decide if the
+// robot needs to download additional map features.
+//
+// - When the robot's cache status is empty, the backend will respond with the
+// snapshot refs and map features that
+//   is currently needed by the robot using the MapFeatureCacheUpdate - see more
+//   info in MapFeatureCacheUpdate
+// - When the robot's cache status specifies tile statuses (e.g. TS1), then it
+// allows the backend to only return map features
+//   that have since been updated/created after the TS1 updated_at time. When
+//   there have been no further updates, the MapFeatureCacheUpdate will be empty
+//
+// Note that the tiles that are relevant to the robot at any given time is
+// computed in the backend.
+message MapFeatureCacheStatus {
+  // Sync status of a particular tile
+  message TileStatus {
+    // Unique tile identifier; uses s2 cell ids
+    string tile_id = 1;
+    // Last updated map feature in this tile
+    google.protobuf.Timestamp updated_at = 2;
+  }
+
+  // Defines all the snapshot ids that is already downloaded on the robot
+  // Allows the backend to skip returning s3 references for cached snapshots
+  repeated string cached_snapshot_ids = 1;
+  // The status of the sync for any tiles that the robot has cached
+  repeated TileStatus tile_status = 2;
+}
+
+// Response to the last MapFeatureCacheStatus - see more info in
+// MapFeatureCacheStatus Contains the data and references to all the map
+// features that the robot needs to obtain for use in its routing
+//
+// MapFeatureCacheUpdates are expected to be ~1KB during initial checkin;
+// containing around 2-4 MapFeatureSnapshotRefs and a few recently updated map
+// features (since the snapshot). Subsequent updates are expected to be mostly
+// empty after initial checkin considering the rate of new map features being
+// created/updated can be < 1 per minute
+message MapFeatureCacheUpdate {
+  // Defines the snapshots that the robot needs to download given the last
+  // MapFeatureCacheStatus checkin
+  repeated MapFeatureSnapshotRef map_feature_snapshot_refs = 1;
+  // Defines any additional map features that is newly created, deleted or
+  // updated since the last snapshot
+  repeated MapFeature map_features = 2;
+}
+
+// RobotCheckinRequestPayload updates the robot state
+message RobotCheckinRequestPayload {
+  reserved 1;
+  reserved "metadata";
+
+  // [DEPRECATED] Use location_status field
+  double latitude = 2 [deprecated = true];
+  // [DEPRECATED] Use location_status field
+  double longitude = 3 [deprecated = true];
+  // [DEPRECATED] Use help_request_status field
+  bool needs_assistance = 4 [deprecated = true];
+  // The mission that the robot is on
+  string mission_id = 5;
+  // The robot code's git sha
+  string git_sha = 6;
+  // The name of the robot code's git branch
+  string git_branch = 7;
+  // The run id of the robot (generated by launch_robot Jenkins job)
+  int32 run_id = 8;
+  // [DEPRECATED] Use vehicle_state.battery_pct field
+  int32 battery_pct = 9 [deprecated = true];
+  // Metadata for the RobotCheckin request
+  RequestMetadata meta = 10;
+  // Updates to vehicle state
+  VehicleState vehicle_state = 11;
+  // Updates whether the robot requires help
+  HelpRequestStatus help_request_status = 12;
+  // Updates to robot diagnostics
+  DiagnosticsSummaries diagnostics_summaries = 13;
+  // Updates to location
+  LocationStatus location_status = 14;
+  // The source public ip address of robot requests.
+  uint32 robot_ip = 15;
+  // The current mission state of the Robot.
+  // This is translated by LFS and sent to ADP as delivery states.
+  MissionState mission_state = 16;
+  // The directive result may update the next directive
+  DirectiveResults directive_results = 17;
+  // Operating site id
+  string operating_site_id = 18;
+  // Name of the map used by the robot
+  string hd_map_name = 19;
+  // Version of the map used by the robot
+  string hd_map_version = 20;
+  // The mode of the robot (e.g real vs simulated)
+  RobotMode robot_mode = 21;
+  // Information about the route the robot is on.
+  RouteStatus route_status = 22;
+  // Operation area assigned to the robot. When unset, LFS will
+  // resolve an operation area for this robot
+  OperationArea operation_area = 23;
+  // Version of ra protocol supported by the robot, checked by client, for
+  // detail see:
+  // https://docs.google.com/document/d/1ptRcuqkOrqjjeruURgLfMqaG_gMdwihVMaVrGUxBD3o
+  string ra_protocol_version = 24;
+  // Whether the robot is in nolo mode
+  bool is_nolo = 25;
+  // Manifest of what map features the robot has cached
+  MapFeatureCacheStatus map_feature_cache_status = 26;
+  // Settings set on the Robot
+  OnRobotSettings on_robot_settings = 28;
+}
+
+// OperatingSite includes info about the robot operating site
+message OperatingSite {
+  // Latitude coordinates for the idling location
+  double idle_lat = 1;
+  // Longitude coordinates for the idling location
+  double idle_lon = 2;
+}
+
+// RobotCheckinResponsePayload response to a robot checkin
+// Next Id: 12
+message RobotCheckinResponsePayload {
+  // List of connection interfaces for the Robot to connect to.
+  // - only returns when request contains `needs_connection_interfaces`
+  repeated ConnectionInterface interfaces = 1;
+  // Canonical ID of the operator the Robot is connected to. (E.g ocu-1)
+  // Note that this is only populated when the ConnectionState for the Robot is
+  // ACTIVE
+  string operator_canonical_id = 2;
+  // The desired remote-assist connection state of the robot.
+  // This is used to determine whether a robot needs to establish a
+  // connection to an operator
+  ConnectionState connection_state = 3;
+  // Directive to execute a mission
+  MissionDirective mission_directive = 4 [deprecated = true];
+  // Directives to execute a mission (1 active, 0 or many pending)
+  repeated MissionDirective mission_directives = 10;
+  // Directive to execute a hatch action
+  HatchDirective hatch_directive = 5;
+  // Operating site information
+  OperatingSite operating_site = 6;
+  // Directive to route to a destination point
+  RouteDirective route_directive = 7;
+  // The canonical ID of the robot that made the request
+  string robot_canonical_id = 8;
+  // The assigned operation area to the robot
+  OperationArea operation_area = 9;
+  // Mission state request is the next desired mission state
+  MissionStateRequest mission_state_request = 11;
+  // Defines what map features the robot needs to download/load to its router
+  MapFeatureCacheUpdate map_feature_cache_update = 12;
+}

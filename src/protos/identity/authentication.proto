@@ -1,0 +1,894 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/service_client_config.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "identity/api_key_model.proto";
+import "identity/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+/*
+ * Request payload for get and verify token info.
+ *
+ * Token itself is part of Request header/metadata.
+ */
+message TokenInfoRequest {
+  // Usually a token is issued to a client against a service.
+  // This is the service ID for which API Key/Token was verified.
+  int64 service_id = 1 [jstype = JS_STRING];
+}
+
+/*
+ * Response payload that contains Token information.
+ */
+message TokenInfoResponse {
+  // Usually a token is issued to a client against a service.
+  // Service ID for which API Key/Token was issued.
+  int64 service_id = 1 [jstype = JS_STRING];
+
+  // Client ID for issued token
+  int64 client_id = 2 [jstype = JS_STRING];
+
+  // Client name for issued token
+  google.protobuf.StringValue client_name = 3;
+
+  // Service name for issued token
+  google.protobuf.StringValue service_name = 4;
+
+  //Scopes assoiated with issued token
+  repeated string scope = 5;
+
+  //Timestamp of the create time of issued token
+  google.protobuf.Timestamp created_at = 6;
+
+  //Timestamp of the expire time of issued token
+  google.protobuf.Timestamp expires_at = 7;
+
+  // Token ID for issued token
+  int64 id = 8;
+
+  // new version of scope
+  message Scope {
+    int64 service_id = 1;
+    int64 client_id = 2;
+    string permission = 3;
+  }
+  repeated Scope scopeV2 = 9;
+
+  message Tenant {
+    string tenant_id = 1;
+  }
+  repeated Tenant tenant = 10;
+}
+
+/*
+ * Request payload for generating MFA code.
+ *
+ * Identity Service can uniquely identify a MFA code with ID and action.
+ * API Key is also required in order to prevent any misuse and it should be part of headers/metadata.
+ */
+message GenerateMFACodeRequest {
+  // User ID for which token is being issued.
+  // **Note** that this ID is not linked any ID within Identity Service.
+  // It's meant to be used for distinct representation of entity within MFA codes.
+  int64 id = 1;
+
+  // Name of action for which code is being generated.
+  string action = 2;
+}
+
+/*
+ * Response payload carrying generated MFA code.
+ *
+ * Identity Service can uniquely identify a MFA code with ID and action.
+ */
+message GenerateMFACodeResponse {
+  // User ID for generated code.
+  // **Note** that this ID is not linked any ID within Identity Service.
+  // It's meant to be used for distinct representation of entity within MFA codes.
+  int64 id = 1;
+
+  // Action for generated code.
+  string action = 2;
+
+  // MFA Code itself, this will be `null` in case of any errors.
+  google.protobuf.StringValue code = 3;
+
+  // In case of banning/too-many attempts, error reason will contain the error reason.
+  // The field remains `null` otherwise.
+  // For all intents and purposes use HTTP status code for identifying error type, and `error_reason`
+  // for detailed logging on what happened. We **highly recommend** preparing your own payload for clients.
+  // This string might be null in case HTTP verb or status code is enough to describe any errors.
+  google.protobuf.StringValue error_reason = 4;
+}
+
+/*
+ * Request payload to verify MFA code.
+ * Identity Service can uniquely identify a MFA code with ID and action.
+ * API Key with "WRITE" scope is required and it should be part of headers/metadata.
+ */
+message VerifyMFACodeRequest {
+  // User ID for which code is being verified (previously generated code).
+  // **Note** that this ID is not linked any ID within Identity Service.
+  // It's meant to be used for distinct representation of entity within MFA codes.
+  int64 id = 1;
+
+  // Action for which code is being verified (previously generated)
+  string action = 2;
+
+  // MFA code itself.
+  string code = 3;
+}
+
+/*
+ * Response payload for verify MFA code.
+ *
+ * Identity Service can uniquely identify a MFA code with ID and action.
+ */
+message VerifyMFACodeResponse {
+  // User ID for which code is being verified (previously generated code).
+  // **Note** that this ID is not linked any ID within Identity Service.
+  // It's meant to be used for distinct representation of entity within MFA codes.
+  int64 id = 1;
+
+  // Action for which code is being verified (previously generated).
+  string action = 2;
+
+  // In case of banning/too-many attempts, error reason will contain the error reason.
+  // The field remains `null` otherwise.
+  // For all intents and purposes use HTTP status code for identifying error type, and `error_reason`
+  // for detailed logging on what happened. We **highly recommend** preparing your own payload for clients.
+  // This string might be null in case HTTP verb or status code is enough to describe any errors.
+  google.protobuf.StringValue error_reason = 3;
+}
+
+/*
+ * Payload containing user credentials.
+ */
+message EmailPasswordCredentials {
+  // Email address of the user account.
+  string email = 1;
+
+  // Password of the user account.
+  string password = 2;
+}
+
+/*
+ * Payload containing CodeExchange credentials
+ */
+message CodeExchangeCredentials {
+  // Pre-generated code that can be exchanged for a User token.
+  // Requires Service permissions
+  string code = 1;
+}
+
+/*
+ * Payload containing phone verification (using OTP) credentials
+ */
+message PhoneVerificationCredentials {
+  // Phone number of the user
+  string phone_number = 1;
+
+  // OTP that user enters based on SMS
+  string code = 2;
+}
+
+/*
+ * Auth-Token that is issued against a user or client or device.
+ */
+message AuthToken {
+  // Token itself, **should be treated as opaque payload**.
+  // It should be used in subsequent requests to identified a preauthorized user.
+  // Token has a limited TTL on expiry the token won't work anymore and must be refreshed.
+  string token = 1;
+
+  // Refresh token, **should be treated as opaque payload**.
+  // Use this token to refresh and get a new AuthToken.
+  string refresh_token = 2;
+
+  // Token type, services should pay attention to this field if they are manipulating token at their own.
+  string type = 3;
+
+  // Version of token.
+  string version = 4;
+
+  // Expires in.
+  int64 expires_in = 5;
+}
+
+/*
+ * Request payload to authenticate a user for given roles and device.
+ *
+ * API Key with "WRITE" scope is required and it should be part of headers/metadata.
+ * Right now we only support only one factor (email/password credentials),
+ * in future this will support multiple factors.
+ */
+message AuthenticateUserRequest {
+  // Unique device ID for which user is being authenticated.
+  // Passing this as empty string will issue a token without any refresh token.
+  // This in necessary because it prevents issuing duplicate device Authentication.
+  string device_id = 1;
+  // Credentials authentication factor
+  EmailPasswordCredentials credentials = 2;
+  CodeExchangeCredentials code = 3;
+  PhoneVerificationCredentials phone_otp = 4;
+}
+
+/*
+ * Request payload for bypass login.
+ */
+message BypassLoginRequest {
+  string login_form_data_nonce = 1;
+  string user_info_nonce = 2;
+  string device_id = 3;
+}
+
+/*
+ * Response payload for bypass login.
+ */
+message BypassLoginResponse {
+  string exchange_code = 1;
+}
+
+/*
+ * Response payload for authenticate call.
+ */
+message AuthenticateUserResponse {
+  // AuthToken, would be `null` in case of any errors
+  AuthToken token = 1;
+
+  // Any errors that might have occured during processing.
+  // For all intents and purposes use HTTP status code for identifying error type, and `error_reason`
+  // for detailed logging on what happened. We **highly recommend** preparing your own payload for clients.
+  // This string might be null in case HTTP verb or status code is enough to describe any errors.
+  google.protobuf.StringValue error_reason = 2;
+  UserInfo user_info = 3;
+
+  // Optional payload, the social user that is linked to this user
+  // this is populated if user is logged in via social oauth
+  SocialUserInfo social_user_info = 4;
+}
+
+/*
+ * Request payload for refreshing AuthToken
+ *
+ * API Key with "WRITE" scope is required and it should be part of headers/metadata.
+ */
+message RefreshTokenRequest {
+  // Previous authentication token.
+  string auth_token = 1;
+
+  // Device ID for which token is being issued.
+  string device_id = 2;
+
+  // Refresh token that was received as part of AuthToken.
+  string refresh_token = 3;
+}
+
+/*
+ * Request payload for token verification
+ */
+message VerifyTokenRequest {
+  // Token that needs to be verified.
+  string token = 1;
+  // The type of token that needs to be verified.
+  TokenType type = 2;
+  // optional clientId. Authorization header is used, if this is absent
+  oneof optional_client_id {
+    int64 client_id = 3;
+  }
+  // The source of the token
+  Requirement requirement = 4;
+}
+
+/*
+ * Request payload to create a lagacy api key
+ */
+message CreateLegacyAPIKeyRequest {
+  // User's unique identifier.
+  int64 user_id = 1;
+  // Boolean whether this key is a test key
+  bool is_test_key = 2;
+}
+
+/*
+ * Response payload for create legacy api key
+ */
+message CreateLegacyAPIKeyResponse {
+  // User's unique identifier.
+  int64 user_id = 1;
+  // Token string
+  string key = 2;
+  // Boolean whether this key is a test key
+  bool is_test_key = 3;
+}
+
+/*
+ * Response payload that contains User information and roles
+ */
+message UserInfo {
+  // User's unique identifier.
+  string id = 1;
+
+  // User's email.
+  string email = 2;
+
+  string first_name = 3;
+
+  string last_name = 4;
+
+  google.protobuf.StringValue phone_number = 5;
+
+  bool is_active = 6;
+
+  // Collection of User's roles.
+  repeated UserRole roles = 7;
+
+  UserLocalePreference user_locale_preference = 8;
+
+  // User auth version, which increases on password change.
+  google.protobuf.Int32Value auth_version = 9;
+
+  google.protobuf.StringValue tenant_id = 10;
+
+  google.protobuf.Timestamp created_at = 11;
+
+  bool is_staff = 12;
+}
+
+message SocialUserInfo {
+  // ID of the social user (external id)
+  string id = 1;
+
+  string first_name = 2;
+
+  string last_name = 3;
+
+  google.protobuf.StringValue email = 4;
+
+  google.protobuf.StringValue phone_number = 5;
+
+  // Auth token given by OAuth provider
+  AuthToken token = 6;
+}
+
+/*
+ * User roles. Can be extended with more information (eg. scope) as we go
+ */
+message UserRole {
+  // Unique name of the role
+  string name = 1;
+}
+
+/*
+ * Request payload for Disable Legacy API Token
+ */
+message DisableTokenRequest {
+  // Token that needs to be disabled.
+  string token = 1;
+  // The type of token that needs to be disabled.
+  TokenType type = 2;
+}
+
+/*
+ * Response Payload for Disable Legacy API Token
+ */
+message DisableTokenResponse {}
+
+/*
+ * Request payload for Enable Legacy API Token
+ */
+message EnableTokenRequest {
+  // Token that needs to be enabled.
+  string token = 1;
+  // The type of token that needs to be enabled.
+  TokenType type = 2;
+}
+
+/*
+ * Response Payload for Enable Legacy API Token
+ */
+message EnableTokenResponse {}
+
+/*
+ * Request for InternalGetUserToken
+ */
+message GetUserTokenByUserIdAndEmailRequest {
+  // User id
+  string id = 1;
+  // User Email
+  string email = 2;
+  // Redirect url for email verification triggered when needed.
+  string redirect_url = 3;
+}
+
+message ConfirmMFAChallengeRequest {
+  // exchange code
+  google.protobuf.StringValue code = 1;
+}
+
+message ConfirmMFAChallengeResponse {
+  // Mfa info : userId and action
+  MFAInfo info = 1;
+}
+
+/*
+ * Request for FindByToken
+ */
+message FindByTokenRequest {
+  // Token that needs to be looked for
+  string api_key_token = 1;
+}
+
+/*
+ * Response Payload for FindByToken
+ */
+message FindByTokenResponse {
+  APIKey api_key_model = 1;
+}
+
+/*
+   User details for creating a token
+*/
+message UserPayload {
+  // user id
+  int64 id = 1;
+  // user email
+  string email = 2;
+  // user is employee/staff
+  oneof optional_is_staff {
+    bool is_staff = 4;
+  }
+  // user auth version
+  oneof optional_payload_auth_version {
+    int32 payloadAuthVersion = 5;
+  }
+  reserved 3;
+  reserved "authVersion";
+}
+
+message GenerateTokenRequest {
+  // user payload
+  UserPayload user_payload = 1;
+  // jwt token expiration
+  int64 jwt_token_delta = 2;
+  // user device id
+  oneof optional_device_id {
+    string device_id = 3;
+  }
+  // client who can "verify" this token
+  oneof optional_payload_client_id {
+    int64 payload_client_id = 4;
+  }
+  // ttl in minutes
+  google.protobuf.Int64Value ttl_minutes = 5;
+
+  // authentication_methods
+  repeated Requirement authentication_methods = 6;
+}
+
+message GenerateTokenResponse {
+  // generated token
+  string token = 1;
+  // generated refresh token
+  oneof optional_refresh_token {
+    string refresh_token = 2;
+  }
+}
+
+/*
+ * Request for Authorize
+ */
+message AuthorizationRequest {
+  // requested service id to find service model
+  int64 service_id = 1;
+  // requested client id to find client model
+  int64 client_id = 2;
+  // related permission
+  string permission = 3;
+  // APIKeyModel for APIKeyAuthzService
+  APIKey api_key_model = 4;
+}
+
+/*
+ * Client Model with name only
+ */
+message ClientModel {
+  string name = 1;
+}
+
+/*
+ * Service Model with name only
+ */
+message ServiceModel {
+  string name = 1;
+}
+
+/*
+ * Response Payload for Authorize
+ */
+message AuthorizationResponse {
+  ClientModel client_model = 1;
+  ServiceModel service_model = 2;
+}
+
+/*
+ * Request for verify password
+ */
+message VerifyPasswordRequest {
+  // user id
+  string user_id = 1;
+  // user's password
+  string password = 2;
+  // client id, optional
+  oneof optional_client_id {
+    string client_id = 3;
+  }
+  // device id, can be optional, which will not return the refresh token if null
+  oneof optional_device_id {
+    string device_id = 4;
+  }
+  // optional flag to specify if password is secure.
+  // If specified, it will update user profile.
+  oneof optional_is_password_secure {
+    bool is_password_secure = 5;
+  }
+  // a flag to specify if the device is mobile or not
+  bool is_device_mobile = 6;
+
+  // if password is valid, the user token will have ttl minutes to be valid
+  int64 token_ttl_in_minute = 7;
+}
+
+/*
+ * Auth Info
+ */
+message AuthInfo {
+  // generated token
+  string token = 1;
+  // generated refresh token
+  oneof optional_refresh_token {
+    string refresh_token = 2;
+  }
+}
+
+/*
+ * Response for verify password
+ */
+message VerifyPasswordResponse {
+  // user's auth information token
+  AuthInfo auth = 2;
+  // if password is verified
+  bool is_verified = 3;
+}
+
+// Partner Code Exchange Request
+message PartnerCodeExchangeRequest {
+  // exchange code
+  google.protobuf.StringValue code = 1;
+
+  // client id
+  google.protobuf.StringValue client_id = 2;
+}
+
+/*
+ * Authentication service contains authentication related requests
+ * All of the responses contains following additional headers:
+ *
+ * - `X-REQUEST-ID` a unique request ID assigned to this request on Identity Service (for tracing purposes).
+ * - `X-TIME-ELAPSED` (if > 100ms) total time in consumed (milliseconds) while processing request on server.
+ */
+service AuthenticationService {
+  option (service_client.client_config).service_name = "identity-service";
+
+  /*
+   * Get and Verify API Token Info
+   *
+   * Given API Key/token verify and get information regarding token.
+   * This endpoint should be used to verify API Keys/Tokens.
+   * Pass the API token to be verified in this header/metadata like: "Authorization: <vendor-key-to-verify>"
+   *
+   * In case of errors it can returns:
+   *
+   * * 401 for invalid token
+   * * 500 for any internal server errors
+   */
+  rpc GetTokenInfo(TokenInfoRequest) returns (TokenInfoResponse) {
+    option (google.api.http) = {get: "/api/v1/verify/{service_id}"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Generate MFA code
+   *
+   * Given a DSJ user ID, and action generates a MFA code
+   * You need API Key/token of at-least "WRITE" scope to generate a MFA code.
+   * In case of errors it can returns:
+   *
+   * * 401 for invalid token
+   * * 403 for token with insufficent privilages (not "WRITE" scope or above) or too many attempts additional headers include:
+   * ** `Code-TTL` specifies TTL of MFA code in seconds.
+   * ** `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   * ** `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   * * 500 for any internal server errors
+   */
+  rpc GenerateMFACode(GenerateMFACodeRequest) returns (GenerateMFACodeResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/mfa/generate/{id}/{action}"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Verify MFA code
+   *
+   * Given a DSJ user ID, action, and code verifies a MFA code
+   * You need API Key/token of at-least "WRITE" scope to generate a MFA code.
+   * In case of errors it can returns:
+   *
+   * * 401 for invalid token
+   * * 403 for token with insufficent privilages (not "WRITE" scope or above) or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   * * 500 for any internal server errors
+   */
+  rpc VerifyMFACode(VerifyMFACodeRequest) returns (VerifyMFACodeResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/mfa/verify/{id}/{action}"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Authenticate User
+   *
+   * This endpoint has migrated to identity bff. Please configure properly
+   * to point to identity bff instead of identity service as identity service will
+   * disallow access for this endpoint.
+   * Given user credentials (username+password) and optionally a device_id
+   * it generated authentication and refresh tokens for that user. An APIKey
+   * can be provided in the header to optionally retrieve user information.
+   *
+   * * 401 for invalid token
+   * * 403 for token with insufficient privileges (not "WRITE" scope or above) or too many attempts additional headers include:
+   *   - `Code-TTL` specifies TTL of MFA code in seconds.
+   *   - `Attempts-Remaining` specifies number of attempts remaining for `id` in request.
+   *   - `Ban-Duration-Secs` in case of banning number of seconds `id` is banned for.
+   * * 500 for any internal server errors
+   */
+  rpc AuthenticateUser(AuthenticateUserRequest) returns (AuthenticateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Refresh User Token
+   *
+   * Given a user authentication token, refresh token and device_id, generates
+   * new auth token and refresh token with refreshed expiration dates.
+   */
+  rpc RefreshToken(RefreshTokenRequest) returns (AuthenticateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token/refresh"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 50;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Generate User Token
+   *
+   * Given a user payload and details, generate token and refresh token
+   */
+  rpc GenerateToken(GenerateTokenRequest) returns (GenerateTokenResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 20;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Verify User Token
+   *
+   * Given a user authentication token, returns whether the provided token is valid.
+   */
+  rpc VerifyToken(VerifyTokenRequest) returns (UserInfo) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token/verify"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 20;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Create a legacy api key
+   *
+   * Given a user id, create an API key.
+   */
+  rpc CreateLegacyAPIKey(CreateLegacyAPIKeyRequest) returns (CreateLegacyAPIKeyResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 10000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 3000;
+  }
+
+  /*
+   * Disable Legacy API Token
+   *
+   * Given an API Token, disables the API key and returns empty body.
+   */
+  rpc DisableToken(DisableTokenRequest) returns (DisableTokenResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token/disable"
+      body: "*"
+    };
+  }
+  /*
+   * Enable Legacy API Token (Internal Identity-Service)
+   *
+   * Given an API Token, enables the API key and returns empty body.
+   */
+  rpc EnableToken(EnableTokenRequest) returns (EnableTokenResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token/enable"
+      body: "*"
+    };
+  }
+
+  /*
+   * MFA Code Exchange endpoint
+   */
+  rpc ConfirmMFAChallenge(ConfirmMFAChallengeRequest) returns (ConfirmMFAChallengeResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/mfa/confirm"
+      body: "*"
+    };
+  }
+
+  /*
+   * Internal delegated get User token. Powerful call, restricted to specific clients
+   *
+   * Given a user email and id generates a user token
+   */
+  rpc getUserTokenByUserIdAndEmail(GetUserTokenByUserIdAndEmailRequest) returns (AuthenticateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/token/internal"
+      body: "*"
+    };
+  }
+
+  /*
+   * Verify magic link and return user token if valid
+   *
+   * This endpoint has migrated to identity bff. Please configure properly
+   * to point to identity bff instead of identity service as identity service will
+   * disallow access for this endpoint.
+   * Given a magic link with userInfoUUID and clientInfoUUID, log user in and return user token if valid,
+   * return error if invalid.
+   * Disable this magic link.
+   *
+   * * 400 for invalid magic link include
+   *   - cached info is expired or magic link is malformed
+   *   - magic link is expired, but cached info is still there, resend bypass login email
+   * * 401 for invalid APIkey
+   * * 500 for any internal errors
+   */
+  rpc bypassLogin(BypassLoginRequest) returns (BypassLoginResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/bypass"
+      body: "*"
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   * Mitosis proj, APIKeyService, create gRpc for identity-bff to call identity-service
+   * findByToken method
+   */
+  rpc findByToken(FindByTokenRequest) returns (FindByTokenResponse);
+
+  /*
+   * Mitosis proj, APIKeyAuthZService, create gRpc for identity-bff to call identity-service
+   * APIKeyAuthZService.authorize method
+   */
+  rpc authorize(AuthorizationRequest) returns (AuthorizationResponse);
+
+  /*
+   * gRpc for identity-bff only to call identity-service
+   * for verifying password
+   * The endpoint will return user auth token when it is successful verified. Null if not.
+   * *
+   * 400 for missing password/ user id include
+   * 401 for invalid APIkey
+   * 500 for any internal errors
+   **
+   */
+  rpc verifyPassword(VerifyPasswordRequest) returns (VerifyPasswordResponse);
+
+  /*
+   * Exchange code for access token, refresh token and user info
+   * Only used for partner code exchange
+   */
+  rpc partnerCodeExchange(PartnerCodeExchangeRequest) returns (AuthenticateUserResponse);
+}

@@ -1,0 +1,175 @@
+syntax = "proto3";
+package self_help_service.csat_survey.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "./self_help_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.self_help_service.api";
+
+// Customer satisfaction service
+service CSatSurveyService {
+  option (doordash.api.service) = {
+    url: "self-help-service-web.service.prod.ddsd"
+    name: "self-help-service"
+    port: 50051
+    name_spaces: ["self_help"]
+    api_key_name: "SELF_HELP_SERVICE_API_KEY"
+    owner: {
+      id: "delivery-reliability-self-serve-expe"
+      name: "self-serve-experience-service"
+      slack_channel: "#ask-self-serve-experience"
+      email_alias: "eng-self-serve-experience@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX
+    ]
+  };
+
+  // Service level header forwarded to all RPCs in CSAT service
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      /* SH Product such as DoorDash, Caviar, Dasher, Courier etc. */ {field: "sh-product"}]
+  };
+
+  // Get the survey questions
+  rpc CreateCSatSurvey(CreateCSatSurveyRequest) returns (CreateCSatSurveyResponse) {
+    option (google.api.http) = {
+      post: "/self_help/v1/csat_survey_request"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        DX_USER
+      ]
+    };
+  }
+
+  // Post the responses to the survey questions
+  rpc PostCSatSurveyResult(PostCSatSurveyResultRequest) returns (PostCSatSurveyResultResponse) {
+    option (google.api.http) = {
+      post: "/self_help/v1/csat_survey_result_request"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        DX_USER
+      ]
+    };
+  }
+
+  // Get the survey (log) by id, one of (session id, delivery uuid, survey uuid)
+  rpc GetCSatSurveyById(GetCSatSurveyByIdRequest) returns (GetCSatSurveyByIdResponse);
+}
+
+// Request for CSAT survey questions
+message CreateCSatSurveyRequest {
+  // The question source (required)
+  string source = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // The flow for which the survey is being requested (required)
+  string self_help_flow_id = 2;
+  // The delivery UUID
+  google.protobuf.StringValue delivery_uuid = 3;
+  // The chat session id if presented after chat
+  google.protobuf.StringValue session_id = 4;
+  // Additional meta data to be recorded for the request
+  google.protobuf.StringValue meta_data = 5;
+}
+
+// Response for retrieving CSAT survey questions
+message CreateCSatSurveyResponse {
+  // The survey id generated for this request
+  string survey_uuid = 1;
+  // The survey questions
+  repeated CSatQuestion questions = 2;
+}
+
+// A CSAT survey question
+message CSatQuestion {
+  // The question id
+  string id = 1;
+  // The question description
+  string description = 2;
+  // If there is free from text available to collect for the response
+  bool is_free_form_text_available = 3;
+  // The prompt description
+  google.protobuf.StringValue prompt_description = 4;
+  // A list of survey choices related to the question
+  repeated CSatQuestionChoice choices = 5;
+}
+
+// A choice belonging to the CSAT survey question
+message CSatQuestionChoice {
+  // The choice value
+  int32 value = 1;
+  // The choice type
+  string type = 2;
+  // The choice description
+  google.protobuf.StringValue description = 4;
+  // The choice label description
+  google.protobuf.StringValue label_description = 5;
+  // A list of reasons related to the choice
+  repeated CSatQuestionChoiceReason reasons = 6;
+}
+
+// A reason belonging the the question choice
+message CSatQuestionChoiceReason {
+  // The reason id
+  string id = 1;
+  // The reason description
+  string description = 2;
+}
+
+// A CSAT survey question response
+message CSatQuestionResponse {
+  // The question id
+  string question_id = 1;
+  // The rating reasons
+  repeated google.protobuf.StringValue rating_reasons = 2;
+  // The freeform text response
+  google.protobuf.StringValue freeform_response = 3;
+  // The support rating
+  google.protobuf.StringValue support_rating = 4;
+}
+
+// Request for returning the CSAT survey questions response
+message PostCSatSurveyResultRequest {
+  // The survey uuid provided by the BE during the CSatSurveyRequest call should be returned here. (required)
+  string survey_uuid = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // The list of of question responses (required)
+  repeated CSatQuestionResponse questions = 2;
+}
+
+// Response for returning the CSAT survey questions response
+message PostCSatSurveyResultResponse {}
+
+// Request for get CSAT survey by id
+message GetCSatSurveyByIdRequest {
+  // one of (session id, delivery uuid, survey uuid) is required
+  oneof id {
+    // The survey uuid
+    google.protobuf.StringValue survey_uuid = 1;
+    // The chat session id
+    google.protobuf.StringValue chat_session_id = 2;
+    // The delivery uuid
+    google.protobuf.StringValue delivery_uuid = 3;
+  }
+}
+
+// Response for get CSAT survey by chat session id
+message GetCSatSurveyByIdResponse {
+  // only need csat questions' responses, if other clients need more fields, they can add more.
+  // The list of question responses
+  repeated CSatQuestionResponse csat_question_responses = 1;
+}

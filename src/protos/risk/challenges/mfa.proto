@@ -1,0 +1,321 @@
+syntax = "proto3";
+// buf:lint:ignore PACKAGE_SAME_DIRECTORY
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package risk.challenges;
+
+import "google/protobuf/timestamp.proto";
+import "risk/challenges/common.proto";
+import "risk/context.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "MfaProtos";
+option java_package = "com.doordash.risk.proto.challenges";
+
+// MfaChallengeService
+service MfaChallengeService {
+  // Send
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc Send(MfaSendRequest) returns (MfaSendResponse);
+  // Verify
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc Verify(MfaVerifyRequest) returns (MfaVerifyResponse);
+
+  // IsMfaVerified
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc IsMfaVerified(IsMfaVerifiedRequest) returns (IsMfaVerifiedResponse);
+  // IsDeviceMfaVerified
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc IsDeviceMfaVerified(IsDeviceMfaVerifiedRequest) returns (IsDeviceMfaVerifiedResponse);
+
+  // initSeamless
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_PASCAL_CASE
+  rpc initSeamless(InitSeamlessRequest) returns (InitSeamlessResponse);
+  // isSeamlessVerified
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_PASCAL_CASE
+  rpc isSeamlessVerified(IsSeamlessVerifiedRequest) returns (IsSeamlessVerifiedResponse);
+}
+
+// MfaChannel
+enum MfaChannel {
+  // SMS
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+  SMS = 0;
+  // EMAIL
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  EMAIL = 1;
+  // CALL
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  CALL = 2;
+  // PROVE_SILENT_VERIFICATION
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  PROVE_SILENT_VERIFICATION = 3;
+}
+
+// MfaOverrideIdType
+enum MfaOverrideIdType {
+  // USER
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+  USER = 0;
+  // DASHER_APPLICANT
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  DASHER_APPLICANT = 1;
+  // PHONE_NUMBER
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  PHONE_NUMBER = 2;
+  // PHONE_NUMBER_EMAIL
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  PHONE_NUMBER_EMAIL = 3;
+}
+
+// MfaSendRequest
+message MfaSendRequest {
+  // Captures contextual detail about the request (e.g., locale, ip, device details).
+  // This is typically parsed from HTTP headers using a risk-provides util function.
+  RiskContext risk_context = 1;
+
+  // By default, MFA codes are scoped to (user_id, action), with `user_id` coming from
+  // `risk_context`. This provides an optional override to use different identifier than UserId.
+  string override_id = 2;
+  // override_id_type
+  MfaOverrideIdType override_id_type = 3;
+
+  // What action is this MFA request scoped to. Requests from different (user_id, action) are
+  // independent, and have different verification codes. Characters should be in `[a-zA-Z0-9_-]`.
+  string action = 4;
+
+  // What channels is the MFA allowed to be sent on. If empty, allow all channels.
+  repeated MfaChannel allowed_channels = 5;
+
+  // If multiple channels are allowed, specifies the one preferred by the user. Defaults to SMS.
+  MfaChannel preferred_channel = 6;
+
+  // user_email
+  string user_email = 7;
+  // user_phone
+  string user_phone = 8;
+
+  // Fields needed for the MFA email body. Currently not needed for SMS.
+  string user_first_name = 11;
+  // user_last_name
+  string user_last_name = 12;
+
+  // By default, a mfa-send response is cached for 5 minutes. That prevents MFA UIs that call
+  // send() immediately upon displaying from causing new codes to be generated constantly. Set
+  // this field to true to invalidate the cache and force a new code to be generated.
+  bool force_new_code = 13;
+
+  // Identifier for the current session. State storage for whether a user is mfa-verified is
+  // keyed on (id, session_id). For send, this is used to check force-sms status.
+  string session_id = 15;
+
+  // Any extra fields needed to customize the OTP message or experience (e.g. business name)
+  map<string, string> metadata = 16;
+
+  // Relevant when force_new_code is false and MfaDebounceCache is a hit
+  // Resends same code and extends debounce and code caches ttl
+  bool force_send_code = 17;
+}
+
+// MfaSendResponse
+message MfaSendResponse {
+  // Success
+  message Success {
+    // The user identifier used.
+    // This is `user_id` unless `override_id` was specified in the request.
+    string id = 2;
+
+    // The action sent in the request.
+    string action = 4;
+
+    // Channels available to be used.
+    repeated MfaChannel available_channels = 5;
+
+    // Actual channel the request was sent on.
+    MfaChannel channel = 6;
+
+    // Masked version of the email/phone used.
+    string contact_address = 7;
+
+    // Timestamp of when the generated code expires
+    google.protobuf.Timestamp token_expires_at = 8;
+
+    // Time-decayed attempt number of this request.
+    int32 attempt = 9;
+
+    // Returns whether this response is from the debounce cache (see comments
+    // for `MfaSendRequest.force_new_code`).
+    bool from_cache = 10;
+
+    // Returns a metadata. Can be used for sending warning back to client
+    /* optional */
+    // metadata
+    map<string, string> metadata = 11;
+
+    // The generated MFA code.
+    // This will only be returned for test users to support pulse testing
+    string code = 12;
+  }
+
+  // result
+  oneof result {
+    // success
+    Success success = 1;
+    // error
+    ChallengeError error = 2;
+  }
+}
+
+// MfaVerifyRequest
+message MfaVerifyRequest {
+  // risk_context
+  RiskContext risk_context = 1;
+
+  // override_id
+  string override_id = 2;
+  // override_id_type
+  MfaOverrideIdType override_id_type = 3;
+
+  // action
+  string action = 4;
+  // code
+  string code = 5;
+  // prove_vfp
+  string prove_vfp = 6;
+  // session_id
+  string session_id = 15;
+}
+
+// MfaVerifyResponse
+message MfaVerifyResponse {
+  // Success
+  message Success {
+    // id
+    string id = 2;
+    // action
+    string action = 4;
+
+    // Different channels have different codes.
+    // This returns the channel the successfully-verified code was sent on.
+    MfaChannel channel = 5;
+
+    // attempt
+    int32 attempt = 6;
+    // session_id
+    string session_id = 7;
+  }
+
+  // result
+  oneof result {
+    // success
+    Success success = 1;
+    // error
+    ChallengeError error = 2;
+  }
+}
+
+// IsMfaVerifiedRequest
+message IsMfaVerifiedRequest {
+  // The user identifier returned in `MfaSendResponse`/`MfaVerifyResponse`.
+  // Typically, this is `user:<user_id>`. With override, this is `<override_id_type>:<override_id>`.
+  string id = 1;
+
+  // The session id passed to the `MfaVerifyRequest`.
+  string session_id = 2;
+
+  // The action to scope this verification. If the given action is empty, we will check all actions.
+  string action = 3;
+}
+
+// IsMfaVerifiedResponse
+message IsMfaVerifiedResponse {
+  // verified
+  bool verified = 1;
+
+  // The actions that mfa has been verified for.
+  repeated string actions = 2;
+}
+
+// IsDeviceMfaVerifiedRequest
+message IsDeviceMfaVerifiedRequest {
+  // user_id
+  string user_id = 1;
+  // device_id
+  string device_id = 2;
+}
+
+// IsDeviceMfaVerifiedResponse
+message IsDeviceMfaVerifiedResponse {
+  // verified
+  bool verified = 1;
+}
+
+// InitSeamlessRequest
+message InitSeamlessRequest {
+  // user_phone
+  string user_phone = 1;
+  // session_id
+  string session_id = 2;
+  // What action is this request scoped to. Requests from different (session_id, action) are
+  // independent. Characters should be in `[a-zA-Z0-9_-]`.
+  string action = 3;
+  // Any extra fields needed to customize the OTP message or experience (e.g. business name)
+  map<string, string> metadata = 4;
+}
+
+// InitSeamlessResponse
+message InitSeamlessResponse {
+  // Success
+  message Success {
+    // targetUrl
+    // buf:lint:ignore FIELD_LOWER_SNAKE_CASE
+    string targetUrl = 1;
+  }
+
+  // result
+  oneof result {
+    // success
+    Success success = 1;
+    // error
+    ChallengeError error = 2;
+  }
+}
+
+// IsSeamlessVerifiedRequest
+message IsSeamlessVerifiedRequest {
+  // session_id
+  string session_id = 1;
+  // The action to scope this verification. If the given action is empty, we will check all actions.
+  string action = 2;
+  // metadata
+  map<string, string> metadata = 3;
+}
+
+// IsSeamlessVerifiedResponse
+message IsSeamlessVerifiedResponse {
+  // Success
+  message Success {
+    // verified
+    bool verified = 1;
+  }
+
+  // result
+  oneof result {
+    // success
+    Success success = 1;
+    // error
+    ChallengeError error = 2;
+  }
+}

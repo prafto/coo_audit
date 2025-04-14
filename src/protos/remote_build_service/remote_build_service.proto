@@ -1,0 +1,216 @@
+syntax = "proto3";
+
+package remote_build_service.v1;
+
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.remote_build_service";
+
+// Remote build service
+service RemoteBuildService {
+  // Kick off gradle build
+  rpc Build(BuildEvent) returns (BuildResponse);
+  // Check build status
+  rpc BuildStatus(BuildStatusRequest) returns (BuildStatusResponse);
+  // Terminate build
+  rpc BuildTerminate(BuildTerminateRequest) returns (BuildTerminateResponse);
+}
+
+// Request for Gradle build on projects dep graph.
+message BuildEvent {
+  // The sha of the commit
+  string sha = 1;
+
+  // The graph of project names base on inverse dependencies
+  repeated BuildProjects build_projects = 2;
+
+  // The branch name
+  string branch = 3;
+
+  // Repo to build
+  string repo = 4;
+
+  // unique id for the build event
+  string event_id = 5;
+
+  // timeout minutes
+  int32 time_out = 6;
+
+  // Build only, skip test
+  bool build_only = 7;
+
+  // list of BuildProject objects
+  repeated BuildProject projects = 8;
+
+  // post merge called by RCS
+  bool post_merge = 9;
+
+  // feature flags for build event
+  BuildEventFlags flags = 10;
+
+  // Trigger a publish. Will skip test and only assemble and publish
+  bool publish = 11;
+
+  // Semver version
+  string semver_version = 12;
+
+  // Environment variables required for the build
+  map<string, string> environment_variables = 13;
+
+  // Project specific semver versions
+  map<string, string> project_semver_versions = 14;
+}
+
+// feature flags for build events
+message BuildEventFlags {
+  // continue on failure
+  bool continue_on_failure = 1;
+
+  // if this is periodical tests run
+  bool periodical_tests_run = 2;
+
+  // Override the skipped tests config and run all tests.
+  bool run_all_tests = 3;
+}
+
+// Request for Gradle build on single project
+message BuildProject {
+  // The sha of the commit
+  string sha = 1;
+
+  // The project to be built
+  string project = 2;
+
+  // The banch name
+  string branch = 3;
+
+  // Repo to build
+  string repo = 4;
+
+  // unique id for the build event
+  string event_id = 5;
+
+  // oneof only flag
+  oneof only_flag {
+    // build only, skip test
+    bool build_only = 6;
+
+    // test only, skip build and assemble publish
+    bool test_only = 7;
+
+    // publish only, skip test and only assemble and publish
+    bool publish_only = 13;
+  }
+
+  // list of test class names
+  repeated string test_classes = 8;
+
+  // use by test sharding
+  // : for base project, :subproject: for sub project
+  string module = 9;
+
+  // project labels such as: arm64, test_shard
+  repeated string labels = 10;
+
+  // feature flags for build tasks
+  BuildFlags flags = 11;
+
+  // count of republished number
+  int32 republish_count = 12;
+
+  // Environment variables required for the build
+  map<string, string> environment_variables = 14;
+
+  // Semver version
+  string semver_version = 15;
+}
+
+// The response of build request
+message BuildResponse {
+  // unique id for the build event
+  string event_id = 1;
+}
+
+// List of projects could be build in parallel
+message BuildProjects {
+  // projects list
+  repeated string projects = 1;
+}
+
+// Build status request
+message BuildStatusRequest {
+  // unique id for the build event
+  string event_id = 1;
+}
+
+// Build status response
+message BuildStatusResponse {
+  // overall build status for the entire job
+  BuildStatus job_status = 1;
+
+  // build status for each project
+  map<string, BuildStatus> project_status = 2;
+}
+
+// Build terminate request
+message BuildTerminateRequest {
+  // unique id for the build event
+  string event_id = 1;
+}
+
+// Build terminate response
+message BuildTerminateResponse {}
+
+// build status enum
+enum BuildStatus {
+  // unknown status
+  UNKNOWN = 0;
+  // successful
+  SUCCESS = 1;
+  // failed
+  FAILED = 2;
+  // in progress
+  IN_PROGRESS = 3;
+  // not started
+  NOT_STARTED = 4;
+  // terminated
+  TERMINATED = 5;
+  // skipped
+  SKIPPED = 6;
+  // timeout
+  TIME_OUT = 7;
+  // assembled
+  ASSEMBLED = 8;
+}
+
+// feature flags for tasks to run
+message BuildFlags {
+  // gradle build
+  bool build = 1;
+  // gradle test
+  bool test = 2;
+  // gradle detekt
+  bool lint = 3;
+  // service assemble
+  bool assemble = 4;
+  // publish sha
+  bool sha_publish = 5;
+  // codecov
+  bool codecov = 6;
+  // download jacocoTestReport.xml from S3 and run codecov
+  bool codecov_republish = 7;
+  // checkout on master branch
+  bool master_branch = 8;
+  // run gradle cyclonedxBom for post merge
+  bool cyclonedxbom = 9;
+  // run gradle cyclonedxBom for CI
+  bool cyclonedxbom_ci = 10;
+  // continue on failure
+  bool continue_on_failure = 11;
+  // gradle publish
+  bool publish = 12;
+  // Override the skipped tests config and run all tests in the project.
+  bool run_all_tests = 13;
+}

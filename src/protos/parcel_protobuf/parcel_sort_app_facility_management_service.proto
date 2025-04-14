@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package parcel_service.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "parcel_protobuf/common.proto";
+
+option go_package = "drive_parcel_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.parcel";
+
+// SortAppFacilityManagementService is a service used to manage the persistent non-day-to-day aspects
+// of a facility, such as access control policies and bins.
+service SortAppFacilityManagementService {
+  option (doordash.api.service) = {
+    name: "parcel-sort-app-facility"
+    url: "parcel-service-web.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_FOR_PARCEL_SERVICE"
+    owner: {
+      id: "drive-parcels"
+      name: "parcel"
+      slack_channel: "#drive-parcels-alerts"
+      email_alias: "drive-eng-parcel-plus@doordash.com"
+    }
+    name_spaces: ["parcel"]
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "X-Application-Name"}]
+  };
+
+  // List all users that currently have access to a facility, as well as the level of access they possess.
+  //
+  // Note that non-corporate users will have no associated roles in this response. They can typically be
+  // treated as operators for most intents and purposes, but the distinction is exposed anyway.
+  rpc ListUserAccessesByFacility(ListUserAccessesByFacilityRequest) returns (ListUserAccessesByFacilityResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/list-user-access-by-facility",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_site_lead"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // Set whether an employee has access or not to a given facility. Use facility code GLOBAL to
+  // grant or revoke access to all facilities.
+  rpc SetEmployeeAccessToFacility(SetEmployeeAccessToFacilityRequest) returns (SetEmployeeAccessToFacilityResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/set-employee-facility-access",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_admin"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+}
+
+// Request message for ListUserAccessesByFacility
+message ListUserAccessesByFacilityRequest {
+  // Facility code of target facility
+  string facility_code = 1;
+  // Whether to hard refresh cached identity data for this facility's users
+  bool refresh = 2;
+}
+
+// Response message for ListUserAccessesByFacility
+message ListUserAccessesByFacilityResponse {
+  // List of user accesses for the facility
+  repeated FacilityUserAccess user_acceses = 1;
+}
+
+// Request message for SetEmployeeAccessToFacility
+message SetEmployeeAccessToFacilityRequest {
+  // Facility code of target facility
+  string facility_code = 1;
+  // Identifier used to identify the employee in question
+  oneof employee_identifier {
+    // Employee user ID
+    string employee_user_id = 2;
+    // Employee user email address
+    string employee_email = 3;
+  }
+  // Whether to grant or revoke access to the facility
+  google.protobuf.BoolValue has_access = 4 [(doordash.api.client.optional) = false];
+}
+
+// Response message for SetEmployeeAccessToFacility
+message SetEmployeeAccessToFacilityResponse {
+  // Did the operation have any effect, i.e. was it not a no-op
+  bool effectual = 1;
+}
+
+// Indicates a user having access to a facility. The list of roles is common to all facilities
+// to which the user has access.
+message FacilityUserAccess {
+  // Facility code of facility
+  string facility_code = 1;
+  // Employee account information. Note that this refers to the information associated with the
+  // Doordash account, not of any assigned temp user.
+  EmployeeAccountInfo employee_info = 5;
+
+  reserved 2, 3, 4;
+  reserved "employee_user_id", "employee_user_email", "roles";
+}

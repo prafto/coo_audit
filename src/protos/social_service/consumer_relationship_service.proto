@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package social_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/common.proto";
+import "ratings_service/consumer_rating.proto";
+import "social_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.social_service";
+
+// This service is for consumer relationship related operations
+service ConsumerRelationshipService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "social-service-web.service.prod.ddsd",
+    name_spaces: ["social_consumer_relationship"],
+    owner: {
+      id: "social-proof"
+      name: "social-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).service_name = "social-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Update consumer contacts
+  rpc UpdateConsumerContactInfos(UpdateConsumerContactInfosRequest) returns (UpdateConsumerContactInfosResponse) {
+    option (google.api.http) = {
+      post: "/social_consumer_relationship/v1/update_consumer_contacts"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // create social follower relationship
+  rpc FollowSocialEntity(FollowSocialEntityRequest) returns (FollowSocialEntityResponse) {
+    option (google.api.http) = {
+      post: "/social_consumer_relationship/v1/social_follow_link"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+  }
+
+  // remove social follower relationship
+  rpc UnfollowSocialEntity(UnfollowSocialEntityRequest) returns (UnfollowSocialEntityResponse) {
+    option (google.api.http) = {delete: "/social_consumer_relationship/v1/social_follow_link"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+  }
+
+  // Fetch the list of target_ids followed by a particular source given a target_type
+  rpc FetchFollowedTargetsByTargetTypeForSource(FetchFollowedTargetsByTargetTypeForSourceRequest) returns (FetchFollowedTargetsByTargetTypeForSourceResponse);
+}
+
+// request for updating consumer contacts
+message UpdateConsumerContactInfosRequest {
+  // the consumer id that is requesting page
+  google.protobuf.Int64Value consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // the contacts to update
+  repeated ConsumerContactInfo contact_info = 2;
+}
+
+// response to updating consumer contacts
+message UpdateConsumerContactInfosResponse {
+  // object with success or failure
+  oneof value {
+    // success result
+    DataUpdateSuccess result = 1;
+    // error result
+    DataUpdateError error = 2;
+  }
+}
+
+// request for creating a social following link
+message FollowSocialEntityRequest {
+  // follower links to create
+  repeated SocialFollowLink follower_links = 1;
+}
+
+// response for creating a social following link
+message FollowSocialEntityResponse {
+  // object with success or failure
+  oneof value {
+    // success result
+    DataUpdateSuccess result = 1;
+    // error result
+    DataUpdateError error = 2;
+  }
+}
+
+// request for deleting a social following link
+message UnfollowSocialEntityRequest {
+  // entity type of the one following
+  SocialFollowerEntity source_type = 1;
+  // id of the source entity
+  google.protobuf.StringValue source_id = 2;
+  // entity type of the one being followed
+  SocialFollowerEntity target_type = 3;
+  // id of the target entity
+  google.protobuf.StringValue target_id = 4;
+}
+
+// response for deleting a social following link
+message UnfollowSocialEntityResponse {
+  // object with success or failure
+  oneof value {
+    // success result
+    DataUpdateSuccess result = 1;
+    // error result
+    DataUpdateError error = 2;
+  }
+}
+
+// request for deleting social following links in batch
+message UnfollowSocialEntitiesRequest {
+  // follower links to delete
+  repeated SocialFollowLink follower_links = 1;
+}
+
+// response for deleting social following links in batch
+message UnfollowSocialEntitiesResponse {
+  // object with success or failure
+  oneof value {
+    // success result
+    DataUpdateSuccess result = 1;
+    // error result
+    DataUpdateError error = 2;
+  }
+}
+
+// message for representing a follower relationship between two entities
+message SocialFollowLink {
+  // id of follow link -- not set in requests from client, as autogenerated by service
+  google.protobuf.StringValue id = 1;
+  // entity type of the one following
+  SocialFollowerEntity source_type = 2;
+  // id of the source entity
+  google.protobuf.StringValue source_id = 3;
+  // entity type of the one being followed
+  SocialFollowerEntity target_type = 4;
+  // id of the target entity
+  google.protobuf.StringValue target_id = 5;
+}
+
+// entity type of social follower
+enum SocialFollowerEntity {
+  // unspecified entity
+  SOCIAL_FOLLOWER_ENTITY_UNSPECIFIED = 0;
+  // consumer
+  SOCIAL_FOLLOWER_ENTITY_CONSUMER = 1;
+  // social list
+  SOCIAL_FOLLOWER_ENTITY_SOCIAL_LIST = 2;
+}
+
+// Request class to fetch all the target_ids of target_type that a source follows.
+message FetchFollowedTargetsByTargetTypeForSourceRequest {
+  // entity type of the one following
+  SocialFollowerEntity source_type = 1;
+  // id of the source entity
+  google.protobuf.StringValue source_id = 2;
+  // entity type of the one being followed
+  SocialFollowerEntity target_type = 3;
+}
+
+// Response class which contains the list of target_ids
+message FetchFollowedTargetsByTargetTypeForSourceResponse {
+  // return value
+  oneof value {
+    // follower links
+    FollowerLinks follower_links = 1;
+    // error message
+    google.protobuf.StringValue error_message = 2;
+  }
+
+  // Message class to represent the list of target_ids
+  message FollowerLinks {
+    // follower links
+    repeated SocialFollowLink follower_links = 1;
+  }
+}

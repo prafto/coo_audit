@@ -1,0 +1,135 @@
+syntax = "proto3";
+package dasher_app_platform.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_app_platform";
+
+// Service for barcode scanning actions
+service BarcodeService {
+  option (doordash.api.service) = {
+    name: "dasher-fulfillment-barcode-service"
+    url: "dasher-fulfillment-web-tier0.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["foundry"]
+    api_key_name: "DASHER-FULFILLMENT-API-KEY"
+    owner: {
+      name: "dasher-app-platform-team"
+      id: "dasher-app-platform-team"
+      slack_channel: "#ask-dx-app-platform"
+      email_alias: "dasher-app-platform@doordash.com"
+    }
+    target_products: [DX]
+  };
+  // Scan Barcode Action
+  rpc ScanBarcodeAction(ScanBarcodeActionRequest) returns (ScanBarcodeActionResponse) {
+    option (google.api.http) = {
+      post: "/foundry/v1/scan_barcode",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+    };
+  }
+
+  // GetRequiredHandbacks retrieves required handback barcodes for a given shift.
+  rpc GetRequiredHandbacks(GetRequiredHandbacksRequest) returns (GetRequiredHandbacksResponse) {
+    option (google.api.http) = {get: "/foundry/v1/required_handbacks"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+    };
+  }
+}
+
+// Request message for GetRequiredHandbacks.
+message GetRequiredHandbacksRequest {
+  // The active shift of the dasher.
+  string shift_id = 1;
+}
+
+// Response message for GetRequiredHandbacks.
+message GetRequiredHandbacksResponse {
+  // List of required handbacks.
+  repeated RequiredHandback required_handbacks = 1;
+  // Banner label to display.
+  google.protobuf.StringValue banner_label = 2;
+  // Additional details for the handback.
+  RequiredHandbackDetails details = 3;
+
+  // Details for a single required handback.
+  message RequiredHandback {
+    // Name of the person or identifier for the handback.
+    string name = 1;
+    // Tag indicating the type of handback (e.g., "Return to facility").
+    string tag = 2;
+    // Associated delivery identifier.
+    string delivery_id = 3;
+    // barcode
+    string barcode = 4;
+  }
+
+  // Additional details for required handbacks.
+  message RequiredHandbackDetails {
+    // Title of the details section.
+    string title = 1;
+    // Body text providing further instructions.
+    string body = 2;
+    // Button title for completing the handback action.
+    string button_title = 3;
+    // Toast message when the handback is incomplet
+    string incomplete_toast = 4;
+  }
+}
+
+// This API is called when scanning a barcode for the parcels use case
+message ScanBarcodeActionRequest {
+  // Injected dx_id
+  string dx_id = 1 [(doordash.api.inject_id) = DX_ID];
+  // Barcode scanned by the client
+  string barcode = 2;
+  // Optional: Active shift of the dx_id who scanned the barcode
+  string shift_id = 3;
+}
+
+// Response message for the scan barcode action
+message ScanBarcodeActionResponse {
+  // Barcode scanned by the client
+  string barcode = 1;
+  // Status of the scanned barcode
+  ScanStatus status = 2;
+  // Alert message to be displayed to the client with custom formatting
+  Alert alert = 3;
+
+  // Custom alert message format
+  message Alert {
+    // Title of the alert, e.g., "Return package for {cx fname last initial} to the facility"
+    google.protobuf.StringValue title = 1;
+    // Body text of the alert
+    google.protobuf.StringValue body = 2;
+    // Text for the alert button, e.g., "Got it"
+    google.protobuf.StringValue button_title = 3;
+  }
+}
+
+// Status of the scanned barcode
+enum ScanStatus {
+  // Unspecified status
+  SCAN_STATUS_UNSPECIFIED = 0;
+  // Barcode was successfully scanned
+  SCAN_STATUS_CONFIRMED = 1;
+  // Barcode is known but does not pertain to the current delivery
+  SCAN_STATUS_INCORRECT_BATCH = 2;
+  // Barcode is not recognized
+  SCAN_STATUS_UNRECOGNIZED = 3;
+}

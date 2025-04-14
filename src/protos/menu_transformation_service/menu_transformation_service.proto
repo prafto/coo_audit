@@ -1,0 +1,169 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+
+package menu_transformation_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_integrations/event.proto";
+import "order/consumer_order_gateway.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.menu_transformation_service.rpc.api";
+
+// MenuTransformationService provides APIs for transforming menu data and orders between different formats.
+// This service is responsible for both forward and reverse transformations of menu data and order items.
+service MenuTransformationService {
+  // This endpoint handles the forward transformation of menu data.
+  rpc TransformMenu(TransformMenuRequest) returns (TransformMenuResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  // This endpoint handles the reverse transformation of order data.
+  rpc TransformPOSOrderItems(TransformPOSOrderItemsRequest) returns (TransformPOSOrderItemsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  // This endpoint is used to transform past orders to latest menu structure.
+  rpc RecoverPastOrderedItems(RecoverPastOrderedItemsRequest) returns (RecoverPastOrderedItemsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  // Upsert menu transformation rules for store(s)
+  rpc UpsertMenuTransformationRules(UpsertMenuTransformationRulesRequest) returns (UpsertMenuTransformationRulesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+    // default circuit breaker config
+  }
+
+  // Creates or updates menu transformation ID mappings for the original and transformed menu
+  rpc UpsertMenuTransformationIDMapping(UpsertMenuTransformationIDMappingRequest) returns (UpsertMenuTransformationIDMappingResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+    // Default circuit breaker configuration
+  }
+}
+
+// TransformMenuRequest represents a request to transform a store's menu data.
+message TransformMenuRequest {
+  // Store ID is the unique identifier for the store whose menu needs transformation.
+  google.protobuf.StringValue store_id = 1;
+  // Store Menu JSON contains the menu data that needs to be transformed.
+  google.protobuf.StringValue store_menu_json = 2;
+}
+
+// TransformMenuResponse contains the transformed menu data and transformation status.
+message TransformMenuResponse {
+  // Transformed Store Menu JSON contains the menu data after transformation.
+  google.protobuf.StringValue transformed_store_menu_json = 1;
+  // Indicate whether restructure transformation is applied to current menu
+  google.protobuf.BoolValue is_restructure_applied = 2;
+  // Response Status
+  ResponseStatus response_status = 3;
+}
+
+// TransformPOSOrderItemsRequest represents a request to transform POS order items.
+message TransformPOSOrderItemsRequest {
+  // Store ID is the unique identifier for the store associated with the order.
+  google.protobuf.StringValue store_id = 1;
+  // Categories contains the order items grouped by category.
+  repeated merchant_integrations_event.POSCategory categories = 2;
+}
+
+// TransformPOSOrderItemsResponse contains the transformed order items and transformation status.
+message TransformPOSOrderItemsResponse {
+  // Transformed Categories contains the order items after transformation..
+  repeated merchant_integrations_event.POSCategory transformed_categories = 1;
+  // Response Status indicates the outcome of the transformation operation.
+  ResponseStatus response_status = 2;
+}
+
+// RecoverPastOrderedItemsRequest represents a request to recover and transform historical order items.
+message RecoverPastOrderedItemsRequest {
+  // Ordered Items contains the list of historical items to be transformed.
+  repeated order_service.OrderedItem ordered_items = 1;
+  // Target Store ID
+  google.protobuf.StringValue target_store_id = 2;
+  // Target Menu ID
+  google.protobuf.StringValue target_menu_id = 3;
+}
+
+// RecoverPastOrderedItemsResponse contains the transformed historical items and transformation status.
+message RecoverPastOrderedItemsResponse {
+  // Transformed Ordered Items contains the historical items after transformation.
+  repeated order_service.OrderedItem transformed_ordered_items = 1;
+  // Response Status
+  ResponseStatus response_status = 2;
+}
+
+// Request for upsert of store menu transformation rule
+message UpsertMenuTransformationRulesRequest {
+  // DD Store Id
+  google.protobuf.Int64Value store_id = 1;
+  // Menu Entity Type
+  EntityType entity_type = 2;
+  // Menu Entity Name
+  google.protobuf.StringValue entity_name = 3;
+  // Store menu transformation rule JSON
+  google.protobuf.StringValue transformation_rules = 4;
+  // Should override/replace existing transformations
+  google.protobuf.BoolValue should_replace_existing_transformations = 5;
+  // Entity Types
+  enum EntityType {
+    // Default unspecified entity type
+    ENTITY_TYPE_UNSPECIFIED = 0;
+    // Option entity type
+    ENTITY_TYPE_OPTION = 1;
+    // Extra entity type
+    ENTITY_TYPE_EXTRA = 2;
+    // Item entity type
+    ENTITY_TYPE_ITEM = 3;
+  }
+}
+
+// Response for upsert of store menu transformation rule
+message UpsertMenuTransformationRulesResponse {
+  // List of successfully generated and saved transformation rules.
+  repeated string transformation_rules = 1;
+  // Response Status
+  ResponseStatus response_status = 2;
+}
+
+// Request for upsert of store menu transformation id mappings
+message UpsertMenuTransformationIDMappingRequest {
+  // Original store menu with IDs in JSON
+  google.protobuf.StringValue original_store_menu = 1;
+  // Transformed store menu with IDs in JSON
+  google.protobuf.StringValue transformed_store_menu = 2;
+}
+
+// Response for upsert of store menu transformation id mappings
+message UpsertMenuTransformationIDMappingResponse {
+  // Response Status
+  ResponseStatus response_status = 1;
+}
+
+// ResponseStatus represents the possible outcomes of a transformation operation.
+enum ResponseStatus {
+  // Default unspecified status
+  RESPONSE_STATUS_UNSPECIFIED = 0;
+
+  // Transformation completed successfully
+  RESPONSE_STATUS_SUCCESS = 1;
+
+  // Transformation failed due to an error
+  RESPONSE_STATUS_FAILURE = 2;
+
+  // All items were skipped during transformation
+  RESPONSE_STATUS_SKIP = 3;
+
+  // Transformation failed due to invalid input data
+  RESPONSE_STATUS_INVALID_INPUT = 4;
+
+  // Transformation failed due to system error
+  RESPONSE_STATUS_SYSTEM_ERROR = 5;
+
+  // Transformation failed due to timeout
+  RESPONSE_STATUS_TIMEOUT = 6;
+}

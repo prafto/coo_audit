@@ -1,0 +1,732 @@
+syntax = "proto3";
+
+package argo_search.common.v1;
+
+import "argo-search/common/types.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.argo_search.rpc.common";
+
+// SortOrder of documents indicating how the documents should be sorted.
+enum SortOrder {
+  // Unspecified order of results.
+  SORT_ORDER_UNSPECIFIED = 0;
+  // Descending order of results.
+  SORT_ORDER_DESENDING = 1;
+  // Ascending order of results.
+  SORT_ORDER_ASCENDING = 2;
+}
+
+// Determines a double doc value or a computed field on which documents are to be sorted, the sort order and the default value.
+message SortField {
+  // Field on which sorting is performed.
+  string field = 1;
+  // Default value to use when sorting double doc value field is missing.
+  double default_value = 2;
+  // Ascending or Descending. Natural order/default is descending.
+  SortOrder sort_order = 3;
+}
+
+// A sort by clause which may contain multiple phases.
+message PhasedSortBy {
+  // The phase kind. [Required]
+  oneof kind {
+    // A sort by with a single phase.
+    OnePhaseSortBy one_phase = 1;
+    // A sort by with two phases.
+    TwoPhaseSortBy two_phases = 2;
+  }
+}
+
+// A sort by with a single phase.
+message OnePhaseSortBy {
+  // The only phase. [Required]
+  SortByPhase phase = 1;
+}
+
+// A sort by with two phases.
+message TwoPhaseSortBy {
+  // The first phase.
+  SortByPhase first_phase = 1;
+  // The final phase.
+  SortByPhase final_phase = 2;
+}
+
+// A sort by phase.
+message SortByPhase {
+  // The sort fields for this phase. [Required]
+  repeated SortField sort_by = 1;
+  // The max number of hits to be returned after sorting. It returns all if not specified. [Required]
+  int32 size = 2;
+}
+
+// It represent a field in specified namespace.
+// Typically, used to in outer query to refer to a resulting field from inner query.
+message ReferenceField {
+  // Namespace. [Required]
+  string namespace = 1;
+  // Field name. [Required]
+  string field = 2;
+}
+
+// Stack's common SearchQuery.
+message SearchQuery {
+  // The namespace where the query will run against. [Required]
+  string namespace = 1;
+  // The keywords query. [Optional]
+  KeywordsQuery keywords_query = 2;
+  // The search filter. [Optional]
+  Filter filter = 3;
+  // Join with another query. [Optional]
+  Join join = 4;
+  // Specifies sorting fields. [Optional]
+  repeated SortField sort_by = 5;
+  // Specifies the group by fields. [Optional]
+  GroupBy group_by = 6;
+  // The fields to be returned in the response. [Required]
+  repeated string return_fields = 7;
+  // Max number of hits to be returned. [Required unless phased sort by is used]
+  int32 size = 8;
+  // Specifies the faceting fields. [Optional]
+  FacetCount facet_count = 9;
+  // Specifies the context features. [Optional]
+  map<string, ContextFeatureValue> context_features = 10;
+  // Early termination constrains. [Optional]
+  EarlyTermination early_termination = 11;
+  // Specifies the multiple phased sort by. It is intended to replace the sort_by parameter. [Optional]
+  PhasedSortBy phased_sort_by = 12;
+  // field was deprecated.
+  reserved 13;
+  reserved "dedup_by";
+  // Specifies the query planning pipeline to be applied on this query. [Optional]
+  QueryPlanner query_planner = 14;
+  // Specifies the deduplication. [Optional]
+  Dedup dedup = 15;
+  // Reserve the field number and name of `reordering` to prevent reuse
+  reserved 16;
+  reserved "reordering";
+  // Specified the reordering settings to be applied to the search results. [Optional]
+  repeated Reordering reorderings = 17;
+}
+
+// Stack's common keywords subquery.
+message KeywordsQuery {
+  // The set of keywords groups prepared on the client side.
+  repeated KeywordGroup groups = 1;
+  // Client keywords to process
+  ClientKeywords client_keywords = 2;
+  // The set of vector queries.
+  repeated VectorQuery vector_queries = 3;
+  // The set of fuzzy queries.
+  repeated FuzzyQuery fuzzy_queries = 4;
+}
+
+// Client keywords to be processed inside of QU module in Broker
+message ClientKeywords {
+  // raw customer keywords as typed into the search bar
+  string keywords = 1;
+  // reference to the qu pipeline configured for the namespace of the search request.
+  // Deprecated: use query_planner in SearchQuery instead.
+  string qu_pipeline = 2 [deprecated = true];
+  // various inputs to the qu pipeline, e.g. business id for in-store search, it is use to pick up business specific override rules
+  // Deprecated: use query_planner in SearchQuery instead.
+  map<string, string> pipeline_context = 3 [deprecated = true];
+}
+
+// Each keyword group represents a bag of keywords. As search query gets processed by the stack, new
+// keyword groups can be added and existing keyword groups can be modified.
+message KeywordGroup {
+  // The keywords in the group.
+  repeated Keyword keywords = 1;
+  // Indicates a required keyword group.
+  KeywordGroupOccur occur = 2;
+  // Keyword group metadata
+  KeywordGroupMetadata metadata = 3;
+  // Deleted groups are ignored by the search engine. We keep them for history and logging.
+  bool deleted = 4;
+  // Min should match in the case when occur=KEYWORD_GROUP_OCCUR_SHOULD
+  int32 min_should_match = 5;
+}
+
+// A vector query produces approximate top K matches for the given target vector.
+message VectorQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The target vector. [Required]
+  argo_search.common.v1.FloatList target = 2;
+  // Number of documents to return. [Required]
+  int32 k = 3;
+  // Filter query applied before the vector search, thus the vector query will return K documents that satisfy the
+  // filter constrain. [Optional]
+  FilterQuery filter = 4;
+  // Indicates that the query requires to produce a match. [Required]
+  KeywordGroupOccur occur = 5;
+  // The metadata about the keyword. [Optional]
+  KeywordGroupMetadata metadata = 6;
+}
+
+// A fuzzy query produces approximate matches for the given term.
+// Approximations are calculated using edit distance (Levenshtein algorithm).
+message FuzzyQuery {
+  // Term query with the term to search for. [Required]
+  TermQuery term_query = 2;
+  // Max edits (Levenshtein distance), max_edits must be 0 <= max_edits <= 2. [Required]
+  int32 max_edits = 3;
+  // The length of the non-fuzzy, prefix portion of the term. [Required]
+  int32 prefix_length = 4;
+  // The maximum number of terms to match. [Required]
+  int32 max_expansions = 5;
+  // True if transpositions should be treated as an edit operation.
+  // If this is false, classic Levenshtein operations are used (insert, delete, substitute). [Required]
+  bool transpositions = 6;
+  // Indicates that the query is required to produce a match. [Required]
+  KeywordGroupOccur occur = 7;
+  // The metadata about the keyword. [Optional]
+  KeywordGroupMetadata metadata = 8;
+}
+
+// The message represents one keyword in a group of keywords.
+message Keyword {
+  // The string representation of the keyword.
+  string keyword = 1;
+  // The index field to match the keyword against. It can be missing. When missing, the default set of fields will be used.
+  string field = 2;
+  // The word position of the keyword in the keyword group. Some keywords can be in the same position.
+  // E.g. synonyms added by the rewriting rules.
+  int32 ordinal = 3;
+  // Indicates a required keyword.
+  KeywordOccur occur = 4;
+  // The maximum number of matches a keyword can produce. It is used to limit the number of matches produced
+  // by very frequent words like "red".
+  int32 matching_limit = 5;
+  // The metadata about the keyword.
+  KeywordMetadata metadata = 6;
+  // Indicates deleted keywords. They are kept around for logging.
+  bool deleted = 7;
+}
+
+// The message represents keyword group metadata.
+message KeywordGroupMetadata {
+  // Annotations of the keyword group.
+  repeated string annotations = 1;
+}
+
+// The message represents keyword metadata.
+message KeywordMetadata {
+  // Indicates the source this keyword.
+  repeated string annotations = 1;
+}
+
+// The metadata about a keyword's occurence.
+enum KeywordOccur {
+  // unspecified
+  KEYWORD_OCCUR_UNSPECIFIED = 0;
+  // the keyword is optional
+  KEYWORD_OCCUR_SHOULD = 1;
+  // the keyword is required
+  KEYWORD_OCCUR_MUST = 2;
+}
+
+// The metadata about a keyword group's occurence.
+enum KeywordGroupOccur {
+  // unspecified
+  KEYWORD_GROUP_OCCUR_UNSPECIFIED = 0;
+  // the keyword is optional
+  KEYWORD_GROUP_OCCUR_SHOULD = 1;
+  // the keyword is required
+  KEYWORD_GROUP_OCCUR_MUST = 2;
+  // the keyword group doesn't produce matches, however it can be used in computed fields to calculate
+  // ranking features
+  KEYWORD_GROUP_OCCUR_COMPUTED_FIELDS_ONLY = 3;
+}
+
+// It represents the group by clause.
+message GroupBy {
+  // Fields on which grouping is performed. The ReferenceField is used to allow group by fields from an inner document after a join. [Required]
+  repeated ReferenceField fields = 1;
+  // The maximum size of a group. Only the top hits will be returned in the group. [Required]
+  int32 max_group_size = 2;
+}
+
+// It represents the join clause.
+message Join {
+  // Join queries [Required]
+  repeated SearchQuery search_query = 1;
+}
+
+// It represents a filter.
+message Filter {
+  // Filter query
+  FilterQuery filter_query = 1;
+}
+
+// It represents a faceting clause.
+message FacetCount {
+  // It represents a value faceting clause, which can contain multiple fields faceting will perform on. [Required]
+  ValueFacetCount value_facet_count = 1;
+  // It represents a value faceting clause that can contain multiple fields, with each faceting field containing multiple fields.
+  MultiValueFacetCount multi_value_facet_count = 2;
+}
+
+// It represents a value faceting clause, which can contain multiple fields faceting will perform on.
+message ValueFacetCount {
+  // A list of faceting fields value faceting will perform on. [Required]
+  repeated ValueFacetField value_facet_field = 1;
+}
+
+// It represents a faceting clause.
+message ValueFacetField {
+  //Fields which faceting will perform on.[Required]
+  string field = 1;
+  //Dimension fields exist. [Required]
+  string dimension_name = 2;
+}
+
+// It represents a value faceting clause that can contain multiple fields as the faceting key.
+message MultiValueFacetCount {
+  // A list of fields multi-field faceting will perform on. [Required]
+  repeated MultiValueFacetField multi_value_facet_field = 1;
+}
+
+// It represents a multi-field faceting clause
+message MultiValueFacetField {
+  //The field which multi-field faceting will perform on.[Required]
+  repeated string fields = 1;
+  //The dimension which multi-field faceting will perform on.[Required]
+  repeated string dimensions = 2;
+}
+
+// It represents a node in the query tree.
+message FilterQuery {
+  // The node type. [Required]
+  oneof node {
+    // leaf queries
+    // Match all query.
+    MatchAllQuery match_all_query = 1;
+    // Term query.
+    TermQuery term_query = 2;
+    // Terms query.
+    TermsQuery terms_query = 3;
+    // Exists query.
+    ExistsQuery exists_query = 4;
+    // Geo distance query.
+    GeoDistanceQuery geo_distance_query = 5;
+    // Geo shape query.
+    GeoShapeQuery geo_shape_query = 6;
+    // Point in set query.
+    PointInSetQuery point_in_set_query = 7;
+    // Keywords query.
+    KeywordsQuery keywords_query = 8;
+    // Point range query.
+    PointRangeQuery point_range_query = 9;
+    // Term in set query.
+    TermInSetQuery term_in_set_query = 10;
+    // DEPRECATED. KNN Vector query.
+    KnnVectorQuery knn_vector_query = 11 [deprecated = true];
+    // Geo point query.
+    GeoPointQuery geo_point_query = 12;
+    // Float Vector query.
+    FloatVectorQuery float_vector_query = 13;
+    // Compute field slow range query.
+    ComputedFieldSlowRangeQuery compute_field_slow_range_query = 14;
+    // More leaf queries should be added here.
+    // compound queries
+    // Boolean query.
+    BooleanQuery boolean_query = 50;
+    // More compound queries should be added here.
+  }
+}
+
+// A query matches all documents.
+message MatchAllQuery {}
+
+// A query matches an exact term in a provided field. The value is not analyzed.
+message TermQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The exact value. [Required]
+  string value = 2;
+}
+
+// A query matches one or more exact terms in a provided field. The value is not analyzed.
+message TermsQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The exact values. [Required]
+  repeated string values = 2;
+}
+
+// A query matches one or more exact terms in a provided field. The value is not analyzed.
+message TermInSetQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The exact values. [Required]
+  repeated string values = 2;
+}
+
+// A query matches if an indexed field exists.
+message ExistsQuery {
+  // Field name. [Required]
+  string field = 1;
+}
+
+// A query matches documents with geoshapes or geopoints within the specified distance of a central point.
+message GeoDistanceQuery {
+  // Field name. [Required]
+  string field = 1;
+  // Distance in meters. [Required]
+  double distance_meters = 2;
+  // Point with latitude and longitude. [Required]
+  Point point = 3;
+}
+
+// A query matches documents with geoshapes which are related to the specified geoshape.
+message GeoShapeQuery {
+  // Field name. [Required]
+  string field = 1;
+  // Spatial relation between the indexed field and the query geometry. [Required]
+  GeoRelation relation = 2;
+  // The query geometry. [Required]
+  GeoShape shape = 3;
+}
+
+// A query matches documents with geopoints which are related to the specified geoshape.
+message GeoPointQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The query geometry. [Required]
+  oneof kind {
+    // A polygon.
+    Polygon polygon = 2;
+    // A bounding box.
+    BoundingBox bounding_box = 3;
+  }
+}
+
+// The geo relations.
+enum GeoRelation {
+  // Unspecified
+  GEO_RELATION_UNSPECIFIED = 0;
+  // Intersects with the query geometry.
+  GEO_RELATION_INTERSECTS = 1;
+  // Has nothing in common with the query geometry.
+  GEO_RELATION_DISJOINT = 2;
+  // Within the query geometry.
+  GEO_RELATION_WITHIN = 3;
+  // Contains the query geometry.
+  GEO_RELATION_CONTAINS = 4;
+}
+
+// The geometry shape.
+message GeoShape {
+  // A shape.
+  oneof shape {
+    // A single geographic coordinate.
+    Point point = 1;
+    // A line string.
+    LineString line_string = 2;
+    // A polygon.
+    Polygon polygon = 3;
+    // A multi-point.
+    MultiPoint multi_point = 4;
+    // A bounding box.
+    BoundingBox bounding_box = 5;
+  }
+}
+
+// A point with latitude and longitude.
+message Point {
+  // Latitude. [Required]
+  double lat = 1;
+  // Longitude. [Required]
+  double lon = 2;
+}
+
+// An arbitrary line given two or more points.
+message LineString {
+  // Coordinates. [Required]
+  repeated Point coordinates = 1;
+}
+
+// A closed polygon whose first and last point must match,
+// thus requiring n + 1 vertices to create an n-sided polygon and a minimum of 4 vertices.
+message Polygon {
+  // Coordinates. [Required]
+  repeated Point coordinates = 1;
+}
+
+// A list of polygons.
+message PolygonList {
+  // boolean elements.
+  repeated Polygon elements = 1;
+}
+
+// An array of unconnected, but likely related points.
+message MultiPoint {
+  // Coordinates. [Required]
+  repeated Point coordinates = 1;
+}
+
+// A bounding rectangle, or envelope, specified by specifying only the top left and bottom right points.
+message BoundingBox {
+  // Top left coordinate. [Required]
+  Point top_left = 1;
+  // Bottom right coordinate. [Required]
+  Point bottom_right = 2;
+}
+
+// It represents a boolean query.
+message BooleanQuery {
+  // Boolean clauses. [Required]
+  repeated BooleanClause clauses = 1;
+  // The minimum number of optional BooleanClauses which must be satisfied. [Required]
+  int32 minimum_should_match = 2;
+}
+
+// It represents a clause in the boolean query.
+message BooleanClause {
+  // The occurrence type.
+  enum Occur {
+    // Unspecified
+    OCCUR_UNSPECIFIED = 0;
+    // Must meet.
+    OCCUR_MUST = 1;
+    // Must not meet.
+    OCCUR_MUST_NOT = 2;
+    // Should meet.
+    OCCUR_SHOULD = 3;
+    // Use as a filter
+    OCCUR_FILTER = 4;
+  }
+  // The occurrence of the clause. [Required]
+  Occur occur = 1;
+  // The filter query of the clause. [Required]
+  FilterQuery query = 2;
+}
+
+// A query matches documents if the value of a field, which is previously indexed as dimensional points, is contained
+// in the specified set. This is equivalent of TermsQuery for dimensional points fields.
+message PointInSetQuery {
+  // Field name. [Required]
+  string field = 1;
+  // Query value [Required]
+  QueryValue query_value = 2;
+}
+
+// A query matches documents if the value of a field, which is previously indexed as dimensional points, is within the
+// specified range. The lower_value or upper_value is a list of numbers to multi-dimensional points. If the field is a
+// single point value, The lower_value and upper_value will be a single element list.
+message PointRangeQuery {
+  // Field name. [Required]
+  string field = 1;
+  // Inclusive lower value. The minimum value of the corresponding type is used if not provided.
+  // One of lower_value and upper_value must be provided. [Optional]
+  QueryValue lower_value = 2;
+  // Inclusive upper value. The maximum value of the corresponding type is used if not provided.
+  // One of lower_value and upper_value must be provided. [Optional]
+  QueryValue upper_value = 3;
+}
+
+// DEPRECATED. The query retrieves approximate K nearest documents close to the target.
+//
+// This query also allows for performing a kNN search subject to a filter. In this case, it first executes the
+// filter for each leaf, then chooses a strategy dynamically:
+//   - If the filter cost is less than k, just execute an exact search
+//   - Otherwise run a kNN search subject to the filter
+//   - If the kNN search visits too many vectors without completing, stop and run an exact search
+message KnnVectorQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The target vector. [Required]
+  argo_search.common.v1.FloatList target = 2;
+  // Number of documents to return. [Required]
+  int32 k = 3;
+  // Filter query applied before the vector search, thus the vector query will return K documents that satisfy the
+  // filter constrain. [Optional]
+  FilterQuery filter = 4;
+}
+
+// The query retrieves approximate K nearest documents close to the target.
+//
+// This query also allows for performing a kNN search subject to a filter. In this case, it first executes the
+// filter for each leaf, then chooses a strategy dynamically:
+//   - If the filter cost is less than k, just execute an exact search
+//   - Otherwise run a kNN search subject to the filter
+//   - If the kNN search visits too many vectors without completing, stop and run an exact search
+message FloatVectorQuery {
+  // Field name. [Required]
+  string field = 1;
+  // The target vector.
+  argo_search.common.v1.FloatList target = 2;
+  // Number of documents to return.
+  int32 k = 3;
+  // Filter query applied before the vector search, thus the vector query will return K documents that satisfy the
+  // filter constrain. [Optional]
+  FilterQuery filter = 4;
+}
+
+// A slow query matches documents if the value of a computed field is within the specified range.
+// The lower_value or upper_value is double value.
+message ComputedFieldSlowRangeQuery {
+  // Field name. [Required]
+  string field = 1;
+  // Inclusive lower value. The minimum double value is used if not provided.
+  // One of lower_value and upper_value must be provided. [Optional]
+  DoubleValue lower_value = 2;
+  // Inclusive upper value. The maximum double value is used if not provided.
+  // One of lower_value and upper_value must be provided. [Optional]
+  DoubleValue upper_value = 3;
+}
+
+// It represents value of a field used in the query
+message QueryValue {
+  // The value. [Required]
+  oneof value {
+    // Typically, a field referencing to the results from inner query
+    ReferenceField reference_field = 1;
+    // Int values. For IntPoint fields.
+    argo_search.common.v1.IntList int_values = 2;
+    // Long values. For LongPoint fields.
+    argo_search.common.v1.LongList long_values = 3;
+    // Float values. For FloatPoint fields.
+    argo_search.common.v1.FloatList float_values = 4;
+    // Double values. For DoublePoint fields.
+    argo_search.common.v1.DoubleList double_values = 5;
+  }
+}
+
+// It represents value of a context feature used in the query
+message ContextFeatureValue {
+  // context feature value that can be oneof: float, double, int
+  oneof value {
+    // Float value
+    float float_value = 1;
+    // Double value
+    double double_value = 2;
+    // Int value
+    int32 int_value = 3;
+    // list of int values
+    argo_search.common.v1.IntList int_values = 4;
+    // list of polygons
+    PolygonList polygon_values = 5;
+    // list of float values
+    argo_search.common.v1.FloatList float_values = 6;
+    // Long value
+    int64 long_value = 7;
+    // String value
+    string string_value = 8;
+    // list of string values
+    argo_search.common.v1.StringList string_values = 9;
+  }
+}
+
+// The structure represents
+message EarlyTermination {
+  // Terminate the document matching once the searcher collected the given number of documents. If no value provided,
+  // the searcher will collect all documents matched to the query. The budget is divided between all segments
+  // proportional to the number of documents in the segment. [Optional]
+  int32 max_matched_documents = 1;
+  // Terminate the document matching once it exhausted the given time budget in milliseconds. If no value provided the
+  // searcher will run matching exhaustively. The budget is divided between all segments proportional to the number of
+  // documents in the segment. [Optional]
+  int32 time_budget_ms = 2;
+}
+
+// It represents the deduplication parameter in a SearchQuery.
+message Dedup {
+  reserved 1;
+  reserved "dedup_fields";
+  reserved 2;
+  reserved "sort_fields";
+
+  // The deduplication operations.
+  repeated DedupOp dedup_ops = 3;
+}
+
+// It represents the deduplication operation.
+message DedupOp {
+  // The sort fields. Sort the documents based these fields, keep the top ones when deleting duplicated documents. [Optional]
+  repeated SortField sort_fields = 1;
+  // The deduplication fields. [Required]
+  repeated string dedup_fields = 2;
+  // The max number of occurrences of documents allowed after grouping by dedup_fields. [Required]
+  int32 max_occurrence = 3;
+  // The occurrence amplifier when scattering documents from shards. Default: 1. [Optional]
+  // Due to non-deterministic computation or eventual consistency, the sort_fields for the same document may be different
+  // across shards. This amplifier makes Searchers to return more documents than requested. Broker will reduce them
+  // to the expected occurrence during merge.
+  int32 max_occurrence_amplifier = 4;
+}
+
+// It specifies the query planner to be used for a search query.
+message QueryPlanner {
+  // The query planning pipeline name. [Required]
+  string pipeline = 1;
+  // A payload contains the context for the query planning pipeline. [Optional]
+  argo_search.common.v1.Payload context = 2;
+}
+
+// It specifies the reordering process to be used for a search query.
+message Reordering {
+  // The reordering pipeline name. [Required]
+  string pipeline = 1;
+  // A payload contains the context for the reordering pipeline. [Optional]
+  argo_search.common.v1.Payload context = 2;
+}
+
+// Search results format.
+enum SearchResultsFormat {
+  // The format is unspecified.
+  SEARCH_RESULTS_FORMAT_UNSPECIFIED = 0;
+  // The first format historically supported. All field names are present in every document. Child documents are copied into every document. It is easy to use at the cost of performance. Not the best choice for large result sets.
+  SEARCH_RESULTS_FORMAT_FULL_DOCUMENTS = 1;
+  // The flat and normalized format of the search result documents.
+  SEARCH_RESULTS_FORMAT_FLAT_NORMALIZED = 2;
+  // The flat and normalized format of the search result documents returned as lz4 (1.8.0) compressed byte array.
+  SEARCH_RESULTS_FORMAT_FLAT_NORMALIZED_COMPRESSED = 3;
+}
+
+// Query understanding bundle values
+message QUBundleValue {
+  // Source of the QU bundle value
+  string source = 1;
+  // QU bundle value type
+  oneof qu_bundle_value_type {
+    // string value type query understanding bundle
+    QUBundleStringValue qu_bundle_string_value = 2;
+    // list of int and float value pairs
+    QUBundleIntFloatPairListValue qu_bundle_int_float_pair_list_value = 3 [deprecated = true];
+    // list value
+    QUBundleListValue qu_bundle_list_value = 4;
+  }
+}
+
+// string value type QU bundle
+message QUBundleStringValue {
+  // the value of string
+  string value = 1;
+}
+
+// [Deprecated] list of the int float pairs
+message QUBundleIntFloatPairListValue {
+  // the value of the list
+  repeated QUBundleIntFloatPair int_float_value_pairs = 1;
+}
+
+// [Deprecated] int and float pair
+message QUBundleIntFloatPair {
+  // int value
+  int32 int_value = 1;
+  // float value
+  float float_value = 2;
+}
+
+// list value.
+message QUBundleListValue {
+  // the value of the list
+  oneof value {
+    // list of float value
+    argo_search.common.v1.FloatList float_values = 1;
+  }
+}

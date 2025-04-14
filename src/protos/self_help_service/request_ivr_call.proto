@@ -1,0 +1,125 @@
+syntax = "proto3";
+package self_help_service.request_ivr_call.v1;
+
+import "delivery_event/delivery_event.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.self_help_service.api";
+
+// Service with defined endpoints for IVR purposes.
+service IVRService {
+  option (doordash.api.service) = {
+    url: "self-help-service-web.service.prod.ddsd"
+    name: "self-help-service"
+    port: 50051
+    name_spaces: ["self_help"]
+    api_key_name: "SELF_HELP_SERVICE_API_KEY"
+    owner: {
+      id: "delivery-reliability-self-serve-expe"
+      name: "self-serve-experience-service"
+      slack_channel: "#ask-self-serve-experience"
+      email_alias: "eng-self-serve-experience@doordash.com"
+    }
+    target_products: [IVR]
+  };
+
+  // Get GenAI Result
+  rpc GetGenAIResult(GetGenAIResultRequest) returns (GetGenAIResultResponse) {
+    option (google.api.http) = {
+      post: "/self_help/v1/get_gen_ai_result"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CLIENT_TOKEN]
+    };
+  }
+}
+
+// Request for GenAI
+message GetGenAIResultRequest {
+  // Input text
+  google.protobuf.StringValue input = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Prompt id to use
+  google.protobuf.StringValue prompt_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Response for GenAI
+message GetGenAIResultResponse {
+  // Output text - can be string/JSON etc depending on prompt
+  google.protobuf.StringValue output = 1;
+}
+
+// Contract for requesting a call from IVR (Amazon Connect) for a given delivery.
+message DasherRequestIvrCall {
+  // Context passed by calling client e.g. mobile
+  ClientContext client_context = 1;
+
+  // Delivery context of the delivery obtained from delivery intelligence service
+  delivery_event.DeliveryContext delivery_context = 2;
+
+  // Workflow executions associated with the given delivery
+  WorkflowExecutions workflow_executions = 3;
+
+  // Attributes of the Dx requesting the call, e.g segmentation (is vip) etc.
+  DasherAttributes dasher_attributes = 4;
+
+  // Case context for any case/incident opened by the Dasher.
+  CaseContext case_context = 5;
+
+  // Telemetry data to track latency and other metrics.
+  IvrTelemetry ivr_telemetry = 6;
+}
+
+// Context passed by clients. e.g mobile
+message ClientContext {
+  // language setting in the app
+  google.protobuf.StringValue locale = 1;
+}
+
+// Workflow execution
+message WorkflowExecution {
+  // Workflow id
+  google.protobuf.Int64Value workflow_id = 1;
+
+  // Workflow name
+  google.protobuf.StringValue workflow_name = 2;
+}
+
+// Workflow executions
+message WorkflowExecutions {
+  // List of workflow execution
+  repeated WorkflowExecution executions = 1;
+}
+
+// Dasher attributes
+message DasherAttributes {
+  // Is the dasher a VIP dasher?
+  google.protobuf.BoolValue is_vip = 1;
+}
+
+// Case context of case opened by the dasher
+message CaseContext {
+  // Incident id of case opened by the dasher
+  google.protobuf.StringValue incident_id = 1;
+}
+
+// Telemetry data for tracking latency and other metrics.
+message IvrTelemetry {
+  // Time at which client (mobile) requested call
+  google.protobuf.Timestamp call_requested_at = 1;
+
+  // Time at which the automation was started
+  google.protobuf.Timestamp automation_started_at = 2;
+
+  // Time at which automation triggered IVR endpoint
+  google.protobuf.Timestamp ivr_triggered_at = 3;
+}

@@ -1,0 +1,328 @@
+syntax = "proto3";
+package consumer_habituation.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "consumer-habituation-service/consumer_habituation.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.consumer_habituation";
+
+// service for managing CHS configs, etc
+service CHSAdminService {
+  // Used by engineers (and maybe a UI in the future) to update the submarket default R2Cs for an experiment
+  rpc UpdateSubmarketDefaultR2CForExperiment(UpdateSubmarketDefaultR2CForExperimentRequest) returns (UpdateSubmarketDefaultR2CForExperimentResponse);
+
+  // Used by engineers (and maybe a UI in the future) to read the submarket default R2Cs for an experiment
+  rpc ReadSubmarketDefaultR2CForExperiment(ReadSubmarketDefaultR2CForExperimentRequest) returns (ReadSubmarketDefaultR2CForExperimentResponse);
+
+  // Used by engineers (and maybe a UI in the future) to delete the submarket default R2Cs for an experiment
+  rpc DeleteSubmarketDefaultR2CForExperiment(DeleteSubmarketDefaultR2CForExperimentRequest) returns (DeleteSubmarketDefaultR2CForExperimentResponse);
+
+  // Used by engineers to create which stores have discounts
+  rpc CreateDiscountCandidates(CreateDiscountCandidatesRequest) returns (CreateDiscountCandidatesResponse);
+
+  // Used by engineers to create which stores have discounts by Geohash
+  rpc CreateDiscountCandidatesByGeohash(CreateDiscountCandidatesByGeohashRequest) returns (CreateDiscountCandidatesByGeohashResponse);
+
+  // Used by engineers to bulk create which stores have discounts
+  rpc BulkCreateDiscountCandidates(BulkCreateDiscountCandidatesRequest) returns (BulkCreateDiscountCandidatesResponse);
+
+  // Used by engineers to bulk create which stores have discounts by Geohash
+  rpc BulkCreateDiscountCandidatesByGeohash(BulkCreateDiscountCandidatesByGeohashRequest) returns (BulkCreateDiscountCandidatesByGeohashResponse);
+
+  // Used by engineers to retrieve which stores have discounts and the corresponding carousels and badges
+  rpc GetDiscountCandidatesByGeohash(GetDiscountCandidatesByGeohashRequest) returns (GetDiscountCandidatesByGeohashResponse);
+
+  // Used by engineers to run adhoc data import job(consumer_entity_selection_swap)
+  rpc RunAdhocDataImport(RunAdhocDataImportRequest) returns (RunAdhocDataImportResponse);
+
+  // Used by engineers to delete the discount candidates
+  rpc DeleteDiscountCandidatesByGeohash(DeleteDiscountCandidatesByGeohashRequest) returns (DeleteDiscountCandidatesByGeohashResponse);
+
+  // Used by engineers to delete the fallback stores
+  rpc DeleteFallbackStoresByGeohash(DeleteFallbackStoresByGeohashRequest) returns (DeleteFallbackStoresByGeohashResponse);
+
+  // Used by engineers to bulk create geohash storelist fallback entries
+  rpc BulkCreateFallbackStoresByGeohash(BulkCreateFallbackStoresByGeohashRequest) returns (BulkCreateFallbackStoresByGeohashResponse);
+
+  // Admin service endpoint to upsert the pad notification candidates
+  rpc UpsertPadNotificationCandidates(UpsertPadNotificationCandidatesRequest) returns (UpsertPadNotificationCandidatesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+}
+
+// request for UpdateSubmarketDefaultR2C
+// designed to emulate how SM R2C was updated in runtime
+message UpdateSubmarketDefaultR2CForExperimentRequest {
+  // experiment name and bucket names that this applies to
+  ExperimentDetails experiment_details = 1;
+  // list of submarket default r2c configs
+  repeated SubmarketToDefaultR2CPair configs = 2;
+  // who is responsible for this update
+  string updated_by = 5;
+}
+
+// response for UpdateSubmarketDefaultR2C
+message UpdateSubmarketDefaultR2CForExperimentResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// request for ReadSubmarketDefaultR2C
+message ReadSubmarketDefaultR2CForExperimentRequest {
+  // experiment name and bucket names that we want to read
+  ExperimentDetails experiment_details = 1;
+}
+
+// request for ReadSubmarketDefaultR2C
+message ReadSubmarketDefaultR2CForExperimentResponse {
+  // list of submarket default r2c configs for the experiment config in request
+  repeated SubmarketDefaultR2CRow submarket_default_r2c_rows = 1;
+}
+
+// request for DeleteSubmarketDefaultR2C
+message DeleteSubmarketDefaultR2CForExperimentRequest {
+  // experiment name and bucket names that we want to delete
+  ExperimentDetails experiment_details = 1;
+}
+
+// request for DeleteSubmarketDefaultR2C
+message DeleteSubmarketDefaultR2CForExperimentResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// pair of submarket id and default r2c
+message SubmarketToDefaultR2CPair {
+  // submarket id
+  string submarket_id = 1;
+  // default r2c
+  float default_r2c = 2;
+}
+
+// experiment name and bucket names
+message ExperimentDetails {
+  // experiment (dv) name
+  string experiment_name = 1;
+  // list of experiment bucket names
+  repeated string experiment_buckets = 2;
+}
+
+// Proto message corresponding to CRDB table row
+message SubmarketDefaultR2CRow {
+  // columns SUBMARKET_ID and DEFAULT_R2C
+  SubmarketToDefaultR2CPair submarket_id_and_default_r2c = 1;
+  // columns EXPERIMENT_NAME and EXPERIMENT_BUCKET
+  ExperimentDetails experiment_name_and_experiment_bucket = 2;
+  // column UPDATED_BY
+  string updated_by = 3;
+  // column UPDATED_AT
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// input request for CreateDiscountCandidates
+message CreateDiscountCandidatesRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // location information
+  common.ConsumerLocation consumer_location = 2;
+  // entity type of candidate
+  EntityType entity = 3;
+  // entity_id of candidate
+  string entity_id = 4;
+  // any carousel_ids that are associated with entity
+  repeated string carousel_ids = 5;
+  // any badges that should show on entity cards
+  repeated string badge_types = 6;
+  // discount type to add
+  money.DiscountType discount_type = 7;
+  // pad discount type
+  PadDiscountType pad_discount_type = 8;
+  // pad rotation attributes
+  RotationAttributes rotation_attributes = 9;
+}
+
+// response for CreateDiscountCandidates
+message CreateDiscountCandidatesResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// input request for CreateDiscountCandidatesByGeohash
+message CreateDiscountCandidatesByGeohashRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // consumer geohash
+  string geohash = 2;
+  // entity type of candidate
+  EntityType entity = 3;
+  // entity_id of candidate
+  string entity_id = 4;
+  // any carousel_ids that are associated with entity
+  repeated string carousel_ids = 5;
+  // any badges that should show on entity cards
+  repeated string badge_types = 6;
+  // discount type to add
+  money.DiscountType discount_type = 7;
+  // pad discount type
+  PadDiscountType pad_discount_type = 8;
+  // pad rotation attributes
+  RotationAttributes rotation_attributes = 9;
+}
+
+// response for CreateDiscountCandidatesByGeohash
+message CreateDiscountCandidatesByGeohashResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// input request for BulkCreateDiscountCandidatesByGeohash
+message BulkCreateDiscountCandidatesByGeohashRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // consumer geohash
+  string geohash = 2;
+  // entity type of candidates
+  EntityType entity = 3;
+  // entity_id list of candidates
+  repeated string entity_ids = 4;
+  // any carousel_ids that are associated with entity
+  repeated string carousel_ids = 5;
+  // any badges that should show on entity cards
+  repeated string badge_types = 6;
+  // discount type to add
+  money.DiscountType discount_type = 7;
+  // pad discount type
+  PadDiscountType pad_discount_type = 8;
+  // pad rotation attributes
+  RotationAttributes rotation_attributes = 9;
+}
+
+// response for BulkCreateDiscountCandidatesByGeohash
+message BulkCreateDiscountCandidatesByGeohashResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// input request for BulkCreateDiscountCandidates
+message BulkCreateDiscountCandidatesRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // location information
+  common.ConsumerLocation consumer_location = 2;
+  // entity type of candidates
+  EntityType entity = 3;
+  // entity_id list of candidates
+  repeated string entity_ids = 4;
+  // any carousel_ids that are associated with entity
+  repeated string carousel_ids = 5;
+  // any badges that should show on entity cards
+  repeated string badge_types = 6;
+  // discount type to add
+  money.DiscountType discount_type = 7;
+  // pad discount type
+  PadDiscountType pad_discount_type = 8;
+  // pad rotation attributes
+  RotationAttributes rotation_attributes = 9;
+}
+
+// response for BulkCreateDiscountCandidates
+message BulkCreateDiscountCandidatesResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// input request for GetDiscountCandidatesByGeohash
+message GetDiscountCandidatesByGeohashRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // consumer geohash
+  string geohash = 2;
+}
+
+// response for GetDiscountCandidatesByGeohash
+message GetDiscountCandidatesByGeohashResponse {
+  // entity type of candidate
+  EntityType entity = 1;
+  // candidates that are eligible for discounts
+  repeated string entity_ids = 2;
+}
+
+// response for RunAdhocDataImport
+message RunAdhocDataImportResponse {
+  // response message
+  string message = 1;
+}
+
+// request for RunAdhocDataImport
+message RunAdhocDataImportRequest {
+  reserved 2;
+  reserved "dump_config_file_path";
+  // workflow name, required to be unique, suggested to suffix with timestamp
+  string workflow_name = 1;
+
+  // workflow runtime config file path for data dump
+  google.protobuf.StringValue data_dump_file_path = 3;
+}
+
+// request for DeleteDiscountCandidatesByGeohash
+message DeleteDiscountCandidatesByGeohashRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // consumer geohash
+  string geohash = 2;
+  // entity type of candidates
+  EntityType entity = 3;
+}
+
+// request for DeleteDiscountCandidatesByGeohash
+message DeleteDiscountCandidatesByGeohashResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// request for DeleteFallbackStoresByGeohash
+message DeleteFallbackStoresByGeohashRequest {
+  // consumer geohash
+  string geohash = 1;
+}
+
+// request for DeleteFallbackStoresByGeohash
+message DeleteFallbackStoresByGeohashResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// request for BulkCreateFallbackStoresByGeohash
+message BulkCreateFallbackStoresByGeohashRequest {
+  // geohash
+  string geohash = 1;
+  // list of fallback store ids
+  repeated string store_ids = 2;
+}
+
+// response for BulkCreateFallbackStoresByGeohash
+message BulkCreateFallbackStoresByGeohashResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// input request for UpsertPadNotificationCandidates
+message UpsertPadNotificationCandidatesRequest {
+  // consumer_id of consumer
+  string consumer_id = 1;
+  // delivery geohash
+  string delivery_geohash = 2;
+  // store ids
+  repeated string store_ids = 3;
+}
+
+// response for UpsertPadNotificationCandidates
+message UpsertPadNotificationCandidatesResponse {
+  // success or failure message
+  string message = 1;
+}

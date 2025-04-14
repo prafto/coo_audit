@@ -1,0 +1,341 @@
+syntax = "proto3";
+
+package doordash.retail.fulfillment.intelligence_service.v1;
+
+import "common/common.proto";
+import "common/date.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "doordash.retail.common.v1/common.proto";
+import "feed_service/facet_response_v2.proto";
+import "feed_service/retail_common.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_data_service_store_service/store.proto";
+import "promotion/incentive.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.retail.fulfillment";
+
+// APIs for the Intelligence Service
+service IntelligenceService {
+  // Fetches checkout delivery options for generating delivery options/windows
+  // This RPC is invoked by feed-service and order-service
+  rpc BatchGetNewVerticalsDeliveryOptions(BatchGetNewVerticalsDeliveryOptionsRequest) returns (BatchGetNewVerticalsDeliveryOptionsResponse);
+  // Fetches the monetary and pricing data associated with each delivery options
+  // This RPC is invoked by delivery-fee-service
+  rpc GetNewVerticalsDeliveryOptionMonetaryData(GetNewVerticalsDeliveryOptionMonetaryDataRequest) returns (GetNewVerticalsDeliveryOptionMonetaryDataResponse);
+  // HackWeek API to map old cart to new cart. This is not used in production
+  rpc HackWeekSwizzleCart(HackWeekSwizzleCartRequest) returns (HackWeekSwizzleCartResponse);
+  // Fetches precheckout delivery options, decoupling from checkout delivery options
+  rpc BatchGetPreCheckoutDeliveryOptions(BatchGetPreCheckoutDeliveryOptionsRequest) returns (BatchGetPreCheckoutDeliveryOptionsResponse);
+}
+
+message BatchGetNewVerticalsDeliveryOptionsRequest {
+  repeated GetNewVerticalsDeliveryOptionsRequest batch_get_new_verticals_delivery_options_request = 1;
+}
+
+message BatchGetNewVerticalsDeliveryOptionsResponse {
+  repeated GetNewVerticalsDeliveryOptionsResponse batch_get_new_verticals_delivery_options_response = 1;
+}
+
+// singular new verticals delivery options request
+message GetNewVerticalsDeliveryOptionsRequest {
+  string client_id = 1;
+  // optional cart ID
+  google.protobuf.StringValue cart_id = 2;
+  string store_id = 3;
+  // domain type
+  Domain domain = 4;
+  string delivery_options_request_identifier = 5;
+  google.protobuf.StringValue store_timezone = 6;
+  // static express minutes
+  google.protobuf.Int32Value express_minutes = 7;
+  // quoted express min
+  google.protobuf.Int32Value express_minutes_lower_bound = 8;
+  // quoted express max
+  google.protobuf.Int32Value express_minutes_upper_bound = 9;
+  google.protobuf.StringValue business_vertical_id = 10;
+  order.ShoppingProtocol retail_shopping_protocol = 11;
+  // store data
+  store_service.Store store = 12;
+  google.protobuf.StringValue menu_id = 13;
+  // store unavailable reason provided from search service
+  google.protobuf.StringValue search_store_unavailable_reason = 14;
+  // upstream provided source delivery fee string. to be transformed to NewVerticalsDeliveryOption.display_strings
+  google.protobuf.StringValue source_delivery_fee = 15;
+  // determines if this delivery is a gift order at checkout
+  google.protobuf.BoolValue is_gift = 16;
+  // store context
+  StoreContext store_context = 17;
+  // consumer context
+  ConsumerContext consumer_context = 18;
+  // cart context
+  CartContext cart_context = 19;
+}
+
+message StoreContext {
+  .common.StoreLocation store_location = 1;
+  // The distance(in miles) between Cx and Mx (aka R2C)
+  google.protobuf.DoubleValue merchant_to_consumer_distance_in_miles = 2;
+}
+
+message ConsumerContext {
+  .common.ConsumerLocation consumer_location = 1;
+}
+
+message CartContext {
+  repeated CartItem cart_items = 1;
+}
+
+// singular new verticals delivery options response
+message GetNewVerticalsDeliveryOptionsResponse {
+  string delivery_options_response_identifier = 1;
+  repeated NewVerticalsDeliveryOption new_verticals_delivery_options = 2;
+}
+
+message NewVerticalsDeliveryOption {
+  string delivery_options_identifier = 1;
+  common.v1.RetailDeliveryOptionType type = 2;
+  bool eligibility = 3;
+  map<string, string> display_strings = 4;
+  repeated DeliveryWindow delivery_windows = 5;
+  // preselect the delivery option if true
+  google.protobuf.BoolValue is_preselected = 6;
+  // Checkout option ranking. The option is hidden if is null or 0.
+  google.protobuf.Int32Value checkout_option_ranking = 7;
+  // More option ranking. The option is hidden if is null or 0.
+  google.protobuf.Int32Value more_option_ranking = 8;
+}
+
+message DeliveryWindow {
+  string delivery_window_identifier = 1;
+  Money money = 2;
+  WindowDuration window_duration = 3;
+  TimeWindow time_window = 4;
+}
+
+message Money {
+  money.MonetaryFields amount = 1;
+  // monetary type incentive/fee
+  common.v1.MonetaryGroup.MonetaryType monetary_type = 2;
+  map<string, string> display_strings = 3;
+}
+
+message TimeWindow {
+  google.protobuf.Timestamp start_timestamp = 1;
+  google.protobuf.Timestamp end_timestamp = 2;
+  google.protobuf.Timestamp midpoint_timestamp = 3;
+  map<string, string> display_strings = 4;
+  date.Date day_timestamp = 5;
+}
+
+message WindowDuration {
+  int32 value = 1;
+  TimeDuration unit = 2;
+  map<string, string> display_strings = 3;
+}
+
+// time duration unit
+enum TimeDuration {
+  TIME_DURATION_UNSPECIFIED = 0;
+  // time duration unit is minute
+  TIME_DURATION_MINS = 1;
+}
+
+// Domain type of the request
+enum Domain {
+  // Domain type is unspecified
+  DOMAIN_UNSPECIFIED = 0;
+  // Domain type is checkout
+  DOMAIN_CHECKOUT = 1;
+  // Domain type is grocery landing page in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_GROCERY_LANDING_PAGE = 2;
+  // Domain type is store search page in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_GLOBAL_SEARCH_PAGE = 3;
+  // Domain type is store page in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_STORE_PAGE = 4;
+  // Domain type is store search with item display page in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_NV_ITEM_SEARCH_PAGE = 5;
+  // Domain type is autocomplete in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_AUTOCOMPLETE = 6;
+  // Domain type is homepage in pre-checkout workflow
+  DOMAIN_PRE_CHECKOUT_HOMEPAGE = 7;
+  // Domain type is cart page
+  DOMAIN_PRE_CHECKOUT_CART = 8;
+  // Domain type is post-checkout reschedule
+  DOMAIN_POST_CHECKOUT_RESCHEDULE = 9;
+}
+
+enum FeeType {
+  FEE_TYPE_UNSPECIFIED = 0;
+  FEE_TYPE_DELIVERY = 1;
+  FEE_TYPE_SERVICE = 2;
+  FEE_TYPE_SOS = 3;
+}
+
+message GetNewVerticalsDeliveryOptionMonetaryDataRequest {
+  string consumer_id = 1;
+  string cart_id = 2;
+  // consumer selected delivery option
+  SelectedDeliveryOption selected_delivery_option = 3;
+  // monetary type: fee or incentive
+  common.v1.MonetaryGroup.MonetaryType monetary_type = 4;
+  repeated StoreInfo store_info = 5;
+}
+
+message GetNewVerticalsDeliveryOptionMonetaryDataResponse {
+  money.MonetaryFields delivery_option_monetary_data = 1;
+  // percentage discount or fee
+  google.protobuf.DoubleValue percentage = 2;
+  // percentage flat cap
+  google.protobuf.Int32Value cap = 3;
+}
+
+message StoreInfo {
+  string store_id = 1;
+  google.protobuf.StringValue store_business_id = 2;
+  google.protobuf.StringValue store_timezone = 3;
+  google.protobuf.StringValue business_vertical_id = 4;
+  google.protobuf.StringValue country = 5;
+  google.protobuf.StringValue submarket_id = 6;
+  // distance from consumer in miles
+  google.protobuf.DoubleValue distance_in_miles = 7;
+}
+
+message ConsumerInfo {
+  google.protobuf.StringValue consumer_id = 1;
+  // true if consumer is a dashpass user
+  google.protobuf.BoolValue is_dashpass = 2;
+}
+
+message EtaInfo {
+  // static express eta in minutes
+  google.protobuf.Int32Value express_minutes = 1;
+}
+
+message PricingInfo {
+  // list of fees
+  repeated FeeEntity fee_entity = 1;
+}
+
+message FeeEntity {
+  FeeType type = 1;
+  // minimum cart subtotal amount in cents to qualify fee amount
+  google.protobuf.Int32Value minimum_subtotal = 2;
+  // fee amount in cents
+  google.protobuf.Int32Value fee_amount = 3;
+  // fee cap amount in cents
+  google.protobuf.Int32Value fee_cap = 4;
+}
+
+// consumer selected delivery option
+message SelectedDeliveryOption {
+  message ExpressDelivery {}
+  message StandardDelivery {}
+  message ScheduledDelivery {
+    google.protobuf.Timestamp delivery_window_start_time = 1;
+    google.protobuf.Timestamp delivery_window_end_time = 2;
+  }
+  message FreeSameDayDelivery {
+    google.protobuf.Timestamp delivery_window_start_time = 1;
+    google.protobuf.Timestamp delivery_window_end_time = 2;
+  }
+  message FastDelivery {}
+
+  // the kind of delivery option
+  oneof delivery_option {
+    ExpressDelivery express_delivery = 1;
+    StandardDelivery standard_delivery = 2;
+    ScheduledDelivery scheduled_delivery = 3;
+    FreeSameDayDelivery free_same_day_delivery = 4;
+    FastDelivery fast_delivery = 5;
+  }
+}
+
+message BatchGetPreCheckoutDeliveryOptionsRequest {
+  repeated GetPreCheckoutDeliveryOptionsRequest get_pre_checkout_delivery_options_request = 1;
+}
+
+message BatchGetPreCheckoutDeliveryOptionsResponse {
+  repeated GetPreCheckoutDeliveryOptionsResponse get_pre_checkout_delivery_options_response = 1;
+}
+
+// singular get pre-checkout delivery options request
+message GetPreCheckoutDeliveryOptionsRequest {
+  // domain type to differentiate discovery pages
+  Domain domain = 1;
+  StoreInfo store_info = 2;
+  ConsumerInfo consumer_info = 3;
+  PricingInfo pricing_info = 4;
+  EtaInfo eta_info = 5;
+  PromotionInfo promotion_info = 6;
+}
+
+message PromotionInfo {
+  repeated CampaignEntity campaign_entities = 1;
+}
+
+message CampaignEntity {
+  string campaign_id = 1;
+  repeated promotion_service.Incentive incentives = 2;
+}
+
+// singular get pre-checkout delivery options response
+message GetPreCheckoutDeliveryOptionsResponse {
+  // deprecated
+  reserved 2;
+  reserved "delivery_options_store_facet";
+  string store_id = 1;
+  repeated DeliveryOptionsStoreFacet store_facets = 3;
+  DeliveryOptionsStoreHeader store_header = 4;
+}
+
+// facet attributes for discovery page content per store
+message DeliveryOptionsStoreFacet {
+  // text fields used in discovery LEGO component Facet V2
+  feed_service.FacetV2.Text text = 1;
+  // LEGO component id
+  google.protobuf.StringValue component_id = 2;
+}
+
+// text attributes for store page header
+message DeliveryOptionsStoreHeader {
+  feed_service.DeliveryFeeLayout delivery_fee_layout = 1;
+  feed_service.DeliveryToolTip delivery_fee_tooltip = 2;
+  feed_service.RetailStoreStatus status = 3;
+}
+
+message CustomerLocation {
+  double cx_lat = 1;
+  double cx_lng = 2;
+}
+
+// Swizzle cart API
+message HackWeekSwizzleCartRequest {
+  string old_cart_id = 1;
+  string new_store_id = 2;
+  string consumer_id = 3;
+  // Cart details
+  repeated CartItem cart_items = 4;
+}
+
+// Plural of CartItem
+message CartItems {
+  repeated CartItem cart_items = 1;
+}
+
+message CartItem {
+  string merchant_supplied_id = 1;
+  string item_id = 2;
+  google.protobuf.Int32Value quantity = 3;
+  google.protobuf.Int64Value unit_price = 4;
+  google.protobuf.StringValue item_category_name = 5;
+}
+
+// Response with the new cart id for further COFC Request
+message HackWeekSwizzleCartResponse {
+  string new_cart_id = 1;
+}

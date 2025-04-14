@@ -1,0 +1,143 @@
+syntax = "proto3";
+package mx_support_service.api.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.mx_support_service";
+
+// Mx Error Charge Dispute Service
+service MxErrorChargeDisputeService {
+  // For reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "mx-support-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Validates whether a delivery is eligible for a Mx to dispute its corresponding error charge based on our internal DoorDash Policies
+  rpc GetDeliveryEligibilityForMerchantDispute(GetDeliveryEligibilityForMerchantDisputeRequest) returns (GetDeliveryEligibilityForMerchantDisputeResponse) {
+    option deprecated = true;
+  }
+
+  // Validates whether a delivery is eligible for a Mx to dispute and if eligible, will create corresponding Merchant Payment Adjustment (i.e. store refund)
+  rpc ValidateAndCreateMxErrorChargePaymentAdjustment(ValidateAndCreateMxErrorChargePaymentAdjustmentRequest) returns (ValidateAndCreateMxErrorChargePaymentAdjustmentResponse);
+}
+
+// Request object for GetDeliveryEligibilityForMerchantDispute rpc
+message GetDeliveryEligibilityForMerchantDisputeRequest {
+  // Delivery to check eligibility on
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Response object for GetDeliveryEligibilityForMerchantDispute rpc
+message GetDeliveryEligibilityForMerchantDisputeResponse {
+  // Whether or not this delivery is eligible for dispute
+  google.protobuf.BoolValue is_eligible_for_dispute = 1;
+  // If this delivery is ineligible for dispute, this returns the reason
+  DisputeDeniedReason dispute_denied_reason = 2;
+  // Doordash policy dictates orders cannot be disputed 14-days after quoted delivery time
+  google.protobuf.Timestamp last_day_to_dispute = 3;
+}
+
+// Request object for ValidateAndCreateMxErrorChargePaymentAdjustment rpc
+message ValidateAndCreateMxErrorChargePaymentAdjustmentRequest {
+  // Client calling this Mx Error Charge Dispute
+  DisputeSource dispute_source = 1;
+  // Delivery being disputed containing Mx Error Charges
+  Delivery delivery = 2;
+  // The amount being requested for refund to the Mx (Merchant Payment Adjustment)
+  google.protobuf.Int32Value store_refund = 3;
+  // The disputor's user ID - tracked in DispatchError (Merchant Payment Adjustment) created as (if empty, get from Hermes)
+  google.protobuf.Int64Value created_by_id = 4;
+  // String value to be stored in resulting DispatchError (Merchant Payment Adjustment) created as DispatchNote. This is used for processing by certain clients (ex. Mx-Initiated uses this field for item tracking)
+  google.protobuf.StringValue dispatch_notes = 5;
+  // Optional idempotency key used when creating the resulting DispatchError
+  google.protobuf.StringValue idempotency_key = 6;
+}
+
+// Response object for ValidateAndCreateMxErrorChargePaymentAdjustment rpc
+message ValidateAndCreateMxErrorChargePaymentAdjustmentResponse {
+  // Contains resulting information from a Mx Error Charge Dispute; includes detailed for dispute ineligibility and fraud heuristics results
+  DisputeInfo dispute_info = 1;
+  // If Mx Error Charge Dispute is successful, this will contain refund information
+  RefundInfo refund_info = 2;
+}
+
+// Contains delivery-related or order-related information
+message Delivery {
+  // Delivery UUID of the delivery being disputed
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Resulting dispute validation information from a Mx Error Charge Dispute
+message DisputeInfo {
+  // Returns whether this delivery was approved, denied, or is pending decision
+  DisputeStatus dispute_status = 1;
+  // If this delivery is ineligible for dispute, this returns the reason
+  DisputeDeniedReason dispute_denied_reason = 2;
+  // Whether or not this delivery is eligible for dispute
+  google.protobuf.BoolValue is_eligible_for_dispute = 3;
+  // Doordash policy dictates orders cannot be disputed 14-days after quoted delivery time, returns last day to dispute
+  google.protobuf.Timestamp last_day_to_dispute = 4;
+}
+
+// Resulting refund-related information from a successful Mx Error Charge Dispute
+message RefundInfo {
+  // Delivery being disputed containing Mx Error Charges
+  google.protobuf.StringValue delivery_uuid = 1;
+  // DispatchError ID of the resulting refund object (if valid request and Mx was refunded, otherwise empty)
+  google.protobuf.Int64Value dispatch_error_id = 2;
+  // Store refund amount paid to the Mx for this dispute of a Mx Error Charge
+  google.protobuf.Int32Value store_refund = 3;
+}
+
+// Client calling this Mx Error Charge Dispute (maps to DispatchErrorSource for financial auditing)
+enum DisputeSource {
+  // Default value; unknown DisputeSource
+  DISPUTE_SOURCE_UNSPECIFIED = 0;
+  // Corresponds to DisputeSource DISPATCH_MERCHANT_ADJUSTMENT_TOOL(3) (i.e. Merchant Payment Adjustment tool in THQ)
+  DISPUTE_SOURCE_DISPATCH_MERCHANT_ADJUSTMENT_TOOL = 1;
+  // Corresponds to DisputeSource BULK_MX_PAYMENT_ADJUSTMENT_TOOL(9) (i.e. Bulk Tool - Mx - Error Payment Processing)
+  DISPUTE_SOURCE_BULK_MX_PAYMENT_ADJUSTMENT_TOOL = 2;
+  // Corresponds to DisputeSource MX_INITIATED_FROM_MX_PORTAL(10) (i.e. Mx Portal/BMA - Mx-Initiated Error Charge Dispute)
+  DISPUTE_SOURCE_MX_INITIATED_FROM_MX_PORTAL = 3;
+  // Corresponds to DisputeSource OTHER(6) (i.e. reserved for unknown source)
+  DISPUTE_SOURCE_OTHER = 4;
+}
+
+// Mx Error Charge Dispute Result - Detailed reason for denied
+enum DisputeDeniedReason {
+  // Default value not set
+  DISPUTE_DENIED_REASON_UNSPECIFIED = 0;
+  // Order cannot be disputed due to delivery doesn't have error charges
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DOES_NOT_CONTAIN_ERROR_CHARGE = 1;
+  // Order cannot be disputed due to the quoted delivery date exceeding 14 days in the past
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_EXCEEDS_14_DAY_POLICY = 2;
+  // Order cannot be disputed due this delivery was already fully/partially refunded
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_PRIOR_STORE_REFUND_EXISTS_FOR_DELIVERY = 3;
+  // Order cannot be disputed due to the Mx exceeding our fraud threshold (i.e. high dispute rate)
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_STORE_EXCEEDS_DISPUTE_THRESHOLD = 4;
+  // Store is disallowed from disputing due to company policy infringement
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_STORE_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 5;
+  // User is disallowed from disputing due to company policy infringement
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_USER_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 6;
+  // Delivery was denied because the order did not pass one or more fraud heuristics
+  DISPUTE_DENIED_REASON_INELIGIBLE_FOR_DISPUTE_REASON_DELIVERY_DID_NOT_PASS_MX_ERROR_CHARGE_DISPUTE_FRAUD_HEURISTICS = 7;
+}
+
+// Mx Error Charge Dispute Result - Returns the status of the dispute
+enum DisputeStatus {
+  // Default value
+  DISPUTE_STATUS_UNSPECIFIED = 0;
+  // Dispute was approved and Mx was issued a merchant payment adjustment
+  DISPUTE_STATUS_APPROVED = 1;
+  // Dispute was denied and Mx was not issued a merchant payment adjustment
+  DISPUTE_STATUS_DENIED = 2;
+  // Dispute decision is still pending
+  DISPUTE_STATUS_PENDING = 3;
+}

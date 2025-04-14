@@ -1,0 +1,441 @@
+syntax = "proto3";
+
+package storage_self_serve.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/storage_self_serve.v1";
+
+// Target environment is the cell where the resource is being provisioned
+// or where the self service operation is being performed
+enum TargetEnvironment {
+  // DO NOT USE. Placeholder for forward compatibility.
+  TARGET_ENVIRONMENT_UNSPECIFIED = 0;
+
+  // Main Environments
+  // this is probably the one you want for staging
+  TARGET_ENVIRONMENT_MAIN_00_STAGING_US_WEST_2 = 1;
+  TARGET_ENVIRONMENT_MAIN_03_PROD_US_WEST_2 = 2;
+  TARGET_ENVIRONMENT_MAIN_00_BUILD_PROD_US_WEST_2 = 3;
+  TARGET_ENVIRONMENT_DEV_00_STAGING_US_WEST_2 = 4; // infra dev cluster
+  TARGET_ENVIRONMENT_MAIN_00_PROD_US_WEST_2 = 5;
+
+  // Dev and Local Environments
+  TARGET_ENVIRONMENT_DEV = 6;
+  TARGET_ENVIRONMENT_LOCAL = 7;
+
+  // Data Staging Environment
+  TARGET_ENVIRONMENT_DATA_00_STAGING_US_WEST_2 = 8;
+
+  // Wolt Environments
+  TARGET_ENVIRONMENT_CELL_001_00_WOLT_PROD_MAIN_EU_WEST_1 = 9;
+  TARGET_ENVIRONMENT_CELL_002_00_WOLT_PROD_MAIN_EU_WEST_1 = 10;
+}
+
+// Enum for storage operation status
+enum OperationStatus {
+  // DO NOT USE. Unspecified storage operation status
+  OPERATION_STATUS_UNSPECIFIED = 0;
+  // Pending manual or CI validation
+  OPERATION_STATUS_VALIDATING = 1;
+  // Apply in progress but not yet finished
+  OPERATION_STATUS_PENDING_APPLY = 2;
+  // Operation applied successfully
+  OPERATION_STATUS_APPLIED = 3;
+  // Monitoring stage
+  OPERATION_STATUS_MONITORING = 4;
+  // Operation has been reverted
+  OPERATION_STATUS_REVERTED = 5;
+  // Operation has been abandoned
+  OPERATION_STATUS_ABANDONED = 6;
+  // Proposed (default starting status)
+  OPERATION_STATUS_PROPOSED = 7;
+  // Applying
+  OPERATION_STATUS_APPLYING = 8;
+  // Reviewing
+  OPERATION_STATUS_REVIEWING = 9;
+  // STALE
+  OPERATION_STATUS_STALE = 10;
+  // Failed
+  OPERATION_STATUS_FAILED = 11;
+}
+
+// Specify the type of operation being performed
+enum OperationType {
+  // DO NOT USE. Unspecified operation type
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  // Deprecated in favor of more specific operation types
+  OPERATION_TYPE_SCHEMA_CHANGE = 1 [deprecated = true];
+  // Generic operation type. Meant for experimentation and storage admin use.
+  OPERATION_TYPE_GENERIC = 2;
+  OPERATION_TYPE_SCHEMA_CHANGE_CRDB = 3;
+  OPERATION_TYPE_SCHEMA_CHANGE_POSTGRES = 4;
+}
+
+// Review status
+enum ReviewStatus {
+  // REVIEW_TYPE_UNSPECIFIED represents an unspecified status
+  REVIEW_STATUS_UNSPECIFIED = 0;
+  // REVIEW_STATUS_PENDING_APPROVAL represents a review waiting for decisions to be made on it
+  REVIEW_STATUS_PENDING_APPROVAL = 1;
+  // REVIEW_STATUS_EXPIRED represents a review that has expired, meaning that reviewers did not approve/decline it in time
+  REVIEW_STATUS_EXPIRED = 2;
+  // REVIEW_STATUS_APPROVED represents a review that has been approved fully (all requirements have been made)
+  REVIEW_STATUS_APPROVED = 3;
+  // REVIEW_STATUS_DECLINED represents a review that has been declined
+  REVIEW_STATUS_DECLINED = 4;
+  // REVIEW_STATUS_PENDING_CHANGES represents a review that has had a "request for changes" made to it
+  REVIEW_STATUS_PENDING_CHANGES = 5;
+  // REVIEW_STATUS_PENDING_VALIDATIONS reprents a review that cannot proceed because there are incomplete validations
+  REVIEW_STATUS_PENDING_VALIDATIONS = 6;
+}
+
+// TODO: simplify this message in the future, probably don't need all these
+// fields
+message OperationEnvironment {
+  // Name of the cluster that the operation is being performed on.
+  string cluster_name = 1;
+  // Describes where the operation is being performed.
+  TargetEnvironment target_env = 2;
+  // AWS region
+  string region = 3;
+  // AWS account name
+  string aws_account_name = 4;
+}
+
+// SQL to be executed to perform the operation and associated rollback
+message OperationQueries {
+  reserved 1;
+
+  // SQL Statement for the operation
+  string operation_statement = 2;
+  // SQL Statement for rollback
+  string rollback_statement = 3;
+  // SQL Statement to verify the operation succeded
+  string verification_statement = 4;
+}
+
+message OperationMetadata {
+  // Description of the operation
+  string description = 1;
+  // Owning team
+  string owning_team = 2;
+  // GitHub pull request link
+  string github_pr_link = 3;
+  // Product DDPD
+  string product_ddpd = 4;
+  // Workflow ID
+  string workflow_id = 5;
+  // Additional information
+  google.protobuf.Struct extra_info = 6;
+  // List of service dependencies
+  repeated string dependencies = 7;
+  // DD email of the requester.
+  string requested_by = 8;
+}
+
+message OperationReview {
+  // Review ID
+  string review_id = 1;
+  // Review status
+  ReviewStatus review_status = 2;
+  // Comments on the review
+  repeated OperationReviewComment comments = 3;
+}
+
+message OperationReviewComment {
+  // timestamp of the comment
+  google.protobuf.Timestamp timestamp = 1;
+  // comment
+  string comment = 2;
+  // DD email of the commenter
+  string commenter = 3;
+}
+
+// Create for generic storage operations. Intended mainly for storage admin use
+// and new endpoint experimentation. General users should use the domain
+// specific APIs.
+// TODO: update this to accommodate pre-req db and new fields as they come in;
+// probably best to refactor this once we have more operation types
+message CreateGenericOperationRequest {
+  // Environment of the resource that the operation is being performed on. E.g.,
+  // the information that identifies a CRDB cluster.
+  OperationEnvironment operation_environment = 1;
+
+  // Status of the storage operation. Deprecated since the server will control the status at creation.
+  OperationStatus status = 2 [deprecated = true];
+
+  // JSON representation of monitor queries. Used to monitor for unexpected side
+  // effects and inform rollback.
+  google.protobuf.Struct monitor_queries = 3;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 4;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 5;
+
+  // Type of the storage operation
+  OperationType operation_type = 6;
+}
+
+// Response for create
+message CreateGenericOperationResponse {
+  // id of the op
+  string operation_id = 1;
+}
+
+// Read request
+message GetGenericOperationRequest {
+  // id of the op
+  string operation_id = 1;
+}
+
+// Read response
+message GetGenericOperationResponse {
+  // Environment of the resource that the operation is being performed on. E.g.,
+  // the information that identifies a CRDB cluster.
+  OperationEnvironment operation_environment = 1;
+
+  // Status of the storage operation (defaults to PROPOSED)
+  OperationStatus status = 2;
+
+  // JSON representation of monitor queries. Used to monitor for unexpected side
+  // effects and inform rollback.
+  google.protobuf.Struct monitor_queries = 3;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 4;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 5;
+
+  // Type of the storage operation
+  OperationType operation_type = 6;
+
+  // ID of the operation
+  string operation_id = 7;
+
+  // Timestamp for when operation was created
+  google.protobuf.Timestamp created_at = 8;
+
+  // Timestamp for when operation was last updated
+  google.protobuf.Timestamp updated_at = 9;
+
+  // Operation review
+  OperationReview operation_review = 10;
+}
+
+// Update request
+message UpdateGenericOperationRequest {
+  // ID of the operation
+  string operation_id = 1;
+
+  // Environment of the resource that the operation is being performed on. E.g.,
+  // the information that identifies a CRDB cluster.
+  OperationEnvironment operation_environment = 2;
+
+  // Status of the storage operation (defaults to PROPOSED)
+  OperationStatus status = 3;
+
+  // JSON representation of monitor queries. Used to monitor for unexpected side
+  // effects and inform rollback.
+  google.protobuf.Struct monitor_queries = 4;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 5;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 6;
+
+  // Type of the storage operation
+  OperationType operation_type = 7;
+
+  // Mask to specify which fields to update. Fields that are not specified will
+  // NOT be updated. Use the unqualified underlying field name and use camelCase
+  // for multi-word field names. E.g., `description` for `metadata.description`
+  // and `githubPrLink` for `metadata.githubPrLink`.
+  google.protobuf.FieldMask update_mask = 8;
+
+  // DD email of the requester.
+  string updated_by = 9;
+}
+
+// Update response
+message UpdateGenericOperationResponse {}
+
+// Create request
+message CreateSchemaChangeOperationRequest {
+  // Identifies the environment where the operation will be performed.
+  OperationEnvironment operation_environment = 1;
+
+  // Status of the storage operation. Deprecated since the server will control the status at creation.
+  OperationStatus status = 2 [deprecated = true];
+
+  // JSON representation of monitor queries. Used to monitor for unexpected side
+  // effects and inform rollback.
+  google.protobuf.Struct monitor_queries = 3;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 4;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 5;
+
+  // Environments where the operation should be tested in before final apply.
+  repeated OperationEnvironment pre_req_testing_environments = 6;
+
+  // Which type of schema change (CRDB or Postgres)
+  OperationType operation_type = 7;
+}
+
+// Create response
+message CreateSchemaChangeOperationResponse {
+  // op id
+  string operation_id = 1;
+}
+
+// Read request
+message GetSchemaChangeOperationRequest {
+  // op id
+  string operation_id = 1;
+}
+
+// Read response
+message GetSchemaChangeOperationResponse {
+  // Environment of the resource that the operation is being performed on. E.g.,
+  // the information that identifies a CRDB cluster.
+  OperationEnvironment operation_environment = 1;
+
+  // Status of the storage operation (defaults to PROPOSED)
+  OperationStatus status = 2;
+
+  // JSON representation of monitor queries. Used to monitor for unexpected side
+  // effects and inform rollback.
+  google.protobuf.Struct monitor_queries = 3;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 4;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 5;
+
+  // Type of the storage operation
+  OperationType operation_type = 6;
+
+  // Operation ID
+  string operation_id = 7;
+
+  // Timestamp for when operation was created
+  google.protobuf.Timestamp created_at = 8;
+
+  // Timestamp for when operation was last updated
+  google.protobuf.Timestamp updated_at = 9;
+
+  // Operation review
+  OperationReview operation_review = 10;
+}
+
+// Update status request
+message UpdateStatusForStorageOperationRequest {
+  // op id
+  string operation_id = 1;
+  // status to update to
+  OperationStatus status = 2;
+  // DD email of the requester.
+  string updated_by = 3;
+}
+
+// Update status response
+message UpdateStatusForStorageOperationResponse {}
+
+// Update SQL queries request
+message UpdateQueriesForSchemaChangeOperationRequest {
+  // op id
+  string operation_id = 1;
+  // JSON representation of monitor queries
+  google.protobuf.Struct monitor_queries = 2;
+
+  // SQL to be executed to perform the operation and associated rollback
+  OperationQueries operation_queries = 3;
+
+  // Mask to specify whether to update monitoring_queries or operation_queries.
+  // When updating operation queries, both operation_statement and
+  // rollback_statement must be specified together.
+  google.protobuf.FieldMask update_mask = 4;
+
+  // DD email of the requester.
+  string updated_by = 5;
+}
+
+// Update SQL queries response
+message UpdateQueriesForSchemaChangeOperationResponse {}
+
+// Update non-functional metadata request
+message UpdateSchemaChangeOperationMetadataRequest {
+  // operation id
+  string operation_id = 1;
+
+  // Information that is not functionally involved in the operation but is used
+  // for logging and attribution.
+  OperationMetadata metadata = 2;
+
+  // Mask to specify which fields to update. Fields that are not specified will
+  // NOT be updated. Use the unqualified underlying field name and use camelCase
+  // for multi-word field names. E.g., `description` for `metadata.description`
+  // and `githubPrLink` for `metadata.githubPrLink`.
+  google.protobuf.FieldMask update_mask = 3;
+
+  // DD email of the requester.
+  string updated_by = 4;
+}
+
+// Update non-functional metadata response
+message UpdateSchemaChangeOperationMetadataResponse {}
+
+message GetAllOperationsRequest {
+  // Filter for operations that were created after this time, inclusive.
+  // Leave unset for no start bound.
+  google.protobuf.Timestamp start_time = 1;
+  // Filter for operations that were created before this time, inclusive.
+  // Leave unset for no end bound.
+  google.protobuf.Timestamp end_time = 2;
+  // Wrapped in oneof to allow for presence check.
+  oneof operation_type_wrapper {
+    // Filter for operation type. Leave unset for no type filter.
+    OperationType operation_type = 3;
+  }
+}
+
+message GetAllOperationsResponse {
+  // List of operations matching filter
+  repeated GetGenericOperationResponse operations = 1;
+}
+
+message ApproveOperationRequest {
+  // op id
+  string operation_id = 1;
+  // DD email of the approver.
+  string approved_by = 2;
+}
+
+message ApproveOperationResponse {}
+
+message RequestChangeOperationRequest {
+  // op id
+  string operation_id = 1;
+  // DD email of the requester.
+  string requested_by = 2;
+  // reason for requesting change
+  string comment = 3;
+}
+
+message RequestChangeOperationResponse {}

@@ -1,0 +1,357 @@
+syntax = "proto3";
+
+package risk_data_flow.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "risk_data_flow/aggregated_features.proto";
+import "risk_data_flow/blocklist.proto";
+import "risk_data_flow/bypass_login_exclusions.proto";
+import "risk_data_flow/cnr_photo_details.proto";
+import "risk_data_flow/cnr_reputation_last_reject.proto";
+import "risk_data_flow/dispute_history.proto";
+import "risk_data_flow/dx_delivery_event.proto";
+import "risk_data_flow/dx_pay_blocklist.proto";
+import "risk_data_flow/list.proto";
+import "risk_data_flow/list_checkpoint_evaluations_service.proto";
+import "risk_data_flow/persona_inquiry.proto";
+import "risk_data_flow/persona_inquiry_details.proto";
+import "risk_data_flow/post_checkout_risk_signals.proto";
+import "risk_data_flow/rcopy_card_fingerprint_added_by_bots.proto";
+import "risk_data_flow/risk_warning.proto";
+import "risk_data_flow/risk_warning_types.proto";
+import "risk_data_flow/ssot.proto";
+import "risk_data_flow/telesign_phone_info.proto";
+import "risk_data_flow/user_ip.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.riskdataflow";
+
+// This is an example service for using Asgard server library in a Guice environment.
+service RiskDataFlowService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // ------------------------------------------- TIMELINE APIs ------------------------------------------- //
+
+  // Retrieve events on the timeline in a time range
+  // for a given entity, and only returns event. These
+  // events only have RiskEvent ids, not the full RiskEvent
+  // data.
+  rpc GetTimeline(GetTimelineRequest) returns (GetTimelineResponse);
+
+  // Retrieve "hydrated" risk events given event ids, ie
+  // "full" RiskEvent data.
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+
+  // All in one, takes an entity id and time range and returns
+  // "hydrated" risk events.
+  rpc GetTimelineEvents(GetTimelineEventsRequest) returns (GetTimelineEventsResponse);
+
+  // All in one, takes an entity id and time range and returns
+  // "hydrated" risk events. This API will be sorted by composite
+  // key (event_time, event_id). This is because event_time is not
+  // a unique value
+  rpc GetTimelineEventsPaginatedByTime(GetTimelineEventsPaginatedByTimeRequest) returns (GetTimelineEventsPaginatedByTimeResponse);
+
+  // Retrieve consumer last known entities based on the consumer id
+  rpc GetConsumerLastKnownEntities(GetConsumerLastKnownEntitiesRequest) returns (GetConsumerLastKnownEntitiesResponse);
+
+  // ------------------------------------------- LIST APIs ------------------------------------------- //
+
+  // AddList API. This API will add a new list to list table while the list_history table
+  // will be updated in the same transaction
+  rpc AddList(AddListRequest) returns (AddListResponse);
+
+  // UpdateList API. This API will update a list in the list table while update the
+  // list_history table
+  rpc UpdateList(UpdateListRequest) returns (UpdateListResponse);
+
+  // GetList API. We could get list by either id or list key but not both
+  rpc GetList(GetListRequest) returns (GetListResponse);
+
+  // GetLists API. We could get lists by itemType, itemDataType and search filter
+  rpc GetLists(GetListsRequest) returns (GetListsResponse);
+
+  // GetListHistory API. We could get list history by listId, changetype and list item key
+  rpc GetListHistory(GetListHistoryRequest) returns (GetListHistoryResponse);
+
+  // UpsertListItem API. This API will check if the list item is in the table.
+  // If so, it will do an update. If not, it will do an insertion
+  // We cannot use UPSERT query here because it requires an insertion on the list history table
+  // based on whether it is an insertion or update
+  rpc UpsertListItem(UpsertListItemRequest) returns (UpsertListItemResponse);
+
+  // UpdateListItem API. This API will update the list item in the table
+  rpc UpdateListItem(UpdateListItemRequest) returns (UpdateListItemResponse);
+
+  // RemoveListItem API. This API will remove one list item with a specific version from the table
+  rpc RemoveListItem(RemoveListItemRequest) returns (RemoveListItemResponse);
+
+  // RemoveListItems API. This API will remove the list items with all versions from the table
+  rpc RemoveListItems(RemoveListItemsRequest) returns (RemoveListItemsResponse);
+
+  // GetListItemsByKeys API. This API will get the list items by keys
+  rpc GetListItemsByKeys(GetListItemsByKeysRequest) returns (GetListItemsByKeysResponse);
+
+  // GetListItemsAPI. This is a generic API for retrieving the list items
+  rpc GetListItems(GetListItemsRequest) returns (GetListItemsResponse) {
+    // TODO: Rever it to 700 ms after item reason back fill.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 20000;
+  }
+
+  // ------------------------------------------- Rest APIs ------------------------------------------- //
+
+  // Retrieve is new ip from user_id table
+  rpc IsNewIp(IsNewIpRequest) returns (IsNewIpResponse);
+
+  // Retrieve is new truncated ip from truncated_ip table
+  rpc IsNewTruncatedIp(IsNewTruncatedIpRequest) returns (IsNewTruncatedIpResponse);
+
+  // Insert entry in the user_ip table
+  rpc InsertUserIp(InsertUserIpRequest) returns (InsertUserIpResponse);
+
+  // Update user truncated ip in truncated_ip table
+  rpc UpdateUserTruncatedIp(UpdateUserTruncatedIpRequest) returns (UpdateUserTruncatedIpResponse);
+
+  /**
+   * This is a method to the distinct entity ids of the feature / fact given a range. The user can feed in the
+   * granularity of the query, but in some cases the granularity is not guaranteed.
+   *
+   * The principle of selecting the tables are as follows ({table_suffix} = "DISTINCT_ENTITY_FRAUD_AGG"):
+   *
+   * Time range     Provided Granularity  Queried Table(s)
+   * -------------  --------------------  ------------------------------------------
+   * <= 10h         all {gran}            {table_suffix}_{gran}
+   * > 10h, <= 10d  MINUTE                | {table_suffix}_MINUTE (edge ranges < 1h)
+   *                                      | {table_suffix}_HOUR (center range)
+   *                all other {gran}      {table_suffix}_{gran}
+   * > 10d, <= 1y   MINUTE                | {table_suffix}_MINUTE (edge ranges < 1h)
+   *                                      | {table_suffix}_HOUR (edge ranges < 1d)
+   *                                      | {table_suffix}_DAY (center range)
+   *                HOUR                  | {table_suffix}_HOUR (edge ranges < 1d)
+   *                                      | {table_suffix}_DAY (center range)
+   *                all other {gran}      {table_suffix}_{gran}
+   * > 1y           all {gran}            {table_suffix}_WEEK
+   *
+   * Example time ranges are interpreted as follows:
+   *
+   * Provided Start       Provided End         Provided Granularity  Queried Table(s)         Query Start end_time       Query End end_time
+   * -------------------  -------------------  --------------------  -----------------------  -------------------------  -------------------------
+   * 07/27/2022 05:30:00  07/27/2022 09:41:00  MINUTE                {table_suffix}_MINUTE    07/27/2022 05:30:00        07/27/2022 09:41:00
+   * 07/21/2022 09:41:00  07/27/2022 09:41:00  MINUTE                | {table_suffix}_MINUTE  | 07/21/2022 09:41:00      07/21/2022 10:00:00
+   *                                                                                          | 07/27/2022 09:00:00      07/27/2022 09:41:00
+   *                                                                 | {table_suffix}_HOUR    07/21/2022 11:00:00        07/27/2022 09:00:00
+   * 07/21/2022 09:41:00  07/27/2022 09:41:00  HOUR                  {table_suffix}_HOUR      07/21/2022 10:00:00        07/27/2022 10:00:00
+   * 07/30/2021 09:41:00  07/27/2022 09:41:00  HOUR                  | {table_suffix}_HOUR    | 07/30/2021 10:00:00      07/31/2021 00:00:00
+   *                                                                                          | 07/27/2022 01:00:00      07/27/2022 10:00:00
+   *                                                                 | {table_suffix}_DAY     08/01/2021 00:00:00        07/27/2022 00:00:00
+   * 07/30/2021 09:41:00  07/27/2022 09:41:00  MINUTE                | {table_suffix}_MINUTE  07/27/2022 09:00:00        07/27/2022 09:41:00
+   *                                                                 | {table_suffix}_HOUR    | 07/30/2021 11:00:00      07/31/2021 00:00:00
+   *                                                                                          | 07/27/2022 01:00:00      07/27/2022 09:00:00
+   *                                                                 | {table_suffix}_DAY     08/01/2021 00:00:00        07/27/2022 00:00:00
+   * 07/30/2021 09:41:00  07/27/2022 09:41:00  DAY                   {table_suffix}_DAY       07/31/2022 00:00:00        07/28/2022 00:00:00
+   * 07/27/2020 09:41:00  07/27/2022 09:41:00  MINUTE/HOUR/DAY/WEEK  {table_suffix}_WEEK      08/01/2021 (Sun) 00:00:00  07/31/2022 (Sun) 00:00:00
+   */
+  rpc GetDistinctEntityId(GetDistinctEntityIdRequest) returns (GetDistinctEntityIdResponse);
+
+  /**
+   * This is a method to the value of the feature / fact given a range. For example when
+   * the request to evaluate a feature is for last 360 days starting from current time say: 11:05 AM and
+   * current day is 02/20/2022. The data that will be used in range of 02/20/2022 11:00 AM minus 360 days,
+   * to 02/20/2022 11:00 AM, and second range of 02/20/2022 11:00 AM to 02/20/2022 11:05 AM. The head in case of
+   * range older than 10 days is always rounded to hour.
+   * Example ranges interpreted:
+   *
+   * Current Date Time         Provided Start       Provided End         Query Start          Query End
+   * ------------------------  -------------------  -------------------  -------------------  -------------------
+   * 02/02/2022 11:00:00       02/02/2022 10:03:00  null                 02/02/2022 10:03:00  02/02/2022 11:00:00
+   * 02/02/2022 11:00:00       10/31/2021 10:03:00  null                 10/31/2021 10:00:00  02/02/2022 11:00:00
+   * 02/02/2022 11:00:00       10/31/2021 10:03:00  10/31/2021 11:03:00  10/31/2021 10:00:00  10/31/2021 12:00:00
+   * 02/02/2022 11:00:00       10/31/2021 10:03:00  11/30/2021 11:03:00  10/31/2021 10:00:00  11/30/2021 12:00:00
+   * 02/02/2022 11:00:00       01/30/2022 10:03:00  01/30/2022 11:03:00  01/30/2022 10:03:00  01/30/2022 11:03:00
+   */
+  rpc GetAggregatedFeature(GetAggregatedFeatureRequest) returns (GetAggregatedFeatureResponse);
+
+  /**
+   * GetBlocklistedEntities: API to retrieve blockedlisted entities such as User, Delivery (future expansion)
+   *
+   * GetBlocklistedAttributes: API to retrieve blockedlisted attributes information that can 'belong' to
+   * certain entities, attributes such as payment_cards, devices (phone), emails, addresses. These attributes
+   * are independent from each other (no key references)
+   */
+  rpc GetBlocklistedEntities(GetBlocklistedEntitiesRequest) returns (GetBlocklistedEntitiesResponse);
+
+  // GetBlocklistedAttributes API
+  rpc GetBlocklistedAttributes(GetBlocklistedAttributesRequest) returns (GetBlocklistedAttributesResponse);
+
+  // GetBlocklistedAddress API
+  rpc GetBlocklistedAddress(GetBlocklistedAddressRequest) returns (GetBlocklistedAddressResponse);
+
+  // GetBypassLoginExclusion API. This API will get a user from the bypass_login_exclusions table
+  rpc GetBypassLoginExclusion(GetBypassLoginExclusionRequest) returns (GetBypassLoginExclusionResponse);
+
+  // InsertBypassLoginExclusions API. This API will add a new user to the bypass_login_exclusions table
+  rpc InsertBypassLoginExclusion(InsertBypassLoginExclusionRequest) returns (InsertBypassLoginExclusionResponse);
+
+  // AddListItems API. This API will insert list items to the list_item table
+  rpc AddListItems(AddListItemsRequest) returns (AddListItemsResponse);
+
+  // GetCnrReputationLastReject API. This API will get a GetCnrReputationLastReject of the given consumer_id
+  rpc GetCnrReputationLastReject(GetCnrReputationLastRejectRequest) returns (GetCnrReputationLastRejectResponse);
+
+  // InsertCnrReputationLastReject API. This API will add/update a new GetCnrReputationLastReject to
+  // the cnr_reputation_last_reject table
+  rpc UpsertCnrReputationLastReject(UpsertCnrReputationLastRejectRequest) returns (UpsertCnrReputationLastRejectResponse);
+
+  // DeleteCnrReputationLastReject API. This API will delete a GetCnrReputationLastReject of the given consumer_id
+  rpc DeleteCnrReputationLastReject(DeleteCnrReputationLastRejectRequest) returns (DeleteCnrReputationLastRejectResponse);
+
+  // GetRiskWarningTypesAPI. This API will get all RiskWarningTypes
+  rpc GetRiskWarningTypes(GetRiskWarningTypesRequest) returns (GetRiskWarningTypesResponse);
+
+  // UpsertRiskWarningTypeAPI. This API will add a new item to the table
+  rpc UpsertRiskWarningType(UpsertRiskWarningTypeRequest) returns (UpsertRiskWarningTypeResponse);
+
+  // AddWarningAppeal API. This API will add a new item to the table
+  rpc AddWarningAppeal(AddWarningAppealRequest) returns (AddWarningAppealResponse);
+
+  // UpdateWarningAppealStatus API. This API will update the status of a warning appeal
+  rpc UpdateWarningAppealStatus(UpdateWarningAppealStatusRequest) returns (UpdateWarningAppealStatusResponse);
+
+  // UpdateWarningWithContractViolation API. This API will update the given warning with contract violation id
+  rpc UpdateWarningWithContractViolation(UpdateWarningWithContractViolationRequest) returns (UpdateWarningWithContractViolationResponse);
+
+  // GetWarningAppeal API. This API will get the warning appeal
+  rpc GetWarningAppeal(GetWarningAppealRequest) returns (GetWarningAppealResponse);
+
+  // GetRiskWarning API. This API will get a RiskWarning of the given warning_id
+  rpc GetRiskWarning(GetRiskWarningRequest) returns (GetRiskWarningResponse);
+
+  // GetRiskWarnings API. This API will get RiskWarnings of the given entity_id, entity_type
+  rpc GetRiskWarnings(GetRiskWarningsRequest) returns (GetRiskWarningsResponse);
+
+  // UpdateRiskWarningStatus API. This API will update a risk warning's status of the given warning_id
+  rpc UpdateRiskWarningStatus(UpdateRiskWarningStatusRequest) returns (UpdateRiskWarningStatusResponse);
+
+  // InsertRiskWarning API. This API will insert a new risk warning
+  rpc InsertRiskWarning(InsertRiskWarningRequest) returns (InsertRiskWarningResponse);
+
+  // API to get persona inquiry details by persona inquiry id
+  rpc GetInquiryDetailsById(GetInquiryDetailsByIdRequest) returns (GetInquiryDetailsByIdResponse);
+
+  // API to upsert persona inquiry details
+  rpc UpsertInquiryDetails(UpsertInquiryDetailsRequest) returns (UpsertInquiryDetailsResponse);
+
+  // API to get persona inquiry by inquiry id
+  rpc GetInquiryById(GetInquiryByIdRequest) returns (GetInquiryByIdResponse);
+
+  // API to get persona inquiries
+  rpc GetInquiries(GetInquiriesRequest) returns (GetInquiriesResponse);
+
+  // API to upsert persona inquiry
+  rpc UpsertInquiry(UpsertInquiryRequest) returns (UpsertInquiryResponse);
+
+  // Upsert CnrPhotoDetails API. This API will upsert the CNR photo details for a delivery
+  rpc UpsertCnrPhotoDetails(UpsertCnrPhotoDetailsRequest) returns (UpsertCnrPhotoDetailsResponse);
+
+  // Upsert CnrPhotoLinks API. This API will upsert the CNR photo links for given CNR photo details id
+  rpc UpsertCnrPhotoLinks(UpsertCnrPhotoLinksRequest) returns (UpsertCnrPhotoLinksResponse);
+
+  // Update CnrPhotoLink model results API. This API will update the model results for a given CNR photo link id
+  rpc UpdateCnrPhotoLinksModelResults(UpdateCnrPhotoLinksModelResultsRequest) returns (UpdateCnrPhotoLinksModelResultsResponse);
+
+  // Get CnrPhotoDetails API. This API will get the CNR photo details for a delivery
+  rpc GetCnrPhotoDetails(GetCnrPhotoDetailsRequest) returns (GetCnrPhotoDetailsResponse);
+
+  // Get CnrPhotoDetails API. This API will get the CNR photo links for given CNR photo details ids
+  rpc GetCnrPhotoLinks(GetCnrPhotoLinksRequest) returns (GetCnrPhotoLinksResponse);
+
+  // Get PostCheckoutRiskSignals API. This API will get the PostCheckoutRiskSignals for a (order_uuid, consumer_id)
+  rpc GetPostCheckoutRiskSignals(GetPostCheckoutRiskSignalsRequest) returns (GetPostCheckoutRiskSignalsResponse);
+
+  // Get PostCheckoutRiskSignals API. This API will get a list of ML scores given consumer_id
+  rpc GetCxPastMLScores(GetCxPastMLScoresRequest) returns (GetCxPastMLScoresResponse);
+
+  // UpdateDxBlockedPayDetail API. This API will update DxBlockedPayDetail
+  rpc UpdateDxBlockedPayDetail(UpdateDxBlockedPayDetailRequest) returns (UpdateDxBlockedPayDetailResponse);
+
+  // UpsertDxPayBlock API. This API will upsert one payment block of a delivery
+  rpc UpsertDxPayBlock(UpsertDxPayBlockRequest) returns (UpsertDxPayBlockResponse);
+
+  // UpdateDxPayBlock API. This API will update the payment block of a given delivery_Id and dasher_Id
+  rpc UpdateDxPayBlock(UpdateDxPayBlockRequest) returns (UpdateDxPayBlockResponse);
+
+  // GetBlockedPayDetail API. This API will get the blocked pay detail of a given deliveryId, dasherId and shiftId
+  rpc GetBlockedPayDetail(GetBlockedPayDetailRequest) returns (GetBlockedPayDetailResponse);
+
+  // API to get one delivery event based on one single delivery_id and one single event_type;
+  rpc GetDeliveryEvent(GetDeliveryEventRequest) returns (GetDeliveryEventResponse);
+
+  // API to get list of delivery events based on one single delivery_id but multiple event_types associated
+  // with this delivery_id;
+  rpc GetDeliveryEvents(GetDeliveryEventsRequest) returns (GetDeliveryEventsResponse);
+
+  // DisputeHistory API. Insert a row to the dispute history table
+  rpc DisputeHistoryCreateDispute(DisputeHistoryCreateDisputeRequest) returns (DisputeHistoryCreateDisputeResponse);
+
+  // DisputeHistory API. Mark a dispute as contested and update the record with contest method and template info.
+  rpc DisputeHistoryContestDispute(DisputeHistoryContestDisputeRequest) returns (DisputeHistoryContestDisputeResponse);
+
+  // DisputeHistory API. Mark a dispute as resolved and update the status to won or lost.
+  rpc DisputeHistoryResolveDispute(DisputeHistoryResolveDisputeRequest) returns (DisputeHistoryResolveDisputeResponse);
+
+  // DisputeHistory API. Retrieve a dispute object from the dispute history table given dispute_id.
+  rpc DisputeHistoryGetDispute(DisputeHistoryGetDisputeRequest) returns (DisputeHistoryGetDisputeResponse);
+
+  // DisputeHistory API. Returns the number of disputes created by a consumer starting from given timestamp.
+  rpc DisputeHistoryGetConsumerLatestDisputeCount(DisputeHistoryGetConsumerLatestDisputeCountRequest) returns (DisputeHistoryGetConsumerLatestDisputeCountResponse);
+
+  // RcopyCardFingerprintAddedByBot API. Returns the result from the rcopy_fact_fraud_card_fp_added_by_bots table given
+  // Stripe card fingerprint
+  rpc RcopyCardFingerprintAddedByBotGetRecord(RcopyCardFingerprintAddedByBotGetRecordRequest) returns (RcopyCardFingerprintAddedByBotGetRecordResponse) {
+    option deprecated = true;
+  }
+
+  // GetInquiriesByListOfTemplateIds API. This API will get the persona inquiries for a list of template ids
+  rpc GetInquiriesV2(GetInquiriesV2Request) returns (GetInquiriesV2Response);
+
+  // -------------------------------------------- Deprecated endpoints --------------------------------------------------- //
+
+  // GetTelesignPhoneInfo API. This API will get the TelesignPhoneInfo for a given phone number
+  rpc GetTelesignPhoneInfo(GetTelesignPhoneInfoRequest) returns (GetTelesignPhoneInfoResponse) {
+    option deprecated = true;
+  }
+
+  // UpsertTelesignPhoneInfo API. This API will add/update a new TelesignPhoneInfo to the telesign_phone_info table
+  rpc UpsertTelesignPhoneInfo(UpsertTelesignPhoneInfoRequest) returns (UpsertTelesignPhoneInfoResponse) {
+    option deprecated = true;
+  }
+
+  // UpdateItemCountInList API. This API will update the item count in list when list item is added or removed
+  // This is a temporary API to facilitate double writes. Will delete this API once list_item APIs are ready
+  rpc UpdateItemCountInList(UpdateItemCountInListRequest) returns (UpdateItemCountInListResponse) {
+    option deprecated = true;
+  }
+
+  // InsertListHistories API. This API will insert the list history table
+  // Have this API because list item write apis will need data from list history table. Therefore adding the doing the
+  // backfill of the list history table before we could implement the list item APIs
+  // This is a temporary API to facilitate double writes. Will delete this API once list_item APIs are ready
+  rpc InsertListHistories(InsertListHistoriesRequest) returns (InsertListHistoriesResponse) {
+    option deprecated = true;
+  }
+}

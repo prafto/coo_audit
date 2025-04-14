@@ -1,0 +1,257 @@
+syntax = "proto3";
+
+package mx_support_service.api.v1;
+
+import "case-management-service/common.proto";
+import "case-management-service/message.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "mx_support_service/mx_error_charge/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.mx_support_service";
+
+// Error charge photo evidence
+service ErrorChargeEvidenceService {
+  option (service_client.client_config).service_name = "mx-support-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Get Mx error charge photo evidence resolution to determine if Mx should be charged
+  rpc GetErrorChargePhotoEvidenceResolution(GetErrorChargePhotoEvidenceResolutionRequest) returns (GetErrorChargePhotoEvidenceResolutionResponse);
+  // Get Mx error charge photo evidence
+  rpc GetErrorChargePhotoEvidence(GetErrorChargePhotoEvidenceRequest) returns (GetErrorChargePhotoEvidenceResponse);
+  // Get Mx error charge consumer comments
+  rpc GetErrorChargeConsumerComments(GetErrorChargeConsumerCommentsRequest) returns (GetErrorChargeConsumerCommentsResponse);
+}
+
+// Aggregated Error Charge information for this item (ex. “Missing” or “Incorrect”) or entire delivery (ex. “Wrong Order Delivered”) and contains info around specific order problems, store charges, and refund status if error charge is disputed by the Mx
+message ErrorCharge {
+  // Summation of all error charges associated with this item
+  money.MonetaryFields error_charge = 1;
+  // Error charge refund status of this item (if error charge is disputed)
+  ErrorChargeRefundStatus error_charge_refund_status = 2;
+  // Aggregated C&R parent category of all problems impacting this item or order
+  Category category = 3;
+  // Captures any difference in the amount disputed vs. the total charged
+  DisputeDifference dispute_difference = 4;
+  // Summation of all error charge subtotal (typically the cost of the items/orders w/o tax or commission)
+  money.MonetaryFields error_charge_subtotal = 5;
+  // Summation of all error charges taxes on error charge subtotal (empty if tax is remitted)
+  money.MonetaryFields error_charge_subtotal_tax = 6;
+  // Breakdown of all delivery issues that resulted in error charges (ex. “Whole Item is Missing”); this maps to C&R’s Order Resolution “Problems”
+  repeated Problem problems = 7;
+}
+
+// Consumer-provided photo evidence; images deemed inappropriate are redacted
+message ConsumerPhotoEvidence {
+  // Type of Photo (ex. photo of order vs. receipt)
+  PhotoType photo_type = 1;
+  // URL of the consumer-provided photo evidence
+  string photo_url = 2;
+
+  // Indicates the type of photo collected from the consumer in relation to the problem
+  enum PhotoType {
+    // Photo type was not specified or not applicable
+    PHOTO_TYPE_UNSPECIFIED = 0;
+    // Order-related photo as evidence of a problem (ex. Photos of food with quality issues)
+    PHOTO_TYPE_ORDER = 1;
+    // Receipt-related photo as evidence of a problem with the entire order (Ex. “Wrong Order Delivered” requires receipt evidence)
+    PHOTO_TYPE_RECEIPT = 2;
+  }
+}
+
+// An error charge “problem” refers to the specific reported issue/problem the item or order incurred as a result of a delivery or Mx error; this maps to C&R’s Order Resolution “Problems”
+message Problem {
+  // C&R Policy category this error charge falls under (ex. "Missing", "Incorrect")
+  Category category = 1;
+  // Issue descriptions using Mx-friendly names (ex. "Whole Item is Missing", "Incorrect Quantity")
+  OrderErrorCategories issue_description = 2;
+  // Consumer-provided photo evidence of the issue
+  repeated ConsumerPhotoEvidence photo_evidence = 3;
+  // Consumer-provided issue description of the issue
+  ConsumerExplanation consumer_explanations = 4;
+  // Error charge subtotal amount for this problem (typically the cost of the item/order w/o tax or commission)
+  money.MonetaryFields error_charge_subtotal = 5;
+  // Error charge subtotal tax amount for this problem (empty if tax is remitted)
+  money.MonetaryFields error_charge_subtotal_tax = 6;
+}
+
+// Captures any difference in the amount disputed vs. the total charged
+message DisputeDifference {
+  // Error Charge amount that was disputed by Mx
+  money.MonetaryFields disputed_amount = 1;
+  // Error Charge amount remaining that was undisputed by Mx
+  money.MonetaryFields undisputed_amount = 2;
+}
+
+// Request object for GetErrorChargePhotoEvidenceResolution API
+message GetErrorChargePhotoEvidenceResolutionRequest {
+  // Name of queue
+  repeated google.protobuf.StringValue queue_list = 1;
+  // List of entity ids
+  repeated google.protobuf.StringValue entity_list = 2;
+  // EntityType (from case-management-service/message.proto)
+  case_management_service.v1.SchemaRow.EntityType entity_type = 3;
+}
+
+// Response object for GetErrorChargePhotoEvidenceResolution API
+message GetErrorChargePhotoEvidenceResolutionResponse {
+  // Returns map of error charge category to whether photo is "good"
+  google.protobuf.Struct resolution_response_map = 1;
+}
+
+// DeliveryIncidentResolution object that includes queue name, resolution subcategory, resolution description
+message DeliveryIncidentResolution {
+  // Name of queue
+  repeated google.protobuf.StringValue queue_name = 1;
+  // Whether photo proves merchant charge
+  repeated google.protobuf.StringValue resolution_subcategory = 2;
+  // Resolution description (problem type)
+  repeated google.protobuf.StringValue resolution_description = 3;
+}
+
+// Request object for GetErrorChargePhotoEvidence API
+message GetErrorChargePhotoEvidenceRequest {
+  // Problem resolution
+  ProblemResolution problem_resolution = 1;
+  // List of ErrorChargePhotoEvidence
+  repeated ErrorChargePhotoEvidence photo_evidence = 2;
+}
+
+// Response object for GetErrorChargePhotoEvidence API
+message GetErrorChargePhotoEvidenceResponse {
+  // List of ConsumerPhotoEvidence
+  repeated ConsumerPhotoEvidence photo_evidence = 1;
+}
+
+// ErrorChargePhotoEvidence object
+message ErrorChargePhotoEvidence {
+  // ErrorChargeConsumerPhoto list
+  repeated ErrorChargeConsumerPhoto consumer_photos = 1;
+  // ErrorChargeConsumerPhotoDetails
+  ErrorChargeConsumerPhotoDetails photo_details = 2;
+}
+
+// ErrorChargeConsumerPhotoObject
+message ErrorChargeConsumerPhoto {
+  // URL of the consumer-provided photo evidence
+  google.protobuf.StringValue photo_url = 1;
+  // Whether photo is explicit or unprocessed
+  google.protobuf.BoolValue is_photo_explicit_or_unprocessed = 2;
+  // Whether photo is expired
+  google.protobuf.BoolValue is_photo_expired = 3;
+}
+
+// ErrorChargeConsumerPhotoDetails object
+message ErrorChargeConsumerPhotoDetails {
+  // Delivery id
+  google.protobuf.StringValue delivery_id = 1;
+  // Order item id
+  google.protobuf.DoubleValue order_item_id = 2;
+  // Problem type
+  ProblemType problem_type = 3;
+  // Sub problem type
+  SubProblemType sub_problem_type = 4;
+  // Photo type
+  PhotoType photo_type = 5;
+  // Consumer description
+  google.protobuf.StringValue consumer_description = 6;
+  // Timestamp when the photo evidence was created
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// ProblemResolution object
+message ProblemResolution {
+  // OrderProblem object
+  OrderProblem order_problem = 1;
+  // Description
+  google.protobuf.StringValue description = 2;
+  // Order item id
+  google.protobuf.DoubleValue order_item_id = 3;
+  // Store charge
+  google.protobuf.Int32Value store_charge = 4;
+  // StoreChargeBreakdown object
+  StoreChargeBreakdown store_charge_breakdown = 5;
+}
+
+// Request object for GetErrorChargeConsumerComments API
+message GetErrorChargeConsumerCommentsRequest {
+  // ErrorChargePhotoEvidence object
+  repeated ErrorChargePhotoEvidence photo_evidence = 1;
+}
+
+// Response object for GetErrorChargeConsumerComments API
+message GetErrorChargeConsumerCommentsResponse {
+  // Consumer comments
+  google.protobuf.StringValue consumer_comments = 1;
+}
+
+// ProblemType
+enum ProblemType {
+  // Default unspecified
+  PROBLEM_TYPE_UNSPECIFIED = 0;
+  // Not recognized or specified
+  PROBLEM_TYPE_NOT_RECOGNIZED_OR_SPECIFIED = 1;
+  // Wrong order delivered
+  PROBLEM_TYPE_WRONG_ORDER_DELIVERED = 2;
+  // Poor food quality
+  PROBLEM_TYPE_POOR_FOOD_QUALITY = 3;
+  // Missing incorrect
+  PROBLEM_TYPE_MISSING_INCORRECT = 4;
+}
+
+// SubProblemType
+enum SubProblemType {
+  // Default unspecified
+  SUB_PROBLEM_TYPE_UNSPECIFIED = 0;
+  // Not recognized or specified
+  SUB_PROBLEM_TYPE_NOT_RECOGNIZED_OR_SPECIFIED = 1;
+  // Incorrect item received
+  SUB_PROBLEM_TYPE_INCORRECT_ITEM_RECEIVED = 2;
+}
+
+// PhotoType
+enum PhotoType {
+  // Default unspecified
+  PHOTO_TYPE_UNSPECIFIED = 0;
+  // Not recognized or specified
+  PHOTO_TYPE_NOT_RECOGNIZED_OR_SPECIFIED = 1;
+  // Receipt photo
+  PHOTO_TYPE_RECEIPT_PHOTO = 2;
+  // Order photo
+  PHOTO_TYPE_ORDER_PHOTO = 3;
+}
+
+// OrderProblem object
+message OrderProblem {
+  // Subcategory name
+  google.protobuf.StringValue sub_category_name = 1;
+  // Type
+  Type type = 2;
+}
+
+// Type object
+message Type {
+  // Parent category
+  google.protobuf.StringValue parent_category = 1;
+}
+
+// StoreChargeBreakdown object
+message StoreChargeBreakdown {
+  // Tax breakdown
+  TaxBreakdown tax_breakdown = 1;
+}
+
+// TaxBreakdown object
+message TaxBreakdown {
+  // Total tax charged
+  google.protobuf.Int32Value total_tax_charged = 1;
+}

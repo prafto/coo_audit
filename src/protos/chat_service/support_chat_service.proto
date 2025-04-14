@@ -1,0 +1,643 @@
+syntax = "proto3";
+
+package delivery.experience.chat;
+
+import "chat_service/chat_common.proto";
+import "chat_service/input.proto";
+import "chat_service/salesforce.proto";
+import "chat_service/sendbird.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "sinch/sinch.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "support_chat_service";
+option java_package = "com.doordash.rpc.chat.service";
+
+// Chat Service for Support.
+service SupportChatService {
+  // Set up this service to be exposed via Unified Gateway
+  option (doordash.api.service) = {
+    name: "chat-platform-chat-service"
+    port: 50051
+    name_spaces: ["chat"]
+    api_key_name: "CHAT_SERVICE_API_KEY"
+    owner: {
+      name: "chat-platform"
+      id: "chat-platform"
+      slack_channel: "#ask-conversation-platform"
+      email_alias: "team-conversation-platform@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX,
+      MX
+    ]
+  };
+
+  // This will load the Chat User for the given DD User
+  rpc GetSupportChatUser(GetSupportChatUserRequest) returns (GetSupportChatUserResponse);
+  // This will return the Chat Channel that should be joined for this Support request
+  rpc GetSupportChatChannel(GetSupportChatChannelRequest) returns (GetSupportChatChannelResponse);
+  // Creates a new support chat channel. Once adopted, deprecate GetSupportChatChannel
+  rpc CreateSupportChatChannel(CreateSupportChatChannelRequest) returns (CreateSupportChatChannelResponse) {
+    option (google.api.http) = {
+      post: "/chat/v1/support-chat/support_chat_channel"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER,
+        MX_USER
+      ]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+  // This will load the Chat User for the given Support Agent
+  rpc GetAgentChatUser(GetAgentChatUserRequest) returns (GetAgentChatUserResponse);
+  // This will add agent to support chat channel
+  rpc AddAgentToChannel(AddAgentToChannelRequest) returns (AddAgentToChannelResponse);
+  // This will unfreeze a given channel
+  rpc UnfreezeChannel(UnfreezeChannelRequest) returns (UnfreezeChannelResponse);
+  // Submits user input
+  rpc SubmitUserInput(SubmitUserInputRequest) returns (SubmitUserInputResponse);
+  // This will end chat
+  rpc EndChat(EndChatRequest) returns (EndChatResponse);
+  // Get support chat configuration
+  rpc GetSupportChatConfiguration(GetSupportChatConfigurationRequest) returns (GetSupportChatConfigurationResponse);
+  // Update support chat configuration
+  rpc UpdateSupportChatConfiguration(UpdateSupportChatConfigurationRequest) returns (UpdateSupportChatConfigurationResponse);
+  // Get support contact method
+  rpc GetSupportContactMethod(GetSupportContactMethodRequest) returns (GetSupportContactMethodResponse);
+  // Handle a Salesforce case update
+  rpc ProcessSalesforceCaseUpdates(ProcessSalesforceCaseUpdatesRequest) returns (ProcessSalesforceCaseUpdatesResponse);
+  // Handle a Sendbird Bot callback
+  rpc ProcessSendbirdBotCallback(ProcessSendbirdBotCallbackRequest) returns (ProcessSendbirdBotCallbackResponse);
+  // Handle a Sendbird Channel webhook
+  rpc ProcessSendbirdChannelWebhook(ProcessSendbirdChannelWebhookRequest) returns (ProcessSendbirdChannelWebhookResponse);
+  // Get latest suggestions for agent
+  rpc GetInitialSuggestions(GetInitialSuggestionsRequest) returns (GetInitialSuggestionsResponse);
+  // Create a voice chat session with Long Tail Chatbot
+  rpc CreateVoiceSupportSession(CreateVoiceSupportSessionRequest) returns (CreateVoiceSupportSessionResponse);
+  // Send a message to existing voice chat session with LTCB
+  rpc ProcessVoiceSupportMessage(ProcessVoiceSupportMessageRequest) returns (ProcessVoiceSupportMessageResponse);
+  // Handle a Sendbird SMS Channel webhook for user validation
+  rpc ProcessDriveUserValidationWebhook(ProcessDriveUserValidationWebhookRequest) returns (ProcessDriveUserValidationWebhookResponse);
+  // initiate a cross system chat transfer for CMP <-> SFDC
+  rpc InitiateCrossSystemChatTransfer(InitiateCrossSystemChatTransferRequest) returns (InitiateCrossSystemChatTransferResponse);
+  // Retrieve knowledge base (KB) articles. Used for Voice support.
+  rpc FetchKnowledgeBase(FetchKnowledgeBaseRequest) returns (FetchKnowledgeBaseResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+    option (google.api.http) = {
+      post: "/chat/v1/support-chat/knowledge_base"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CLIENT_TOKEN]
+      target_products: [DX]
+    };
+  }
+  // Handle Dashbuddy text message webhook
+  rpc ProcessDashbuddyTextMessageWebhook(ProcessDashbuddyTextMessageWebhookRequest) returns (ProcessDashbuddyTextMessageWebhookResponse) {
+    option (google.api.http) = {
+      post: "/chat/v1/dashbuddy/webhooks/text_message"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [DX]
+    };
+  }
+}
+
+// Get support contact method request
+message GetSupportContactMethodRequest {
+  // Information about the user making the request
+  ChatRequestUserInfo user_info = 1;
+  // Platform
+  google.protobuf.StringValue platform = 2;
+  // Entrypoint
+  google.protobuf.StringValue entrypoint = 3;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 4;
+}
+
+// Support contact method
+enum SupportContactMethod {
+  // Unspecified
+  SUPPORT_CONTACT_METHOD_UNSPECIFIED = 0;
+  // Sendbird chat
+  SUPPORT_CONTACT_METHOD_SENDBIRD_CHAT = 1;
+  // Phone
+  SUPPORT_CONTACT_METHOD_PHONE = 2;
+  // Disabled
+  SUPPORT_CONTACT_METHOD_DISABLED = 3;
+}
+
+// Get support contact method response
+message GetSupportContactMethodResponse {
+  // Support contact method
+  SupportContactMethod support_contact_method = 1;
+}
+
+// Role
+enum Role {
+  // Unspecified
+  ROLE_UNSPECIFIED = 0;
+  // Cx
+  ROLE_CX = 1;
+  // Dx
+  ROLE_DX = 2;
+  // Mx business manager
+  ROLE_MX_BUSINESS_MANAGER = 3;
+  // Mx tablet
+  ROLE_MX_TABLET = 4;
+}
+
+// Request to get support chat configuration
+message GetSupportChatConfigurationRequest {
+  // Language
+  string language = 1;
+  // Role
+  Role role = 2;
+}
+
+// Get support chat configuration response
+message GetSupportChatConfigurationResponse {
+  // Configuration
+  SupportChatConfiguration configuration = 1;
+}
+
+// Request to update support chat configuration
+message UpdateSupportChatConfigurationRequest {
+  // Language
+  string language = 1;
+  // Role
+  Role role = 2;
+  // New configuration
+  SupportChatConfiguration configuration = 3;
+}
+
+// Update suppot chat configuration response
+message UpdateSupportChatConfigurationResponse {
+  // Configuration
+  SupportChatConfiguration configuration = 1;
+}
+
+// Support chat configuration
+message SupportChatConfiguration {
+  // Escalations enabled
+  bool escalations_enabled = 1;
+  // Escalations disabled chatbot config
+  string escalations_disabled_chatbot_config = 2;
+  // Idle auto end enabled
+  bool idle_auto_end_enabled = 3;
+  // Idle auto end delay seconds
+  int64 idle_auto_end_delay_seconds = 4;
+  // Idle prompt enabled
+  bool idle_prompt_enabled = 5;
+  // Idle prompt delay seconds
+  int64 idle_prompt_delay_seconds = 6;
+  // Long wait escalation message enabled
+  bool long_wait_escalation_message_enabled = 7;
+  // Long wait escalation message chatbot config
+  string long_wait_escalation_message_chatbot_config = 8;
+  // Send estimated wait time to front end enabled
+  bool should_show_estimated_wait_time = 9;
+  // Send test data to developers enabled
+  bool should_use_wait_time_test_data = 10;
+  // Value (in minutes) at which a long wait time is detected
+  int64 long_wait_time_minutes = 11;
+}
+
+// Information about the user making the request.
+message ChatRequestUserInfo {
+  // Unique ID for the user making the request.
+  oneof id {
+    // DoorDash Consuemr ID.
+    string consumer_id = 1;
+    // DoorDash Dasher ID.
+    string dasher_id = 2;
+    // Any unique identifier for Mx Business Manager user.
+    string merchant_business_manager_id = 3;
+    // Any unique identifier for Mx tablet ID.
+    string merchant_tablet_id = 4;
+  }
+  // Information about the requesting user's geo location.
+  chat_common.GeoLocation geo_location = 5;
+}
+
+// Request for UnfreezeChannel
+message UnfreezeChannelRequest {
+  // The channel url to unfreeze
+  string channel_url = 1;
+  // Information about the user making the request.
+  ChatRequestUserInfo user_info = 2;
+  // Additional metadata about the unfreeze channel Request.
+  google.protobuf.Struct metadata = 3;
+}
+
+// Response for UnfreezeChannel
+message UnfreezeChannelResponse {}
+
+// Request for GetSupportChatUser.
+message GetSupportChatUserRequest {
+  // DoorDash Consumer ID.
+  string consumer_id = 1 [deprecated = true];
+  // User Nick Name.
+  string nick_name = 2;
+  // Information about the user making the request.
+  ChatRequestUserInfo user_info = 3;
+}
+
+// Response for GetSupportChatUser.
+message GetSupportChatUserResponse {
+  // Chat User ID.
+  string chat_user_id = 1;
+  // Chat Access Token.
+  string chat_user_access_token = 2;
+  // Chat (Sendbird) Application ID
+  string application_id = 3;
+}
+
+// Request for GetSupportChatChannel.
+message GetSupportChatChannelRequest {
+  // DoorDash Consumer ID.
+  string consumer_id = 1 [deprecated = true];
+  // Additional Metadata about the Support Request.
+  google.protobuf.Struct metadata = 2;
+  // Information about the user making the request.
+  ChatRequestUserInfo user_info = 3;
+  // Entrypoint for the chat session.
+  string entrypoint = 4;
+  // Provide additional metadata that will be automatically added to the channel metadata.
+  // Note this is exposed publicly so avoid adding private information.
+  map<string, string> public_metadata = 5;
+  // Chat provider.
+  chat_common.ChatProvider chat_provider = 6;
+}
+
+// Response for GetSupportChatChannel.
+message GetSupportChatChannelResponse {
+  // Channel URL.
+  string channel_url = 1;
+}
+
+// Request for CreateSupportChatChannel.
+message CreateSupportChatChannelRequest {
+  // The user's role id (e.g. Cx id, Dx id, etc)
+  google.protobuf.StringValue role_id = 1;
+  // The entrypoint workflow name for support chat. If unset, defaults to the chat welcome entry workflow
+  google.protobuf.StringValue entrypoint = 2;
+  // Delivery uuid, applicable for requests associated with an order
+  google.protobuf.StringValue delivery_uuid = 3;
+  // The platform that the user used (e.g., iOS, Android, Web)
+  google.protobuf.StringValue platform = 4;
+  // The version of the client app used by the user
+  google.protobuf.StringValue client_version = 5;
+  // Store id
+  google.protobuf.StringValue store_id = 6;
+  // Business id
+  google.protobuf.StringValue business_id = 7;
+  // The user experience type (e.g., DoorDash, Caviar)
+  chat_common.Experience experience = 8;
+  // User's role (e.g. Dx, Cx, Mx)
+  Role role = 9;
+  // The chat provider to be used for this channel (e.g., DashChat, Sendbird, etc)
+  chat_common.ChatProvider chat_provider = 10;
+}
+
+// Response for CreateSupportChatChannel.
+message CreateSupportChatChannelResponse {
+  // The channel URL for the created support chat channel
+  google.protobuf.StringValue channel_url = 1;
+}
+
+// Support contact method
+enum SupportAgentType {
+  // Unspecified
+  SUPPORT_AGENT_TYPE_UNSPECIFIED = 0;
+  // Crimson agents
+  SUPPORT_AGENT_TYPE_CRIMSON = 1;
+}
+
+// Request for GetAgentChatUser.
+message GetAgentChatUserRequest {
+  // Salesforce Agent ID.
+  string salesforce_agent_id = 1;
+  // Agent Nick Name.
+  string nick_name = 2;
+  // Sendbird Channel
+  string channel_url = 3;
+  // Agent type
+  SupportAgentType agent_type = 4;
+}
+
+// Response for GetAgentChatUser.
+message GetAgentChatUserResponse {
+  // Chat User ID.
+  string chat_user_id = 1;
+  // Chat Access Token.
+  string chat_user_access_token = 2;
+  // Chat (Sendbird) Application ID
+  string application_id = 3;
+}
+
+// Request for AddAgentToChannel.
+message AddAgentToChannelRequest {
+  // Agent ID.
+  string agent_id = 1;
+  // Agent Nickname.
+  string nick_name = 2;
+  // Channel ID.
+  string channel_url = 3;
+}
+
+// Response for AddAgentToChannel
+message AddAgentToChannelResponse {}
+
+// Resposne for SubmitUserInput
+message SubmitUserInputRequest {
+  // Sendbird channel url
+  string channel_url = 1;
+  // Sendbird message id
+  string message_id = 2;
+  // User info
+  ChatRequestUserInfo user_info = 3;
+  // User input
+  delivery.experience.chat.input.UserInput user_input = 4;
+}
+
+// Response for SubmitUserInput
+message SubmitUserInputResponse {}
+
+// Request for EndChat
+message EndChatRequest {
+  // The channel url to end chat with
+  string channel_url = 1;
+  // [optional] If want to remove Ax from the chat, their encoded chat user id
+  string remove_chat_agent_id = 2;
+  // [optional] Replaces the admin message sent when chat is ended
+  string custom_end_chat_admin_message = 3;
+}
+
+// Response for EndChat
+message EndChatResponse {}
+
+// Request for Salesforce Case Update
+message ProcessSalesforceCaseUpdatesRequest {
+  // Handle multiple update requests with each invocation
+  repeated delivery.experience.chat.salesforce.SalesforceCaseUpdateRequest case_updates = 1;
+}
+
+// Response for UpdateSalesforceCase
+message ProcessSalesforceCaseUpdatesResponse {}
+
+// Request for Sendbird Bot Callback
+message ProcessSendbirdBotCallbackRequest {
+  // Callback Event to be sent in response to this Request
+  delivery.experience.chat.sendbird.SendbirdBotCallbackRequest data = 1;
+}
+
+// Response for Sendbird Bot Callback
+message ProcessSendbirdBotCallbackResponse {}
+
+// Request for a sendbird webhook to be handled
+message ProcessSendbirdChannelWebhookRequest {
+  // request for each type of sendbird webhook
+  oneof request {
+    // sendbird group channel created
+    delivery.experience.chat.sendbird.SendbirdGroupChannelCreateWebhookRequest create_request = 1;
+    // sendbird group channel message delivery
+    delivery.experience.chat.sendbird.SendbirdGroupChannelMsgDeliveryReceiptWebhookRequest msg_delivery_request = 2;
+    // sendbird group channel leave
+    delivery.experience.chat.sendbird.SendbirdGroupChannelLeaveWebhookRequest leave_request = 3;
+    // sendbird group channel message read
+    delivery.experience.chat.sendbird.SendbirdGroupChannelMsgReadWebhookRequest msg_read_request = 4;
+    // sendbird group channel message send
+    delivery.experience.chat.sendbird.SendbirdGroupChannelMsgSendWebhookRequest msg_send_request = 5;
+    // sendbird group channel join
+    delivery.experience.chat.sendbird.SendbirdGroupChannelJoinWebhookRequest join_request = 6;
+  }
+}
+
+// Response for a sendbird message webhook
+message ProcessSendbirdChannelWebhookResponse {}
+
+// Request for GetInitialSuggestions
+message GetInitialSuggestionsRequest {
+  // Channel id
+  string channel_id = 1;
+  // Role
+  Role role = 3;
+  // Role id
+  string dd_role_id = 4;
+  // First name of Tx
+  string tx_first_name = 5;
+}
+
+// Response for
+message GetInitialSuggestionsResponse {
+  // Agent suggestions
+  repeated AgentSuggestion suggestions = 1;
+}
+
+// Agent suggestion definition
+message AgentSuggestion {
+  // Suggestion content
+  string suggestion = 1;
+  // Suggestion id
+  string suggestion_id = 2;
+}
+
+// Request for CreateVoiceSupportSession
+message CreateVoiceSupportSessionRequest {
+  reserved 3;
+  reserved "entrypoint";
+  // For including information - like deliveryUUID
+  map<string, string> public_metadata = 1;
+  // Information about the user making the request.
+  ChatRequestUserInfo user_info = 2;
+  // The user's first name
+  string nickname = 4;
+}
+
+// Response for CreateVoiceSupportSession
+message CreateVoiceSupportSessionResponse {
+  reserved 2;
+  reserved "response_message";
+  // Session ID
+  string session_id = 1;
+}
+
+// Request for ProcessVoiceSupportMessage
+message ProcessVoiceSupportMessageRequest {
+  // Session ID
+  string session_id = 1;
+  // User utterance
+  string user_utterance = 2;
+  // Last QA bot message
+  string last_qa_bot_message = 3;
+}
+
+// Data indicating the intent of the user's query
+message Intent {
+  // The type of the intent
+  oneof type {
+    // Top level labyrinth escalation check result
+    bool top_level_escalation = 1;
+    // Text of the quick reply that the LLM mapped the user query to
+    string quick_reply = 2;
+    // Intent chosen by LLM during workflow routing step
+    string choose_action_intent = 3;
+  }
+}
+
+// Response for ProcessVoiceSupportMessage
+message ProcessVoiceSupportMessageResponse {
+  // Bot response
+  repeated string bot_response = 1;
+  // Flag to determine whether to escalate to Salesforce Ax or not
+  bool is_escalate = 2;
+  // The escalation category aka the queue name that the escalation gets routed to
+  string escalate_category = 3;
+  // Flag to determine whether to use QA result
+  bool need_invoke_qa = 4;
+  // Additional data that a workflow can provide
+  repeated string tags = 5;
+  // Directives that a workflow node can provide
+  repeated string directives = 6;
+  // Intent of the user's query
+  Intent intent = 7;
+}
+
+// Request for ProcessSendbirdUserValidationWebhook
+message ProcessDriveUserValidationWebhookRequest {
+  // Specifies the user’s phone number
+  string user_phone_number = 1;
+  // Specifies the number the user sent a message to (e.g. Merchant’s phone number)
+  string request_phone_number = 2;
+  // Specifies the binding key for the Merchant’s phone number
+  string omni_channel_binding_key = 3;
+  // Specifies the Sendbird application id of the Merchant’s phone number
+  string application_id = 4;
+}
+
+// Response for ProcessSendbirdUserValidationWebhook
+message ProcessDriveUserValidationWebhookResponse {
+  // Empty string if this requested user is not valid
+  string sendbird_user_id = 1;
+  // Determines if this is a valid DoorDash Drive user
+  bool is_valid_user = 2;
+  // (Optional) Nickname to register for sendbird user. Default: empty string
+  string sendbird_user_nickname = 3;
+}
+
+// Request for InitiateCrossSystemChatTransfer
+message InitiateCrossSystemChatTransferRequest {
+  // channel_id of chat
+  google.protobuf.StringValue channel_id = 1;
+  // previous system
+  google.protobuf.StringValue previous_system = 2;
+  // target system
+  google.protobuf.StringValue target_system = 3;
+  // previous case id
+  google.protobuf.StringValue previous_case_id = 4;
+}
+
+// Response for InitiateCrossSystemChatTransfer
+message InitiateCrossSystemChatTransferResponse {
+  // channel_id of chat
+  google.protobuf.StringValue channel_id = 1;
+}
+
+// Request for FetchKnowledgeBase
+message FetchKnowledgeBaseRequest {
+  // Latest user query
+  string user_query = 1;
+  // Sendbird channel where the conversation is taking place
+  string channel_url = 2;
+  // Chat history of the conversation thus far. Needed for LLM Summarization step to contextualize the latest user query for vector search
+  repeated Message chat_history = 3;
+}
+
+// Knowledge Base Article definition
+message KnowledgeBaseArticle {
+  // Unique identifier for the article
+  string uuid = 1;
+  // The content of the knowledge base article
+  string article_body = 2;
+}
+
+// Response for FetchKnowledgeBase
+message FetchKnowledgeBaseResponse {
+  // List of KBs
+  repeated KnowledgeBaseArticle top_articles = 1;
+}
+
+// Message definition
+message Message {
+  // Type of the message (e.g., text, binary, etc.)
+  Type type = 1;
+  // Sender of the message (e.g., Bot, DX, etc.)
+  Sender sender = 2;
+  // Content of the message (text for TYPE_TEXT, etc.)
+  google.protobuf.StringValue content = 3;
+}
+
+// Type of message
+enum Type {
+  // Unspecified message type
+  TYPE_UNSPECIFIED = 0;
+  // Text-based message
+  TYPE_TEXT = 1;
+}
+
+// Sender of message
+enum Sender {
+  // Unspecified sender
+  SENDER_UNSPECIFIED = 0;
+  // Dasher
+  SENDER_DX = 1;
+  // Bot
+  SENDER_BOT = 2;
+}
+
+// Webhook request for handling incoming messages from Dashbuddy app
+message ProcessDashbuddyTextMessageWebhookRequest {
+  // Unique identifier for the application
+  string app_id = 1;
+  // Complete message payload
+  sinch.v1.Message message = 2;
+  // Unique identifier for the project
+  string project_id = 3;
+  // Timestamp marking when the channel callback was accepted
+  string accepted_time = 4;
+  // Timestamp of the event as provided by the underlying channels
+  string event_time = 5;
+  // Context-dependent metadata
+  string message_metadata = 6;
+  // The value provided in field correlation_id of a send message request
+  string correlation_id = 7;
+  // Additional metadata that might be provided by a channel
+  google.protobuf.Struct channel_metadata = 8;
+}
+
+// Response for Dashbuddy app webhook
+message ProcessDashbuddyTextMessageWebhookResponse {}

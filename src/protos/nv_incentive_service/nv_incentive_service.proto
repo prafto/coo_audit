@@ -1,0 +1,411 @@
+syntax = "proto3";
+
+package nv_incentive_service.v1;
+
+import "common/money.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/cart.proto";
+import "promotion/service.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/nv_incentive_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.nv_incentive_service.rpc.api";
+
+// NvIncentiveService
+service NvIncentiveService {
+  option (doordash.api.service) = {
+    name: "nv-incentive-service"
+    url: "nv-incentive-service-api.service.prod.ddsd"
+    name_spaces: ["nv_incentive"]
+    port: 50051
+    owner: {
+      name: "cng-affordability-eng"
+      id: "cng-affordability-eng"
+      slack_channel: "#eng-nv-affordability-alerts"
+      email_alias: "nv-affordability-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Get all possible incentive item ids from NV Incentive Service database for a merchant
+  rpc GetIncentiveItemIdsWithPossibleItemPromos(GetIncentiveItemIdsWithPossibleItemPromosRequest) returns (GetIncentiveItemIdsWithPossibleItemPromosResponse);
+
+  // Get eligible incentives for the given consumer
+  rpc GetIncentivesByDdsics(GetIncentivesByDdsicsRequest) returns (GetIncentivesByDdsicsResponse);
+
+  // Claim the incentive
+  rpc ClaimIncentive(ClaimIncentiveRequest) returns (ClaimIncentiveResponse) {
+    option (google.api.http) = {get: "/nv_incentive/v1/incentive_selection"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd_device_id"},
+        {field: "DD-GEO-INFO"},
+        {field: "X-FACETS-VERSION"},
+        {field: "dd-test-traffic-routing"}]
+    };
+  }
+
+  // Redeem the incentive
+  rpc RedeemIncentive(RedeemIncentiveRequest) returns (RedeemIncentiveResponse);
+
+  // Insert a new fee configuration
+  rpc InsertFeeConfiguration(InsertFeeConfigurationRequest) returns (InsertFeeConfigurationResponse);
+
+  // Upsert a fee configuration
+  rpc UpsertFeeConfiguration(UpsertFeeConfigurationRequest) returns (UpsertFeeConfigurationResponse);
+
+  // Delete a fee configuration
+  rpc DeleteFeeConfiguration(DeleteFeeConfigurationRequest) returns (DeleteFeeConfigurationResponse);
+
+  // Get fee configurations
+  rpc GetFeeConfiguration(GetFeeConfigurationRequest) returns (GetFeeConfigurationResponse);
+
+  // Manually process a delivery
+  rpc DeliveryProcessing(DeliveryProcessingRequest) returns (DeliveryProcessingResponse);
+
+  // Pre-warm our incentive cache for a given consumer
+  rpc PreWarmIncentivesByConsumer(PreWarmIncentivesByConsumerRequest) returns (PreWarmIncentivesByConsumerResponse);
+}
+
+// Request for GetIncentiveItemIdsWithPossibleItemPromos
+message GetIncentiveItemIdsWithPossibleItemPromosRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // business_id
+  google.protobuf.StringValue business_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  // provider_type
+  repeated ProviderType providers = 4;
+}
+
+// Response for GetIncentiveItemIdsWithPossibleItemPromos
+message GetIncentiveItemIdsWithPossibleItemPromosResponse {
+  // incentive item ids list with provider mapping
+  repeated IncentiveItemIds incentive_item_ids_list = 1;
+}
+
+// IncentiveItemIds to represent the provider to ids mapping in GetIncentiveItemIdsWithPossibleItemPromosResponse
+message IncentiveItemIds {
+  // providerType with corresponding ddSics
+  ProviderType provider = 1;
+  // list of incentive ids for the provider, e.g. ddSic ids
+  repeated google.protobuf.StringValue ids = 2;
+}
+
+// Request for GetIncentivesByDdsics
+message GetIncentivesByDdsicsRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // business_id
+  google.protobuf.StringValue business_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  // list of dd_sics
+  repeated google.protobuf.StringValue dd_sics = 4;
+  // Only equals true when the calls are from PDP and order service.
+  // This determines whether we need to include the coupon status in response.
+  google.protobuf.BoolValue should_include_item_promo_status = 5;
+  // Only equals true when the calls are from order service.
+  // This determines whether promo service will check the eligibility on the user criterion
+  google.protobuf.BoolValue should_evaluate_user_criterion = 6;
+}
+
+// Response for GetIncentivesByDdsics
+message GetIncentivesByDdsicsResponse {
+  // list of product data
+  repeated promotion_service.ProductData product_data = 1;
+}
+
+// Request for ClaimIncentive
+message ClaimIncentiveRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // business_id
+  google.protobuf.StringValue business_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  // incentive_id for the item coupon that being clipped
+  google.protobuf.StringValue incentive_id = 4;
+}
+
+// Response for ClaimIncentive
+message ClaimIncentiveResponse {
+  // incentive_id
+  google.protobuf.StringValue incentive_id = 1;
+}
+
+// Request for RedeemIncentive
+message RedeemIncentiveRequest {
+  // incentive_id
+  google.protobuf.StringValue incentive_id = 1;
+  // order_id
+  google.protobuf.StringValue order_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 4;
+  // order cart details
+  promotion_service.Cart cart = 5;
+  // total discount promotion value in a redemption
+  money.MonetaryFields promotion_value = 6;
+  // delivery_id
+  google.protobuf.StringValue delivery_id = 7;
+  // order_uuid
+  google.protobuf.StringValue order_uuid = 8;
+  // Number of redemptions applied, default to 1
+  // Complex deals can be applied multiple times per order.
+  // i.e. buy 1 get $1 off, buy 2 will get $2 off. num_applications is 2.
+  google.protobuf.Int32Value num_applications = 9;
+  // federated_source_type
+  money.FederatedSource.Type federated_source_type = 10;
+}
+
+// Response for RedeemIncentive
+message RedeemIncentiveResponse {
+  // incentive_id
+  google.protobuf.StringValue incentive_id = 1;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+// ProductFeeConfiguration message
+message ProductFeeConfiguration {
+  // key_type for the fee configuration
+  int64 key_type = 1;
+  // country code (e.g., "US")
+  string country_code = 2;
+  // submarket identifier
+  int64 submarket_id = 3;
+  // business vertical identifier
+  int64 business_vertical_id = 4;
+  // business identifier
+  int64 business_id = 5;
+  // store identifier
+  int64 store_id = 6;
+  // name of the DV
+  google.protobuf.StringValue dv_name = 7;
+  // treatment of the DV
+  google.protobuf.StringValue dv_treatment = 8;
+  // delivery option identifier
+  google.protobuf.Int64Value delivery_option = 9;
+  // subscription status
+  google.protobuf.StringValue subscription_status = 10;
+  // shopping protocol identifier
+  google.protobuf.Int64Value shopping_protocol = 11;
+  // fee type identifier
+  int64 fee_type = 12;
+  // JSON string containing provider information
+  string providers_json = 13;
+  // minimum value
+  int64 min = 14;
+  // maximum value
+  int64 max = 15;
+  // minimum subtotal value
+  int64 min_subtotal = 16;
+  // description of the configuration
+  string configuration_description = 17;
+  // tooltip metadata
+  TooltipMetadata tooltip_metadata = 18;
+  // dd tenant_id
+  google.protobuf.StringValue tenant_id = 19;
+}
+
+// ComplianceFeeConfiguration message
+message ComplianceFeeConfiguration {
+  // key_type for the fee configuration
+  int64 key_type = 1;
+  // country code (e.g., "US")
+  string country_code = 2;
+  // submarket identifier
+  int64 submarket_id = 3;
+  // business vertical identifier
+  int64 business_vertical_id = 4;
+  // business identifier
+  int64 business_id = 5;
+  // store identifier
+  int64 store_id = 6;
+  // name of the DV
+  google.protobuf.StringValue dv_name = 7;
+  // treatment of the DV
+  google.protobuf.StringValue dv_treatment = 8;
+  // delivery option identifier
+  google.protobuf.Int64Value delivery_option = 9;
+  // subscription status
+  google.protobuf.StringValue subscription_status = 10;
+  // shopping protocol identifier
+  google.protobuf.Int64Value shopping_protocol = 11;
+  // fee type identifier
+  int64 fee_type = 12;
+  // JSON string containing provider information
+  string providers_json = 13;
+  // minimum value
+  int64 min = 14;
+  // maximum value
+  int64 max = 15;
+  // minimum subtotal value
+  int64 min_subtotal = 16;
+  // description of the configuration
+  string configuration_description = 17;
+  // tooltip metadata
+  TooltipMetadata tooltip_metadata = 18;
+  // dd tenant_id
+  google.protobuf.StringValue tenant_id = 19;
+}
+
+// TooltipMetadata to set tooltip message and bundle with fees info
+message TooltipMetadata {
+  // localization key for the tooltip message
+  google.protobuf.StringValue localization_key = 1;
+  // whether or not to bundle tooltip message with taxes and fees
+  google.protobuf.BoolValue should_bundle_with_fees = 2;
+}
+
+// Request for InsertFeeConfiguration
+message InsertFeeConfigurationRequest {
+  // Configuration to be inserted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Response for InsertFeeConfiguration
+message InsertFeeConfigurationResponse {
+  // Configuration that was inserted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Request for UpsertFeeConfiguration
+message UpsertFeeConfigurationRequest {
+  // Configuration to be upserted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Response for UpsertFeeConfiguration
+message UpsertFeeConfigurationResponse {
+  // Configuration that was upserted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Request for DeleteFeeConfiguration
+message DeleteFeeConfigurationRequest {
+  // Configuration to be deleted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Response for DeleteFeeConfiguration
+message DeleteFeeConfigurationResponse {
+  // Configuration that was deleted
+  ProductFeeConfiguration configuration = 1;
+  // Optional compliance configuration
+  ComplianceFeeConfiguration compliance_configuration = 2;
+}
+
+// Request for GetFeeConfiguration
+message GetFeeConfigurationRequest {
+  // key_type for the fee configuration
+  int64 key_type = 1;
+  // country code
+  string country_code = 2;
+  // submarket identifier
+  int64 submarket_id = 3;
+  // business vertical identifier
+  int64 business_vertical_id = 4;
+  // business identifier
+  int64 business_id = 5;
+  // store identifier
+  int64 store_id = 6;
+  // name of the DV
+  google.protobuf.StringValue dv_name = 7;
+  // treatment of the DV
+  google.protobuf.StringValue dv_treatment = 8;
+  // delivery option identifier
+  google.protobuf.Int64Value delivery_option = 9;
+  // subscription status
+  google.protobuf.StringValue subscription_status = 10;
+  // shopping protocol identifier
+  google.protobuf.Int64Value shopping_protocol = 11;
+  // fee type identifier
+  int64 fee_type = 12;
+  // dd tenant_id
+  google.protobuf.StringValue tenant_id = 13;
+}
+
+// Response for GetFeeConfiguration
+message GetFeeConfigurationResponse {
+  // List of matching configurations
+  repeated ProductFeeConfiguration configurations = 1;
+  // List of matching compliance configurations
+  repeated ComplianceFeeConfiguration compliance_configurations = 2;
+}
+
+// ProviderType to indicate the deal provider
+enum ProviderType {
+  // UNSPECIFIED
+  PROVIDER_TYPE_UNSPECIFIED = 0;
+  // MX_INGESTED
+  PROVIDER_TYPE_MX_INGESTED = 1;
+  // IBOTTA
+  PROVIDER_TYPE_IBOTTA = 2;
+  // IBOTTA STAGING
+  PROVIDER_TYPE_IBOTTA_STAGING = 3;
+}
+
+// Request for DeliveryProcessing
+message DeliveryProcessingRequest {
+  // deliveryUuid to be processed
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Response for DeliveryProcessing
+message DeliveryProcessingResponse {
+  // ibotta_submit_purchase job result
+  google.protobuf.BoolValue ibotta_submit_purchase_job_result = 1;
+  // insert_into_redemption_table job result
+  google.protobuf.BoolValue insert_into_redemption_table_job_result = 2;
+  // update_selection_fulfillment job result
+  google.protobuf.BoolValue update_selection_fulfillment_job_result = 3;
+  // insert_into_provider_transactions_table job result
+  google.protobuf.BoolValue insert_into_provider_transactions_table_job_result = 4;
+  // clear_redis job result
+  google.protobuf.BoolValue clear_redis_job_result = 5;
+  // update_order job result
+  google.protobuf.BoolValue update_order_job_result = 6;
+}
+
+// Request for PreWarmIncentivesByConsumer
+message PreWarmIncentivesByConsumerRequest {
+  // consumer_id to pre-warm the cache for
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+// Response for PreWarmIncentivesByConsumer
+message PreWarmIncentivesByConsumerResponse {
+  // success of the request
+  google.protobuf.BoolValue success = 1;
+}

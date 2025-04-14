@@ -1,0 +1,454 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/cart.proto";
+import "common/common.proto";
+import "common/datatypes.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/common.proto";
+import "promotion/criterion.proto";
+import "promotion/eligibility_expression.proto";
+import "promotion/limitation.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+message Incentive {
+  reserved 7;
+  //indicates what is being discounted for the user
+  IncentiveTarget target = 1;
+
+  //indicates the value to be discounted from the target
+  IncentiveValue value = 2;
+
+  repeated UserCriterion user_criteria = 3;
+  repeated CartCriterion cart_criteria = 4;
+
+  google.protobuf.StringValue id = 5;
+
+  repeated MerchantCriterion merchant_criteria = 6;
+
+  // indicates if the Discount label needs to be custom
+  CustomDiscountTag tag = 8;
+  enum CustomDiscountTag {
+    CUSTOM_DISCOUNT_TAG_NOT_SET = 0;
+    CUSTOM_DISCOUNT_TAG_LOYALTY = 1;
+  }
+
+  // single boolean expression object utilizing criterion and limitations
+  EligibilityExpression eligibility_expression = 9;
+
+  DiscountMetadata discount_metadata = 10;
+
+  // Max number of times the item promo can be used in an order.
+  // Default to 1.
+  google.protobuf.Int32Value max_applications = 11;
+  // so far only for benefit campaigns with delivery fee incentives
+  // campaign cannot have both stackable and non-stackable incentives
+  // an order can only have all is_stackable incentives or none at all
+  google.protobuf.BoolValue is_stackable = 12;
+
+  // a value that is used by external systems to identify this incentive,
+  // specified at creation time
+  google.protobuf.StringValue external_id = 13;
+
+  repeated MarketStateCriteria market_state_criteria = 14;
+
+  // stacking configuration for the stackable incentive
+  StackingConfig stacking_config = 15;
+
+  message StackingConfig {
+    PromotionStackingType promotion_stacking_type = 1;
+    google.protobuf.Int32Value application_sequence = 2;
+  }
+}
+
+enum DiscountMessageConditional {
+  DISCOUNT_MESSAGE_CONDITIONAL_NONE = 0;
+  DISCOUNT_MESSAGE_CONDITIONAL_IS_SUBTOTAL_NUDGE = 1;
+  DISCOUNT_MESSAGE_CONDITIONAL_OTHER_DISCOUNT_APPLIES = 2;
+  DISCOUNT_MESSAGE_CONDITIONAL_SUBSCRIPTION_DISCOUNT_APPLIES = 3;
+  DISCOUNT_MESSAGE_CONDITIONAL_EXPRESS_AVAILABLE = 4;
+}
+
+// set of discount messages with associated conditions
+message ConditionalDiscountMessage {
+  // no conditions is the default discount applied case
+  repeated DiscountMessageConditional conditions = 1;
+
+  // different discount message placements
+  repeated money.DiscountDetailMessage banner_discount_details = 2; // bottom banner (potentially stacked with others)
+  money.Paragraph line_item_tooltip = 3; // tooltip for this incentives line item
+  common.UIFlowScreen expanded_tooltip_bottomsheet = 20;
+  money.UpsellDetails subscription_upsell_details = 4;
+  bool is_draft = 5; // if true, this will only be used in canary, not production
+  string message_key = 6; // identifier for these messages to be recorded in pricing audit logs
+  StickyFooterDetails sticky_footer_details = 7; // sticky footer for this incentive
+  DiscountMessagingLineItem discount_messaging_line_item = 8; // Modify line item label and styling
+}
+
+message DiscountMessagingLineItem {
+  string label = 1;
+  money.HighlightType highlight_type = 2;
+}
+
+// ItemLevelDiscountMessage contains campaign-level metadata related to nudgeable item promos
+message ItemLevelDiscountMessage {
+  // campaign level message, e.g. buy same X items, save $Y
+  google.protobuf.StringValue nudge_message = 1;
+  // item level nudge detail
+  repeated ItemPromoNudgeDetail item_promo_nudge_details = 2;
+  // collection id for mix & match promos
+  google.protobuf.StringValue collection_id = 3;
+  // campaign level message that applies to all items in the campaign
+  // to replace nudge_message in the future to be more generic, e.g. "20% off bestsellers"
+  google.protobuf.StringValue message = 4;
+  // item level promo detail to replace item_promo_nudge_details in the future to be more generic
+  repeated ItemPromoDetail item_promo_details = 5;
+}
+
+// ItemPromoNudgeDetail contains item-level metadata related to nudgeable item promos
+message ItemPromoNudgeDetail {
+  // item identifier
+  google.protobuf.StringValue item_id = 1;
+  // e.g. add 2 more items to apply the deal
+  google.protobuf.StringValue description = 2;
+  // percentage of progress to meet the deal requirement as a float value
+  google.protobuf.FloatValue progress = 3;
+}
+
+// ItemPromoDetail contains item-level metadata related to item promos
+message ItemPromoDetail {
+  // item identifier
+  google.protobuf.StringValue item_id = 1;
+}
+
+// DiscountMessages contains localized strings that override default discount messaging strings
+// they can contain placeholders that pricing will inject
+message DiscountMessages {
+  google.protobuf.StringValue banner_subtotal_nudge_message = 1 [deprecated = true];
+  google.protobuf.StringValue banner_savings_message = 2 [deprecated = true];
+
+  // localized name of the discount. eg. "DashPass". used in pricing's default messaging like {discount} in
+  // "Add {additional} in items to use {discount} ({subtotal}+ subtotal)"
+  google.protobuf.StringValue discount_name = 3;
+
+  // localized discount messages with their associated conditions
+  // order matter as pricing will choose the first message whose conditions pass
+  repeated ConditionalDiscountMessage conditional_discount_messages = 4;
+
+  // list of campaign-level metadata related to nudgeable item promos in the order cart
+  repeated ItemLevelDiscountMessage item_level_discount_messages = 5;
+
+  // Tags associated with discount message
+  // NOTE: pricing serving interface only - never set during creation
+  repeated google.protobuf.StringValue campaign_tags = 6;
+}
+
+// DiscountMetadata: attributions for promotion and benefit campaigns. DiscountType will be set by client, and the
+// other data fields will be set by system on creation and update paths
+message DiscountMetadata {
+  money.DiscountType discount_type = 1;
+  money.DiscountMonetaryField discount_monetary_field = 2;
+
+  // delivery fee discount
+  DeliveryFeeDiscountMetadata delivery_fee_discount_metadata = 3;
+
+  // service fee discount
+  ServiceFeeDiscountMetadata service_fee_discount_metadata = 4;
+
+  // promotion metadata discount target
+  money.DiscountTarget promotion_discount_target = 5;
+
+  // eg. consumerSubscriptionPlanId
+  string source_id = 6;
+
+  SubscriptionDiscountMetadata subscription_discount_metadata = 7;
+  // Is a mix and match complex deals, default false.
+  google.protobuf.BoolValue is_mix_and_match = 8;
+
+  // Meal Plan Discount metadata, used to relay the unit_price_per_meal data from promotion to pricing service
+  oneof plan_metadata {
+    MealPlanDiscountMetadata meal_plan_metadata = 9;
+  }
+
+  // priority fee discount
+  PriorityFeeDiscountMetadata priority_fee_discount_metadata = 10;
+
+  // overrides for messaging that goes into the quote when this incentive applies
+  DiscountMessages discount_messages = 11;
+
+  // Range of the fee post-discount
+  Range range = 12;
+}
+
+message DeliveryFeeDiscountMetadata {
+  money.DeliveryFeeDiscountType delivery_fee_discount_type = 1;
+  money.DeliveryFeeDiscountSourceType delivery_fee_discount_source_type = 2;
+
+  // Delivery fee discount info like strikethrough or related banner info UI show/hide control, default true.
+  google.protobuf.BoolValue is_delivery_fee_discount_visible = 3;
+  // Minimum delivery fee threshold
+  money.MonetaryFields delivery_fee_min_floor_fee = 4;
+  // so far only for benefit campaigns with delivery fee incentives
+  // Maximum delivery fee threshold, e.g. delivery fee will be $0.99 at most
+  money.MonetaryFields delivery_fee_max_cap_fee = 5;
+}
+
+message ServiceFeeDiscountMetadata {
+  money.DiscountSourceType service_fee_discount_source = 1;
+}
+
+message SubscriptionDiscountMetadata {
+  google.protobuf.BoolValue is_new_subscriber = 1;
+  google.protobuf.Int32Value eligible_num_of_stores = 2;
+  string consumer_subscription_status = 3;
+  google.protobuf.Int32Value subscription_plan_id = 4;
+  google.protobuf.Int32Value subscription_id = 5;
+  google.protobuf.StringValue callout_text = 6;
+  money.SubscriptionTermsAndConditions terms_and_conditions = 7;
+  money.UpsellDetails upsell_details = 8;
+  repeated money.EligibleSubscriptionTrialPlan subscription_trial_plans = 9;
+
+  // Data for the current active plan. Will be empty if the user is not a subscriber
+  SubscriptionPlanDiscountMetadata plan_metadata = 10;
+
+  // Data for the best eligible plan for the user. Applicable if the user is a non subscriber,
+  // or if the user has a better plan (e.g. annual plan, partner plan, etc.) they can subscribe to
+  SubscriptionPlanDiscountMetadata best_eligible_plan_metadata = 11;
+
+  // should_block_payment_method_switch - if true, a specific payment method must be used on the order for the benefits to apply
+  google.protobuf.BoolValue should_block_payment_method_switch = 12;
+}
+
+enum SubscriptionPlanType {
+  SUBSCRIPTION_PLAN_TYPE_UNKNOWN = 0;
+  SUBSCRIPTION_PLAN_TYPE_ANNUAL_PLAN = 1;
+  SUBSCRIPTION_PLAN_TYPE_PARTNER_PLAN = 2;
+}
+
+message SubscriptionPlanDiscountMetadata {
+  google.protobuf.Int32Value id = 1;
+  repeated SubscriptionPlanType plan_types = 2;
+  money.MonetaryFields plan_fee = 3;
+  money.SubscriptionRecurrenceIntervalType recurrence_interval_type = 4;
+  google.protobuf.StringValue country_code = 5;
+}
+
+message MealPlanDiscountMetadata {
+  money.MonetaryFields unit_price_per_meal = 1;
+}
+
+message PriorityFeeDiscountMetadata {
+  money.PriorityFeeDiscountType priority_fee_discount_type = 1;
+  money.PriorityFeeDiscountSourceType priority_fee_discount_source_type = 2;
+  google.protobuf.BoolValue show_priority_fee_nudge_banner = 3;
+  google.protobuf.BoolValue is_priority_fee_option_preselected = 4;
+  google.protobuf.Int32Value priority_fee_nudge_banner_maximum_delta = 5;
+}
+
+message IncentiveTarget {
+  //what aspect of the cart are we discounting?
+  IncentiveTargetType type = 1;
+  enum IncentiveTargetType {
+    INCENTIVE_TARGET_TYPE_INVALID = 0;
+    INCENTIVE_TARGET_TYPE_UNSET = 1;
+    INCENTIVE_TARGET_TYPE_SUBTOTAL = 2;
+    INCENTIVE_TARGET_TYPE_DELIVERY_FEE = 3;
+    INCENTIVE_TARGET_TYPE_SERVICE_FEE = 4;
+    INCENTIVE_TARGET_TYPE_SMALL_ORDER_FEE = 5;
+    INCENTIVE_TARGET_TYPE_ORDER_ITEM = 6;
+    INCENTIVE_TARGET_TYPE_CREDITSBACK = 7;
+    INCENTIVE_TARGET_TYPE_DINE_IN_VOUCHER = 8;
+    INCENTIVE_TARGET_TYPE_GENERIC_FEE = 9;
+    INCENTIVE_TARGET_TYPE_PRIORITY_FEE = 10;
+    INCENTIVE_TARGET_TYPE_DELIVERY_ASSIGNMENT = 11;
+  }
+
+  //based on the type only one of the following is valid
+  //non if target is part of the cart object
+  oneof target {
+    //a specific menu item
+    //TODO : should this be Item, OrderItem, MenuItem?
+    cart.Item item = 2; // deprecated - possibly deleted if not used
+    google.protobuf.StringValue item_name = 3; // deprecated - possibly deleted if not used
+    IncentiveTargetOrderItem incentive_target_order_item = 4;
+    money.FeeCategoryType generic_fee_type = 5;
+  }
+}
+
+message IncentiveTargetOrderItem {
+  IncentiveTargetOrderItemType type = 1;
+  enum IncentiveTargetOrderItemType {
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_INVALID = 0;
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_UNSET = 1;
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_ITEM = 2; // ITEM VALUE ONLY
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_ITEM_EXTRA_OPTION = 3; // OPTION VALUE ONLY
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_ITEM_WITH_ITEM_EXTRA_OPTION = 4; // FULL ITEM VALUE WITH OPTION
+    INCENTIVE_TARGET_ORDER_ITEM_TYPE_LUNCHPASS = 5;
+  }
+
+  // Replaced by target_item_ids in v2.
+  google.protobuf.StringValue audience_name = 2; // set during configuration or null
+
+  // set during audience evaluation or during configuration
+  // replaced by item_promo_incentive_details in v2.
+  google.protobuf.StringValue item_id = 3;
+  google.protobuf.StringValue item_extra_option_id = 4;
+
+  // Target discount item collection. Used to support cross promotion. Replace audience_name.
+  // Default to CartCriterionOrderItem.product_ids. Only set if differs for cross promotion case.
+  ProductIds product_ids = 5;
+
+  // Among num_required_items in the cart, how many items will be discounted.
+  // The deal can be applied multiple times. This defined the discount ratio, i.e. Buy 3 Get 2 free
+  // Default to 1.
+  google.protobuf.Int32Value num_discount_items = 6;
+
+  // Set during item promotion optimization.
+  // Replace item_id, item_extra_option_id which only support 1 discount item/option.
+  // This is set as part of GetCampaignsForOrderCartPricingResponse.
+  IncentiveTargetItemDetails item_details = 7;
+
+  // Max applications per item in the same cart.
+  // Set during campaign creation. Default to 1.
+  google.protobuf.Int32Value max_applications_per_item = 8;
+
+  // Applicable to INCENTIVE_TARGET_ORDER_ITEM_TYPE_ITEM_EXTRA_OPTION and INCENTIVE_TARGET_ORDER_ITEM_TYPE_ITEM_WITH_ITEM_EXTRA_OPTION
+  // This specifies what parent item the option incentive should apply to
+  ProductIds parent_product_ids = 9;
+
+  // This field enables precise setup of options promotions.
+  // The ItemWithOptions data structure represents a tree capturing items and their nested options for discounting inclusion.
+  repeated ItemWithOptions items_with_options = 10;
+
+  // if set to true,
+  // the incentive can be applied to any item in the Cx's cart
+  // product_ids and audience_name should not be set
+  google.protobuf.BoolValue any_item = 11;
+}
+
+/**
+ * Define the discount items distribution in the order cart.
+ * Pricing service will use the information to calculate/prorate item level discounts.
+ */
+message IncentiveTargetItemDetails {
+  // i.e. Cart (5A, 4B), discount items (3A, 1B)
+  repeated IncentiveTargetItem items = 1;
+  // Number of times the item promo applied to the order cart.
+  // i.e. Buy 1 get $1 off, Buy 2 will get $2 off, num_applications = 2
+  int32 num_applications = 2;
+}
+
+/**
+ * Define the item discount quantity.
+ */
+message IncentiveTargetItem {
+  // menu item/option id/carnival item id
+  oneof value {
+    google.protobuf.StringValue item_id = 1;
+    google.protobuf.StringValue item_extra_option_id = 2;
+    // If the user adds the same item ID into the cart multiple times with different options,
+    // it will result in different carnival cart items with the same item ID.
+    // For accurate item+options promotion discount and tax calculations,
+    // we need to specify the discount breakdown at the carnival cart item level.
+    google.protobuf.StringValue carnival_item_id = 5;
+  }
+  // quantity
+  int32 quantity = 3;
+  // options quantity info for the target item
+  repeated IncentiveTargetItem options = 4;
+}
+
+message IncentiveValue {
+  // What type of discount is being applied to the target
+  IncentiveValueType type = 1;
+  enum IncentiveValueType {
+    INCENTIVE_VALUE_TYPE_INVALID = 0;
+    INCENTIVE_VALUE_TYPE_UNSET = 1;
+    INCENTIVE_VALUE_TYPE_PERCENT_OFF = 2;
+    INCENTIVE_VALUE_TYPE_FLAT_AMOUNT_OFF = 3;
+    INCENTIVE_VALUE_TYPE_SET_VALUE = 4;
+    INCENTIVE_VALUE_TYPE_SET_PERCENTAGE_RATE = 5;
+    INCENTIVE_VALUE_TYPE_RANGE_CAPPED = 6;
+    INCENTIVE_VALUE_TYPE_FORMULA = 7;
+    INCENTIVE_VALUE_TYPE_STRATEGY = 8;
+  }
+
+  enum DeliveryAssignmentStrategy {
+    DELIVERY_ASSIGNMENT_STRATEGY_UNSPECIFIED = 0;
+    DELIVERY_ASSIGNMENT_STRATEGY_TOP_DASHER = 1;
+    DELIVERY_ASSIGNMENT_STRATEGY_PRIORITY_STATUS = 2;
+    DELIVERY_ASSIGNMENT_STRATEGY_TOP_DASHER_NO_MESSAGING = 3;
+  }
+
+  // The value to apply to the target
+  oneof value {
+    // Percent off if the discount is of type PERCENT_OFF
+    int32 percent_off = 2;
+
+    // Flat amount off if the discount is of type FLAT_AMOUNT_OFF
+    money.MonetaryFields flat_amount_off = 3;
+
+    // Specific value if the discount is of type SPECIFIC_VALUE (e.g. $1 delivery fee)
+    money.MonetaryFields set_specific_value = 4;
+
+    // Specific rate if the incentive value type is of type SET_RATE (e.g. 5% service rate)
+    double set_specific_rate = 6;
+
+    Range range = 7;
+    DeliveryAssignmentStrategy delivery_assignment_strategy = 8;
+    // calculate value based on formula and corresponding coefficients
+    Formula formula = 9;
+  }
+
+  // If provided sets a maximum monetary limit that can be given for this single incentive
+  money.MonetaryFields maximum_incentive_discount = 5;
+}
+
+message Formula {
+  // map of coefficients for the formula
+  map<string, common.datatypes.v1.BigDecimal> coefficient_map = 1;
+  // description of the formula
+  google.protobuf.StringValue description = 2;
+}
+
+message Range {
+  // Min fee threshold
+  money.MonetaryFields floor_amount = 1;
+  // Max fee threshold
+  money.MonetaryFields ceil_amount = 2;
+
+  // value for the range
+  oneof value {
+    // specific_rate for this range
+    money.BasisPoint set_specific_rate = 3;
+    // specific_value for this range
+    money.MonetaryFields set_specific_value = 4;
+  }
+}
+
+message StickyFooterDetails {
+  // The promo message string
+  google.protobuf.StringValue promo_message = 1;
+  // The description to be displayed in the popup dialogue
+  google.protobuf.StringValue promo_message_description = 2;
+  // The title to be displayed in the popup dialogue
+  google.protobuf.StringValue promo_message_title = 3;
+  // The promo description that shows up under promo_message
+  google.protobuf.StringValue promo_sub_message = 4;
+  // Timestamp indicating when the promotion will end for certain cases (e.g. Weekly Drops)
+  google.protobuf.Timestamp promo_end_time = 5;
+  // Text to be included on badge of sticky footer
+  google.protobuf.StringValue badge_text = 6;
+  // Background color of sticky footer banner. This will override the background color set in cxmbff by
+  // placement_assets.json
+  google.protobuf.StringValue sticky_footer_background_color = 7;
+  // Type of the sticky footer banner. This will override the type set in cxmbff by placement_assets.json
+  google.protobuf.StringValue sticky_footer_type = 8;
+}

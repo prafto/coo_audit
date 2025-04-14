@@ -1,0 +1,510 @@
+syntax = "proto3";
+
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package nv;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.nv.pg";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// APIs for Offer Service
+service Offer {
+  // Set timeout to 2 seconds after prod deployment
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 6000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 7000;
+
+  option (doordash.api.service) = {
+    url: "nv-offer-check-eligibility.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["nv-offer"]
+    owner: {
+      id: "order-platform-default-bucket"
+      name: "order-service-offer"
+      slack_channel: "#eng-order-platform"
+      email_alias: "order-platform@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Check eligibility for offers
+  rpc CheckEligibility(CheckEligibilityRequest) returns (CheckEligibilityResponse) {
+    option (google.api.http) = {
+      post: "/nv-offer/v1/check-eligibility"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+      }
+      presentation_gateway_endpoint: true
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+  // Get the bottomsheet if available
+  rpc GetBottomSheet(GetBottomSheetRequest) returns (GetBottomSheetResponse) {
+    option (google.api.http) = {
+      post: "/nv-offer/v1/offer-bottom-sheet"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+  // Accept the offer
+  rpc AcceptOffer(AcceptOfferRequest) returns (AcceptOfferResponse) {
+    option (google.api.http) = {
+      post: "/nv-offer/v1/accept-offer"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 5
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_guest"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+// CheckEligibility Request Message
+message CheckEligibilityRequest {
+  // Request Identifier
+  RequestIdentifier request_identifier = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // User ID
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+  // consumer lat
+  double lat = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The longitude coordinate of the user's location.
+  double lng = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The submarket ID of the user's location.
+  int64 submarket_id = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The district ID of the user's location.
+  int64 district_id = 7 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The country short name of the user's location.
+  google.protobuf.StringValue country_shortname = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // The user's locale.
+  google.protobuf.StringValue locale = 9 [(.doordash.api.inject_from_headers) = {
+    field: "accept-language"
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// CheckEligibility Response Message
+message CheckEligibilityResponse {
+  // Eligibility for offers
+  google.protobuf.BoolValue eligible_for_offers = 1;
+}
+
+// Get Bottom Sheet Request Message
+message GetBottomSheetRequest {
+  // Request Identifier
+  RequestIdentifier request_identifier = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // User ID
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+  // consumer lat
+  double lat = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The longitude coordinate of the user's location.
+  double lng = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The submarket ID of the user's location.
+  int64 submarket_id = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The district ID of the user's location.
+  int64 district_id = 7 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The country short name of the user's location.
+  google.protobuf.StringValue country_shortname = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // The user's locale.
+  google.protobuf.StringValue locale = 9 [(.doordash.api.inject_from_headers) = {
+    field: "accept-language"
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+}
+
+// Get Bottom Sheet Response
+message GetBottomSheetResponse {
+  // Lego Page Response
+  lego.response.v1.LegoPageResponse lego_page_response = 1;
+  // Offer details
+  OfferDetails offer_details = 2;
+}
+
+// Accept Offer Request Message
+message AcceptOfferRequest {
+  // Request Identifier
+  RequestIdentifier request_identifier = 1;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // User ID
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+  // consumer lat
+  double lat = 4 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lat",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lat",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The longitude coordinate of the user's location.
+  double lng = 5 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.lng",
+      injection_rule: {
+        cast_type: "double",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_lng",
+      injection_rule: {
+        cast_type: "double",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The submarket ID of the user's location.
+  int64 submarket_id = 6 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_submarket_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The district ID of the user's location.
+  int64 district_id = 7 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.district_id",
+      injection_rule: {
+        cast_type: "int64",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_district_id",
+      injection_rule: {
+        cast_type: "int64",
+        default_value: "-1"
+      }
+    }
+  ];
+  // The country short name of the user's location.
+  google.protobuf.StringValue country_shortname = 8 [
+    (doordash.api.inject_from_headers) = {
+      field: "DD-LOCATION-CONTEXT.country_short_name",
+      injection_rule: {
+        cast_type: "nullable_string",
+        conversions: [
+          DECODE_BASE64,
+          JSON
+        ]
+      }
+    },
+    (doordash.api.inject) = {
+      field: "cx_geo_country_short_name",
+      injection_rule: {cast_type: "nullable_string"}
+    }
+  ];
+  // The user's locale.
+  google.protobuf.StringValue locale = 9 [(.doordash.api.inject_from_headers) = {
+    field: "accept-language"
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // Offer details sent from offer_bottom_sheet
+  OfferDetails offer_details = 10;
+}
+
+// Accept Offer Response
+message AcceptOfferResponse {
+  // Cart uuid of the new cart
+  google.protobuf.StringValue cart_uuid = 1;
+  // If the cart is a DYF cart
+  google.protobuf.BoolValue is_cart_submitted = 2;
+}
+
+// Details of the new offer
+message OfferDetails {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+  // Menu id of the store
+  google.protobuf.StringValue menu_id = 2;
+  // List of offer_items
+  repeated OfferItem offer_items = 3;
+}
+
+// One of the items offered
+message OfferItem {
+  // List of menu_item_ids
+  google.protobuf.StringValue menu_item_id = 1;
+  // Quantity of item
+  common.QuantityInfo item_quantity_info = 5;
+}
+
+// Request Identifier Message
+message RequestIdentifier {
+  // Cart UUID
+  string cart_uuid = 1;
+  // Cart Version
+  string cart_version = 2;
+}

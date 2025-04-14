@@ -1,0 +1,899 @@
+syntax = "proto3";
+package experience_reliability_service.salesforce;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "dasher_service/dasher_tier.proto";
+import "doordash.api/annotations.proto";
+import "experience_reliability_service/common.proto";
+import "geo-intelligence/address.proto";
+import "geo-intelligence/address_v2.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.salesforce";
+
+service SupportSalesforce {
+  option (doordash.api.service) = {
+    url: "self-help-service-web.service.prod.ddsd"
+    name: "self-help-service"
+    port: 50051
+    name_spaces: ["self_help"]
+    api_key_name: "SELF_HELP_SERVICE_API_KEY"
+    owner: {
+      id: "delivery-reliability-self-serve-expe"
+      name: "self-serve-experience-service"
+      slack_channel: "#ask-self-serve-experience"
+      email_alias: "eng-self-serve-experience@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX,
+      IVR
+    ]
+  };
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  rpc getSalesforceAudienceInfo(SalesforceAudienceInfoRequest) returns (SalesforceAudienceInfoResponse) {
+    // This implementation has been removed as it was replaced by getSalesforceAudienceInfoV2
+    option deprecated = true;
+  }
+  rpc getSalesforceAudienceInfoV2(SalesforceAudienceInfoV2BulkRequest) returns (SalesforceAudienceInfoV2BulkResponse);
+  // This implementation is the same as V2 but is used for UG. V2 is unusable due to AddressResponse not working with UG.
+  rpc getSalesforceAudienceInfoV3(SalesforceAudienceInfoV3BulkRequest) returns (SalesforceAudienceInfoV3BulkResponse) {
+    option (google.api.http) = {
+      post: "/self_help/v1/salesforce_audience_info_v3"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CLIENT_TOKEN]
+    };
+  }
+  rpc getSalesforceCaseInfo(GetSalesforceCaseInfoRequest) returns (SalesforceCaseInfo);
+  rpc getSalesforceCasesSummaryByCaseIds(GetSalesforceCasesSummaryByCaseIdsRequest) returns (SalesforceCasesSummary);
+  rpc getSalesforceCasesSummaryByCaseNums(GetSalesforceCasesSummaryByCaseNumsRequest) returns (SalesforceCasesSummary);
+  rpc mergeSalesforceCases(MergeSalesforceCasesRequest) returns (SalesforceCaseInfo) {
+    // This implementation was removed as it was decided against ramping this functionality
+    option deprecated = true;
+  }
+  rpc getIVRDeliveryDetails(IVRDeliveryDetailsRequest) returns (IVRDeliveryDetailsResponse) {
+    // This functionality has been removed and replaced by getSalesforceAudienceInfoV2 for IVR
+    option deprecated = true;
+  }
+  rpc getSalesforceChatConfiguration(SalesforceChatConfigurationRequest) returns (SalesforceChatConfigurationResponse);
+  // getSupportPhoneConfiguration lives in self-help-service
+  rpc getSupportPhoneConfiguration(SupportPhoneConfigurationRequest) returns (SupportPhoneConfigurationResponse);
+  rpc createSalesforceCase(CreateGeneralSalesforceCaseRequest) returns (CreateGeneralSalesforceCaseResponse);
+  rpc getSalesforceCasesSummaryByDeliveryUuid(GetSalesforceCasesSummaryByDeliveryUuidRequest) returns (SalesforceCasesSummary);
+  rpc getSalesforceCasesSummaryBySalesforceUserId(GetSalesforceCasesSummaryBySalesforceUserIdRequest) returns (SalesforceCasesSummary);
+
+  // Creates a new Salesforce Chat Transcript object
+  rpc createSalesforceChatTranscript(CreateSalesforceChatTranscriptRequest) returns (CreateSalesforceChatTranscriptResponse);
+  // Closes a given Salesforce Case
+  rpc closeSalesforceCase(CloseSalesforceCaseRequest) returns (CloseSalesforceCaseResponse);
+
+  // Get Salesforce account information
+  rpc getSalesforceAccountInfo(GetSalesforceAccountInfoRequest) returns (GetSalesforceAccountInfoResponse);
+
+  // Get Salesforce data for a user
+  rpc getSalesforceContext(GetSalesforceContextRequest) returns (GetSalesforceContextResponse);
+
+  // Get Salesforce MXP account informationsss
+  rpc getSalesforceMXPAccountInfo(GetSalesforceMXPAccountInfoRequest) returns (GetSalesforceMXPAccountInfoResponse);
+
+  // Get Salesforce User's Omni-channel Status
+  rpc getSalesforceUserOmniChannelStatus(GetSalesforceUserOmniChannelStatusRequest) returns (GetSalesforceUserOmniChannelStatusResponse);
+
+  // Add note to Salesforce case
+  rpc addSalesforceCaseNoteByDeliveryUuid(AddSalesforceCaseNoteByDeliveryUuidRequest) returns (AddSalesforceCaseNoteByDeliveryUuidResponse);
+
+  // Get Salesforce QuickText Queues
+  rpc getSalesforceSendBirdQueues(GetSalesforceSendBirdQueuesRequest) returns (GetSalesforceSendBirdQueuesResponse);
+
+  // Get Salesforce QuickText Quick Text
+  rpc getSalesforceSendBirdQuickText(GetSalesforceSendBirdQuickTextRequest) returns (GetSalesforceSendBirdQuickTextResponse);
+
+  // Update Salesforce QuickText Queues
+  rpc updateSalesforceSendBirdCaseTransfer(UpdateSalesforceSendBirdCaseTransferRequest) returns (UpdateSalesforceSendBirdCaseTransferResponse);
+}
+
+// Salesforce chat target
+enum ChatTarget {
+  // Default
+  CHAT_TARGET_UNSPECIFIED = 0;
+  // Consumer
+  CHAT_TARGET_CONSUMER = 1;
+  // Dasher
+  CHAT_TARGET_DASHER = 2;
+  // Merchant
+  CHAT_TARGET_MERCHANT = 3;
+  // Caviar
+  CHAT_TARGET_CAVIAR = 4;
+}
+
+// Salesforce phone target
+enum PhoneTarget {
+  // Default
+  PHONE_TARGET_UNSPECIFIED = 0;
+  // Consumer
+  PHONE_TARGET_CONSUMER = 1;
+  // Dasher
+  PHONE_TARGET_DASHER = 2;
+  // Merchant
+  PHONE_TARGET_MERCHANT = 3;
+}
+
+enum ShoppingProtocol {
+  UNKNOWN_PROTOCOL = 0;
+  MERCHANT_PICK = 1;
+  DASHER_PICK = 2;
+  SHOPPER_PICK = 3;
+}
+
+message SalesforceChatConfigurationRequest {
+  string delivery_uuid = 1;
+  ChatTarget target = 2;
+}
+
+message SalesforceChatConfigurationResponse {
+  string salesforce_chat_button_id = 1;
+  string language = 2;
+}
+
+message SupportPhoneConfigurationRequest {
+  PhoneTarget target = 1;
+}
+
+message SupportPhoneConfigurationResponse {
+  string phone_number = 1;
+}
+
+message GetSalesforceCaseInfoRequest {
+  string case_uid = 1;
+}
+
+message GetSalesforceCasesSummaryByCaseIdsRequest {
+  repeated string case_uid = 1;
+}
+
+message GetSalesforceCasesSummaryByCaseNumsRequest {
+  repeated string case_num = 1;
+}
+
+message GetSalesforceCasesSummaryByDeliveryUuidRequest {
+  string delivery_uuid = 1;
+}
+
+message GetSalesforceCasesSummaryBySalesforceUserIdRequest {
+  string salesforce_user_id = 1;
+  // optional: pass this to only retrieve open cases for the user
+  google.protobuf.BoolValue open_only = 2;
+}
+
+message MergeSalesforceCasesRequest {
+  string parent_case_uid = 1;
+  repeated string case_uid = 2;
+}
+
+message SalesforceCaseInfo {
+  google.protobuf.StringValue case_number = 1;
+  google.protobuf.StringValue customer_type = 2;
+  google.protobuf.StringValue issue = 3;
+  google.protobuf.StringValue resolution = 4;
+  google.protobuf.StringValue current_owner = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.StringValue parent_id = 7;
+  repeated SalesforceCaseInfo related_cases = 8;
+  google.protobuf.StringValue status = 9;
+  google.protobuf.Timestamp status_at = 10;
+  google.protobuf.StringValue id = 11;
+  google.protobuf.StringValue owner_id = 12;
+  google.protobuf.StringValue address_time_zone = 13;
+  google.protobuf.StringValue issue_type = 14;
+  google.protobuf.StringValue resolution_type = 15;
+  google.protobuf.StringValue delivery_uuid = 16;
+  google.protobuf.StringValue consumer_id = 17;
+  google.protobuf.StringValue dasher_id = 18;
+  google.protobuf.StringValue store_id = 19;
+  google.protobuf.StringValue chat_key = 20;
+  google.protobuf.StringValue consumer_name = 21;
+  google.protobuf.StringValue initial_queue_name = 22;
+  google.protobuf.StringValue pre_chat_details = 23;
+  google.protobuf.StringValue subject = 24;
+  google.protobuf.StringValue incident_id = 25;
+  google.protobuf.StringValue business_id = 26;
+}
+
+message SalesforceCasesSummary {
+  repeated SalesforceCaseInfo case_summary = 1;
+  int64 count = 2;
+  repeated SalesforceCases mergeable_cases = 3;
+}
+
+message SalesforceCases {
+  repeated SalesforceCaseInfo cases = 1;
+}
+
+message IVRDeliveryDetailsRequest {
+  google.protobuf.StringValue phone_number = 1;
+}
+
+message IVRDeliveryDetailsResponse {
+  MerchantDetails merchant = 1;
+  DasherDetails dasher = 2;
+  ConsumerDetails consumer = 3;
+  google.protobuf.Timestamp actual_pickup_time = 4;
+  google.protobuf.StringValue audience = 5;
+  google.protobuf.StringValue business_name = 6;
+  int64 dasher_score = 7;
+  google.protobuf.Timestamp dasher_at_store_time = 8;
+  google.protobuf.Timestamp estimated_delivery_time = 9;
+  google.protobuf.BoolValue is_active_consumer = 10;
+  google.protobuf.BoolValue is_consumer_pickup = 11;
+  google.protobuf.BoolValue is_first_dasher_delivery = 12;
+  google.protobuf.BoolValue is_first_ordercart = 13;
+  google.protobuf.BoolValue is_from_store_to_us = 14;
+  google.protobuf.BoolValue is_group_order = 15;
+  google.protobuf.BoolValue is_on_live_delivery = 16;
+  google.protobuf.BoolValue is_partner = 17;
+  google.protobuf.BoolValue is_reorder = 18;
+  google.protobuf.BoolValue is_subscribed_consumer = 19;
+  google.protobuf.BoolValue is_vip = 20;
+  int64 vip_tier = 21;
+  int64 most_recent_delivery = 22;
+  int64 num_unassigns = 23;
+  google.protobuf.StringValue order_protocol = 24;
+  google.protobuf.Timestamp quoted_delivery_time = 25;
+  google.protobuf.StringValue source = 26;
+  google.protobuf.StringValue submit_platform = 27;
+  google.protobuf.StringValue submarket_name = 28;
+  int64 subtotal = 29;
+  int64 value_of_contents = 30;
+  google.protobuf.BoolValue was_batched = 31;
+  google.protobuf.StringValue experience = 32;
+  ConsumerSubscriptionPlanDetails consumer_subscription_plan = 33;
+  google.protobuf.StringValue most_recent_delivery_uuid = 34;
+}
+
+message MerchantDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+}
+
+message ConsumerDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+}
+
+message DasherDetails {
+  google.protobuf.Int32Value id = 1; // Dasher Service has dasherId as int32
+  google.protobuf.StringValue name = 2;
+}
+
+message ConsumerSubscriptionPlanDetails {
+  google.protobuf.Int64Value id = 1;
+}
+
+message SalesforceAudienceInfoRequest {
+  google.protobuf.StringValue phone_number = 1;
+  google.protobuf.StringValue email = 2;
+  ers.api.common.CustomerTypeChoice customer_type = 3; // merchant choice is out of scope for now
+  common.Experience experience = 4; // only useful when customer_type is consumer; defaults to DOORDASH
+}
+
+message SalesforceAudienceInfoV2BulkRequest {
+  oneof audience {
+    AudienceInfoBulkDeliveryRequest delivery_audience = 1;
+    AudienceInfoBulkCustomerRequest customer_audience = 2;
+    AudienceInfoDeliveryByShortUUIDRequest delivery_by_short_uuid_audience = 3;
+  }
+  google.protobuf.StringValue source = 4; // Source that initiated case creation: Phone, Cx chat, Dx chat, etc. - for tracking purposes
+  google.protobuf.StringValue context = 5; // Case context/customer intent: Dx payments, Cx M&I, etc = for tracking purposes
+}
+
+message SalesforceAudienceInfoV3BulkRequest {
+  oneof audience {
+    AudienceInfoBulkDeliveryRequest delivery_audience = 1;
+    AudienceInfoBulkCustomerRequest customer_audience = 2;
+    AudienceInfoDeliveryByShortUUIDRequest delivery_by_short_uuid_audience = 3;
+  }
+  google.protobuf.StringValue source = 4; // Source that initiated case creation: Phone, Cx chat, Dx chat, etc. - for tracking purposes
+  google.protobuf.StringValue context = 5; // Case context/customer intent: Dx payments, Cx M&I, etc = for tracking purposes
+}
+
+message AudienceInfoBulkDeliveryRequest {
+  repeated string delivery_uuids = 1;
+}
+
+message AudienceInfoBulkCustomerRequest {
+  repeated AudienceInfoCustomerRequest customers = 2;
+}
+
+message AudienceInfoDeliveryByShortUUIDRequest {
+  repeated string delivery_short_uuids = 3; // making this a list to extend it to multiple short uuids in future
+}
+
+message AudienceInfoCustomerRequest {
+  google.protobuf.StringValue phone_number = 1;
+  google.protobuf.StringValue email = 2;
+  ers.api.common.CustomerTypeChoiceV2 customer_type = 3; // merchant choice is out of scope for now
+  common.Experience experience = 4; // only useful when customer_type is consumer; defaults to DOORDASH
+}
+
+message SalesforceAudienceInfoResponse {
+  ers.api.common.CustomerTypeChoice customer_type = 1;
+  SalesforceAudienceDetails audience = 6;
+  SalesforceDeliveryDetails delivery = 10; // latest delivery associated to this audience
+}
+
+message SalesforceAudienceInfoV2BulkResponse {
+  repeated SalesforceAudienceInfoV2Response salesforce_audience_info_bulk_response = 1;
+  repeated SalesforceAudienceInfoV2ResponseError salesforce_audience_info_bulk_response_errors = 2;
+}
+
+message SalesforceAudienceInfoV3BulkResponse {
+  repeated SalesforceAudienceInfoV3Response salesforce_audience_info_bulk_response = 1;
+  repeated SalesforceAudienceInfoV2ResponseError salesforce_audience_info_bulk_response_errors = 2;
+}
+
+message SalesforceAudienceInfoV2ResponseError {
+  oneof request {
+    AudienceInfoCustomerRequest customer = 1;
+    string delivery_uuid = 2;
+  }
+  string error = 3;
+}
+
+message SalesforceAudienceInfoV2Response {
+  ers.api.common.CustomerTypeChoiceV2 customer_type = 1;
+  SalesforceAudienceDetailsV2 audience = 2;
+  SalesforceDeliveryDetailsV2 delivery = 3;
+  google.protobuf.StringValue requesting_info = 4;
+}
+
+message SalesforceAudienceInfoV3Response {
+  ers.api.common.CustomerTypeChoiceV2 customer_type = 1;
+  SalesforceAudienceDetailsV3 audience = 2;
+  SalesforceDeliveryDetailsV3 delivery = 3;
+  google.protobuf.StringValue requesting_info = 4;
+}
+
+message SalesforceAudienceDetails {
+  oneof audience {
+    SalesforceConsumerAudienceDetails consumer_audience = 5;
+    SalesforceDasherAudienceDetails dasher_audience = 7;
+  }
+}
+
+message SalesforceAudienceDetailsV2 {
+  SalesforceConsumerAudienceDetails consumer_audience = 1;
+  SalesforceDasherAudienceDetails dasher_audience = 2;
+  SalesforceStoreDetails store = 3;
+}
+
+message SalesforceAudienceDetailsV3 {
+  SalesforceConsumerAudienceDetailsV2 consumer_audience = 1;
+  SalesforceDasherAudienceDetailsV2 dasher_audience = 2;
+  SalesforceStoreDetailsV2 store = 3;
+}
+
+message SalesforceDasherAudienceDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue email = 4;
+  google.protobuf.StringValue phone_number = 5;
+  google.protobuf.StringValue country = 6;
+  AddressResponse address = 7;
+  common.Experience experience = 8;
+  common.PhoneNumberComponents phone_number_components = 9;
+  google.protobuf.StringValue language = 10;
+  DasherDeliveryStatus dasher_delivery_status = 18;
+  google.protobuf.StringValue submarket_id = 19;
+  google.protobuf.StringValue submarket_name = 20;
+  google.protobuf.StringValue experience_string = 21;
+  google.protobuf.StringValue salesforce_id = 22; // coming from fact_dasher_vip_status table
+  google.protobuf.StringValue dasher_routing_queue = 23; // coming from fact_dasher_vip_status table
+  google.protobuf.StringValue dasher_cohort = 24; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp vip_start_dt = 25; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp vip_end_dt = 26; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp etl_create_date_utc = 27; // coming from fact_dasher_vip_status table
+  google.protobuf.BoolValue is_dasher_vip = 28;
+  dasher_service.tier.TierType dasher_tier_ratings = 29;
+  google.protobuf.BoolValue is_dasher_active = 30; // Identify if the Dx is an active Dx
+  google.protobuf.BoolValue on_live_order_now_or_recently = 31; // Check if the Dx is on a live order or has been in the last 12 hours
+  google.protobuf.StringValue payout_experience = 32; // How a Dx is paid out - DasherDirect or Crimson
+  google.protobuf.StringValue user_id = 33; // Dx DoorDash user id
+}
+
+message SalesforceStoreDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  SalesforceBusinessDetails business = 3;
+  google.protobuf.StringValue phone_number = 4;
+  AddressResponse address = 5;
+  google.protobuf.StringValue order_protocol = 6;
+  common.PhoneNumberComponents phone_number_components = 7;
+  google.protobuf.StringValue language = 8;
+  google.protobuf.BoolValue is_partner = 9;
+  google.protobuf.Int32Value tenure = 10;
+  google.protobuf.StringValue activation_status = 11; // Activated, Activating, Deactivatd, Inactive based on store isActive and activatedAt
+}
+
+message SalesforceBusinessDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue business_vertical_id = 3;
+  google.protobuf.StringValue business_vertical_name = 4;
+}
+
+message SalesforceConsumerAudienceDetails {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue email = 4;
+  google.protobuf.StringValue phone_number = 5;
+  google.protobuf.StringValue country = 6;
+  common.Experience experience = 7;
+  google.protobuf.Int32Value cx_unavail_last_3_orders_flag = 8; // coming from drs /v1/never_delivered_flags
+  google.protobuf.BoolValue is_vip = 9;
+  google.protobuf.Int32Value vip_tier = 10;
+  google.protobuf.StringValue language = 11;
+  AddressResponse address = 12;
+  google.protobuf.BoolValue is_subscribed_consumer = 13;
+  google.protobuf.Int32Value available_consumer_credits = 14;
+  common.PhoneNumberComponents phone_number_components = 15;
+  ConsumerSubscriptionPlanDetails consumer_subscription_plan = 16;
+  ConsumerDeliveryStatus consumer_delivery_status = 17;
+  google.protobuf.StringValue submarket_id = 18;
+  google.protobuf.StringValue submarket_name = 19;
+  money.MonetaryFields available_consumer_credits_monetary_fields = 20;
+  google.protobuf.StringValue experience_string = 21;
+  google.protobuf.BoolValue has_cnr_badge = 22;
+  google.protobuf.BoolValue is_daily_whale = 23;
+  google.protobuf.BoolValue is_at_risk_daily_whale = 24;
+  ers.api.common.DdfbConsumerType ddfb_consumer_type = 25;
+}
+
+message SalesforceDeliveryDetails {
+  int64 delivery_id = 1;
+  google.protobuf.StringValue merchant_name = 3;
+  int64 total_cost = 4;
+  google.protobuf.StringValue customer_full_name = 5;
+  google.protobuf.StringValue dasher_full_name = 6;
+  google.protobuf.StringValue order_source = 7;
+  google.protobuf.StringValue delivery_uuid = 8;
+  google.protobuf.BoolValue is_group_order = 9;
+  google.protobuf.BoolValue was_batched = 10;
+  ShoppingProtocol shopping_protocol = 11;
+}
+
+message SalesforceDeliveryDetailsV2 {
+  google.protobuf.StringValue most_recent_delivery_uuid = 1;
+  money.MonetaryFields total_cost = 2;
+  google.protobuf.StringValue order_source = 3;
+  google.protobuf.StringValue delivery_uuid = 4;
+  google.protobuf.BoolValue is_group_order = 5;
+  google.protobuf.StringValue currency = 7;
+  repeated CreditRefundStatus status_of_credit_refund = 8;
+  google.protobuf.Timestamp active_date = 9;
+  AddressResponse address = 10;
+  google.protobuf.Int32Value last_4 = 11;
+  google.protobuf.BoolValue was_batched = 12;
+  ShoppingProtocol shopping_protocol = 13;
+  google.protobuf.Timestamp estimated_pickup_time = 14;
+  google.protobuf.StringValue market_timezone = 15;
+  google.protobuf.StringValue estimated_pickup_time_in_market_timezone = 16;
+  google.protobuf.BoolValue is_delivery_current = 17;
+  google.protobuf.BoolValue has_order_been_in_review_queue = 18;
+  google.protobuf.StringValue fulfillment_type = 19;
+  google.protobuf.StringValue should_block_cnr_abuser = 20;
+  ers.api.common.DdfbBenefitType ddfb_benefit_type = 21;
+  ers.api.common.DdfbMemberRoleType ddfb_member_role_type = 22;
+}
+
+message CreditRefundStatus {
+  int64 id = 1;
+  google.protobuf.StringValue category = 2;
+  google.protobuf.Timestamp created_at = 3;
+  money.MonetaryFields consumer_refund = 4;
+  money.MonetaryFields consumer_credits = 5;
+  money.MonetaryFields consumer_charge = 6;
+  money.MonetaryFields store_charge = 7;
+  google.protobuf.StringValue payment_action = 9;
+  money.MonetaryFields store_refund = 10;
+}
+
+message CreateSalesforceApiCaseRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  int64 issue_id = 3;
+  google.protobuf.StringValue delivery_event_id = 4;
+}
+
+// kafka protobuf message format
+message SalesforceCaseRequest {
+  // name of service publishing to kafka
+  string event_creator_service_name = 1;
+  oneof entity {
+    CreateSalesforceApiCaseRequest create_salesforce_api_case_request = 2;
+  }
+}
+
+message CreateGeneralSalesforceCaseRequest {
+  repeated google.protobuf.StringValue category_tag = 1;
+  google.protobuf.StringValue incident_description = 2;
+  // Note this is the value for consumer_id__c. It does not write to different sources based upon the role.
+  google.protobuf.StringValue reporting_user_id = 3;
+  // Customer types - "Consumer", "Dasher", "Merchant", "Courier", "Restaurant", "Shopper", etc
+  google.protobuf.StringValue customer_type = 4;
+  google.protobuf.StringValue delivery_id = 5;
+  google.protobuf.StringValue delivery_uuid = 6;
+  // Note this is actually the dasher name (dasher_name__c), not the dasher id. Keeping as-is for backwards compatibility.
+  google.protobuf.StringValue dasher_id = 7;
+  google.protobuf.StringValue merchant_id = 8;
+  google.protobuf.StringValue origin = 9;
+  // Auto-populated by other fields. Optional.
+  google.protobuf.StringValue subject = 10;
+  // "Trust and Safety" - configured by Bizapps team
+  google.protobuf.StringValue issue_type = 11;
+  // Auto-populated. Specific id from Sfdc
+  google.protobuf.StringValue record_type = 12;
+  // Auto-populated from category_tags. Optional.
+  google.protobuf.StringValue chat_issue_details = 13;
+  // Auto-populated. Optional.
+  google.protobuf.StringValue parent_case_id = 14;
+  // "DoorDash Consumer In-App Android" OR "DoorDash Consumer In-App iOS"
+  // Chat also allows "DoorDash Web"
+  google.protobuf.StringValue channel = 15;
+  // Optional string for salesforce owner
+  google.protobuf.StringValue owner_id = 16;
+  // Optional Chat Key. Applicable for Chats.
+  google.protobuf.StringValue chat_key = 17;
+  // ID Pointing to when case was escalated. For sendbird, this will be message id.
+  google.protobuf.StringValue chat_escalation_id = 18;
+  // Note this is the actual dasher ID that goes into the salesforce column 'dasher_id__c'.
+  google.protobuf.StringValue dasher_id_customized = 19;
+  google.protobuf.StringValue business_id = 20;
+  google.protobuf.StringValue store_id = 21;
+  google.protobuf.StringValue locale = 22;
+  google.protobuf.StringValue phone_number = 23;
+  google.protobuf.StringValue email = 24;
+  google.protobuf.BoolValue request_wait_time = 25;
+}
+
+// Expanded to include owner_id and avg_wait_time
+// Added for chat estimates of agent response time
+message CreateGeneralSalesforceCaseResponse {
+  repeated google.protobuf.StringValue case_uid = 1;
+  repeated google.protobuf.StringValue owner_id = 2;
+  repeated google.protobuf.Duration avg_wait_time = 3;
+}
+
+// This contains the status of a specific chat case.
+enum CaseTranscriptStatus {
+  // Unknown.
+  CASE_TRANSCRIPT_STATUS_UNSPECIFIED = 0;
+  // If Cx sends 0 messages after it is escalated
+  CASE_TRANSCRIPT_STATUS_DROPPED = 1;
+  // If Ax sends 0 messages after joining
+  CASE_TRANSCRIPT_STATUS_MISSED = 2;
+  // All other cases
+  CASE_TRANSCRIPT_STATUS_COMPLETED = 3;
+  // If it gets transferred to a real-time queue
+  CASE_TRANSCRIPT_STATUS_TRANSFERRED = 4;
+}
+
+// This indicates either Agent or Visitor.
+enum AgentOrVisitor {
+  // Unknown.
+  AGENT_OR_VISITOR_UNSPECIFIED = 0;
+  // Agent.
+  AGENT_OR_VISITOR_AGENT = 1;
+  // Visitor (ex. Cx).
+  AGENT_OR_VISITOR_VISITOR = 2;
+}
+
+enum DasherDeliveryStatus {
+  DASHER_STATUS_UNKNOWN = 0;
+  DASHER_STATUS_ON_THE_WAY_TO_THE_MERCHANT = 1;
+  DASHER_STATUS_ARRIVED_AT_MERCHANT = 2;
+  DASHER_STATUS_PICKED_UP_FOOD = 3;
+  DASHER_STATUS_ON_THE_WAY_TO_THE_CONSUMER = 4;
+  DASHER_STATUS_UNASSIGNED = 5;
+  DASHER_STATUS_NOT_ON_A_DASH = 6;
+}
+
+enum ConsumerDeliveryStatus {
+  CONSUMER_STATUS_UNKNOWN = 0;
+  CONSUMER_STATUS_NO_ORDERS_IN_PROGRESS = 1;
+  CONSUMER_STATUS_ORDER_IN_PROGRESS = 2;
+}
+
+message CreateSalesforceChatTranscriptRequest {
+  // Corresponding Salesforce Case ID
+  google.protobuf.StringValue case_id = 1;
+  // Status (Completed, Missed, Abandoned, Transferred)
+  CaseTranscriptStatus status = 2;
+  // This is when the user requested an Escalation.
+  google.protobuf.Timestamp escalation_request_time = 3;
+  // Time the agent joined the chat
+  google.protobuf.Timestamp agent_join_time = 4;
+  // Time the chat was completed. This does not include any after-chat actions.
+  google.protobuf.Timestamp chat_end_time = 5;
+  // Whoever marked the chat as complete first and froze the chat.
+  AgentOrVisitor ended_by = 6;
+  // Duration between the agent joining the chat until chat marked as complete.
+  google.protobuf.Duration agent_chat_duration = 7;
+  // Wait time from requesting escalation until agent joined.
+  google.protobuf.Duration wait_time = 8;
+  // Customer device type / User Agent
+  google.protobuf.StringValue user_agent = 9;
+  // The text of the chat transcript
+  google.protobuf.StringValue chat_transcript = 10;
+
+  // Average response time taken by customer to respond to agent.
+  google.protobuf.Duration average_visitor_response_time = 11;
+  // Max response time
+  google.protobuf.Duration max_visitor_response_time = 12;
+  // Total message count sent by the visitor (ex. Cx / Dx)
+  google.protobuf.Int32Value visitor_message_count = 13;
+
+  // Average response time taken by agent to respond to customer.
+  google.protobuf.Duration average_agent_response_time = 14;
+  // Max response time taken by agent to respond to customer.
+  google.protobuf.Duration max_agent_response_time = 15;
+  // Total message count sent by agent
+  google.protobuf.Int32Value agent_message_count = 16;
+
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 17;
+
+  // Duration that bot was active (between chat starting and escalation request)
+  google.protobuf.Duration bot_chat_duration = 18;
+  // Time the chat was started (ex. when interacting with the bot)
+  google.protobuf.Timestamp chat_start_time = 19;
+  // Number of times the same agent rejoined the chat after ending it.
+  google.protobuf.Int32Value rejoin_count = 20;
+  // Column uniquely defining the case / channel this transcript is for.
+  // Used to allow upserting certain fields by this id.
+  google.protobuf.StringValue transcript_unique_id = 21;
+
+  // The Agent ID that worked on the chat case.
+  google.protobuf.StringValue agent_id = 22;
+}
+
+enum TranscriptCreationStatus {
+  TRANSCRIPT_CREATION_STATUS_UNKNOWN = 0;
+  TRANSCRIPT_CREATION_STATUS_CREATED = 1;
+  TRANSCRIPT_CREATION_STATUS_UPDATED = 2;
+}
+
+message CreateSalesforceChatTranscriptResponse {
+  google.protobuf.StringValue transcript_id = 1;
+  // Status of the transcript (created vs updated).
+  TranscriptCreationStatus status = 2;
+}
+
+message CloseSalesforceCaseRequest {
+  // Corresponding Salesforce Case ID that should be closed.
+  string case_id = 1;
+  // Issue, ex. "Unresolved Contact: Dropped"
+  google.protobuf.StringValue issue = 2;
+  // Issue Type, ex. "Other - CX"
+  google.protobuf.StringValue issue_type = 3;
+  // Resolution, ex. "Unresolved Contact: Dropped"
+  google.protobuf.StringValue resolution = 4;
+  // Resolution Type, ex. "Other - CX"
+  google.protobuf.StringValue resolution_type = 5;
+  // Status, ex. "Solved"
+  google.protobuf.StringValue status = 6;
+  // Updated Owner ID. Omni cannot route based upon status, so we need to reassign.
+  google.protobuf.StringValue owner_id = 7;
+}
+
+message CloseSalesforceCaseResponse {}
+
+message GetSalesforceAccountInfoRequest {
+  // Store ID in string format, ex. "12345", Required
+  google.protobuf.StringValue store_id = 1;
+}
+
+message GetSalesforceAccountInfoResponse {
+  // Name of the decision maker of an SFDC Account in string format, ex. "Foo Bar", Optional
+  google.protobuf.StringValue decision_maker_name = 1;
+
+  // Email of the decision maker of an SFDC Account in string format, ex. "foo.bar@doordash.com", Optional
+  google.protobuf.StringValue decision_maker_email = 2;
+
+  // Phone number of the decision of an SFDC Account in string format, ex. "(123) 456-7890", Optional
+  google.protobuf.StringValue decision_maker_phone_number = 3;
+
+  // Cell phone number of the decision maker of an SFDC Account in string format, ex. "(123) 456-7890", Optional
+  google.protobuf.StringValue decision_maker_cell_phone_number = 4;
+
+  // Employer identification number(EIN)/Tax ID of an SFDC Account in string format, ex. "1234567890", Optional
+  google.protobuf.StringValue ein_tax_id = 5;
+
+  // Encrypted EIN of an SFDC Account in string format, ex. "xxxxxx7890", Optional
+  google.protobuf.StringValue ein_encrypted = 6;
+}
+
+message GetSalesforceContextRequest {
+  google.protobuf.StringValue email = 1;
+}
+
+message GetSalesforceContextResponse {
+  google.protobuf.StringValue salesforce_user_id = 1;
+}
+
+message GetSalesforceMXPAccountInfoRequest {
+  // Store ID in string format, ex. "12345", Required
+  google.protobuf.StringValue store_id = 1;
+}
+
+message GetSalesforceMXPAccountInfoResponse {
+  // Name of the SFDC account who has the role of MXP as an account team member for the store id, ex. "Amber Choi", Optional
+  google.protobuf.StringValue experience_partner_name = 1;
+
+  // Email of the SFDC account who has the role of MXP as an account team member for the store id, ex. "amber.choi@doordash.com", Optional
+  google.protobuf.StringValue experience_partner_email = 2;
+}
+
+message GetSalesforceUserOmniChannelStatusRequest {
+  google.protobuf.StringValue user_id = 1;
+}
+
+message GetSalesforceUserOmniChannelStatusResponse {
+  google.protobuf.BoolValue is_available = 1;
+}
+
+message AddSalesforceCaseNoteByDeliveryUuidRequest {
+  //Delivery uuid
+  string delivery_uuid = 1;
+
+  //Note content to be added
+  string note = 2;
+}
+
+message AddSalesforceCaseNoteByDeliveryUuidResponse {}
+
+message SalesforceSendBirdQueue {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue id = 2;
+}
+
+message GetSalesforceSendBirdQueuesRequest {}
+
+message GetSalesforceSendBirdQueuesResponse {
+  repeated SalesforceSendBirdQueue salesforce_send_bird_queue = 1;
+}
+
+message SalesforceSendBirdQuickText {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+message GetSalesforceSendBirdQuickTextRequest {}
+
+message GetSalesforceSendBirdQuickTextResponse {
+  repeated SalesforceSendBirdQuickText salesforce_send_bird_quick_text = 1;
+}
+
+message UpdateSalesforceSendBirdCaseTransferRequest {
+  google.protobuf.StringValue case_id = 1;
+  google.protobuf.StringValue owner_id = 2;
+}
+message UpdateSalesforceSendBirdCaseTransferResponse {
+  google.protobuf.StringValue items = 1;
+}
+
+// These are V2 versions of messages for UG purposes
+message SalesforceDasherAudienceDetailsV2 {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue email = 4;
+  google.protobuf.StringValue phone_number = 5;
+  google.protobuf.StringValue country = 6;
+  geo_intelligence.v2.AddressV2Response address = 7;
+  common.Experience experience = 8;
+  common.PhoneNumberComponents phone_number_components = 9;
+  google.protobuf.StringValue language = 10;
+  DasherDeliveryStatus dasher_delivery_status = 18;
+  google.protobuf.StringValue submarket_id = 19;
+  google.protobuf.StringValue submarket_name = 20;
+  google.protobuf.StringValue experience_string = 21;
+  google.protobuf.StringValue salesforce_id = 22; // coming from fact_dasher_vip_status table
+  google.protobuf.StringValue dasher_routing_queue = 23; // coming from fact_dasher_vip_status table
+  google.protobuf.StringValue dasher_cohort = 24; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp vip_start_dt = 25; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp vip_end_dt = 26; // coming from fact_dasher_vip_status table
+  google.protobuf.Timestamp etl_create_date_utc = 27; // coming from fact_dasher_vip_status table
+  google.protobuf.BoolValue is_dasher_vip = 28;
+  dasher_service.tier.TierType dasher_tier_ratings = 29;
+  google.protobuf.BoolValue is_dasher_active = 30; // Identify if the Dx is an active Dx
+  google.protobuf.BoolValue on_live_order_now_or_recently = 31; // Check if the Dx is on a live order or has been in the last 12 hours
+  google.protobuf.StringValue payout_experience = 32; // How a Dx is paid out - DasherDirect or Crimson
+  google.protobuf.StringValue user_id = 33; // Dx DoorDash user id
+}
+
+message SalesforceStoreDetailsV2 {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  SalesforceBusinessDetails business = 3;
+  google.protobuf.StringValue phone_number = 4;
+  geo_intelligence.v2.AddressV2Response address = 5;
+  google.protobuf.StringValue order_protocol = 6;
+  common.PhoneNumberComponents phone_number_components = 7;
+  google.protobuf.StringValue language = 8;
+  google.protobuf.BoolValue is_partner = 9;
+  google.protobuf.Int32Value tenure = 10;
+  google.protobuf.StringValue activation_status = 11; // Activated, Activating, Deactivatd, Inactive based on store isActive and activatedAt
+}
+
+message SalesforceConsumerAudienceDetailsV2 {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue email = 4;
+  google.protobuf.StringValue phone_number = 5;
+  google.protobuf.StringValue country = 6;
+  common.Experience experience = 7;
+  google.protobuf.Int32Value cx_unavail_last_3_orders_flag = 8; // coming from drs /v1/never_delivered_flags
+  google.protobuf.BoolValue is_vip = 9;
+  google.protobuf.Int32Value vip_tier = 10;
+  google.protobuf.StringValue language = 11;
+  geo_intelligence.v2.AddressV2Response address = 12;
+  google.protobuf.BoolValue is_subscribed_consumer = 13;
+  google.protobuf.Int32Value available_consumer_credits = 14;
+  common.PhoneNumberComponents phone_number_components = 15;
+  ConsumerSubscriptionPlanDetails consumer_subscription_plan = 16;
+  ConsumerDeliveryStatus consumer_delivery_status = 17;
+  google.protobuf.StringValue submarket_id = 18;
+  google.protobuf.StringValue submarket_name = 19;
+  money.MonetaryFields available_consumer_credits_monetary_fields = 20;
+  google.protobuf.StringValue experience_string = 21;
+  google.protobuf.BoolValue has_cnr_badge = 22;
+  google.protobuf.BoolValue is_daily_whale = 23;
+  google.protobuf.BoolValue is_at_risk_daily_whale = 24;
+  ers.api.common.DdfbConsumerType ddfb_consumer_type = 25;
+}
+
+message SalesforceDeliveryDetailsV3 {
+  google.protobuf.StringValue most_recent_delivery_uuid = 1;
+  money.MonetaryFields total_cost = 2;
+  google.protobuf.StringValue order_source = 3;
+  google.protobuf.StringValue delivery_uuid = 4;
+  google.protobuf.BoolValue is_group_order = 5;
+  google.protobuf.StringValue currency = 7;
+  repeated CreditRefundStatus status_of_credit_refund = 8;
+  google.protobuf.Timestamp active_date = 9;
+  geo_intelligence.v2.AddressV2Response address = 10;
+  google.protobuf.Int32Value last_4 = 11;
+  google.protobuf.BoolValue was_batched = 12;
+  ShoppingProtocol shopping_protocol = 13;
+  google.protobuf.Timestamp estimated_pickup_time = 14;
+  google.protobuf.StringValue market_timezone = 15;
+  google.protobuf.StringValue estimated_pickup_time_in_market_timezone = 16;
+  google.protobuf.BoolValue is_delivery_current = 17;
+  google.protobuf.BoolValue has_order_been_in_review_queue = 18;
+  google.protobuf.StringValue fulfillment_type = 19;
+  google.protobuf.StringValue should_block_cnr_abuser = 20;
+  ers.api.common.DdfbBenefitType ddfb_benefit_type = 21;
+  ers.api.common.DdfbMemberRoleType ddfb_member_role_type = 22;
+}

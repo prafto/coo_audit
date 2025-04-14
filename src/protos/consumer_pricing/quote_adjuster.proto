@@ -1,0 +1,391 @@
+syntax = "proto3";
+package consumer_pricing_quote_adjuster.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "consumer_pricing/pricing.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+import "promotion/common.proto";
+import "promotion/criterion.proto";
+import "promotion/incentive.proto";
+
+option go_package = "consumer_pricing_quote_adjuster";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_pricing_quote_adjuster";
+
+// This is a proto interface that external service can use to integrate with the creation of a pricing quote.
+// Design doc: https://docs.google.com/document/d/1ruz8zGSOcpJpgXfXv-FrzdOcRTjB1AfpU6BCHr58Fw8/edit#
+service ConsumerPricingQuoteAdjusterService {
+  // The API function that external service can have their own implementation
+  rpc GetQuoteAdjustments(GetQuoteAdjustmentsRequest) returns (GetQuoteAdjustmentsResponse);
+
+  // The API function that external service can have their own implementation
+  rpc GetBatchQuoteAdjustments(GetBatchQuoteAdjustmentsRequest) returns (GetBatchQuoteAdjustmentsResponse);
+}
+
+// consumer-pricing will construct GetQuoteAdjustmentsRequest (similar to PriceContext)
+// and pass down the same context to downstream when calling the remote adjuster in external service
+message GetQuoteAdjustmentsRequest {
+  // uuids, enabled experiments, feature flags, etc
+  QuoteMetadata quoteMetadata = 1;
+
+  // all the info about the Mx needed for pricing
+  MerchantDetails merchant_details = 2;
+
+  // cart delivery details like delivery location
+  DeliveryDetails delivery_details = 3;
+
+  // all the info about the Cx needed for pricing
+  ConsumerInfo consumer_info = 4;
+
+  consumer_pricing.Cart cart = 5;
+
+  // the parts of the quote that have been computed already
+  repeated FeeLineItem line_items = 6;
+
+  // delivery options passed in by order service
+  order.DeliveryOptionAttributes delivery_option_attributes = 7;
+
+  money.PricingProfile pricing_strategy = 8;
+
+  // parent order quote for split bill
+  money.OrderQuoteV2 parent_order_quote = 9;
+
+  // payment context that has supplemental payment info
+  PaymentContext payment_context = 10;
+}
+
+message PaymentContext {
+  repeated money.SupplementalPaymentAuthorizedAmount supplemental_payment_authorized_amount = 1;
+
+  //Cx payment method info which is coming from openAPI tools, define in price context
+  google.protobuf.StringValue paymentMethodId = 2;
+  google.protobuf.StringValue brandProduct = 3;
+  google.protobuf.StringValue paymentBrand = 4;
+  google.protobuf.StringValue iin = 5;
+
+  google.protobuf.BoolValue is_card_payment = 6;
+
+  // payment method passed from order request
+  common.PaymentMethod order_payment_method = 7;
+}
+
+// GetQuoteAdjustmentsResponse will be structured data that consumer-pricing knows how to build into the quote.
+// It will contain information like fees, discounts, messaging, etc.
+message GetQuoteAdjustmentsResponse {
+  // line items/fees
+  repeated FeeLineItem fee_line_items = 1;
+
+  // quote info that needs selection/confirmation by the Cx
+  QuoteOptions quote_options = 2;
+
+  // system data for this dependency such as telemetry, build version, etc
+  consumer_pricing.SystemMetadata system_metadata = 3;
+
+  // pricing incentives
+  repeated PricingIncentive incentives = 4;
+}
+
+// consumer-pricing will construct GetBatchQuoteAdjustmentsRequest (similar to PriceContext)
+// and pass down the same context to downstream when calling the remote adjuster in external service
+message GetBatchQuoteAdjustmentsRequest {
+  // uuids, enabled experiments, feature flags, etc
+  QuoteMetadata quoteMetadata = 1;
+
+  // all the info about the Mx needed for pricing
+  repeated MerchantDetails merchant_details = 2;
+
+  // all the info about the Cx needed for pricing
+  ConsumerInfo consumer_info = 3;
+
+  // info about delivery location
+  DeliveryDetails delivery_details = 4;
+}
+
+// GetBatchQuoteAdjustmentsResponse will be structured data that consumer-pricing knows how to consume for batchQuote.
+// It will contain information like fees, discounts, messaging, etc.
+message GetBatchQuoteAdjustmentsResponse {
+  // quote info for each store contains delivery fee, service rate etc.
+  repeated StoreQuoteAdjustments storeQuoteAdjustments = 1;
+
+  // system data for this dependency such as telemetry, build version, etc
+  consumer_pricing.SystemMetadata system_metadata = 2;
+}
+
+message StoreQuoteAdjustments {
+  // id of the store
+  string store_id = 1;
+
+  // line items/fees
+  repeated FeeLineItem fee_line_items = 2;
+
+  // pricing incentives
+  repeated PricingIncentive incentives = 3;
+}
+
+// QuoteFlowType represents the type of flow used for generating this quote
+enum QuoteFlowType {
+  // unspecified quote flow
+  QUOTE_FLOW_TYPE_UNSPECIFIED = 0;
+
+  // generateOrderQuoteV2
+  QUOTE_FLOW_TYPE_PREVIEW = 1;
+
+  // finalizeOrderQuote (v1 or v2)
+  QUOTE_FLOW_TYPE_FINALIZE = 2;
+
+  // adjustOrderQuote
+  QUOTE_FLOW_TYPE_ADJUST = 3;
+
+  // BatchStoreOrderQuote
+  QUOTE_FLOW_TYPE_BATCH_STORE = 4;
+
+  // FinalizeRedeliveryQuote
+  QUOTE_FLOW_TYPE_REDELIVERY = 5;
+
+  // FinalizeReturnOrderQuote
+  QUOTE_FLOW_TYPE_RETURN = 6;
+
+  // getPromoMessageForCart
+  QUOTE_FLOW_TYPE_GET_PROMO_MESSAGE = 7;
+
+  // generateOrderQuoteV2 DISPLAY_QUOTE_TYPE_TOTAL_FEE_TALLY use case
+  QUOTE_FLOW_TYPE_TOTAL_FEE_TALLY = 8;
+
+  // BatchStoreOrderQuote For Ranking
+  QUOTE_FLOW_TYPE_BATCH_STORE_OPTIMIZED = 9;
+}
+
+// FlowExperienceType represents the type of experience used for generating this quote
+enum FlowExperienceType {
+  // unspecified quote flow
+  FLOW_EXPERIENCE_TYPE_UNSPECIFIED = 0;
+  // voice
+  FLOW_EXPERIENCE_TYPE_VOICE = 1;
+  // nv
+  FLOW_EXPERIENCE_TYPE_NV = 2;
+  // storefront
+  FLOW_EXPERIENCE_TYPE_STOREFRONT = 3;
+}
+
+message QuoteMetadata {
+  // uuid of the quote
+  string quote_uuid = 1;
+
+  // id of the cart
+  string cart_uuid = 2;
+
+  // map of active experiments (name -> treatment)
+  map<string, string> experiments = 3;
+
+  // hash of experiments map
+  string experiments_hash = 4;
+
+  // map of active feature flags (name -> enabled?)
+  map<string, bool> feature_flags = 5;
+
+  // type of quote request being fulfilled (eg. preview, finalize, ...)
+  QuoteFlowType flow_type = 6;
+
+  // bool indicating if this is serving shadow traffic
+  bool is_shadow = 7;
+
+  // a unique uuid for this request (may be different from quote_uuid
+  string request_uuid = 8;
+
+  // the tracking_uuid for this request from context headers
+  string tracking_uuid = 9;
+
+  // a unique uuid to track delivery fee calculation
+  google.protobuf.StringValue delivery_fee_request_uuid = 10;
+
+  // Identify which page is the upstream calling for.
+  consumer_pricing.TriggerPage trigger_page = 11;
+
+  // type of the flow in terms of experience passed from upstream
+  FlowExperienceType flow_experience_type = 12;
+
+  // cart upsell info from order-service
+  money.UpsellOptions upsell_options = 13;
+
+  // external channel, e.g. chick fil a, google food ordering, mainly for storefront
+  string external_channel = 14;
+
+  // indicates the adjustment type of this request in str format
+  google.protobuf.StringValue adjustment_type = 15;
+}
+
+message MerchantDetails {
+  common.StoreLocation store_location = 1;
+  consumer_pricing.AdditionalStoreInfo addition_store_info = 2;
+  common.CommonAddress store_address = 3;
+  string store_id = 4;
+  Submarket submarket = 5;
+}
+
+message DeliveryDetails {
+  common.ConsumerLocation delivery_location = 1;
+
+  // bundle cart details info
+  consumer_pricing.BundleDetails bundle_details = 2;
+
+  common.DeliveryOptionType delivery_option_type = 3;
+
+  google.protobuf.Timestamp scheduled_delivery_time = 4;
+}
+
+message ConsumerInfo {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue submarket_id = 2;
+  google.protobuf.StringValue locale = 3;
+  common.ClientDeviceCtx client_device = 4;
+  bool is_employee = 5;
+  common.Channel order_channel = 6;
+  bool is_guest = 7;
+  common.Experience experience = 8;
+  common.CommonAddress consumer_address = 9;
+  repeated string consumer_tags = 10;
+  google.protobuf.StringValue consumer_address_id = 11;
+  google.protobuf.StringValue time_zone = 12;
+}
+
+// FeeLineItem represents a fee/line item.
+message FeeLineItem {
+  // unique to each type of fee. Please use lower case with underscore, e.g small_order_fee
+  google.protobuf.StringValue fee_name = 1;
+
+  // fee category type: e.g. bag_fee, cup_fee
+  money.FeeCategoryType fee_category_type = 2;
+
+  // label, tooltip, etc
+  LineItemMetadata line_item_metadata = 3;
+
+  // fee amount before any discounts
+  FeeDetails original_fee_details = 4;
+
+  // config id mainly for genericFee etc
+  google.protobuf.StringValue fee_config_id = 5;
+
+  // unique type of fee
+  QuoteFeeType quote_fee_type = 6;
+
+  // reserved for backward compatibility
+  reserved 7;
+}
+
+message LineItemMetadata {
+  google.protobuf.StringValue label_key = 1;
+  google.protobuf.StringValue label_builder = 2;
+  google.protobuf.StringValue tooltip_message_key = 3;
+  google.protobuf.StringValue tooltip_message_builder = 4;
+  google.protobuf.StringValue tax_line_item_type = 5;
+  repeated money.GenericFeeLink generic_fee_links = 6;
+  google.protobuf.BoolValue should_bundle_with_tax_and_fees = 7;
+  google.protobuf.StringValue localized_override_tooltip_message = 8;
+}
+
+message FeeDetails {
+  money.MonetaryFields fee_amount = 1;
+  money.BasisPoint fee_rate = 2;
+  google.protobuf.Int32Value fee_units_charged = 3;
+  money.MonetaryFields unit_fee_amount = 4;
+
+  // Metadata of extra info may return based on fee type
+  map<string, google.protobuf.Any> additional_info = 5;
+  // represents fee's lineage
+  repeated string source = 6;
+}
+
+message QuoteOptions {
+  // options related to delivery fee
+  repeated DeliveryOptionQuote delivery_option_quote = 1;
+}
+
+message DeliveryOptionQuote {
+  common.DeliveryOptionType delivery_option_type = 1;
+  google.protobuf.BoolValue is_option_available = 2;
+  google.protobuf.BoolValue is_option_selectable = 3;
+  money.MonetaryFields fee_amount = 4;
+  money.MonetaryFields discount_amount = 5;
+  google.protobuf.StringValue quote_message = 6;
+  money.StyledDeliveryOptionFields delivery_option_ui_fields = 7;
+  // Metadata of extra info
+  map<string, google.protobuf.Any> additional_info = 8;
+  // represents quote option's lineage
+  repeated string source = 9;
+}
+
+message PricingIncentive {
+  string id = 1;
+  money.PromotionType promotion_type = 2;
+  string promotion_id = 3;
+  string promotion_title = 4;
+  string promotion_description = 5;
+  money.Funding funding = 6;
+  string external_campaign_id = 7;
+  common.CampaignTermAndConditionContent term_condition_content = 8;
+  promotion_service.IncentiveValue value = 9;
+  promotion_service.IncentiveTarget target = 10;
+  repeated promotion_service.CartCriterion cart_criteria = 11;
+  bool is_stackable = 12;
+  int32 max_applications = 13;
+  promotion_service.DiscountMetadata discount_metadata = 14;
+  bool is_nudge = 15;
+  promotion_service.NudgeableReason nudgeable_reason = 16;
+  map<string, google.protobuf.Any> metadata = 17; // arbitary data (data extension)
+  // represents incentive's lineage
+  repeated string source = 18;
+  // campaign and promotion level metadata here
+  money.PromotionMetadata promotion_metadata = 19;
+  promotion_service.PromotionTypeGroup promotion_type_group = 20;
+  repeated promotion_service.UserCriterion user_criteria = 21;
+  promotion_service.Incentive.CustomDiscountTag tag = 22;
+  repeated promotion_service.Campaign.CampaignType type = 23;
+}
+
+message Submarket {
+  int64 id = 1;
+  string name = 2;
+  int64 marketId = 3;
+  int32 minOrderFee = 4;
+  int32 minOrderSubtotal = 5;
+}
+
+// This class suppose to not be used in any proto definition, but only for Any pack/Unpack purpose.
+// Map or List data type can not be directly packed with Any, hence need to add wrapper layer to ensure
+// it can be parsed correctly.
+message PricingSubtotalDetails {
+  map<int64, int32> item_id_to_price = 1;
+
+  map<int64, int32> item_extra_option_id_to_price = 2;
+
+  google.protobuf.Int32Value map_item_subtotal_amount = 3;
+}
+
+// Unique fee type for each quote
+// To be synced with IncentiveTargetType
+enum QuoteFeeType {
+  // unspecified fee type
+  QUOTE_FEE_TYPE_UNSPECIFIED = 0;
+  // delivery fee type
+  QUOTE_FEE_TYPE_DELIVERY_FEE = 1;
+  // service fee type
+  QUOTE_FEE_TYPE_SERVICE_FEE = 2;
+  // generic fee type
+  QUOTE_FEE_TYPE_GENERIC_FEE = 3;
+  // small order fee type
+  QUOTE_FEE_TYPE_SMALL_ORDER_FEE = 4;
+  // priority fee type
+  QUOTE_FEE_TYPE_PRIORITY_FEE = 5;
+  // total tax fee type
+  QUOTE_FEE_TYPE_TOTAL_TAX = 6;
+  // total discount fee type
+  QUOTE_FEE_TYPE_TOTAL_DISCOUNT = 7;
+  // subtotal fee type
+  QUOTE_FEE_TYPE_SUBTOTAL_FEE = 8;
+}

@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "promotion/campaign.proto";
+import "promotion/status.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.promotion";
+
+// service to process store payment that related to promo/ads
+service PromotionStorePaymentService {
+    // create a store payment for a delivery/order
+    rpc CreateStorePaymentForDelivery (CreateStorePaymentForDeliveryRequest) returns (CreateStorePaymentForDeliveryResponse);
+
+    // cancel all store payments for the delivery/order
+    rpc CancelStorePaymentsForDelivery (CancelStorePaymentsForDeliveryRequest) returns (CancelStorePaymentsForDeliveryResponse);
+
+    // get store payments for a list of deliveries
+    rpc GetStorePaymentsForDeliveries (GetStorePaymentsForDeliveriesRequest) returns (GetStorePaymentsForDeliveriesResponse);
+}
+
+// request to create a store payment
+message CreateStorePaymentForDeliveryRequest {
+    // integer based delivery id, please do not pass delivery uuid
+    google.protobuf.StringValue delivery_id = 1;
+    // store id
+    google.protobuf.StringValue store_id = 2;
+    // positive for credit, negative for debit
+    money.MonetaryFields amount = 3;
+    // store payment type
+    StorePaymentType payment_type = 4;
+    // additional description for the store payment
+    google.protobuf.StringValue description = 6;
+    // idempotency key
+    google.protobuf.StringValue idempotency_key = 7;
+    // promo/ad campaign id
+    google.protobuf.StringValue campaign_id = 8;
+}
+
+// store payment type
+enum StorePaymentType {
+    // Unspecified
+    STORE_PAYMENT_TYPE_UNSPECIFIED = 0;
+    // promotion free trial payment type
+    STORE_PAYMENT_TYPE_FREE_TRIAL_PROMO = 1;
+    // ads charge store payment type
+    STORE_PAYMENT_TYPE_ADS_CHARGE = 2;
+    // ad free trial payment type
+    STORE_PAYMENT_TYPE_FREE_TRIAL_AD = 3;
+}
+
+// response for creating store payment
+message CreateStorePaymentForDeliveryResponse {
+    // Store Payment id associated with the Store Payment
+    google.protobuf.StringValue store_payment_id = 1;
+}
+
+// request to get store payments for a list of deliveries
+message GetStorePaymentsForDeliveriesRequest {
+    // // integer based delivery ids, please do not pass delivery uuid
+    repeated google.protobuf.StringValue delivery_ids = 1;
+    google.protobuf.StringValue store_id = 2;
+}
+
+// response of  GetStorePaymentsForDeliveries
+message GetStorePaymentsForDeliveriesResponse {
+    // list of store payment
+    repeated StorePaymentForDelivery store_payments = 1;
+}
+
+// the ad/promo store payment for a given delivery
+message StorePaymentForDelivery {
+    // store id
+    google.protobuf.StringValue store_id = 1;
+    // integer based delivery id, please do not pass delivery uuid
+    google.protobuf.StringValue delivery_id = 2;
+    // store payment break down line items
+    repeated StorePaymentLineItem line_items = 3;
+    // campaign id related to store payment
+    google.protobuf.StringValue campaign_id = 4;
+}
+
+// store payment break down details
+message StorePaymentLineItem {
+    // Store Payment id associated with the Store Payment
+    google.protobuf.StringValue store_payment_id = 1;
+    // payment amount
+    money.MonetaryFields amount = 2;
+    // store payment type
+    StorePaymentType payment_type = 3;
+    // why the store payment was issued
+    google.protobuf.StringValue reason_name = 4;
+    // additional description for the store payment
+    google.protobuf.StringValue description = 5;
+    // payment creation time
+    google.protobuf.Timestamp created_at = 6;
+}
+
+// Request for cancel store payments
+message CancelStorePaymentsForDeliveryRequest {
+    // integer based delivery id, please do not pass delivery uuid
+    google.protobuf.StringValue delivery_id = 1;
+    // store id
+    google.protobuf.StringValue store_id = 2;
+}
+
+/* Response for cancel store payments
+  In case delivery/order was already cancelled.
+    previous_net_amount = 0,
+    final_net_amount = 0,
+    previous_store_payment_ids set to all store payments associated.
+    new_store_payment_ids set to empty.
+  In case cancellation failed
+    previous_net_amount = 100,
+    final_net_amount = 100,
+    previous_store_payment_ids set to all store payments associated.
+    new_store_payment_ids set to empty.
+  In case of successful cancellation.
+    previous_net_amount = 100,
+    final_net_amount = 0,
+    previous_store_payment_ids set to all store payments associated.
+    new_store_payment_ids set to new store payment ids in order to reverse previous charges.
+ */
+message CancelStorePaymentsForDeliveryResponse {
+    // net amount prior to the cancellation.
+    money.MonetaryFields previous_net_amount = 1;
+    // net amount after the cancellation. Should be 0 if cancel successfully or already cancelled.
+    money.MonetaryFields final_net_amount = 2;
+    // previous store payment ids prior to the cancellation.
+    repeated google.protobuf.StringValue previous_store_payment_ids = 3;
+    // new store payment ids for reversing the prior store payments.
+    repeated google.protobuf.StringValue new_store_payment_ids = 4;
+}

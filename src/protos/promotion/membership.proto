@@ -1,0 +1,207 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/code.proto";
+import "promotion/common.proto";
+import "promotion/criterion.proto";
+import "promotion/eligibility_expression.proto";
+import "promotion/fee.proto";
+import "promotion/incentive.proto";
+import "promotion/limitation.proto";
+import "promotion/placement.proto";
+import "promotion/promotion.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+message Membership {
+  MembershipEntityType type = 1;
+  enum MembershipEntityType {
+    MEMBERSHIP_ENTITY_TYPE_INVALID = 0;
+    MEMBERSHIP_ENTITY_TYPE_UNSET = 1;
+    MEMBERSHIP_ENTITY_TYPE_STORE = 2;
+    MEMBERSHIP_ENTITY_TYPE_BUSINESS = 3;
+    MEMBERSHIP_ENTITY_TYPE_BUSINESS_GROUP = 4;
+    MEMBERSHIP_ENTITY_TYPE_MARKET = 5;
+    MEMBERSHIP_ENTITY_TYPE_SUBMARKET = 6;
+    MEMBERSHIP_ENTITY_TYPE_GLOBAL = 7;
+    MEMBERSHIP_ENTITY_TYPE_DISTRICT = 8;
+    MEMBERSHIP_ENTITY_TYPE_ITEM = 9;
+    MEMBERSHIP_ENTITY_TYPE_ITEM_AND_STORE = 10;
+    MEMBERSHIP_ENTITY_TYPE_PRODUCT = 11;
+    MEMBERSHIP_ENTITY_TYPE_COLLECTION = 12;
+    MEMBERSHIP_ENTITY_TYPE_PRODUCT_GTIN = 13;
+  }
+
+  repeated string ids = 2;
+
+  oneof value {
+    Fee fee = 3; // deprecated
+    money.Funding funding = 11;
+  }
+
+  // Limitations - start/end dates, is_active, specific day parts (day of week, time of day), budgets
+  repeated Limitation limitations = 4;
+
+  repeated Placement placements = 5;
+
+  //list of user criteria for any incentive specific to this store for this promotion/campaign
+  repeated UserCriterion user_criteria = 6;
+
+  Promotion promotion = 7;
+
+  //who created this record
+  common.Creator created_by = 8;
+
+  //when was this record created
+  google.protobuf.Timestamp created_at = 9;
+
+  google.protobuf.StringValue id = 10;
+
+  repeated MerchantCriterion merchant_criteria = 12;
+
+  message ItemAndStore {
+    string store_id = 1;
+    string item_id = 2;
+    // BusinessVertical vertical = 3 [deprecated = true];
+    google.protobuf.StringValue universal_item_id = 4;
+  }
+
+  // Enum of the vertical
+  enum BusinessVertical {
+    // Invalid
+    BUSINESS_VERTICAL_INVALID = 0;
+    // unset business vertical
+    BUSINESS_VERTICAL_UNSET = 1;
+    // restaurant menu item
+    BUSINESS_VERTICAL_RESTAURANT = 2;
+    // convenience item
+    BUSINESS_VERTICAL_CONVENIENCE = 3;
+    // grocery item
+    BUSINESS_VERTICAL_GROCERY = 4;
+  }
+
+  repeated ItemAndStore item_and_stores = 13;
+
+  // initially used for storing ItemAndStore memberships as a csv in s3
+  google.protobuf.StringValue membership_ids_external_file_name = 14;
+
+  // single boolean expression object utilizing criterion and limitations
+  EligibilityExpression eligibility_expression = 15;
+  // TODO In future, add Fee here
+
+  google.protobuf.StringValue name = 16;
+
+  // a value that is used by external systems to identify this membership,
+  // specified at creation time
+  google.protobuf.StringValue external_id = 17;
+
+  // creative metadata such as logo and background image for collection
+  Creative creative = 18;
+  // product ids for the membership entity type collection
+  ProductIds product_ids = 19;
+
+  // creative metadata such as logo and background image for collection as a list since now sb campaigns require
+  // multiple creatives
+  repeated Creative creatives = 20;
+
+  // Persisted state in the DB
+  State state = 21;
+
+  // Calculated status only on the read path
+  DerivedStatus derived_status = 22;
+
+  // when the state of the entity is changed, this field will be populated
+  StateChangeInfo state_change_info = 23;
+}
+
+message Creative {
+  enum CreativeType {
+    CREATIVE_TYPE_UNSET = 0;
+    CREATIVE_TYPE_COLLECTION = 1;
+    CREATIVE_TYPE_BRAND_HEADER_IMAGE = 2;
+    CREATIVE_TYPE_BRAND_CARD_IMAGE = 3;
+    CREATIVE_TYPE_BRAND_LANDING_PAGE = 4;
+  }
+  CreativeType type = 1;
+
+  // these should equal to membership ids.
+  // the membership ids act as foreign keys to actual content
+  // This opens up the possibility to extract out creative data from the campaign later on
+  // Creative Data lives in the campaign for now
+  // since we do not have another logical place to store it
+  string creative_id = 2;
+
+  message CollectionCreative {
+    // used to show the title of the ad collection
+    google.protobuf.StringValue title = 2;
+
+    // used to show the subtitle of the ad collection
+    google.protobuf.StringValue description = 3;
+
+    // content url for brand logo
+    google.protobuf.StringValue logo_content_url = 4;
+
+    // having left and right allows us to scale the background of the
+    // carousel without distorting the blobs on the left and right.
+    // content url for background image of collection (web, left)
+    google.protobuf.StringValue background_image_url_web_left = 5;
+    // content url for background image of collection (web, right)
+    google.protobuf.StringValue background_image_url_web_right = 6;
+    // background color for web
+    google.protobuf.StringValue background_color = 7;
+
+    // content url for background image of collection (mobile)
+    google.protobuf.StringValue background_image_url_mobile = 8;
+
+    // content url for background image of collection (mobile dark mode)
+    google.protobuf.StringValue background_image_url_mobile_dark = 9;
+  }
+
+  message BrandHeaderImageCreative {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+    google.protobuf.StringValue logo_content_url = 3;
+    google.protobuf.StringValue header_image_url_mobile = 4;
+    google.protobuf.StringValue header_video_url_mobile = 5;
+    google.protobuf.StringValue background_color = 6;
+    google.protobuf.StringValue title_text_color = 7;
+    google.protobuf.StringValue header_image_url_web = 8;
+    google.protobuf.StringValue header_video_url_web = 9;
+  }
+
+  message BrandCardImageCreative {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+    google.protobuf.StringValue logo_content_url = 3;
+    google.protobuf.StringValue card_image_url_mobile = 4;
+    google.protobuf.StringValue card_video_url_mobile = 5;
+    google.protobuf.StringValue background_color = 6;
+    google.protobuf.StringValue title_text_color = 7;
+  }
+
+  message BrandLandingPageCreative {
+    google.protobuf.StringValue title = 1;
+    google.protobuf.StringValue description = 2;
+    google.protobuf.StringValue logo_content_url = 3;
+    repeated google.protobuf.StringValue header_image_url_list = 4;
+    repeated google.protobuf.StringValue header_image_url_list_web = 5;
+    google.protobuf.StringValue background_color = 6;
+    google.protobuf.StringValue title_text_color = 7;
+    // can add more creatives here as necessary
+  }
+
+  oneof data {
+    CollectionCreative collection = 3;
+    BrandHeaderImageCreative brand_header_image = 4;
+    BrandCardImageCreative brand_card_image = 5;
+    BrandLandingPageCreative brand_landing_page = 6;
+  }
+}

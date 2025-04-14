@@ -1,0 +1,414 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/bundle_order_info.proto";
+import "common/cart.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "common/store_loyalty.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/payment_method_v1.proto";
+import "promotion/common.proto";
+import "promotion/limitation.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+message UserCriterion {
+  UserCriterionType type = 1;
+  enum UserCriterionType {
+    USER_CRITERION_TYPE_INVALID = 0;
+    USER_CRITERION_TYPE_UNSET = 1;
+    USER_CRITERION_TYPE_AUDIENCE_EXISTING_CONSUMERS = 2;
+    USER_CRITERION_TYPE_AUDIENCE_CUSTOM = 3;
+    USER_CRITERION_TYPE_AUDIENCE_EXISTING_STORE_CONSUMERS = 4;
+    USER_CRITERION_TYPE_AUDIENCE_WINBACK = 5;
+    USER_CRITERION_TYPE_AUDIENCE_DASHPASS = 6;
+    USER_CRITERION_TYPE_AUDIENCE_BOTH_CX_AND_MX_DASHPASS = 7;
+    USER_CRITERION_TYPE_AUDIENCE_EXISTING_BUSINESS_CONSUMERS = 8;
+    USER_CRITERION_TYPE_AUDIENCE_EXISTING_BUSINESS_GROUP_CONSUMERS = 9;
+    USER_CRITERION_TYPE_REQUIRES_CLAIM = 10;
+    USER_CRITERION_TYPE_AUDIENCE_FMU = 11;
+    USER_CRITERION_TYPE_EXPERIMENT = 12;
+    USER_CRITERION_TYPE_DEVICE_TYPE = 13;
+    USER_CRITERION_TYPE_SUFFICIENT_LOYALTY_POINTS = 14;
+    USER_CRITERION_TYPE_AUDIENCE_FDF = 15;
+    USER_CRITERION_TYPE_MARKETING_PUSH_NOTIFICATION = 16;
+    USER_CRITERION_TYPE_TAG_METADATA = 17;
+    USER_CRITERION_TYPE_SHUTDOWN = 18; // Eligible only if user's submarkets has no shutdown starting points
+    USER_CRITERION_TYPE_LUNCHPASS_SUBSCRIPTION = 19;
+    USER_CRITERION_TYPE_TARGETING_SEGMENT = 20;
+
+    // The user is eligible if the user is in any of the geofences that are associated with the campaign.
+    USER_CRITERION_TYPE_GEOFENCE = 21;
+
+    // The user is eligible if the store is "SuperSaved".
+    USER_CRITERION_TYPE_SUPERSAVE_STORES = 22;
+
+    // The user is eligible if the users region matches this
+    USER_CRITERION_TYPE_REGION = 23;
+
+    USER_CRITERION_TYPE_TARGETING_CRITERION = 24;
+
+    // The user is eligibile if they have a sufficient balance of the required token type
+    USER_CRITERION_TYPE_TOKENS_REQUIREMENT = 25;
+
+    // The user is eligible if the partnership check passes
+    USER_CRITERION_TYPE_PARTNERSHIP_BENEFIT = 26;
+
+    // The user is eligible if the deal is a coupon
+    USER_CRITERION_TYPE_COUPON = 27;
+
+    // The user eligibility is determined by CHS (Promo AI)
+    USER_CRITERION_TYPE_AUDIENCE_SMART_TARGETING = 28;
+  }
+
+  oneof tag {
+    google.protobuf.StringValue audience_id = 2;
+    google.protobuf.StringValue audience_name = 5;
+    google.protobuf.StringValue segment_id = 10;
+    google.protobuf.StringValue targeting_criterion_id = 17;
+  }
+
+  google.protobuf.BoolValue negate_audience_result = 3;
+
+  oneof property {
+    google.protobuf.Int32Value winback_days = 4;
+    UserCriterionExperiment experiment = 6;
+    UserCriterionDevice device = 7;
+    google.protobuf.BoolValue has_opted_in_marketing_push = 8;
+
+    // required when type = USER_CRITERION_TYPE_TAG_METADATA
+    UserCriterionTagMetadata tag_metadata = 9;
+
+    UserCriterionLoyalty loyalty = 14;
+    UserCriterionGeofence geofence = 15;
+    UserCriterionRegion region = 16;
+
+    // required for USER_CRITERION_TYPE_TOKENS_REQUIREMENT
+    UserCriterionTokensRequirement tokens_requirement = 18;
+
+    // required for USER_CRITERION_TYPE_COUPON
+    UserCriterionDealsAggregatorCouponsRequirement deals_aggregator_coupons_requirement = 19;
+  }
+}
+
+// object sets the required tag metadata field and value to satisfy the criterion
+// criterion will be satisfied if the consumer has a tag with the property value equaling the configured value
+message UserCriterionTagMetadata {
+  // property in the tag metadata object to be compared to the required value
+  TagMetadataProperty property = 1;
+  enum TagMetadataProperty {
+    TAG_METADATA_PROPERTY_UNSET = 0;
+    TAG_METADATA_PROPERTY_ATTRIBUTION_CHANNEL = 1;
+  }
+
+  // required value of the tag metadata property
+  google.protobuf.StringValue required_value = 2;
+}
+
+message UserCriterionExperiment {
+  google.protobuf.StringValue experiment_name = 1;
+  repeated google.protobuf.StringValue visible_to_buckets = 2;
+  // this field is used by bff (admin gateway) to create a DV in runtime-service
+  // and attach it here. This will also be used by UI to distinguish manual experiment name input vs dynamic
+  google.protobuf.BoolValue dynamically_created = 3;
+  google.protobuf.StringValue experiment_id = 4;
+  google.protobuf.StringValue experiment_version = 5;
+}
+
+message UserCriterionDevice {
+  repeated DeviceInfo device_infos = 1;
+}
+
+message DeviceInfo {
+  DeviceType type = 1;
+  enum DeviceType {
+    DEVICE_TYPE_INVALID = 0;
+    DEVICE_TYPE_UNSET = 1;
+    DEVICE_TYPE_IOS = 2;
+    DEVICE_TYPE_ANDROID = 3;
+    DEVICE_TYPE_WEB = 4;
+  }
+  common.SemanticVersion min_version = 2;
+  common.SemanticVersion max_version = 3;
+}
+
+message UserCriterionLoyalty {
+  google.protobuf.StringValue program_id = 1;
+  google.protobuf.Int32Value points_criteria = 2;
+  // offer Id to be used by dynamic mx offers campaigns. DEPRECATED in favor of offerId list
+  google.protobuf.StringValue offer_id = 3 [deprecated = true];
+  // offer Id list to be used by dynamic mx offers campaigns
+  repeated google.protobuf.StringValue offer_ids = 4;
+  // eligible user loyalty states
+  repeated common.loyalty.v1.UserLoyaltyStateType eligible_user_loyalty_states = 5;
+}
+
+message UserCriterionGeofence {
+  repeated string place_ids = 1;
+}
+
+message UserCriterionRegion {
+  repeated google.protobuf.StringValue regions = 1;
+  RegionType type = 2;
+  enum RegionType {
+    REGION_TYPE_INVALID = 0;
+    REGION_TYPE_COUNTRY = 1;
+    //Cx address state infomation
+    REGION_TYPE_ADMINISTRATIVE_AREA_LEVEL_1 = 2;
+  }
+}
+
+message UserCriterionTokensRequirement {
+  google.protobuf.StringValue token_benefit_type = 1;
+  google.protobuf.Int32Value quantity = 2;
+
+  // token comparison operation
+  TokenOperation operation = 3;
+
+  // enum of supported operator types
+  enum TokenOperation {
+    // invalid default operator type
+    TOKEN_OPERATION_UNSPECIFIED = 0;
+    // equal
+    TOKEN_OPERATION_EQUAL = 1;
+  }
+}
+
+message UserCriterionDealsAggregatorCouponsRequirement {
+  // represent the different external deals aggregator, e.g. Ibotta
+  google.protobuf.StringValue external_deals_aggregator = 1;
+  // determine whether the deal needs to be represented as a coupon
+  google.protobuf.BoolValue is_external_deals_aggregator_deals_coupon_needed = 2;
+  // if the deal is a coupon, represents whether the coupon has already been claimed
+  google.protobuf.BoolValue is_external_deals_aggregator_deals_coupon_claimed = 3;
+  // based on the feed or order route, determine how to evaluate the userCriterion. Set to true for order. Set to false for feed.
+  google.protobuf.BoolValue needs_to_check_coupon_claimed_status = 4;
+}
+
+message CartCriterion {
+  CartCriterionType type = 1;
+  enum CartCriterionType {
+    CART_CRITERION_TYPE_INVALID = 0;
+    CART_CRITERION_TYPE_UNSET = 1;
+    CART_CRITERION_TYPE_MINIMUM_SUBTOTAL = 2;
+    CART_CRITERION_TYPE_ITEM_NAME_EXISTS_IN_CART = 3;
+    CART_CRITERION_TYPE_ITEM_EXISTS_IN_CART = 4;
+    CART_CRITERION_TYPE_IS_GROUP_ORDER = 5;
+    CART_CRITERION_TYPE_IS_PICKUP = 6;
+    CART_CRITERION_TYPE_IS_DELIVERY = 7;
+    CART_CRITERION_TYPE_CURRENCY = 8;
+    CART_CRITERION_TYPE_IS_DINE_IN = 9;
+    CART_CRITERION_TYPE_PAYMENT_METHOD_DETAILS = 10;
+    CART_CRITERION_TYPE_IS_GIFT = 11;
+    CART_CRITERION_TYPE_CONTAINS_ALCOHOL_ITEM = 12;
+    CART_CRITERION_TYPE_FREE_SAME_DAY_DELIVERY = 13;
+    CART_CRITERION_TYPE_IS_LUNCHPASS = 14;
+    CART_CRITERION_TYPE_BUNDLE = 15;
+    CART_CRITERION_TYPE_SCHEDULE_AHEAD_TIME_ELIGIBILITY_DETAILS = 16;
+    CART_CRITERION_TYPE_IS_ASAP = 17;
+    CART_CRITERION_TYPE_IS_FIRST_RECURRING_DELIVERY = 18;
+    CART_CRITERION_TYPE_IS_SUBSEQUENT_RECURRING_DELIVERY = 19;
+    CART_CRITERION_TYPE_IS_VIRTUAL_DELIVERY = 20;
+    CART_CRITERION_TYPE_IS_DRONE_DELIVERY = 21;
+    CART_CRITERION_TYPE_ITEM_MEETS_MINIMUM_SUBTOTAL = 22;
+    CART_CRITERION_TYPE_IS_DASHPARTY = 23;
+    CART_CRITERION_TYPE_MAXIMUM_SUBTOTAL = 24;
+    CART_CRITERION_TYPE_IS_SEND_TO_SOMEONE_ELSE = 25;
+  }
+  oneof target {
+    money.MonetaryFields minimum_subtotal = 2; // CART_CRITERION_TYPE_MINIMUM_SUBTOTAL
+    google.protobuf.BoolValue is_group_order = 5; // CART_CRITERION_TYPE_IS_GROUP_ORDER
+    google.protobuf.BoolValue is_pickup = 6; // CART_CRITERION_TYPE_IS_PICKUP
+    google.protobuf.BoolValue is_delivery = 7; // CART_CRITERION_TYPE_IS_DELIVERY
+    ItemsInCartDetail items_in_cart_detail = 8;
+    // The 3-letter currency code defined in ISO 4217.
+    // (https://en.wikipedia.org/wiki/ISO_4217)
+    google.protobuf.StringValue currency = 9;
+    CartCriterionOrderItem cart_criterion_order_item = 10;
+    CartCriterionPaymentMethodDetails payment_method_details = 11;
+    google.protobuf.BoolValue is_gift = 12; // CART_CRITERION_TYPE_IS_GIFT
+    // If true: Campaign will only apply to carts containing alcohol items
+    // If false: Campaign will only apply to carts not containing alcohol items
+    // If absent: Campaign will apply regardless of cart having alcohol items or not
+    google.protobuf.BoolValue cart_has_alcohol = 13; // CART_CRITERION_TYPE_CONTAINS_ALCOHOL_ITEM
+    google.protobuf.BoolValue is_free_same_day_delivery = 14; // CART_CRITERION_TYPE_FREE_SAME_DAY_DELIVERY
+    google.protobuf.BoolValue is_lunchpass = 15; // CART_CRITERION_TYPE_IS_LUNCHPASS
+    BundleTypes allowed_bundle_types = 16; // CART_CRITERION_TYPE_BUNDLE
+    ScheduleAheadTimeEligibilityDetails schedule_ahead_time_eligibility_details = 17; // CART_CRITERION_TYPE_SCHEDULE_AHEAD_DAY_PARTS
+    google.protobuf.BoolValue is_asap = 18; // CART_CRITERION_TYPE_IS_ASAP
+    google.protobuf.BoolValue is_first_recurring_delivery = 19; // CART_CRITERION_TYPE_IS_FIRST_RECURRING_DELIVERY
+    google.protobuf.BoolValue is_subsequent_recurring_delivery = 20; // CART_CRITERION_TYPE_IS_SUBSEQUENT_RECURRING_DELIVERY
+    google.protobuf.BoolValue is_virtual_delivery = 21; // CART_CRITERION_TYPE_IS_VIRTUAL_DELIVERY
+    google.protobuf.BoolValue is_drone_delivery = 22; // CART_CRITERION_TYPE_IS_DRONE_DELIVERY
+    google.protobuf.BoolValue is_dashparty = 23; // CART_CRITERION_TYPE_IS_DASHPARTY
+    money.MonetaryFields maximum_subtotal = 24; // CART_CRITERION_TYPE_MAXIMUM_SUBTOTAL
+    google.protobuf.BoolValue is_send_to_someone_else = 25; // CART_CRITERION_TYPE_IS_SEND_TO_SOMEONE_ELSE
+  }
+}
+
+message ScheduleAheadTimeEligibilityDetails {
+  DayParts day_parts = 1;
+}
+
+message CartCriterionPaymentMethodDetails {
+  // if the user's payment method details match any (not all) of the list, then the criterion passes
+  // if brand_product is not populated, only brand field is checked
+  repeated CardPaymentMethodDetails payment_method_details = 1;
+  repeated google.protobuf.StringValue bin_blocklist = 2;
+
+  reserved 3;
+  reserved "payment_method_type";
+  // Payment method TYPE that was selected for the order
+  // Used for payment method promotion project (i.e. Cash App Pay promotion)
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA
+  doordash.payin.payment_method.v1.PaymentMethodType payin_payment_method_type = 4;
+}
+
+message CardPaymentMethodDetails {
+  google.protobuf.StringValue brand = 1;
+  google.protobuf.StringValue brand_product = 2;
+}
+
+message CartCriterionOrderItem {
+  CartCriterionOrderItemType type = 1;
+  enum CartCriterionOrderItemType {
+    CART_CRITERION_ORDER_ITEM_TYPE_INVALID = 0;
+    CART_CRITERION_ORDER_ITEM_TYPE_UNSET = 1;
+    CART_CRITERION_ORDER_ITEM_TYPE_ITEM = 2;
+    CART_CRITERION_ORDER_ITEM_TYPE_ITEM_EXTRA_OPTION = 3; // TO BE USED FOR INITIAL CFA
+  }
+
+  // For item promo setup with dd_sic or merchant_supplied_id, use product_ids instead.
+  google.protobuf.StringValue audience_name = 2; // set during configuration or null
+
+  google.protobuf.Int32Value num_required_items = 3; // enables buy 3 get 1 free
+
+  oneof value {
+    google.protobuf.StringValue item_id = 4;
+    google.protobuf.StringValue item_extra_option_id = 5;
+    // Required item collection. Replace audience_name. Attach product ids directly to the campaign.
+    ProductIds product_ids = 6;
+    // Required item+options. Replace product_ids which could only cover base items.
+    ItemsWithOptions required_items_with_options = 9;
+  }
+
+  // Used to support mix and match case. i.e. Buy any 2 of (A, B) Get $1 off.
+  // Default to PRODUCT_COLLECTION_TYPE_SINGLE_SKU
+  ProductCollectionType product_collection_type = 7;
+
+  // Enables minimum subtotal of items. i.e. Buy $X subtotal in group, get $Y off
+  money.MonetaryFields minimum_item_subtotal = 8;
+}
+
+message ItemsWithOptions {
+  repeated ItemWithOptions items_with_options = 1;
+}
+
+/**
+ * Define the item collection patterns, which will qualify for the item promo.
+ */
+enum ProductCollectionType {
+  PRODUCT_COLLECTION_TYPE_UNSPECIFIED = 0;
+  PRODUCT_COLLECTION_TYPE_UNKNOWN = 1;
+  // Single item meets the num_required_items criteria. i.e. Buy 2 Get $1 off.
+  // 2A will qualify, (1A, 1B) will disqualify.
+  PRODUCT_COLLECTION_TYPE_SINGLE_SKU = 2;
+  // Mix and match case, i.e. Buy any 2 Get $1 off.
+  // Both 2A and (1A, 1B) will qualify.
+  PRODUCT_COLLECTION_TYPE_MULTI_SKU = 3;
+}
+
+message ItemsInCartDetail {
+  repeated ItemPromoCriterionDetail item_promo_criterion_detail = 1;
+}
+
+message ItemPromoCriterionDetail {
+  repeated string include_keyword = 1;
+  repeated string exclude_keyword = 2;
+}
+
+message MerchantCriterion {
+  MerchantCriterionType type = 1;
+  enum MerchantCriterionType {
+    MERCHANT_CRITERION_TYPE_INVALID = 0;
+    MERCHANT_CRITERION_TYPE_UNSET = 1;
+    MERCHANT_CRITERION_TYPE_STORE_AVAILABILITY_STATUS = 2; // requires bool is_open
+    MERCHANT_CRITERION_TYPE_STORE_ACTIVATION_STATUS = 3; // requires bool is_active
+    MERCHANT_CRITERION_TYPE_STORE_TEMPORARY_ACTIVATION_STATUS = 4; // requires bool is_temporary_active
+    MERCHANT_CRITERION_TYPE_STORE_DELIVERY_TYPE = 5; // requires delivery type
+    MERCHANT_CRITERION_TYPE_STORE_IS_DASHPASS = 6; // requires is_dashpass
+    MERCHANT_CRITERION_TYPE_AUDIENCE_CUSTOM = 7; // requires audience_name
+    //        To support exclusion for mx with fixed delivery fee which are not eligible for any delivery fee discount
+    MERCHANT_CRITERION_TYPE_STORE_IS_NON_CUSTOM_DELIVERY_FEE = 9; // requires is_non_custom_delivery_fee
+    MERCHANT_CRITERION_TYPE_STORE_FULFILLS_OWN_DELIVERIES = 10; // requires fulfills_own_delivery
+    MERCHANT_CRITERION_TYPE_STORE_BUSINESS_VERTICAL_ID = 11; // requires business_vertical_ids
+  }
+  oneof target {
+    google.protobuf.BoolValue is_open = 2;
+    google.protobuf.BoolValue is_active = 3;
+    google.protobuf.BoolValue is_temporary_active = 4;
+    common.FulfillmentType fulfillment_type = 5;
+    google.protobuf.BoolValue is_dashpass = 6;
+    google.protobuf.StringValue audience_name = 7;
+    google.protobuf.BoolValue is_non_custom_delivery_fee = 9;
+    google.protobuf.BoolValue fulfills_own_delivery = 10;
+    BusinessVerticalIdTargets business_vertical_ids = 11;
+  }
+
+  google.protobuf.BoolValue negate_audience_result = 8;
+}
+
+message BusinessVerticalIdTargets {
+  repeated google.protobuf.StringValue business_vertical_ids = 1;
+}
+
+// Criteria to determine state of the market
+// Please use this only at the promotion OR incentive level as of now. This is related to undersupply
+// Doc: https://docs.google.com/document/d/1TLFOvRs3-rsDlZrh5mHDE-tBFm3D6vl0EW8YDFjixpk/edit#
+// Doc: https://lucid.app/lucidchart/bb40d69c-dac0-48d5-a5e4-f4aae9d47703/edit?page=NBVnk.wwqfOZ#
+message MarketStateCriteria {
+  // List of market states supported
+  oneof target {
+    MarketStateTypes types = 1; // MARKET_CRITERION_TYPE_MARKET_STATES
+    google.protobuf.FloatValue fleet_load_factor_threshold = 3; // MARKET_CRITERION_TYPE_FLEET_LOAD_FACTOR_BELOW_THRESHOLD
+  }
+  enum MarketStateType {
+    // invalid state
+    MARKET_STATE_TYPE_INVALID = 0;
+    // not set state
+    MARKET_STATE_TYPE_UNSET = 1;
+    // normal market state
+    MARKET_STATE_TYPE_NORMAL = 2;
+    // market killed due to undersupply, pickup only
+    MARKET_STATE_TYPE_MARKET_KILLED_PICKUP_ONLY = 3;
+    // doordash down
+    MARKET_STATE_TYPE_TOTAL_OUTAGE = 4;
+  }
+  // List of market states allowed object
+  message MarketStateTypes {
+    // market state type list supported
+    repeated MarketStateType market_state_type = 1;
+  }
+
+  MarketCriterionType type = 2;
+
+  enum MarketCriterionType {
+    // invalid state
+    MARKET_CRITERION_TYPE_INVALID = 0;
+    // not set state
+    MARKET_CRITERION_TYPE_UNSET = 1;
+    // used for the current repeated marketstatetypes
+    MARKET_CRITERION_TYPE_MARKET_STATES = 2;
+    // use for the new load factor here
+    MARKET_CRITERION_TYPE_FLEET_LOAD_FACTOR_BELOW_THRESHOLD = 3;
+  }
+}
+
+message BundleTypes {
+  repeated common.bundle_order_info.v1.BundleType bundle_type = 1;
+}

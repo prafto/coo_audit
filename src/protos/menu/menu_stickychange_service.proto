@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package menustickychangeservice;
+
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menustickychangeservice/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menustickychangeservice.grpc";
+
+/**
+   In menu ingestion flow, there are two kinds of sticky behaviors distinguished from whether to honor the payload in the request.
+   Case 1: If the request has the value, honor the value in the request; otherwise, apply the sticky value. For example,  sort_id, base_price, calories, dietary_tags
+   Case 2: Always apply the sticky changes no matter whether the request has the value. All other sticky fields, for example, membership_types, dynamic_properties, etc.
+   The difference can be found in Ingestion Flow Case 4.
+
+   Test Cases  | The value of a sticky field in a menu request | The value of the sticky filed  in table sticky_change | The updated field value in sticky_change | The updated field value in store_menu
+               |                                               |                                                       | getStickyData will see this data         | menu read flow will see this data
+   Ingestion Flow Case 1 | No data                             | No data                                               | No data                                  | No data
+   Ingestion Flow Case 2 | No data                             | B                                                     | B                                        | B
+   Ingestion Flow Case 3 | A                                   | No data                                               | No data                                  | A
+   Ingestion Flow Case 4 | A                                   | B                                                     | B                                        | case 1: A
+                                                                                                                                                                  | case 2: B
+   Merchant Gateway Write Flow Case 1 | No data                | No data                                               | No data                                  | No data
+   Merchant Gateway Write Flow Case 2 | No data                | B                                                     | No data                                  | No data
+   Merchant Gateway Write Flow Case 3 | A                      | No data                                               | A                                        | A
+   Merchant Gateway Write Flow Case 4 | A                      | B                                                     | A                                        | A
+
+   The details can be found in : https://docs.google.com/document/d/12eahayZYB0E3YQd0KqzSrY8edTEjLGc0OPAV3_2FA48/edit?usp=sharing
+*/
+service StickyChangeService {
+  rpc PutStickyChange(PutStickyChangeRequest) returns (PutStickyChangeResponse);
+  rpc GetStickyChangeByStoreIdEntityId(GetStickyChangeByStoreIdEntityIdRequest) returns (GetStickyChangeByStoreIdEntityIdResponse);
+  rpc GetStickyChangesByStoreId(GetStickyChangesByStoreIdRequest) returns (GetStickyChangesByStoreIdResponse);
+
+  rpc PutStickyChangeBulk(PutStickyChangeBulkRequest) returns (PutStickyChangeBulkResponse);
+  rpc GetStickyChangeByStoreIdEntityIds(GetStickyChangeByStoreIdEntityIdsRequest) returns (GetStickyChangeByStoreIdEntityIdsResponse);
+
+  // the internal endpoint to trigger the workflow to cleanup the orphan sticky records by the given storeIds
+  rpc CleanUpStickyRecordsByStoreIds(CleanUpStickyRecordsByStoreIdsRequest) returns (CleanUpStickyRecordsByStoreIdsResponse);
+  // the internal endpoint to trigger the workflow to cleanup the orphan sticky records for all the stores
+  rpc CleanUpStickyRecordsAcrossStores(CleanUpStickyRecordsAcrossStoresRequest) returns (CleanUpStickyRecordsAcrossStoresResponse);
+}
+
+/**
+ * Request to upsert menu sticky change
+ */
+message PutStickyChangeRequest {
+  menu.MenuStickyChange menu_sticky_change = 1;
+}
+
+/**
+ * Return of upserting menu sticky change
+ */
+message PutStickyChangeResponse {}
+
+/**
+ * Request to upsert a list of menu sticky changes for a store_menu_id
+ * 1) All the MenuStickyChange records should come from the same store_menu_id
+ * 2) All the records will be inserted together through a bulk insert operation. The operation will succeed or fail for all the records.
+ * 3) Relies on the client to chuck the request.
+ */
+message PutStickyChangeBulkRequest {
+  string store_menu_id = 1;
+  repeated menu.MenuStickyChange menu_sticky_changes = 2;
+  string business_id = 3;
+}
+
+/**
+ * Return of upserting a list of menu sticky change
+ */
+message PutStickyChangeBulkResponse {}
+
+/**
+ * Request to get menu sticky change by store id and entity id
+ */
+message GetStickyChangeByStoreIdEntityIdRequest {
+  string store_menu_id = 1;
+  string entity_id = 2;
+}
+
+/**
+ * Return of getting menu sticky change by store id and entity id
+ */
+message GetStickyChangeByStoreIdEntityIdResponse {
+  menu.MenuStickyChange menu_sticky_change = 1;
+}
+
+/**
+ * Request to get menu sticky change by store id
+ */
+message GetStickyChangesByStoreIdRequest {
+  string store_menu_id = 1;
+}
+
+/**
+ * Return of getting menu sticky change by store id
+ */
+message GetStickyChangesByStoreIdResponse {
+  repeated menu.MenuStickyChange menu_sticky_changes = 1;
+}
+
+/**
+ * Request to get menu sticky change by entity_ids under the same store_menu_id
+ */
+message GetStickyChangeByStoreIdEntityIdsRequest {
+  string store_menu_id = 1;
+  repeated string entity_ids = 2;
+}
+
+/**
+ * Return of getting menu sticky changes by entity_ids under the same store_menu_id
+ */
+message GetStickyChangeByStoreIdEntityIdsResponse {
+  repeated menu.MenuStickyChange menu_sticky_changes = 1;
+}
+
+/**
+ * Clean up the orphan sticky records by given storeIds
+ */
+message CleanUpStickyRecordsByStoreIdsRequest {
+  repeated string store_menu_ids = 1;
+}
+
+/**
+ * Response message to CleanupStickyRecordsByStoreIdsRequest
+ */
+message CleanUpStickyRecordsByStoreIdsResponse {
+  string workflow_id = 1;
+  string run_id = 2;
+}
+
+/**
+ * Clean up the orphan sticky records for all stores
+ * To avoid the tombstones generated during the sticky cleanup affecting the db performance, we set the following parameters to control the cleanup:
+ * 1. if should_full_scan = true, do the full store scan that cleaning the orphan sticky records across all stores  -- avoid using the full store scan
+ * 2. if should_full_scan = false, scan the db ranges [scan_range_start, scan_range_end). The db ranges are defined in:
+ * https://github.com/doordash/runtime/blob/master/data/menu-data-service/sticky_clean_orphan_config.json (field_name: range_count). The current value is 1000.
+ * scan_range_start and scan_range_end can only be in [0, range_count], otherwise, the invalid request exception will be thrown out.
+ * For example: if the token range is [10, 150], the job will scan the stores in the token range [10, 149];
+ * if the token range is [900, 100], the job will scan the stores in the token range [900, 999] + [0, 99];
+ */
+message CleanUpStickyRecordsAcrossStoresRequest {
+  google.protobuf.BoolValue should_full_scan = 1;
+  google.protobuf.Int32Value scan_token_range_start = 2;
+  google.protobuf.Int32Value scan_token_range_end = 3;
+}
+
+/**
+ * Response message to CleanUpStickyRecordsAcrossStoresRequest
+ */
+message CleanUpStickyRecordsAcrossStoresResponse {
+  string workflow_id = 1;
+  string run_id = 2;
+}

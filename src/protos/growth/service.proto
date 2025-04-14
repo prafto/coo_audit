@@ -1,0 +1,906 @@
+syntax = "proto3";
+package doordash.growth;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "consumer_profile_service/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/immersive_header.proto";
+import "growth/placements/announcement.proto";
+import "growth/placements/placement_section.proto";
+import "growth/referral.proto";
+import "growth/sticky_footer.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.growth";
+
+service GrowthService {
+  rpc CreateMessageExample(CreateMessageRequest) returns (EmptyResponse);
+  rpc GetMessagesExample(EmptyRequest) returns (GetMessagesResponse);
+
+  // Test calls including Legacy
+  rpc DynamicValuesTest(DynamicValuesTestRequest) returns (DynamicValuesTestResponse);
+  rpc AssignFmxTest(AssignFmxTestRequest) returns (AssignFmxTestResponse);
+  rpc CheckResurrected(CheckResurrectedRequest) returns (CheckResurrectedResponse);
+  rpc AssignResurrectedProgram(AssignResurrectedProgramRequest) returns (EmptyResponse);
+  rpc UtilizationTest(UtilizationTestRequest) returns (EmptyResponse);
+  rpc SnowflakeQueryTest(SnowflakeQueryTestRequest) returns (SnowflakeQueryTestResponse);
+
+  // ReferralProgram management
+  rpc CreateReferralProgram(CreateReferralProgramRequest) returns (CreateReferralProgramResponse) {
+    // As slower API, with many downstream calls
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 1000;
+  }
+  rpc UpdateReferralProgram(UpdateReferralProgramRequest) returns (UpdateReferralProgramResponse);
+  rpc GetReferralProgram(GetReferralProgramRequest) returns (GetReferralProgramResponse);
+  rpc GetSubmarkets(GetSubmarketsRequest) returns (GetSubmarketsResponse);
+  rpc GetReferralProgramsInSubmarket(GetReferralProgramsInSubmarketRequest) returns (GetReferralProgramsInSubmarketResponse);
+  rpc DeleteReferralProgram(DeleteReferralProgramRequest) returns (DeleteReferralProgramResponse);
+
+  // Generates a new referral link for this sender and returns it
+  // If an active referral link already exists for this sender, that will be returned instead
+  rpc GetReferralLinkForSender(GetReferralLinkForSenderRequest) returns (GetReferralLinkForSenderResponse);
+
+  // Used for the account tab sender upsell ("Refer friends and get X reward")
+
+  // Config from Service to Hermes clients for high traffic APIs
+  rpc GetReferralSenderRewardInSubmarket(GetReferralSenderRewardInSubmarketRequest) returns (GetReferralSenderRewardInSubmarketResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+  rpc GetReferralSenderReward(GetReferralSenderRewardRequest) returns (GetReferralSenderRewardResponse);
+
+  // Looks up the receiver's referral link via the id provided and returns it
+  // If the receiver's referral link is expired, a new one will be auto-generated and returned instead
+  rpc GetReferralLinkForReceiver(GetReferralLinkForReceiverRequest) returns (GetReferralLinkForReceiverResponse);
+
+  rpc CreateReferral(CreateReferralRequest) returns (CreateReferralResponse);
+  // Temporary API - Used only by DSJ for double-writing data
+  rpc UpdateReferral(UpdateReferralRequest) returns (UpdateReferralResponse);
+
+  // Config from Service to Hermes clients for high traffic APIs
+  rpc GetReferrals(GetReferralsRequest) returns (GetReferralsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.25;
+  }
+
+  rpc AssignReferralProgramToSubmarkets(AssignReferralProgramToSubmarketsRequest) returns (AssignReferralProgramToSubmarketsResponse);
+
+  rpc AssignReferralProgramToCountry(AssignReferralProgramToCountryRequest) returns (AssignReferralProgramToCountryResponse);
+  rpc AssignReferralProgramToAudience(AssignReferralProgramToAudienceRequest) returns (AssignReferralProgramToAudienceResponse);
+
+  // Manually assign consumers to an engagement program
+  rpc AssignConsumersToEngagementProgram(AssignConsumersToEngagementProgramRequest) returns (AssignConsumersToEngagementProgramResponse);
+
+  // Manually assign entities to an engagement program
+  rpc AssignEntitiesToEngagementProgram(AssignEntitiesToEngagementProgramRequest) returns (AssignEntitiesToEngagementProgramResponse);
+
+  // Create a Engagement Program. not marked as active on creation, call SetActive for that
+  // Philosophy for parameters, custom to each preferred if likely to change, else common across many
+  rpc EngagementProgramCreate(EngagementProgramCreateRequest) returns (EngagementProgramCreateResponse);
+
+  // Get an Engagement Program
+  rpc EngagementProgramGet(EngagementProgramRequest) returns (EngagementProgramGetResponse);
+  // Get all engagement programs
+  rpc EngagementProgramGetAll(EngagementProgramGetAllRequest) returns (EngagementProgramGetAllResponse);
+
+  // Check if program isActive, true means will be scheduled for checking and assignment by scheduler
+  rpc EngagementProgramIsActive(EngagementProgramRequest) returns (EngagementProgramIsActiveResponse);
+  // Set active status for Engagement Program
+  rpc EngagementProgramSetActive(EngagementProgramSetActiveRequest) returns (EngagementProgramSetActiveResponse);
+
+  // Updates fields for Engagement Program such as query
+  rpc EngagementProgramUpdate(EngagementProgramUpdateRequest) returns (EngagementProgramUpdateResponse);
+  // Delete Engagement Program, removing it completely
+  rpc EngagementProgramDelete(EngagementProgramRequest) returns (EmptyResponse);
+
+  // Run the Engagement Program once, this is manual equivalent of scheduler.
+  rpc EngagementProgramRun(EngagementProgramRunRequest) returns (EngagementProgramRunResponse);
+
+  // Do testRun for Engagement Program
+  rpc EngagementProgramTestRun(EngagementProgramTestRunRequest) returns (EngagementProgramTestRunResponse);
+
+  // Schedule the Engagement Program run once in background
+  rpc EngagementProgramSchedule(EngagementProgramScheduleRequest) returns (EngagementProgramScheduleResponse);
+
+  // Validate EP set up
+  rpc EngagementProgramValidate(EngagementProgramValidateRequest) returns (EngagementProgramValidateResponse);
+
+  // Endpoint to support benefit reminders
+  rpc GetBenefitReminder(GetBenefitReminderRequest) returns (GetBenefitReminderResponse);
+
+  // assign referral program to submarket based on its treatment group
+  rpc AssignReferralProgramToTreatmentGroup(AssignReferralProgramToTreatmentGroupRequest) returns (AssignReferralProgramToTreatmentGroupResponse);
+  rpc GetReferralProgramsInSubmarketWithTreatmentGroup(GetReferralProgramsInSubmarketWithTreatmentGroupRequest) returns (GetReferralProgramsInSubmarketWithTreatmentGroupResponse);
+
+  // Get variant counts for a given program
+  rpc EngagementProgramGetRunDetails(EngagementProgramGetRunDetailsRequest) returns (EngagementProgramGetRunDetailsResponse);
+
+  // Endpoint for getting placement data
+  // For now, this will only serve /placement/home/sticky_footer as there's already logic in BFF for remaining cases
+  rpc GetPlacements(GetPlacementsRequest) returns (GetPlacementsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  // update the status of an EP Program
+  rpc EngagementProgramUpdateStatus(EngagementProgramUpdateStatusRequest) returns (EngagementProgramUpdateStatusResponse);
+}
+
+message GetReferralProgramsInSubmarketWithTreatmentGroupRequest {
+  google.protobuf.Int32Value submarket_id = 1;
+}
+
+message GetReferralProgramsInSubmarketWithTreatmentGroupResponse {
+  repeated ReferralProgramSubmarketTreatment referral_program_submarket_treatments = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message Empty {}
+message EmptyRequest {}
+message EmptyResponse {}
+
+message CreateMessageRequest {
+  string message = 1;
+}
+
+message GetMessagesResponse {
+  repeated string messages = 1;
+}
+
+message AssignFmxTestRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue experience = 2; // Doordash or caviar
+  google.protobuf.StringValue fmx_flavor = 3;
+}
+
+message AssignFmxTestResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message DynamicValuesTestRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue experiment_name = 2;
+  google.protobuf.StringValue context = 3;
+}
+
+message DynamicValuesTestResponse {
+  bool is_success = 1;
+  string result = 2;
+}
+
+message CheckResurrectedRequest {
+  int64 delivery_id = 1;
+}
+
+message CheckResurrectedResponse {
+  bool is_passed = 1;
+}
+
+message AssignResurrectedProgramRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message UtilizationTestRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message SnowflakeQueryTestRequest {
+  // type can be "test" or "pickup"
+  google.protobuf.StringValue type = 1;
+}
+
+message SnowflakeQueryTestResponse {
+  // Return the number of rows returned for the query
+  int64 count = 1;
+}
+
+message CreateReferralProgramRequest {
+  ReferralProgram referral_program = 1;
+}
+
+message CreateReferralProgramResponse {
+  ReferralProgram referral_program = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message UpdateReferralProgramRequest {
+  ReferralProgram referral_program = 1;
+}
+
+message UpdateReferralProgramResponse {
+  ReferralProgram referral_program = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralProgramRequest {
+  google.protobuf.StringValue referral_program_id = 1;
+}
+
+message GetReferralProgramResponse {
+  ReferralProgram referral_program = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetSubmarketsRequest {
+  google.protobuf.StringValue referral_program_id = 1;
+}
+
+message SubmarketDetail {
+  google.protobuf.Int32Value submarket_id = 1;
+  google.protobuf.BoolValue is_active = 2;
+  common.Experience experience_source = 3;
+  common.Experience experience_destination = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  google.protobuf.StringValue activated_by = 7;
+  google.protobuf.StringValue deactivated_by = 8;
+}
+
+message GetSubmarketsResponse {
+  repeated SubmarketDetail submarket_details = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralProgramsInSubmarketRequest {
+  google.protobuf.Int32Value submarket_id = 1;
+}
+
+message ReferralProgramDetail {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.BoolValue is_active = 3;
+  common.Experience experience_source = 4;
+  common.Experience experience_destination = 5;
+  google.protobuf.Timestamp start_time = 6;
+  google.protobuf.Timestamp end_time = 7;
+  google.protobuf.StringValue activated_by = 8;
+  google.protobuf.StringValue deactivated_by = 9;
+}
+
+message GetReferralProgramsInSubmarketResponse {
+  repeated ReferralProgramDetail referral_program_details = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralSenderRewardInSubmarketRequest {
+  google.protobuf.Int32Value submarket_id = 1;
+  common.Experience experience_source = 3;
+  common.Experience experience_destination = 4;
+}
+
+message GetReferralSenderRewardInSubmarketResponse {
+  money.MonetaryFields sender_reward_amount = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralSenderRewardRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Int32Value submarket_id = 2;
+  // `country_shortname` is in practice an acronym, e.g. 'US' or 'JP'
+  google.protobuf.StringValue country_code = 3;
+  common.Experience experience_source = 4;
+  common.Experience experience_destination = 5;
+}
+
+message GetReferralSenderRewardResponse {
+  money.MonetaryFields sender_reward_amount = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralLinkForSenderRequest {
+  google.protobuf.StringValue sender_user_id = 1;
+  google.protobuf.Int32Value submarket_id = 2;
+  common.Experience experience_source = 3;
+  common.Experience experience_destination = 4;
+
+  // If sending this, dont send sender_user_id
+  google.protobuf.StringValue sender_consumer_id = 5;
+}
+
+message GetReferralLinkForSenderResponse {
+  ReferralLink referral_link = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralLinkForReceiverRequest {
+  google.protobuf.StringValue referral_link_id = 1;
+}
+
+message GetReferralLinkForReceiverResponse {
+  ReferralLink referral_link = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message LegacyReferralDetails {
+  google.protobuf.StringValue sender_user_id = 1;
+  ReferralStatus referral_status = 2;
+  ReferralNoPayoutReason referral_no_payout_reason = 3;
+  google.protobuf.StringValue order_cart_id = 4;
+  google.protobuf.StringValue receiver_reward_campaign_id = 5;
+  money.MonetaryFields receiver_required_min_subtotal = 6;
+  money.MonetaryFields sender_reward_amount = 7;
+  money.MonetaryFields legacy_receiver_reward_amount = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp redeemed_at = 10;
+}
+
+message CreateReferralRequest {
+  google.protobuf.StringValue referral_link_id = 1;
+  google.protobuf.StringValue receiver_user_id = 2;
+  common.Experience experience_source = 3;
+  common.Experience experience_destination = 4;
+  google.protobuf.BoolValue legacy = 5;
+  LegacyReferralDetails legacy_referral_details = 6;
+  google.protobuf.StringValue mfa_session_id = 7;
+  google.protobuf.StringValue mfa_action = 8;
+
+  // If sending this, dont send receiver user id
+  google.protobuf.StringValue receiver_consumer_id = 9;
+}
+
+message CreateReferralResponse {
+  Referral referral = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message UpdateReferralRequest {
+  google.protobuf.StringValue referral_id = 1;
+  ReferralStatus referral_status = 2;
+  ReferralNoPayoutReason referral_no_payout_reason = 3;
+  google.protobuf.StringValue order_cart_id = 4;
+  google.protobuf.Timestamp redeemed_at = 5;
+}
+
+message UpdateReferralResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetReferralsRequest {
+  google.protobuf.StringValue sender_user_id = 1;
+  google.protobuf.StringValue receiver_user_id = 4;
+  common.Experience experience_source = 2;
+  common.Experience experience_destination = 3;
+
+  // Required to get back receiver_required_min_subtotal in the response
+  google.protobuf.Int32Value submarket_id = 6;
+
+  // Pass true if receiver names and emails are not required on each referral
+  google.protobuf.BoolValue skip_pii = 5;
+
+  // If sending this, dont send sender_user_id
+  google.protobuf.StringValue sender_consumer_id = 7;
+}
+
+message GetReferralsResponse {
+  repeated Referral referrals = 1;
+  money.MonetaryFields receiver_required_min_subtotal = 2;
+  google.protobuf.StringValue error_message = 3;
+}
+
+message AssignReferralProgramToSubmarketsRequest {
+  repeated google.protobuf.Int32Value submarket_ids = 1;
+  google.protobuf.StringValue referral_program_id = 2;
+  google.protobuf.StringValue activated_by = 3;
+}
+
+message AssignReferralProgramToSubmarketsResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message AssignReferralProgramToCountryRequest {
+  // `country_shortname` is in practice an acronym, e.g. 'US' or 'JP'
+  google.protobuf.StringValue country_code = 1;
+  google.protobuf.StringValue referral_program_id = 2;
+  google.protobuf.StringValue activated_by = 3;
+}
+
+message AssignReferralProgramToCountryResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message AssignReferralProgramToAudienceRequest {
+  repeated google.protobuf.StringValue audience_tags = 1;
+  google.protobuf.StringValue referral_program_id = 2;
+  google.protobuf.StringValue activated_by = 3;
+}
+
+message AssignReferralProgramToAudienceResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+enum SegmentProject {
+  SEGMENT_PROJECT_UNSPECIFIED = 0;
+  SEGMENT_PROJECT_DOORDASH = 1;
+  SEGMENT_PROJECT_CAVIAR = 2;
+  SEGMENT_PROJECT_DASHER = 3;
+}
+
+enum TagEntityType {
+  TAG_ENTITY_TYPE_UNSPECIFIED = 0;
+  TAG_ENTITY_TYPE_CONSUMER = 1;
+  TAG_ENTITY_TYPE_DASHER = 2;
+  TAG_ENTITY_TYPE_MERCHANT_BUSINESS = 3;
+  TAG_ENTITY_TYPE_MERCHANT_STORE = 4;
+  TAG_ENTITY_TYPE_MERCHANT = 5;
+  TAG_ENTITY_TYPE_RAW_EMAIL_ADDRESS = 6;
+}
+
+message AssignConsumersToEngagementProgramRequest {
+  google.protobuf.StringValue engagement_program_name = 1;
+  message Consumer {
+    google.protobuf.Int32Value consumer_id = 1;
+    google.protobuf.StringValue email = 2;
+    google.protobuf.StringValue submarket_id = 3;
+  }
+  repeated Consumer consumers = 2;
+}
+
+message AssignConsumersToEngagementProgramResponse {
+  google.protobuf.Int32Value match_count = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message AssignEntitiesToEngagementProgramRequest {
+  google.protobuf.StringValue engagement_program_name = 1;
+  message Entity {
+    google.protobuf.Int64Value entity_id = 1;
+    google.protobuf.StringValue email = 2;
+    google.protobuf.StringValue submarket_id = 3;
+  }
+  repeated Entity entities = 2;
+}
+
+message AssignEntitiesToEngagementProgramResponse {
+  google.protobuf.Int32Value match_count = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message CustomizedFieldDefinition {
+  // name of the field
+  google.protobuf.StringValue field_name = 1;
+  // value type of the field
+  google.protobuf.StringValue value_type = 2;
+  // name of the column
+  google.protobuf.StringValue column_name = 3;
+}
+
+message EngagementProgramCreateRequest {
+  // Program name, unique, used for query, update, etc
+  google.protobuf.StringValue name = 1;
+  // Snowflake sql query that returns consumer ids
+  google.protobuf.StringValue query = 2;
+  // Dynamic Values Experiment to use to convert consumer-id to audience tag
+  google.protobuf.StringValue experiment_name = 3;
+  // Duration the program is assigned for, to the consumers
+  google.protobuf.Int32Value duration_seconds = 4;
+  // Segment project name
+  SegmentProject segment_project = 5;
+  // run interval for the program in hours
+  google.protobuf.Int32Value run_interval_hours = 6;
+  // True if program is CRM, else false
+  google.protobuf.BoolValue is_crm = 7;
+  // Audience tag entity type
+  TagEntityType tag_entity_type = 8;
+  // Enabled for triggering Journey workflow
+  google.protobuf.BoolValue enabled_for_journey = 9;
+  // Definition of customized data field
+  repeated CustomizedFieldDefinition customized_field_definitions = 10;
+  // Scheduling information
+  EngagementProgramScheduleInfo schedule_info = 11;
+  // has merchandising like campaign manager
+  google.protobuf.BoolValue has_merchandising = 12;
+  // has comms like braze, iterable
+  google.protobuf.BoolValue has_comms = 13;
+  // link to checklist doc
+  google.protobuf.StringValue checklist_url = 14;
+}
+
+message EngagementProgramCreateResponse {}
+
+// Request message for single or specific program request
+message EngagementProgramRequest {
+  google.protobuf.StringValue name = 1;
+}
+
+// Message with fields of EngagementProgram
+message EngagementProgram {
+  // Program name, unique, used for query, update, etc
+  google.protobuf.StringValue name = 1;
+  // Snowflake sql query that returns consumer ids
+  google.protobuf.StringValue query = 2;
+  // Dynamic Values Experiment to use to convert consumer-id to audience tag
+  google.protobuf.StringValue experiment_name = 3;
+  // Duration the program is assigned for, to the consumers
+  google.protobuf.Int32Value duration_seconds = 4;
+  // True if program is active, else false
+  google.protobuf.BoolValue is_active = 5;
+  // Segment project name
+  SegmentProject segment_project = 6;
+  // Run interval for the program in hours
+  google.protobuf.Int32Value run_interval_hours = 7;
+  // Last run audience match count, default is max int (2147483647)
+  google.protobuf.Int32Value last_run_count = 8;
+  google.protobuf.Timestamp last_run_timestamp = 9;
+  // Max audience match count across runs, default is max int (2147483647)
+  google.protobuf.Int32Value max_run_count = 10;
+  // True if program is CRM, else false
+  google.protobuf.BoolValue is_crm = 11;
+  // Audience tag entity type
+  TagEntityType tag_entity_type = 12;
+  // Enabled for triggering Journey workflow
+  google.protobuf.BoolValue enabled_for_journey = 13;
+  // Definition of customized data field
+  repeated CustomizedFieldDefinition customized_field_definitions = 14;
+  // ep status
+  EPStatus status = 15;
+  // Scheduling information
+  EngagementProgramScheduleInfo schedule_info = 16;
+  // has merchandising like campaign manager
+  google.protobuf.BoolValue has_merchandising = 17;
+  // has comms like braze, iterable
+  google.protobuf.BoolValue has_comms = 18;
+  // link to checklist doc
+  google.protobuf.StringValue checklist_url = 19;
+}
+
+/* Info about the schedule of the EP.
+ * Defines the first date an EP that is active
+ * will run, and the last date it will run, after
+ * which it will be deactivated. execution_time_seconds
+ * defines the second on the day the EP will run.
+ */
+message EngagementProgramScheduleInfo {
+  // Start day -- time is ignored
+  google.protobuf.Timestamp start_date = 1;
+  // End day -- time is ignored
+  google.protobuf.Timestamp end_date = 2;
+  // Execution time in seconds
+  // max is 86399 seconds (corresponding to 23:59:59)
+  google.protobuf.UInt32Value execution_time_seconds = 3;
+}
+
+message EngagementProgramGetResponse {
+  EngagementProgram program = 1;
+}
+
+message EngagementProgramGetAllRequest {}
+
+message EngagementProgramGetAllResponse {
+  repeated EngagementProgram program = 1;
+}
+
+message EngagementProgramIsActiveResponse {
+  google.protobuf.BoolValue is_active = 1; // True if active
+}
+
+message EngagementProgramSetActiveRequest {
+  google.protobuf.StringValue name = 1;
+  // Send True to set to active, else false
+  google.protobuf.BoolValue is_active = 2;
+  // When true, the last run date is retained, and reset to the current date otherwise
+  google.protobuf.BoolValue retain_lastrundate = 3;
+}
+
+message EngagementProgramSetActiveResponse {}
+
+message EngagementProgramUpdateRequest {
+  // reserved, a safer way to retire obsolete parameters
+  reserved 6;
+  reserved "is_active";
+  // Program name, unique, used for query, update, etc
+  google.protobuf.StringValue name = 1;
+  // Snowflake sql query that returns consumer ids
+  google.protobuf.StringValue query = 2;
+  // Dynamic Values Experiment to use to convert consumer-id to audience tag
+  google.protobuf.StringValue experiment_name = 3;
+  // Duration the program is assigned for, to the consumers
+  google.protobuf.Int32Value duration_seconds = 4;
+  // Segment project name
+  SegmentProject segment_project = 5;
+  // run interval for the program in hours
+  google.protobuf.Int32Value run_interval_hours = 7;
+  // Audience tag entity type
+  TagEntityType tag_entity_type = 8;
+  // Enabled for triggering Journey workflow
+  google.protobuf.BoolValue enabled_for_journey = 9;
+  // Definition of customized data field
+  repeated CustomizedFieldDefinition customized_field_definitions = 10;
+  // Scheduling information
+  EngagementProgramScheduleInfo schedule_info = 11;
+  // has merchandising like campaign manager
+  google.protobuf.BoolValue has_merchandising = 12;
+  // has comms like braze, iterable
+  google.protobuf.BoolValue has_comms = 13;
+  // link to checklist doc
+  google.protobuf.StringValue checklist_url = 14;
+}
+
+message EngagementProgramUpdateResponse {}
+
+// Run once the program query to get audience, if dry_run is false, assign the program to all in audience as well
+message EngagementProgramRunRequest {
+  // reserved, a safer way to retire obsolete parameters
+  reserved 2;
+  reserved "dry_run";
+  google.protobuf.StringValue name = 1;
+}
+
+message EngagementProgramRunResponse {
+  google.protobuf.Int32Value match_count = 1;
+}
+
+message EngagementProgramTestRunRequest {
+  google.protobuf.StringValue name = 1;
+  // false: only execute Snowflake query and return result count
+  // true: execute same path as Run api, but skip the write operations
+  bool do_full_dry_run = 2;
+}
+
+message EngagementProgramTestRunResponse {
+  google.protobuf.Int32Value match_count = 1;
+}
+
+message EngagementProgramScheduleRequest {
+  repeated google.protobuf.StringValue program_names = 1;
+}
+
+message EngagementProgramScheduleResponse {
+  google.protobuf.Int32Value success_count = 1;
+}
+
+// EP validation request
+message EngagementProgramValidateRequest {
+  // EP name
+  google.protobuf.StringValue name = 1;
+  // campaign ids
+  repeated google.protobuf.StringValue campaign_ids = 2;
+}
+
+// EP validation response
+message EngagementProgramValidateResponse {
+  bool success = 1;
+  // EP validation tasks
+  repeated EngagementProgramValidationTask tasks = 2;
+}
+
+// EP validation task
+message EngagementProgramValidationTask {
+  // status of the validation task
+  bool status = 1;
+  // error
+  google.protobuf.StringValue error = 2;
+  // resolution
+  google.protobuf.StringValue resolution = 3;
+}
+
+// Benefit Reminder placement types
+enum BenefitReminderPlacementType {
+  // Default value for unspecified placement type
+  BENEFIT_REMINDER_PLACEMENT_TYPE_UNSPECIFIED = 0;
+  // Home placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_HOME = 1;
+  // Cart placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_CART = 2;
+  // Store placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_STORE = 3;
+  // Checkout placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_CHECKOUT = 4;
+  // Wallet placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_WALLET = 5;
+  // Account placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_ACCOUNT = 6;
+  // Vertical page placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_VERTICAL = 7;
+  // Retail store page placement
+  BENEFIT_REMINDER_PLACEMENT_TYPE_RETAIL_STORE = 8;
+}
+
+// Request message to pull benefitReminders
+message GetBenefitReminderRequest {
+  // Placement type of benefitReminder
+  BenefitReminderPlacementType placement_type = 1;
+  // Consumer ID for which benefit reminder needs to be fetched
+  google.protobuf.StringValue consumer_id = 2;
+  // Submarket Id of the consumer for which benefit reminder needs to be fetched
+  google.protobuf.Int32Value submarket_id = 3;
+  // Country shortname from default address of the consumer
+  google.protobuf.StringValue country_short_name = 4;
+  // Whether the user is guest or not
+  google.protobuf.BoolValue is_guest = 5;
+  // Serialized cursor value for verticals
+  google.protobuf.StringValue cursor = 6;
+  // Whether the user belongs to a Doordash for Work team
+  google.protobuf.BoolValue is_ddfw_user = 7;
+}
+
+// Response message of benefitReminders
+message GetBenefitReminderResponse {
+  // benefit reminder title
+  google.protobuf.StringValue reminder_title = 1;
+  // benefit reminder type
+  google.protobuf.StringValue type = 2;
+  // benefit reminder metadata
+  google.protobuf.Struct metadata = 3;
+  // benefit reminder icon
+  google.protobuf.StringValue icon = 4;
+  // benefit reminder custom
+  google.protobuf.Struct custom = 5;
+}
+
+message DeleteReferralProgramRequest {
+  google.protobuf.StringValue referral_program_id = 1;
+}
+
+message DeleteReferralProgramResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message AssignReferralProgramToTreatmentGroupRequest {
+  message ReferralProgramToSubmarketWithTreatmentGroup {
+    google.protobuf.Int32Value submarket_id = 1;
+    google.protobuf.StringValue referral_program_id = 2;
+    google.protobuf.BoolValue is_treatment = 3;
+  }
+  repeated ReferralProgramToSubmarketWithTreatmentGroup referral_program_submarket = 1;
+  google.protobuf.StringValue updated_by = 2;
+}
+
+message AssignReferralProgramToTreatmentGroupResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message EngagementProgramGetRunDetailsRequest {
+  google.protobuf.StringValue name = 1;
+}
+
+message EngagementProgramGetRunDetailsResponse {
+  google.protobuf.StringValue program_name = 1;
+  repeated ProgramRunDetails program_run_details = 2;
+}
+
+message ProgramRunDetails {
+  google.protobuf.Timestamp run_timestamp = 1;
+  repeated ProgramExperimentDetails program_experiment_details = 2;
+  EngagementProgramRunStatus status = 3;
+}
+
+message ProgramExperimentDetails {
+  google.protobuf.StringValue variant_key = 1;
+  google.protobuf.Int32Value count = 2;
+}
+
+enum EngagementProgramRunStatus {
+  PROGRAM_RUN_STATUS_UNSPECIFIED = 0;
+  PROGRAM_RUN_STATUS_SUCCESS = 1;
+  PROGRAM_RUN_STATUS_FAILED = 2;
+  PROGRAM_RUN_STATUS_INCOMPLETE = 3;
+}
+
+// GetPlacements endpoint request
+message GetPlacementsRequest {
+  // location id
+  // e.g. home, store
+  google.protobuf.StringValue location_id = 1;
+  // component
+  // e.g. sticky_footer
+  google.protobuf.StringValue component = 2;
+  // request context
+  RequestContext request_context = 3;
+  // boolean value for nudgeable campaign, v2 is true, v1 is false
+  google.protobuf.BoolValue is_nudging = 4;
+}
+
+// request context
+message RequestContext {
+  // cx id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // cart id
+  google.protobuf.StringValue cart_id = 3;
+  // cx submarket id
+  google.protobuf.Int32Value submarket_id = 4;
+  // country short name
+  google.protobuf.StringValue country_short_name = 5;
+  // add currency for benefit reminder campaign, (https://en.wikipedia.org/wiki/ISO_4217)
+  google.protobuf.StringValue currency = 6;
+  // consumer timezone
+  google.protobuf.StringValue timezone = 7;
+  // consumer district id
+  google.protobuf.StringValue district_id = 8;
+  // consumer latitude
+  google.protobuf.DoubleValue lat = 9;
+  // consumer longitude
+  google.protobuf.DoubleValue lng = 10;
+  // landing page type e.g cross-vertical landing page
+  google.protobuf.StringValue landing_page_type = 11;
+  // consumer experience
+  doordash_consumer_profile_service.ConsumerExperience consumer_experience = 12;
+  // user id
+  google.protobuf.StringValue user_id = 13;
+  // Serialized cursor value for verticals
+  google.protobuf.StringValue cursor = 14;
+  // payment context
+  PaymentContext payment_context = 15;
+  // Whether the user belongs to a Doordash for Work team
+  google.protobuf.BoolValue is_ddfw_user = 16;
+  // cart context
+  CartContext cart_context = 17;
+}
+
+// payment context
+message PaymentContext {
+  // is card payment
+  google.protobuf.BoolValue is_card_payment = 1;
+}
+
+// cart context
+message CartContext {
+  // subtotal
+  money.MonetaryFields subtotal = 1;
+}
+
+// GetPlacements endpoint response
+message GetPlacementsResponse {
+  // placements
+  repeated PlacementData placements = 1;
+}
+
+// placement data
+message PlacementData {
+  // placement data
+  oneof placement_data {
+    // sticky footer
+    StickyFooter sticky_footer = 1;
+    ImmersiveHeader immersive_header = 2;
+    placements.v2.Announcement announcements = 3;
+    placements.v2.PlacementSection placement_sections = 4;
+  }
+}
+
+/// EPStatus
+enum EPStatus {
+  // unspecified
+  EP_STATUS_UNSPECIFIED = 0;
+  // draft
+  EP_STATUS_DRAFT = 1;
+  // activation pending approval
+  EP_STATUS_ACTIVATION_PENDING_APPROVAL = 2;
+  // approved
+  EP_STATUS_APPROVED = 3;
+  // activated
+  EP_STATUS_ACTIVATED = 4;
+  // deactivated
+  EP_STATUS_DEACTIVATED = 5;
+  // deactivation pending approval
+  EP_STATUS_DEACTIVATION_PENDING_APPROVAL = 6;
+  // reactivation pending approval
+  EP_STATUS_REACTIVATION_PENDING_APPROVAL = 7;
+  // reactivation approved
+  EP_STATUS_REACTIVATION_APPROVED = 8;
+}
+
+// EngagementProgramUpdateStatusRequest
+message EngagementProgramUpdateStatusRequest {
+  // ep program name
+  google.protobuf.StringValue ep_name = 1;
+  // status
+  EPStatus status = 2;
+}
+
+// EngagementProgramUpdateStatusResponse
+message EngagementProgramUpdateStatusResponse {}

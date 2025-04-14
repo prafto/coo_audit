@@ -1,0 +1,457 @@
+syntax = "proto3";
+
+package ads;
+
+import "ads/budget.proto";
+import "ads/wrapper.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+import "promotion/placement.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ads";
+
+// status code for result parsing between different stages
+enum StatusCode {
+  // unspecified status code
+  STATUS_CODE_UNSPECIFIED = 0;
+  // success status code
+  STATUS_CODE_SUCCESS = 1;
+  // error status code
+  STATUS_CODE_ERROR = 2;
+}
+
+// ad product used to decide under the hood which endpoint to call
+// we might diverge to different endpoints
+message AdProduct {
+  // ad product surface
+  enum AdProductType {
+    // unspecified product surface
+    AD_PRODUCT_TYPE_UNSPECIFIED = 0;
+    // sponsored listing product surface
+    AD_PRODUCT_TYPE_SEARCH_SPONSORED_LISTING = 1;
+  }
+  // product type
+  AdProductType type = 1;
+  // vertical ids
+  repeated string vertical_ids = 2;
+}
+
+// geo hash with level and hash
+message GeoHash {
+  // geohash string value
+  google.protobuf.StringValue value = 1;
+  // geohash level
+  google.protobuf.Int64Value level = 2;
+}
+
+// query for sponsored listing
+message SponsoredListingQuery {
+  // query value
+  google.protobuf.StringValue query = 1;
+  // query type, currently:
+  //  - PLACEMENT_TYPE_CUISINE_FILTER
+  //  - PLACEMENT_TYPE_KEYWORD_SEARCH
+  promotion_service.Placement.PlacementType type = 2;
+  // query view
+  google.protobuf.StringValue view = 3;
+
+  // canonicalized query
+  google.protobuf.StringValue normalized_query = 4;
+
+  // pill filters
+  repeated google.protobuf.StringValue filters = 5;
+
+  // When carousel placement type optionally specifies more specific carousel
+  CarouselType carousel_type = 6;
+}
+
+// Specific carousels
+enum CarouselType {
+  // unspecified carousel type
+  CAROUSEL_TYPE_UNSPECIFIED = 0;
+  // 'Try Something New' sponsored carousel
+  CAROUSEL_TYPE_SPONSORED_TSN = 1;
+}
+
+// query for sponsored product
+message SponsoredProductQuery {
+  // query type, currently:
+  // - PLACEMENT_TYPE_RETAIL_CATEGORY_ITEM
+  // - PLACEMENT_TYPE_RETAIL_SEARCH_ITEM
+  // - PLACEMENT_TYPE_RETAIL_COLLECTION_ITEM
+  promotion_service.Placement.PlacementType type = 1;
+
+  // query value
+  google.protobuf.StringValue query = 2;
+
+  // canonicalized query
+  google.protobuf.StringValue normalized_query = 3;
+
+  // collection id
+  google.protobuf.StringValue collection_id = 4;
+  // l1 category id
+  google.protobuf.StringValue l1_category_id = 5;
+  // l2 category id
+  google.protobuf.StringValue l2_category_id = 6;
+}
+
+/*
+   Open RTB 3.2.20 User with doordash extension
+*/
+message User {
+  // user id
+  string id = 1;
+
+  // comma separated list of keywords, interest or intent
+  string keywords = 2;
+  // geo information
+  Geo geo = 3;
+
+  // session id for the user
+  string dd_session_id = 4;
+
+  // device id for the user
+  string dd_device_id = 5;
+
+  /* Doordash ext:
+     any extension fields that does not defined already in open RTB
+     goes under
+  */
+  // user tags of audience tag format like "store_id_974059_consumer"
+  // only used by Wolt use case for now
+  repeated google.protobuf.StringValue available_user_tags = 6;
+}
+
+/*
+   Open RTB 3.2.19 Geo with doordash extension
+*/
+message Geo {
+  // lat
+  float lat = 1;
+  // lon
+  float lon = 2;
+
+  /* Doordash ext:
+     any extension fields that does not defined already in open RTB
+     goes under
+  */
+  // submarket id
+  google.protobuf.StringValue submarket_id = 3;
+  // district id
+  google.protobuf.StringValue district_id = 4;
+  // reserved for geo hash query if sponsored listing is geo-sharded
+  repeated GeoHash geo_hash = 5;
+  //Cx address, country shortname such as US, DE
+  google.protobuf.StringValue country_shortname = 6;
+  //Cx address state infomation
+  google.protobuf.StringValue administrative_area_level1 = 7;
+}
+
+/*
+   Open RTB 3.2.4 Impression / placement offered
+*/
+message Imp {
+  // impression id
+  string id = 1;
+
+  // ad placement identifier
+  string tagid = 2;
+
+  /* minimum bid for this impression expressed in CPM
+   * note: this can be optionally passed in from Feed */
+  float bidfloor = 3;
+  // currency for bidfloor
+  string bidfloorcur = 4;
+
+  /*Doordash extend*/
+  // SeatBid
+  SponsoredListingQuery query = 5;
+
+  // product denotes product surface where ad is requested
+  AdProduct product = 6;
+}
+
+// SeatBid denotes one merchant bid
+message SeatBid {
+  // actual bid for a list of inventories
+  repeated Bid bid = 1;
+  /* 0 = ads bid can be won individually;
+     1 = impression must be won or lost as a group */
+  int32 group = 2;
+}
+
+// Actual bid from one merchant to one inventory
+message Bid {
+  // bid id
+  string id = 1;
+  // inventory id from the request
+  string impid = 2;
+
+  // campaign id
+  string cid = 4;
+  // creative id
+  string crid = 5;
+  // language
+  string language = 6;
+
+  /* doordash extension */
+  // ad group id
+  string ad_group_id = 7;
+  // auction id
+  string auction_id = 8;
+  // store id - the store id is empty for global search items. Refer to store_ids field for those
+  google.protobuf.StringValue store_id = 9;
+
+  // ad score for ranking. For flat-fee, it is equal to ad_quality_score, otherwise eValue
+  float ad_score = 10;
+
+  // Monetary fields for bidding price; this is the "2nd price" after the auction
+  money.MonetaryFields bid_price = 11;
+  /*
+     a list of item ids for item ads based on
+     https://docs.google.com/document/d/1cmzw8Ll4IMesd5gwGv_2g_H2Cqb7oxpWbPbd-OYfUQU/edit?usp=sharing
+  */
+  StoreItem store_items = 12;
+
+  // the original bid before any bid modifiers are applied
+  int32 true_bid = 13;
+
+  // the bid price after bid modifiers are applied but before the auction
+  int32 auction_bid = 14;
+
+  // ad quality score; it is pConv for CPA, and pCTR for CPC
+  float ad_quality_score = 15;
+
+  // OpenRTB image url
+  google.protobuf.StringValue iurl = 16;
+
+  // advertiser id
+  google.protobuf.StringValue aid = 17;
+
+  // budget experiment info
+  BudgetExperimentInfo budget_experiment_info = 18;
+
+  // creative metadata for digital endcaps, collection ads, etc
+  CreativeMetadata creative_metadata = 19;
+
+  // business id
+  google.protobuf.StringValue business_id = 20;
+
+  // deduplication conditions to be used to remove self-competition
+  promotion_service.DeduplicationCondition deduplication_conditions = 21;
+
+  // gsp discount rate cap
+  double gsp_discount_cap = 34;
+
+  // ad relevance score
+  float ad_relevance_score = 35;
+
+  // ad id
+  string ad_id = 36;
+
+  // The percentile of the ad quality score
+  int32 ad_quality_score_percentile = 37;
+
+  // store level floor price
+  int32 floor_price_unit_amount = 38;
+
+  //add metadata of pricing related control.
+  string pricing_metadata = 39;
+
+  // ad_score = expected_value + ad_hidden_cost
+  double expected_value = 40;
+
+  // hidden cost of boosting or suppressing ad
+  double hidden_cost = 41;
+
+  // json string to log hidden_cost breakdown
+  string hidden_cost_metadata = 42;
+
+  // Some campaigns are configured with lift experiments to measure how much "lift" in revenue the
+  // campaign is generating. ad-exchange will populate this field for bids that have such a
+  // experiment when requested (i.e. request.defer_lift_experiment_filtering == true).
+  LiftExperiment experimentation_metadata = 43;
+
+  // prediction on how much cx could save by using ad with incentive (budget liquidity)
+  money.MonetaryFields predicted_cx_saving = 44;
+
+  // Incentivized ad promo badge string tag
+  google.protobuf.StringValue promo_badge_tag = 45;
+
+  // store ids associated with this bid - used for global search items
+  repeated google.protobuf.StringValue store_ids = 46;
+}
+
+// LiftExperiment describes the lift experiment associated with an ad campaign.
+message LiftExperiment {
+  // `experiment_name` contains the name of an associated lift experiment.
+  string experiment_name = 1;
+  // `should_be_withheld_from_user` is true when the ad should be withheld from the user associated
+  // with the feed request because they were in the control group of a lift experiment.
+  bool should_be_withheld_from_user = 2;
+}
+
+// V0 definition of StoreItem for ads maintain this mapping in
+// ad-exchange instead of directly use promotion ItemCampaignsForStore
+message StoreItem {
+  // a list of item ad ids in this campaign
+  string item_id = 1;
+  // business merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 2;
+  // dd_sic
+  google.protobuf.StringValue dd_sic = 3;
+  // upc
+  google.protobuf.StringValue upc = 4;
+  // field that indicates whether an item is prioritized. If null, should default to false
+  google.protobuf.BoolValue is_priority = 5;
+  // brand L1 ID
+  google.protobuf.StringValue brand_id_l1 = 6;
+}
+
+// testing mode for testing different phases in "GetAds"
+enum TestMode {
+  // unspecified test mode, the request can be considered as production request
+  TEST_MODE_UNSPECIFIED = 0;
+  // test mode for testing automated bidding
+  TEST_MODE_AUTOMATED_BIDDING = 1;
+  // test mode for testing budget pacing
+  TEST_MODE_BUDGET_PACING = 2;
+  // test mode for testing attribution
+  TEST_MODE_ATTRIBUTION = 3;
+  // test mode for testing billing
+  TEST_MODE_BILLING = 4;
+  // test mode for a read-only response, with no events saved
+  TEST_MODE_READ_ONLY = 5;
+  // test mode for preload requests to production
+  TEST_MODE_PRELOAD = 6;
+}
+
+// definition of production info at global dd_sic level used in ads-exchange and promo-streaming
+message ProductInfo {
+  // dd_sic value to identify product
+  string dd_sic = 1;
+  // enum for product type
+  enum RestrictionType {
+    // use unknown as default value
+    RESTRICTION_TYPE_UNKNOWN = 0;
+    // use regular for non-alcohol items/products
+    RESTRICTION_TYPE_REGULAR = 1;
+    // use to indicate item/product is alcohol
+    RESTRICTION_TYPE_ALCOHOL = 2;
+  }
+  // restriction type
+  RestrictionType restriction_type = 2;
+}
+
+// definition of creative metadata which will be used in digital endcaps, etc
+message CreativeMetadata {
+  // creative id
+  string creative_id = 1;
+  // metadata title
+  string title = 2;
+  // meta data description
+  string description = 3;
+  // logo image url
+  string logo_url = 4;
+  // background image url. For web:Left, Right, Bg color. For mobile: Light, Dark
+  map<string, string> background_image_url_map = 5;
+  // items for each collection/brand
+  repeated StoreItem store_items = 6;
+  // the targeted l1 category ids of the sponsored brand
+  repeated string l1_category_ids = 7;
+}
+
+// container to contain list of RetailItem
+message RetailItemList {
+  // list of retail item
+  repeated RetailItem retail_items = 1;
+}
+
+// definition of retail item used for cache in Ad-Ex
+message RetailItem {
+  // item id
+  string item_id = 1;
+  // item name
+  string item_name = 2;
+  // dd_sic to identify product
+  string dd_sic = 3;
+  // business merchant supplied id
+  string merchant_supplied_id = 4;
+  // upc value
+  google.protobuf.StringValue upc = 5;
+  // price unit amount value
+  google.protobuf.DoubleValue price_unit_amount = 6;
+  // is alcohol flag
+  google.protobuf.BoolValue is_alcohol = 7;
+}
+
+// the banner campaign info passed from promo
+message CampaignInfo {
+  // campaign id
+  google.protobuf.StringValue id = 1;
+  // lifetime budget
+  money.MonetaryFields budget = 2;
+  // bid info
+  money.MonetaryFields bid = 3;
+  // associated storeIds
+  repeated google.protobuf.StringValue store_ids = 4;
+  // vertical type
+  promotion_service.Vertical.Type vertical = 5;
+  // ad_group_id
+  google.protobuf.StringValue ad_group_id = 6;
+  // daily budget
+  money.MonetaryFields daily_budget = 7;
+  // cpm, amount field on campaign billing line item
+  money.MonetaryFields cpm = 8;
+  // sort_order of the campaign placement
+  google.protobuf.Int32Value priority = 9;
+}
+
+// The container type to transfer data between and US and EU AZ for Wolt use case
+message WoltDataTransfer {
+  // the data type, represent a category of data to be transferred
+  // e.g., 1. ESAdGroup generated by woltassembler
+  //       2. Cassandra write Task generated by woltassembler
+  string data_type = 1;
+  // the data id, in case we need to do deduplication
+  google.protobuf.StringValue id = 2;
+  // the actual payload of the data, the consumer of this will need to use the
+  // ESAdGroup or Task to parse the bytes based on the actual data_type
+  bytes data_payload = 3;
+}
+
+// definition of RxItemAd that is sent to feed-service
+message RxItemAd {
+  // campaign id related to ad
+  string campaign_id = 1;
+  // ad group id which ad exists in
+  string ad_group_id = 2;
+  // store that the product ad is for
+  string store_id = 3;
+  // could either be MSID or option_id
+  string product_id = 4;
+}
+
+// definition of AlcoholAdvertiser
+message AlcoholAdvertiser {
+  // advertiser id
+  google.protobuf.StringValue advertiser_id = 1;
+}
+
+// Enum representing different template IDs
+enum TemplateID {
+  // Default template
+  TEMPLATE_UNSPECIFIED = 0;
+  // SL-v3 template
+  SL = 1;
+  // SL-v4 and SL-v5 templates
+  SPONSORED_PRODUCTS = 2;
+  // Sponsored brand template
+  SPONSORED_BRAND = 3;
+}

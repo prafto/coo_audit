@@ -1,0 +1,308 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package dasher_comms_service.v2;
+
+import "dasher_comms_service/common.proto";
+import "dasher_comms_service/segment.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_comms_service.v2";
+
+// The NotificationService service definition.
+service NotificationService {
+  option (doordash.api.service) = {
+    name: "dasher_comms_service"
+    url: "dasher-comms-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["dasher_comms_service"]
+    api_key_name: "DASHER_COMMS_SERVICE_API_KEY"
+    owner: {
+      id: "dasher-comms-platform-team"
+      name: "dasher_comms_service"
+      slack_channel: "#eng-dasher-comms-service-notifications"
+      email_alias: "eng-dasher-comms-platform@doordash.com"
+    }
+    target_products: [DX] /* Full list https://github.com/doordash/services-protobuf/blob/master/protos/doordash.api/common.proto */
+  };
+
+  // UpsertNotifications .. add/update Notifications. Used by internal cadence job
+  rpc UpsertNotifications(UpsertNotificationsRequest) returns (UpsertNotificationsResponse) {}
+
+  // UpdateNotificationStatus .. update existing notification status by notification uuid.
+  // Called by FrontEnd (DxApp).
+  rpc UpdateNotificationStatus(UpdateNotificationStatusRequest) returns (UpdateNotificationStatusResponse) {
+    option (google.api.http) = {
+      post: "/dasher_comms_service/v2/update_notification_status"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // BulkUpdateNotificationStatus .. update existing notification status by notification uuid.
+  // Called by FrontEnd (DxApp).
+  rpc BulkUpdateNotificationStatus(BulkUpdateNotificationStatusRequest) returns (BulkUpdateNotificationStatusResponse) {
+    option (google.api.http) = {
+      post: "/dasher_comms_service/v2/bulk_update_notification_status"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // GetNotificationsByFilter read all Comms by the given filtering criteria
+  rpc GetNotificationsByFilter(GetNotificationsByFilterRequest) returns (GetNotificationsByFilterResponse) {
+    option (google.api.http) = {get: "/dasher_comms_service/v2/get_notifications_by_filter"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "dasher-comms-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "web";
+  }
+
+  // GetUnreadNotificationCountByFilter read just the unread notifications count by the given filtering criteria
+  rpc GetUnreadNotificationCountByFilter(GetUnreadNotificationCountByFilterRequest) returns (GetUnreadNotificationCountByFilterResponse) {
+    option (google.api.http) = {get: "/dasher_comms_service/v2/get_unread_notification_count_by_filter"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+
+  // GetNotificationHistoryEventByNotificationId read the NotificationHistory event by the given notification id
+  rpc GetNotificationHistoryEventByNotificationId(GetNotificationHistoryEventByNotificationIdRequest) returns (GetNotificationHistoryEventByNotificationIdResponse) {}
+
+  //Get display template payload by notification_id
+  rpc GetNotificationById(GetNotificationByIdRequest) returns (GetNotificationByIdResponse) {
+    option (google.api.http) = {get: "/dasher_comms_service/v2/get_notification_by_id"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DX_USER]
+    };
+  }
+}
+
+// request object for BulkUpdateNotificationStatus
+message BulkUpdateNotificationStatusRequest {
+  // list of notifications to update
+  repeated UpdateNotificationStatusRequest update_records = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// response object for BulkUpdateNotificationStatus
+message BulkUpdateNotificationStatusResponse {
+  // number of records that got updated
+  google.protobuf.Int64Value update_count = 1;
+}
+
+// request object for UpdateNotificationStatus
+message UpdateNotificationStatusRequest {
+  // unique id to identify the comms , should be used for logging from frontend.
+  // Frontend should log the read/unread/click/redirect status using this id
+  google.protobuf.StringValue notification_uuid = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // notification status
+  dasher_comms_service.v2.NotificationStatus notification_status = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// response object for UpdateNotificationStatus
+message UpdateNotificationStatusResponse {
+  // number of records that got updated
+  google.protobuf.Int64Value update_count = 1;
+}
+
+// request object for UpsertNotifications
+message UpsertNotificationsRequest {
+  // payload associated with this request
+  repeated UpsertNotification records = 1;
+}
+
+// Payload representing one unique notification for write
+message UpsertNotification {
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // onboarding request associated with this notification
+  google.protobuf.StringValue request_uuid = 2;
+
+  // status of the notifications
+  dasher_comms_service.v2.NotificationStatus notification_status = 3;
+
+  // place holder values used for content hydration
+  map<string, string> place_holder_values = 4;
+
+  // time when this notification will become active
+  google.protobuf.Timestamp activation_time = 5;
+
+  // time when this notification will expire
+  google.protobuf.Timestamp expiration_time = 6;
+
+  // ranking associated with this notification
+  google.protobuf.Int64Value notification_rank = 7;
+
+  // additional params to pass to the redirecting screen_id, optional field
+  map<string, string> screen_id_params = 8;
+}
+
+// response object for UpsertNotifications
+message UpsertNotificationsResponse {
+  // number of records that got upserted
+  google.protobuf.Int64Value upsert_count = 1;
+}
+
+// request payload associated with GetNotificationsByFilter
+message GetNotificationsByFilterRequest {
+  reserved 2;
+  reserved 'channel';
+
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // RequestStatus: status of the request
+  repeated dasher_comms_service.v2.NotificationStatus notification_status = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // RequestStatus: status of the request
+  Locale locale = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // max number of records to return as response, no value results to 10
+  int32 page_size = 5;
+
+  // page_token received in the last response, if empty response will be from the beginning
+  google.protobuf.StringValue page_token = 6;
+
+  // channels associated with this request
+  repeated dasher_comms_service.v2.CommsChannel channels = 7 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// response payload associated with GetNotificationsByFilter
+message GetNotificationsByFilterResponse {
+  // payload associated with this request
+  repeated NotificationResponse notifications = 4;
+
+  // max number of records to return as response, no value results to 10
+  int32 page_size = 2;
+
+  // page_token received in the last response, if empty response will be from the beginning
+  google.protobuf.StringValue page_token = 3;
+
+  // count of notifications with status = 'Unread' or 'Ready'(not delivered, reading for the firs time)
+  google.protobuf.Int64Value unread_count = 5;
+}
+
+// NotificationResponse payload for each notification
+message NotificationResponse {
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // template payload associated with this response
+  dasher_comms_service.v2.TemplatePayload template_payload = 2;
+
+  // notification status
+  dasher_comms_service.v2.NotificationStatus notification_status = 3;
+
+  // The lego page of the notification
+  lego.response.v1.LegoPageResponse lego_page = 4;
+
+  // channel type for this notification
+  dasher_comms_service.v2.CommsChannel channel = 5;
+
+  // additional params to pass to the redirecting screen_id
+  map<string, string> screen_id_params = 6;
+
+  // unique id to identify the comms , should be used for logging from frontend.
+  // Frontend should log the read/unread/click/redirect status using this id
+  google.protobuf.StringValue notification_uuid = 15;
+}
+
+// request payload associated with GetUnreadNotificationCountByFilter
+message GetUnreadNotificationCountByFilterRequest {
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // channel associated with this request
+  dasher_comms_service.v2.CommsChannel channel = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // RequestStatus: status of the request
+  repeated dasher_comms_service.v2.NotificationStatus notification_status = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// response payload associated with GetUnreadNotificationCountByFilter
+message GetUnreadNotificationCountByFilterResponse {
+  // count of notifications with status = 'Unread' or 'Ready'(not delivered, reading for the first time)
+  google.protobuf.Int64Value unread_count = 1;
+}
+
+// request payload associated with GetNotificationHistoryEventByNotificationId
+message GetNotificationHistoryEventByNotificationIdRequest {
+  // unique id to identify the notification
+  google.protobuf.StringValue notification_uuid = 1;
+}
+
+// response payload associated with GetNotificationHistoryEventByNotificationId
+message GetNotificationHistoryEventByNotificationIdResponse {
+  // event associated with the notification_uuid
+  dasher_comms_service.v1.DasherNotificationHistory event = 1;
+}
+
+// Locale supported for communications
+enum Locale {
+  // unspecified locale, default value
+  LOCALE_UNSPECIFIED = 0;
+
+  // english locale
+  LOCALE_EN = 1;
+
+  // english locale
+  LOCALE_EN_AU = 2;
+
+  // english locale
+  LOCALE_EN_CA = 3;
+
+  // english locale
+  LOCALE_EN_NZ = 4;
+
+  // english locale
+  LOCALE_ES = 5;
+
+  // english locale
+  LOCALE_FR_CA = 6;
+}
+
+// request payload associated with GetNotificationById
+message GetNotificationByIdRequest {
+  // unique id to identify the notification
+  google.protobuf.StringValue notification_uuid = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // dasher_id associated with this notification
+  google.protobuf.Int64Value dasher_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // locale is an optional field
+  Locale locale = 3;
+}
+
+// response payload associated with GetNotificationById
+message GetNotificationByIdResponse {
+  // payload associated with this request
+  NotificationResponse notification = 1;
+}

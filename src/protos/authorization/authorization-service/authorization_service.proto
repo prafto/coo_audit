@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package authorization.authorization_service.v2;
+
+import "authorization/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/authorization/authorization_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.authorization";
+
+// Handle authorization requests.
+service AuthorizationService {
+  option (service_client.client_config).service_name = "authorization-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 10;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Evaluates client's authorization request.
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+  // [Internal Use Only] Evaluates all users with access to a given resource.
+  rpc EvaluatePolicyUsers(EvaluatePolicyUsersRequest) returns (EvaluatePolicyUsersResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 60000;
+  }
+}
+
+// Client's authorization request.
+message AuthorizeRequest {
+  // Requester information.
+  Requester requester = 1;
+  // Resource information.
+  Resource resource = 2;
+  // Action to be performed on the resource.
+  authorization.v2.Action action = 3;
+}
+
+// Client's authorization request.
+message EvaluatePolicyUsersRequest {
+  // Resource information.
+  Resource resource = 1;
+  // Action to be performed on the resource.
+  authorization.v2.Action action = 2;
+  // Flag to enable the comparison to the IDS group equivalent. Only supported for legacy permissions.
+  bool compare_to_identity_service = 3;
+}
+
+// Requester information.
+message Requester {
+  // The requester type to which the id belongs.
+  RequesterType type = 1;
+  // The requester id according to the type.
+  string id = 2;
+  // Additional requester attributes that will be used for authorization evaluation.
+  repeated Attribute attributes = 3;
+}
+
+// Resource information.
+message Resource {
+  // The application to which the resource belongs.
+  string application_id = 1;
+  // Attributes that define the requested resource set.
+  repeated Attribute attributes = 2;
+}
+
+// Authorization response.
+message AuthorizeResponse {
+  // Whether the requested access is allowed.
+  google.protobuf.BoolValue allowed = 1;
+}
+
+// Authorization response.
+message EvaluatePolicyUsersResponse {
+  // Total users with access to the resource in Access Management.
+  int32 total_am_users_with_access = 1;
+  // Total users with membership to the IDS group. Only provided if compare_to_identity_service = true
+  int32 total_ids_users_with_access = 2;
+  // A list of user IDs with access to the Access Management resource.
+  repeated string users_with_access_to_am = 3;
+  // A list of user IDs that have access to the Access Management resource but not the IDS group.
+  // Only provided if compare_to_identity_service = true
+  repeated string extra_users_with_access_to_am = 4;
+  // A list of user IDs apart of the IDS group but no access to the Access Management resource.
+  // Only provided if compare_to_identity_service = true
+  repeated string users_missing_access_from_am = 5;
+}
+
+// Key-value pair to represent additional requester or resource attributes.
+message Attribute {
+  // The attribute key.
+  string key = 1;
+  // The attribute value.
+  string value = 2;
+}
+
+// The requester type.
+enum RequesterType {
+  // An unspecified requester type. Do not use.
+  REQUESTER_TYPE_UNSPECIFIED = 0;
+  // The requester is a DD user.
+  REQUESTER_TYPE_DD_USER = 1;
+  // The requester is a DD service.
+  REQUESTER_TYPE_DD_SERVICE = 2;
+}

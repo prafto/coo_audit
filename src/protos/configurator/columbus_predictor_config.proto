@@ -1,0 +1,163 @@
+syntax = "proto3";
+package configurator;
+
+import "configurator/common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.configurator.api";
+
+enum PredictorConfigChangeStatusCode {
+  // Pending review
+  PENDING = 0;
+  // Change request passes tests
+  VERIFIED = 1;
+  // Change request submitted
+  SUBMITTED = 2;
+  // When review is rejected
+  REJECTED = 3;
+  // When PR is closed (only updated when done via ML portal)
+  CLOSED = 4;
+  // When PR is just created (only updated when done via ML portal)
+  QUEUED = 5;
+}
+
+// Proto for table schema
+message PredictorConfigChangeSpec {
+  // Name of the predictor
+  string predictor_name = 1;
+  // environment, ex "staging" or "prod"
+  string environment = 2;
+  // config used in this change
+  PredictorConfig predictor_config = 3;
+  // whether this change is submitted
+  PredictorConfigChangeStatusCode code = 4;
+  // pull request  used for change
+  string pr_url = 5;
+  // change requested by user
+  string owner = 6;
+  // timestamp of last change to pr
+  int64 last_updated_ts = 7;
+}
+
+message PredictorConfigsGetRequest {
+  repeated string predictor_names = 1;
+  string environment = 2;
+  string shard = 3;
+}
+
+message PredictorConfigsGetResponse {
+  repeated PredictorConfig predictor_configs = 1;
+  StatusCode code = 2;
+}
+
+message PredictorConfigChangeSpecGetRequest {
+  repeated string predictor_names = 1;
+  string environment = 2;
+}
+
+message PredictorConfigChangeSpecGetResponse {
+  repeated PredictorConfigChangeSpec change_specs = 1;
+}
+
+message PredictorConfigChangeSpecUpsertRequest {
+  PredictorConfigChangeSpec change_spec = 1;
+  bool dry = 2;
+}
+
+message PredictorConfigUpsertRequest {
+  PredictorConfig predictor_config = 1;
+  string environment = 2;
+  bool dry = 3;
+}
+
+message PredictorConfigDeleteRequest {
+  string predictor_name = 1;
+  string environment = 2;
+  bool dry = 3;
+}
+
+// Proto for table schema
+message PredictorConfigSpec {
+  string predictor_name = 1;
+  // environment, ex "staging" or "prod"
+  string environment = 2;
+  PredictorConfig config = 3;
+}
+
+message PredictorConfig {
+  // Name of the predictor
+  string predictor_name = 1;
+  // Fallback model id if none specified in the request
+  string default_model_id = 2;
+  // Team/person
+  string predictor_owner = 3;
+  // Fraction of predictions to be logged to snowflake
+  float logging_fraction = 4;
+  // Determines snowflake table where predictions will be logged
+  string iguazu_topic = 5;
+  // [Optional] Whether to log which features used fallback values
+  bool log_default_values = 6;
+  // [Optional] For composite models, fraction of predictions that will log intermediate steps of computation
+  float intermediate_features_log_fraction = 7;
+  // Shadow model configs
+  repeated ShadowModelConfig shadow_model_configs = 8;
+  // [Optional] config for logging by entityIDs instead of random logging
+  EntityLoggingConfig entity_logging = 9;
+  // [Optional] Which shards should the predictor be made available in?
+  repeated string shards = 10;
+  // [Optional] whether this model should not be completely rolled out in production
+  bool canary_only = 11;
+  // [Optional] Use the latest model
+  bool continuously_trained = 12;
+  // [Optional] Shadow the latest model
+  bool continuously_trained_shadow = 13;
+  // [Optional] Name of the Prediction Engine
+  string engine_name = 14;
+  // [Optional] Same-prefix continuously trained model list
+  repeated string continuously_trained_with_same_prefix = 15;
+  // Latest model Id for continuously trained model
+  string model_id_resolved = 16;
+  // [Optional]offline model performances evaluation method
+  repeated MetricEvaluation metric_evaluation = 17;
+  // timestamp of deployment list
+  repeated int64 last_deployment_ts = 18;
+}
+
+message MetricEvaluation {
+  string metric_name = 1;
+  string evaluation_method = 2;
+  float evaluation_threshold = 3;
+}
+
+message ShadowModelConfig {
+  string model_id = 1;
+  // fraction of predictions of the requested model that should be shadowed to this model
+  float shadow_fraction = 2;
+  float logging_fraction = 3;
+  float intermediate_features_log_fraction = 4;
+  // whether this model should not be completely rolled out in production
+  bool canary_only = 5;
+  bool continuously_trained = 6;
+  // Latest model Id for continuously trained model
+  string model_id_resolved = 7;
+  // [Optional]offline model performances evaluation method
+  repeated MetricEvaluation metric_evaluation = 9;
+  // timestamp of deployment list
+  repeated int64 last_deployment_ts = 10;
+}
+
+message EntityLoggingConfig {
+  // sample predictions by `entity_name`
+  // For example when logging_fraction=0.1 and entity_name=store_id
+  // 10% of store_ids will be hashed always if they are present in a request
+  string entity_name = 1;
+
+  // Allow list to always log predictions certain entities are present
+  repeated EntityId allow_list = 2;
+}
+
+message EntityId {
+  string entity_name = 1;
+  string id_value = 2;
+  int32 seq_index = 3;
+}

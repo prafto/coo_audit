@@ -1,0 +1,249 @@
+syntax = "proto3";
+
+package authorization.authorization_management_service.v2;
+
+import "authorization/authorization-management-service/authorization_management.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/authorization/authorization_management_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.authorization";
+
+// Manage Applications within the Authorization Platform
+service ApplicationService {
+  // Setup this service to be exposed via Unified Gateway.
+  option (doordash.api.service) = {
+    name: "authorization-management-application-service"
+    url: "authorization-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "authorization",
+      "authorization-management",
+      "access-management"
+    ]
+    owner: {
+      name: "identity-platform"
+      id: "identity-platform-team"
+      slack_channel: "#ask-access-management"
+      email_alias: "identity-platform@doordash.com"
+    }
+    api_key_name: "AUTHORIZATION-MANAGEMENT-SERVICE-API-KEY"
+    target_products: [INTERNAL]
+  };
+
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "authorization-management-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // Create a new Application. The requester becomes the default admin.
+  rpc CreateApplication(CreateApplicationRequest) returns (CreateApplicationResponse) {
+    option (google.api.http) = {
+      post: "/authorization-management/v1/application"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Update an existing Application in the access management platform. Only admins can call this endpoint.
+  rpc UpdateApplication(UpdateApplicationRequest) returns (UpdateApplicationResponse) {
+    option (google.api.http) = {
+      patch: "/authorization-management/v1/application"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Gets an Application registered in the access management platform with their basic information.
+  rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse) {
+    option (google.api.http) = {get: "/authorization-management/v1/application/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // List all Applications accessible to the requesting user
+  rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse) {
+    option (google.api.http) = {get: "/authorization-management/v1/applications"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"] /* Only DD internal users can call this API. */
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Soft delete an Application. This endpoint is only accessible to Application admins.
+  rpc DisableApplication(DisableApplicationRequest) returns (DisableApplicationResponse) {
+    option (google.api.http) = {delete: "/authorization-management/v1/application/{id}"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"] /* Only DD internal users can call this API. */
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get a list of all changes made to an Application, including creating/updating user sets, resource sets,
+  // policies, and policy approvals.
+  rpc QueryApplicationHistory(QueryApplicationHistoryRequest) returns (QueryApplicationHistoryResponse) {
+    option (google.api.http) = {get: "/authorization-management/v1/application/{id}/history"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"] /* Only DD internal users can call this API. */
+      }
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Create a new Application in the access management platform.
+message CreateApplicationRequest {
+  // Name is unique to the Application
+  string name = 1;
+  // [Optional] The description of the app.
+  google.protobuf.StringValue description = 2 [(doordash.api.client.optional) = true];
+  // list of user types that will access the application
+  repeated UserType user_types = 3;
+  // DDRN of the application
+  string id = 4;
+  // The support Slack channel for the Application
+  string support_channel = 5;
+}
+
+// The created Application
+message CreateApplicationResponse {
+  // The created Application
+  Application application = 1;
+}
+
+// Update an existing Application in the access management platform.
+message UpdateApplicationRequest {
+  reserved 5;
+  reserved "admin_user_ids";
+  // The Application to update.
+  string id = 1;
+  // [Optional] The updated name for the Application
+  google.protobuf.StringValue name = 3 [(doordash.api.client.optional) = true];
+  // [Optional] The updated description for the Application
+  google.protobuf.StringValue description = 4 [(doordash.api.client.optional) = true];
+  // [Optional] The updated admin user IDs for the Application
+  repeated string admin_users = 6 [(doordash.api.client.optional) = true];
+  // [Optional] The updated support Slack channel for the Application
+  google.protobuf.StringValue support_channel = 7 [(doordash.api.client.optional) = true];
+}
+
+// Responds with the updated app.
+message UpdateApplicationResponse {
+  // The updated Application
+  Application application = 1;
+}
+
+// Get a specific Application
+message GetApplicationRequest {
+  // Target Application ID
+  string id = 1;
+}
+
+// Responds a target Application
+message GetApplicationResponse {
+  // Target Application
+  Application application = 1;
+}
+
+// List all Applications accessible to the requesting user
+message ListApplicationsRequest {
+  // The minimum created_at time to filter the applications
+  google.protobuf.Timestamp created_at_from = 1 [(doordash.api.client.optional) = true];
+  // The page size for the list of applications
+  google.protobuf.Int64Value page_size = 2;
+}
+
+// List of Applications accessible to the requesting user
+message ListApplicationsResponse {
+  // List of Applications accessible to the requesting user
+  repeated Application applications = 1;
+}
+
+// Soft delete an Application. This endpoint is only accessible to Application admins.
+message DisableApplicationRequest {
+  // Target Application ID
+  string id = 1;
+}
+
+// Success is determined by the response code.
+message DisableApplicationResponse {}
+
+// Get a list of all changes made to an Application, including creating/updating user sets, resource sets,
+message QueryApplicationHistoryRequest {
+  // The Application to get history for.
+  string id = 1;
+  // The minimum created_at time to filter the application history
+  google.protobuf.Timestamp created_at_from = 2 [(doordash.api.client.optional) = true];
+  // The page size for the list of application history
+  google.protobuf.Int64Value page_size = 3 [(doordash.api.client.optional) = true];
+  // The entity filter
+  repeated EntityType entity_filters = 4 [(doordash.api.client.optional) = true];
+  // The Operation filter
+  repeated OperationType operation_filters = 5 [(doordash.api.client.optional) = true];
+  // The entity ID filter (should be combined with the 'entity_filters').
+  string entity_id = 6 [(doordash.api.client.optional) = true];
+}
+
+// Responds with a list of history events for the given Application.
+message QueryApplicationHistoryResponse {
+  // A list of history events for the given Application.
+  repeated AuthorizationHistoryEvent events = 1;
+}

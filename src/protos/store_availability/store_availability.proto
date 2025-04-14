@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+package storeavailability;
+
+import "common/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "StoreAvailabilityProto";
+option java_package = "com.doordash.merchantdataservice.storeavailability.protobuf";
+option objc_class_prefix = "SA";
+
+service StoreAvailabilityService {
+  rpc GetStoreAvailabilityStream(stream StoreAvailabilityRequest) returns (stream StoreAvailabilityResponse);
+  rpc GetStoreAvailability(StoreAvailabilityRequest) returns (StoreAvailabilityResponse);
+
+  // Get all store status by store id
+  rpc GetStoreStatusByStoreIds(GetStoreStatusByStoreIdsRequest) returns (GetStoreStatusByStoreIdsResponse);
+
+  // Get service hours
+  rpc GetStoreServiceHours(StoreServiceHoursRequest) returns (StoreServiceHoursResponse);
+}
+
+message StoreServiceHoursRequest {
+  // Store id as String
+  string store_id = 1;
+  // Experience that we check store service hours for
+  common.Experience experience = 2;
+}
+
+message StoreServiceHoursResponse {
+  string store_id = 1;
+  // Holds regular store hours
+  repeated StoreHours regular_hours = 2;
+  // Holds special store hours
+  repeated StoreSpecialHours special_hours = 3;
+}
+
+// Holds service hours for every day
+message StoreHours {
+  ServiceHours monday = 1;
+  ServiceHours tuesday = 2;
+  ServiceHours wednesday = 3;
+  ServiceHours thursday = 4;
+  ServiceHours friday = 5;
+  ServiceHours saturday = 6;
+  ServiceHours sunday = 7;
+}
+
+message StoreSpecialHours {
+  // date format: yyyy-mm-dd
+  // Special hours for a specific day
+  string date = 1;
+  // store hours by specific time windows
+  ServiceHours hours = 2;
+}
+
+message ServiceHours {
+  bool closed = 1;
+  // Service hours for asap pick up window
+  repeated Interval asap_pickup = 2;
+  // Service hours for asap delivery window
+  repeated Interval asap_delivery = 3;
+  // Service hours for schedule pick up window
+  repeated Interval scheduled_pickup = 4;
+  // Service hours for schedule delivery window
+  repeated Interval scheduled_delivery = 5;
+}
+
+message Interval {
+  // number of seconds since the beginning of the day
+  // e.g. 3600 means 1am.
+  int32 start = 1;
+  int32 end = 2;
+}
+
+enum OrderType {
+  UNKNOWN_TYPE = 0;
+  ASAP_PICKUP = 1;
+  ASAP_DELIVERY = 2;
+  SCHEDULED_PICKUP = 3;
+  SCHEDULED_DELIVERY = 4;
+}
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+}
+
+message StoreAvailabilityRequest {
+  string storeId = 1;
+  // Whether detailed menu hours will be included in response or not
+  bool includeMenuSpecific = 2;
+  OrderType orderType = 3;
+  // Optional, default to current time
+  google.protobuf.Timestamp scheduledTime = 4;
+  // if this value is set to true, will read data from DB and by pass, target for caller who cares accuracy than latency
+  bool disableCache = 5;
+  // number of days requested
+  int32 numDays = 6;
+  // Optional, used to custom store availability for different fulfillment types
+  common.FulfillmentType fulfillmentType = 7;
+  // Experience that we will check store availability for
+  common.Experience experience = 8;
+}
+
+enum ReasonKey {
+  UNKNOWN_KEY = 0;
+  STORE_INACTIVE = 1;
+  TEMPORARILY_CLOSED = 2;
+}
+
+message TimeInterval {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+message Hours {
+  repeated TimeInterval hours = 1;
+}
+
+message StoreAvailabilityInfo {
+  bool isDeactivated = 1;
+  repeated ReasonKey deactivatedReasons = 2;
+  // list of open hours at store level
+  Hours storeHours = 3;
+  // map from menuId to list of open hours at menu level
+  map<string, Hours> menuHoursMap = 4;
+  string storeId = 5;
+}
+
+message StoreAvailabilityResponse {
+  Error error = 1;
+  StoreAvailabilityInfo storeAvailabilityInfo = 2;
+}
+
+message GetStoreStatusByStoreIdsRequest {
+  repeated string store_id = 1;
+  common.Experience experience = 2;
+}
+
+message GetStoreStatusByStoreIdsResponse {
+  map<string, StoreStatus> store_status = 1;
+}
+
+message StoreStatus {
+  string store_id = 1;
+  StoreIsOpen store_is_open = 2;
+  repeated StoreIsClosed store_is_closed = 3;
+  repeated StoreIsInactive store_is_inactive = 4;
+  repeated StoreIsPaused store_is_paused = 5;
+  repeated StoreIsDeactivated store_is_deactivated = 6;
+}
+
+message StoreIsOpen {
+  string reason = 1;
+
+  // timestamp of next close
+  int64 next_close = 2;
+
+  repeated string details = 3;
+
+  //time (second) to keep close. If next_close is 0, check this value.
+  int64 keep_open = 4;
+}
+
+message StoreIsClosed {
+  // store status sub_reason
+  string reason = 1;
+
+  // timestamp of next open
+  int64 next_open = 2;
+
+  // time (second) to keep close. If next open is 0, check this value.
+  int64 keep_closed = 3;
+
+  // details
+  repeated StoreStatusReasonDetails details = 4;
+}
+
+message StoreIsInactive {
+  // store status sub_reason
+  string reason = 1;
+
+  repeated StoreStatusReasonDetails details = 2;
+}
+
+message StoreIsPaused {
+  // store status sub_reason
+  string reason = 1;
+
+  int64 pauseEndTime = 2;
+
+  repeated StoreStatusReasonDetails details = 3;
+}
+
+message StoreIsDeactivated {
+  // store status sub_reason
+  string reason = 1;
+
+  int64 deactivationEndTime = 2;
+
+  repeated StoreStatusReasonDetails details = 3;
+}
+
+message StoreStatusReasonDetails {
+  // payload only has one of the following attributes
+  oneof payload {
+    string details = 1;
+    StoreDeactivation store_temporary_deactivation = 2;
+    StoreDeactivation store_permanent_deactivation = 3;
+  }
+}
+
+message StoreDeactivation {
+  string id = 1;
+  string reason = 2;
+  string notes = 3;
+  int64 created_at = 4;
+  int64 end_time = 5;
+  string created_by_id = 6;
+  common.Experience experience = 7;
+}

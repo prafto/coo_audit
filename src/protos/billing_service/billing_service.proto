@@ -1,0 +1,715 @@
+syntax = "proto3";
+
+package doordash.billing_service.v1;
+
+import "billing_service/common.proto";
+import "billing_service/invoice.proto";
+import "billing_service/subscription.proto";
+import "billing_service/subscription_invoice.proto";
+import "billing_service/subscription_plan.proto";
+import "billing_service/subscription_schedule.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+import "payin/payer_v1.proto";
+import "payment/payin_payer.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.billing_service.v1";
+
+// recurring billing service
+service BillingService {
+  option (service_client.client_config).service_name = "billing-service";
+  option (service_client.client_config).service_app = "web";
+
+  // create a subscription
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse);
+
+  // update a subscription
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (UpdateSubscriptionResponse);
+
+  // cancel a subscription
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+
+  // get a subscription
+  rpc GetSubscription(GetSubscriptionRequest) returns (GetSubscriptionResponse);
+
+  // create a subscription plan
+  rpc CreateSubscriptionPlan(CreateSubscriptionPlanRequest) returns (CreateSubscriptionPlanResponse);
+
+  // get a subscription plan
+  rpc GetSubscriptionPlan(GetSubscriptionPlanRequest) returns (GetSubscriptionPlanResponse);
+
+  // delete a subscription plan
+  rpc DeleteSubscriptionPlan(DeleteSubscriptionPlanRequest) returns (DeleteSubscriptionPlanResponse);
+
+  // pay subscription invoice
+  rpc PaySubscriptionInvoice(PaySubscriptionInvoiceRequest) returns (PaySubscriptionInvoiceResponse);
+
+  // list all subscription invoices
+  rpc ListSubscriptionInvoice(ListSubscriptionInvoiceRequest) returns (ListSubscriptionInvoiceResponse);
+
+  // update a subscription default payment method by reference id.
+  rpc UpdateSubscriptionDefaultPaymentMethod(UpdateSubscriptionDefaultPaymentMethodRequest) returns (UpdateSubscriptionDefaultPaymentMethodResponse);
+
+  // run ad-hoc script for data cleanup after
+  rpc RunScript(RunScriptRequest) returns (RunScriptResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 86400000; // 1 day in milliseconds since the script run can be really long
+  }
+
+  // migrate an existing subscription
+  rpc MigrateSubscription(MigrateSubscriptionRequest) returns (MigrateSubscriptionResponse);
+
+  // create a subscription invoice item
+  rpc CreateSubscriptionInvoiceItem(CreateSubscriptionInvoiceItemRequest) returns (CreateSubscriptionInvoiceItemResponse);
+
+  // create a subscription schedule
+  rpc CreateSubscriptionSchedule(CreateSubscriptionScheduleRequest) returns (CreateSubscriptionScheduleResponse);
+
+  // update a subscription schedule
+  rpc UpdateSubscriptionSchedule(UpdateSubscriptionScheduleRequest) returns (UpdateSubscriptionScheduleResponse);
+
+  // create an invoice
+  rpc CreateInvoice(CreateInvoiceRequest) returns (CreateInvoiceResponse);
+
+  // get an invoice
+  rpc GetInvoice(GetInvoiceRequest) returns (GetInvoiceResponse);
+
+  // update an invoice
+  rpc UpdateInvoice(UpdateInvoiceRequest) returns (UpdateInvoiceResponse);
+
+  // void an invoice
+  rpc VoidInvoice(VoidInvoiceRequest) returns (VoidInvoiceResponse);
+
+  // refund an invoice
+  rpc RefundInvoice(RefundInvoiceRequest) returns (RefundInvoiceResponse);
+}
+
+// create subscription invoice item request
+// create subscription invoice item request
+message CreateSubscriptionInvoiceItemRequest {
+  // ONE OF THE FOLLOWING FIELDS MUST BE PROVIDED (can't use oneof due to backward compatibility)
+  // IN-HOUSE BILLING subscription invoice id -- UUID
+  google.protobuf.StringValue subscription_invoice_id = 1;
+
+  // IN-HOUSE BILLING OR STRIPE BILLING pgp subscription invoice resource id -- UUID or String ("in_*")
+  google.protobuf.StringValue pgp_subscription_invoice_resource_id = 8;
+
+  // payer id
+  google.protobuf.StringValue payer_id = 2;
+
+  // payer correlation id
+  doordash.payment.payin.PayerCorrelationIds payer_correlation_ids = 3;
+
+  // amount
+  google.protobuf.Int32Value amount = 4;
+
+  // currency
+  doordash.payin.common.v1.Currency currency = 5;
+
+  // identifier (ex. "dashpass_tax")
+  google.protobuf.StringValue identifier = 6;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 7;
+
+  // subscription plan
+  oneof subscription_plan {
+    // subscription plan id
+    google.protobuf.StringValue subscription_plan_id = 9;
+
+    // subscription plan correlation ids (reference id and type)
+    SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 10;
+  }
+  // payment method
+  oneof payment_method {
+    // payment method id
+    google.protobuf.StringValue payment_method_id = 11;
+
+    // payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds payment_method_correlation_ids = 12;
+  }
+}
+
+// create subscription invoice item response
+message CreateSubscriptionInvoiceItemResponse {
+  // subscription invoice item
+  SubscriptionInvoiceItem subscription_invoice_item = 1;
+}
+
+// payment method correlation ids (reference id and type)
+message PaymentMethodCorrelationIds {
+  // payment method reference id
+  google.protobuf.StringValue payment_method_reference_id = 1;
+
+  // payment method reference id type
+  google.protobuf.StringValue payment_method_reference_id_type = 2;
+}
+
+// create subscription request
+message CreateSubscriptionRequest {
+  reserved 9;
+  reserved "dd_consumer_subscription_id";
+
+  // subscription plan
+  oneof subscription_plan {
+    // subscription plan id
+    google.protobuf.StringValue subscription_plan_id = 1;
+
+    // subscription plan correlation ids (reference id and type)
+    SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 2;
+  }
+
+  // payer
+  oneof payer {
+    // payer id
+    google.protobuf.StringValue payer_id = 3;
+
+    // payer correlation ids (reference id and type)
+    doordash.payment.payin.PayerCorrelationIds payer_correlation_ids = 4;
+  }
+
+  // default payment method
+  oneof default_payment_method {
+    // default payment method id
+    google.protobuf.StringValue default_payment_method_id = 5;
+
+    // default payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds default_payment_method_correlation_ids = 6;
+  }
+
+  // trial days, if not specified, will use the trial days from the subscription plan
+  google.protobuf.Int32Value trial_period_days = 7;
+
+  // external subscription correlation ids (reference id and type)
+  SubscriptionCorrelationIds subscription_correlation_ids = 8;
+
+  // legacy maindb consumer subscription plan trial id
+  google.protobuf.Int64Value dd_consumer_subscription_plan_trial_id = 10;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 11;
+
+  // indicate if subscription will be canceled at period end
+  google.protobuf.BoolValue cancel_at_period_end = 12;
+}
+
+// create subscription response
+message CreateSubscriptionResponse {
+  // subscription object
+  Subscription subscription = 1;
+}
+
+// update subscription request
+message UpdateSubscriptionRequest {
+  // subscription
+  oneof subscription {
+    // subscription id
+    google.protobuf.StringValue subscription_id = 1;
+
+    // subscription correlation ids (reference id and type)
+    SubscriptionCorrelationIds subscription_correlation_ids = 2;
+  }
+
+  // default payment method
+  oneof default_payment_method {
+    // default payment method id to be updated
+    google.protobuf.StringValue default_payment_method_id = 3;
+
+    // default payment method correlation ids (reference id and type) to be updated
+    PaymentMethodCorrelationIds default_payment_method_correlation_ids = 4;
+  }
+
+  // cancel subscription at period end
+  google.protobuf.BoolValue cancel_at_period_end = 5;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 6;
+}
+
+// update subscription response
+message UpdateSubscriptionResponse {
+  // subscription object
+  Subscription subscription = 1;
+}
+
+// cancel subscription request
+message CancelSubscriptionRequest {
+  // subscription
+  oneof subscription {
+    // subscription id
+    google.protobuf.StringValue subscription_id = 1;
+
+    // subscription correlation ids (reference id and type)
+    SubscriptionCorrelationIds subscription_correlation_ids = 2;
+  }
+}
+
+// cancel subscription response
+message CancelSubscriptionResponse {
+  // subscription object
+  Subscription subscription = 1;
+}
+
+// get subscription request
+message GetSubscriptionRequest {
+  // subscription
+  oneof subscription {
+    // subscription id
+    google.protobuf.StringValue subscription_id = 1;
+
+    // subscription correlation ids (reference id and type)
+    SubscriptionCorrelationIds subscription_correlation_ids = 2;
+  }
+}
+
+// get subscription response
+message GetSubscriptionResponse {
+  // subscription object
+  Subscription subscription = 1;
+
+  // subscription schedule (if attached)
+  SubscriptionSchedule schedule = 2;
+}
+
+// create subscription plan request
+message CreateSubscriptionPlanRequest {
+  // country
+  doordash.payin.common.v1.Country country = 1;
+
+  // fee
+  google.protobuf.Int64Value fee = 2;
+
+  // currency
+  doordash.payin.common.v1.Currency currency = 3;
+
+  // subscription recurrence interval type
+  SubscriptionPlanIntervalType recurrence_interval_type = 4;
+
+  // recurrence interval units
+  google.protobuf.Int64Value recurrence_interval_units = 5;
+
+  // trial period days
+  google.protobuf.Int64Value trial_period_days = 6;
+
+  // subscription plan correlation ids
+  SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 7;
+
+  // product detail
+  SubscriptionPlanProductDetail product_detail = 8;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 9;
+}
+
+// create subscription plan response
+message CreateSubscriptionPlanResponse {
+  // subscription plan object
+  SubscriptionPlan subscription_plan = 1;
+}
+
+// get subscription plan request
+message GetSubscriptionPlanRequest {
+  // subscription plan
+  oneof subscription_plan {
+    // subscription plan id
+    google.protobuf.StringValue subscription_plan_id = 1;
+    // subscription plan correlation ids (reference id and type)
+    SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 2;
+  }
+}
+
+// get subscription plan response
+message GetSubscriptionPlanResponse {
+  // subscription plan object
+  SubscriptionPlan subscription_plan = 1;
+}
+
+// delete subscription plan request
+message DeleteSubscriptionPlanRequest {
+  // subscription plan
+  oneof subscription_plan {
+    // subscription plan id
+    google.protobuf.StringValue subscription_plan_id = 1;
+    // subscription plan correlation ids (reference id and type)
+    SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 2;
+  }
+}
+
+// delete subscription plan response
+message DeleteSubscriptionPlanResponse {
+  // subscription plan object
+  SubscriptionPlan subscription_plan = 1;
+}
+
+// pay subscription invoice request
+message PaySubscriptionInvoiceRequest {
+  // subscription invoice id
+  google.protobuf.StringValue subscription_invoice_id = 1;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 2;
+
+  // payment method
+  oneof payment_method {
+    // payment method id
+    google.protobuf.StringValue payment_method_id = 3;
+
+    // payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds payment_method_correlation_ids = 4;
+  }
+
+  // legacy consumer subscription id
+  google.protobuf.Int64Value dd_consumer_subscription_unit_id = 5;
+}
+
+// pay subscription invoice response
+message PaySubscriptionInvoiceResponse {
+  // subscription invoice
+  SubscriptionInvoice subscription_invoice = 1;
+}
+
+// list subscription invoice request
+message ListSubscriptionInvoiceRequest {
+  // subscription
+  oneof subscription {
+    // subscription id
+    google.protobuf.StringValue subscription_id = 1;
+
+    // subscription correlation ids (reference id and type)
+    SubscriptionCorrelationIds subscription_correlation_ids = 2;
+  }
+
+  // paid only
+  google.protobuf.BoolValue paid_only = 3;
+
+  //pagination cursor
+  google.protobuf.StringValue cursor = 4;
+
+  //pagination limit
+  google.protobuf.Int64Value limit = 5;
+}
+
+// list subscription invoice response
+message ListSubscriptionInvoiceResponse {
+  // subscription invoice list
+  SubscriptionInvoiceList subscription_invoice_list = 1;
+}
+
+// update subscription default payment method request
+message UpdateSubscriptionDefaultPaymentMethodRequest {
+  // Client reference Id of the payer who owns this payment method.
+  // Used in combination of payer_reference_id_type
+  google.protobuf.StringValue payer_reference_id = 1;
+
+  // Type of payer_reference_id
+  doordash.payin.common.v1.PayerReferenceIdType payer_reference_id_type = 2;
+
+  // country
+  doordash.payin.common.v1.Country country = 3;
+
+  // default payment method
+  oneof default_payment_method {
+    // default payment method id
+    google.protobuf.StringValue default_payment_method_id = 4;
+
+    // default payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds default_payment_method_correlation_ids = 5;
+  }
+}
+
+// update subscription default payment method response
+message UpdateSubscriptionDefaultPaymentMethodResponse {
+  // payer
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// run script request
+message RunScriptRequest {
+  // the script name of the run
+  google.protobuf.StringValue script_name = 1;
+  // the script arguments in json string format
+  google.protobuf.StringValue json_args = 2;
+}
+
+// run script response
+message RunScriptResponse {
+  // the response data string that returned from script
+  google.protobuf.StringValue data = 1;
+}
+
+// migrate subscription request
+message MigrateSubscriptionRequest {
+  // subscription id
+  google.protobuf.StringValue subscription_id = 1;
+}
+
+// migrate subscription response
+message MigrateSubscriptionResponse {
+  // subscription object
+  Subscription subscription = 1;
+}
+
+// create subscription schedule request
+message CreateSubscriptionScheduleRequest {
+  // id of subscription to add schedule to
+  oneof from_subscription {
+    // subscription id
+    google.protobuf.StringValue from_subscription_id = 1;
+
+    // subscription correlation ids
+    SubscriptionCorrelationIds from_subscription_correlation_ids = 2;
+  }
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 3;
+}
+
+// specifies whether phase should start at timestamp or immediately
+enum SubscriptionScheduleFirstPhaseStartType {
+  // unspecified
+  SUBSCRIPTION_SCHEDULE_FIRST_PHASE_START_TYPE_UNSPECIFIED = 0;
+
+  // start at time in timestamp
+  SUBSCRIPTION_SCHEDULE_FIRST_PHASE_START_TYPE_TIMESTAMP = 1;
+
+  // start immediately
+  SUBSCRIPTION_SCHEDULE_FIRST_PHASE_START_TYPE_NOW = 2;
+}
+
+// create subscription schedule response
+message CreateSubscriptionScheduleResponse {
+  // schedule
+  SubscriptionSchedule subscription_schedule = 1;
+  // subscription
+  Subscription subscription = 2;
+}
+
+// update subscription schedule request
+message UpdateSubscriptionScheduleRequest {
+  // subscription schedule id
+  google.protobuf.StringValue subscription_schedule_id = 1;
+
+  // phases in order of execution (phases that have already ended can be omitted)
+  repeated UpdateSubscriptionSchedulePhaseRequest phases = 2;
+
+  // idempotency key
+  google.protobuf.StringValue idempotency_key = 3;
+
+  // first phase start type
+  SubscriptionScheduleFirstPhaseStartType first_phase_start_type = 4;
+
+  // if start type is timestamp, specifies time in future to start phase
+  google.protobuf.Timestamp first_phase_start_time = 5;
+}
+
+// update subscription schedule phase request
+message UpdateSubscriptionSchedulePhaseRequest {
+  // how long the phase will last
+  oneof duration {
+    // End date of the phase
+    google.protobuf.Timestamp end_date = 1;
+
+    // Number of billing cycles to apply phase to, will be converted to timestamp
+    google.protobuf.Int32Value iterations = 2;
+  }
+
+  // phase type (trial period, billing period, etc.)
+  SubscriptionSchedulePhaseType phase_type = 3;
+
+  // if phase type is billed, the plan to apply to subscription
+  oneof subscription_plan {
+    // subscription plan id
+    google.protobuf.StringValue subscription_plan_id = 4;
+
+    // subscription plan correlation ids
+    SubscriptionPlanCorrelationIds subscription_plan_correlation_ids = 5;
+  }
+  // if phase type is billed, the amount to charge
+  google.protobuf.Int32Value plan_fee = 6;
+}
+
+// update subscription schedule response
+message UpdateSubscriptionScheduleResponse {
+  // schedule
+  SubscriptionSchedule subscription_schedule = 1;
+  // subscription
+  Subscription subscription = 2;
+}
+
+// create invoice request
+message CreateInvoiceRequest {
+  // payer
+  oneof payer {
+    // payer id
+    google.protobuf.StringValue payer_id = 1;
+
+    // payer correlation ids (reference id and type)
+    doordash.payment.payin.PayerCorrelationIds payer_correlation_ids = 2;
+  }
+
+  // default payment method
+  oneof default_payment_method {
+    // default payment method id
+    google.protobuf.StringValue default_payment_method_id = 3;
+
+    // default payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds default_payment_method_correlation_ids = 4;
+  }
+
+  // Invoice correlation ids (reference id and type)
+  InvoiceCorrelationIds invoice_correlation_ids = 5;
+
+  // Currency of the invoice amount
+  doordash.payin.common.v1.Currency currency = 6;
+
+  // Country to search for payment methods within and to use for tax calculations.  If omitted, the payer's country will be used for these purposes.
+  doordash.payin.common.v1.Country country = 7;
+
+  // Total amount to be charged
+  int32 amount = 8;
+
+  // Description for customer's bank statement
+  string statement_descriptor = 9;
+
+  // Idempotency key
+  string idempotency_key = 10;
+
+  // client callback token
+  google.protobuf.StringValue callback_token = 11;
+
+  // Maximum number of attempts
+  google.protobuf.Int32Value max_attempts = 12;
+
+  // Attempt until this timestamp is exceeded
+  google.protobuf.Timestamp attempt_until = 13;
+
+  // Type of tax to collect by billing address.  If omitted, no taxes will be collected.
+  InvoiceTaxType tax_type = 14;
+}
+
+// create invoice response
+message CreateInvoiceResponse {
+  // invoice object
+  Invoice invoice = 1;
+}
+
+// get invoice request
+message GetInvoiceRequest {
+  // invoice
+  oneof invoice {
+    // invoice id
+    google.protobuf.StringValue invoice_id = 1;
+
+    // invoice correlation ids (reference id and type)
+    InvoiceCorrelationIds invoice_correlation_ids = 2;
+  }
+}
+
+// get invoice response
+message GetInvoiceResponse {
+  // invoice
+  Invoice invoice = 1;
+}
+
+// update invoice request
+message UpdateInvoiceRequest {
+  // invoice
+  oneof invoice {
+    // invoice id
+    google.protobuf.StringValue invoice_id = 1;
+
+    // invoice correlation ids (reference id and type)
+    InvoiceCorrelationIds invoice_correlation_ids = 2;
+  }
+
+  // default payment method
+  oneof default_payment_method {
+    // default payment method id to be updated
+    google.protobuf.StringValue default_payment_method_id = 3;
+
+    // default payment method correlation ids (reference id and type) to be updated
+    PaymentMethodCorrelationIds default_payment_method_correlation_ids = 4;
+  }
+
+  // idempotency key
+  string idempotency_key = 5;
+}
+
+// update invoice response
+message UpdateInvoiceResponse {
+  // invoice object
+  Invoice invoice = 1;
+}
+
+// void invoice request
+message VoidInvoiceRequest {
+  // invoice
+  oneof invoice {
+    // invoice id
+    google.protobuf.StringValue invoice_id = 1;
+
+    // invoice correlation ids (reference id and type)
+    InvoiceCorrelationIds invoice_correlation_ids = 2;
+  }
+}
+
+// void invoice response
+message VoidInvoiceResponse {
+  reserved 1;
+  reserved "invoice";
+
+  // workflow run id
+  string request_id = 2;
+}
+
+// pay invoice request
+message PayInvoiceRequest {
+  // invoice correlation ids (reference id and type)
+  InvoiceCorrelationIds invoice_correlation_ids = 1;
+
+  // idempotency key
+  string idempotency_key = 2;
+
+  // payment method
+  oneof payment_method {
+    // payment method id
+    google.protobuf.StringValue payment_method_id = 3;
+
+    // payment method correlation ids (reference id and type)
+    PaymentMethodCorrelationIds payment_method_correlation_ids = 4;
+  }
+
+  // invoice id
+  google.protobuf.StringValue invoice_id = 5;
+}
+
+// pay invoice response
+message PayInvoiceResponse {
+  // invoice
+  Invoice invoice = 1;
+}
+
+// refund invoice request
+message RefundInvoiceRequest {
+  // invoice correlation ids (reference id and type)
+  InvoiceCorrelationIds invoice_correlation_ids = 1;
+
+  // idempotency key
+  string idempotency_key = 2;
+
+  // amount
+  int32 amount = 3;
+
+  // invoice id
+  google.protobuf.StringValue invoice_id = 4;
+}
+
+// refund invoice response
+message RefundInvoiceResponse {
+  // invoice
+  Invoice invoice = 1;
+}

@@ -1,0 +1,157 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package merchant_affordability;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.merchant_affordability";
+
+// Service that exposes APIs to facilitate video upload and retrieval
+service VideoService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "merchant-affordability-service-web.service.prod.ddsd",
+    name_spaces: ["video"],
+    owner: {
+      id: "social-proof"
+      name: "merchant-affordability-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (service_client.client_config).service_name = "merchant-affordability-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Method to upload videos
+  rpc InitiateVideoUpload(InitiateVideoUploadRequest) returns (InitiateVideoUploadResponse) {
+    option (google.api.http) = {
+      post: "/video/v1/initiate_upload"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Method to finalize the video upload, after initiating the video upload.
+  rpc FinalizeVideoUpload(FinalizeVideoUploadRequest) returns (FinalizeVideoUploadResponse) {
+    option (google.api.http) = {
+      post: "/video/v1/finalize_video_upload"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+}
+
+// Request to initiate video upload.
+message InitiateVideoUploadRequest {
+  // userId will be injected by UG
+  string user_id = 1 [(doordash.api.inject_id) = USER_ID];
+  // filename. e.g. abc.mp4
+  google.protobuf.StringValue file_name = 2;
+  // Store id belonging to the tagged video.
+  google.protobuf.StringValue store_id = 3;
+  // business id associated with the store
+  google.protobuf.StringValue business_id = 4;
+  // Source of the video upload(ex: reels, cx_creator), use video_upload_source field instead.
+  google.protobuf.StringValue source = 5 [deprecated = true];
+  // Source of the video upload(ex: reels, cx_creator)
+  VideoUploadSource video_upload_source = 6;
+}
+
+// Response to upload a video.
+message InitiateVideoUploadResponse {
+  // The Pre signed url used to upload a video.
+  google.protobuf.StringValue presigned_url = 1;
+  // the actual object_key we put in S3
+  google.protobuf.StringValue object_key = 2;
+}
+
+// Source of the video upload
+enum VideoUploadSource {
+  // unspecified source
+  VIDEO_UPLOAD_SOURCE_UNSPECIFIED = 0;
+  // ugc creator video source
+  VIDEO_UPLOAD_SOURCE_UGC_CREATOR = 1;
+  // mx upload
+  VIDEO_UPLOAD_SOURCE_MX_UPLOAD = 2;
+}
+
+// Request to finalize the video upload.
+message FinalizeVideoUploadRequest {
+  // userId will be injected by UG
+  string user_id = 1 [(doordash.api.inject_id) = USER_ID];
+  // object key of the file
+  google.protobuf.StringValue object_key = 2;
+  // items tagged in the video
+  repeated TaggedItem items = 3;
+  // video metadata
+  VideoFileMetadata metadata = 4;
+}
+
+// Response to finalizing the video upload.
+message FinalizeVideoUploadResponse {}
+
+// Metadata associated with the Video
+message VideoFileMetadata {
+  // MIME type. e.g. video/mp4
+  google.protobuf.StringValue media_type = 1;
+  // media width
+  google.protobuf.Int32Value width = 2;
+  // media height
+  google.protobuf.Int32Value height = 3;
+  // size in bytes
+  google.protobuf.Int32Value size_byte = 4;
+  // creation datetime
+  google.protobuf.Timestamp created_at = 5;
+  // video duration in ms
+  google.protobuf.Int32Value video_duration_ms = 6;
+  // caption for this video, supplied by the uploader
+  google.protobuf.StringValue caption = 7;
+}
+
+// Items tagged in videos
+message TaggedItem {
+  // Id of the item.
+  google.protobuf.StringValue item_id = 1;
+  // msid of the item.
+  google.protobuf.StringValue msid = 2;
+}

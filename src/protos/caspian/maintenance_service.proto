@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+package caspian.v1;
+
+import "caspian/catalog.proto";
+import "common/code.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.caspian";
+
+// Service for managing and executing Caspian maintenance workflow
+service MaintenanceService {
+  // Batch upload delta table maintenance jobs
+  rpc BatchUploadDeltaTableMaintenanceJobs(BatchUploadDeltaTableMaintenanceJobsRequest) returns (BatchUploadDeltaTableMaintenanceJobsResponse);
+
+  // Start a Delta table maintenance workflow in Data Lake
+  rpc StartDeltaTableMaintenance(StartDeltaTableMaintenanceRequest) returns (StartDeltaTableMaintenanceResponse);
+
+  // Start an Iceberg table maintenance workflow in Data Lake
+  rpc StartTableMaintenance(StartTableMaintenanceRequest) returns (StartTableMaintenanceResponse);
+
+  // Upsert an Iceberg table maintenance workflow in Data Lake
+  rpc UpsertTableMaintenanceConfig(UpsertTableMaintenanceConfigRequest) returns (UpsertTableMaintenanceConfigResponse);
+
+  // Get an Iceberg table maintenance config
+  rpc GetTableMaintenanceConfig(GetTableMaintenanceConfigRequest) returns (GetTableMaintenanceConfigResponse);
+}
+
+// request for Batch upload delta table maintenance jobs
+message BatchUploadDeltaTableMaintenanceJobsRequest {
+  // Multiple data Lake table identifiers, i.e. list of db_name and table_name
+  repeated TableIdentifier table_identifiers = 1;
+}
+
+// response for Batch upload delta table maintenance jobs
+message BatchUploadDeltaTableMaintenanceJobsResponse {
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// request for Start a Delta table maintenance workflow
+message StartDeltaTableMaintenanceRequest {
+  // Data Lake table identifier, i.e. db_name and table_name
+  TableIdentifier table_identifier = 1;
+  // Parameters for Vacuum
+  VacuumParams vacuum_params = 2;
+}
+
+// Parameters for Vacuum procedure
+// options for vacuum: https://docs.databricks.com/en/sql/language-manual/delta-vacuum.html#parameters
+message VacuumParams {
+  // The retention threshold
+  google.protobuf.Int32Value retain_num_hours = 1;
+  // Return a list of up to 1000 files to be deleted
+  google.protobuf.BoolValue dry_run = 2;
+  reserved 3;
+  reserved "mode";
+}
+
+// Datalake table identifier
+message TableIdentifier {
+  // Data Lake db name a.k.a schema_name
+  google.protobuf.StringValue db_name = 1;
+  // Data Lake table name table_name
+  google.protobuf.StringValue table_name = 2;
+}
+
+// response for Start a Delta table maintenance workflow
+message StartDeltaTableMaintenanceResponse {
+  // this will be the cadence workflow id that executes the task
+  google.protobuf.StringValue submission_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// request for Start a table maintenance workflow
+message StartTableMaintenanceRequest {
+  // Data Lake db name a.k.a schema_name
+  google.protobuf.StringValue db_name = 3;
+  reserved 2;
+  reserved "where_filter";
+  // Data Lake table name table_name
+  google.protobuf.StringValue table_name = 1;
+  // Parameters for RewriteDataFiles
+  RewriteDataFilesParams rewrite_data_files_params = 4;
+  // Flag for whether to execute RewriteDataFiles or not
+  google.protobuf.BoolValue rewrite_data_files_enabled = 5;
+  // Parameters for ExpireSnapshots
+  ExpireSnapshotsParams expire_snapshots_params = 6;
+  // Flag for whether to execute ExpireSnapshots or not
+  google.protobuf.BoolValue expire_snapshots_enabled = 7;
+  reserved 8;
+  reserved "rewrite_manifest_files_params";
+  // Flag for whether to execute RewriteManifestFiles
+  google.protobuf.BoolValue rewrite_manifest_files_enabled = 9;
+  // Parameters for RemoveOrphanFiles
+  RemoveOrphanFilesParams remove_orphan_files_params = 10;
+  // Flag for whether to execute RemoveOrphanFiles
+  google.protobuf.BoolValue remove_orphan_files_enabled = 11;
+}
+
+// response for Start a table maintenance workflow
+message StartTableMaintenanceResponse {
+  // this will be the cadence workflow id that executes the task
+  google.protobuf.StringValue submission_id = 1;
+  // gRPC response code
+  code.Code code = 20;
+  // Error message if there is any
+  google.protobuf.StringValue error_message = 21;
+}
+
+// Parameters for RewriteDataFiles procedure
+message RewriteDataFilesParams {
+  // options for rewrite data files.
+  // https://iceberg.apache.org/docs/latest/spark-procedures/#options
+  map<string, string> options = 1;
+  // For Zorder use a comma separated list of columns within zorder(). Example:
+  // zorder(c1,c2,c3). Else, Comma separated sort orders in the format
+  // (ColumnName SortDirection NullOrder).
+  google.protobuf.StringValue sort_order = 2;
+  // Predicate as a string used for filtering the files. Leave empty when
+  // register a maintenance
+  google.protobuf.StringValue where_filter = 3;
+  // Job overrides for rewrite data files job
+  RewriteDataFilesJobOverrides job_overrides = 4;
+}
+
+// Parameters for RewriteDataFiles job overrides
+message RewriteDataFilesJobOverrides {
+  // Number of processing partitions to limit the rewrite data files job
+  google.protobuf.Int32Value partition_limit = 1;
+  // cc_spec overrides for rewrite data files job
+  google.protobuf.StringValue cc_spec = 2;
+}
+
+// Parameters for ExpireSnapshots procedure
+message ExpireSnapshotsParams {
+  // Snapshots older than this date will be expired for expire snapshots.
+  // https://iceberg.apache.org/docs/latest/spark-procedures/#usage_7
+  google.protobuf.Int32Value expire_snapshots_older_than_days = 1;
+}
+
+// Parameters for RemoveOrphanFiles procedure
+message RemoveOrphanFilesParams {
+  // Orphan files older than this date will be removed for remove orphan files.
+  // https://iceberg.apache.org/docs/latest/spark-procedures/#usage_8
+  google.protobuf.Int32Value older_than = 1;
+}
+
+// request for upsert a table maintenance config in caspian maintenance service
+message UpsertTableMaintenanceConfigRequest {
+  // Data Lake db name a.k.a schema_name
+  google.protobuf.StringValue db_name = 1;
+  // Data Lake table name table_name
+  google.protobuf.StringValue table_name = 2;
+  // SLA (in hours) of how frequent the auto table maintenance will run
+  google.protobuf.FloatValue sla = 3;
+  // Flag for whether to auto run table maintenance or not
+  google.protobuf.BoolValue enabled = 4;
+  // Parameters for RewriteDataFiles
+  RewriteDataFilesParams rewrite_data_files_params = 5;
+  // Flag for whether to execute RewriteDataFiles or not
+  google.protobuf.BoolValue rewrite_data_files_enabled = 6;
+  // Parameters for ExpireSnapshots
+  ExpireSnapshotsParams expire_snapshots_params = 7;
+  // Flag for whether to execute ExpireSnapshots or not
+  google.protobuf.BoolValue expire_snapshots_enabled = 8;
+  reserved 9;
+  reserved "rewrite_manifest_files_params";
+  // Flag for whether to execute RewriteManifestFiles
+  google.protobuf.BoolValue rewrite_manifest_files_enabled = 10;
+  // Parameters for RemoveOrphanFiles
+  RemoveOrphanFilesParams remove_orphan_files_params = 11;
+  // Flag for whether to execute RemoveOrphanFiles
+  google.protobuf.BoolValue remove_orphan_files_enabled = 12;
+}
+
+// Response for upsert table maintenance config in caspian maintenance service
+message UpsertTableMaintenanceConfigResponse {
+  // gRPC response code
+  code.Code code = 20;
+}
+
+// Request for get table maintenance config
+message GetTableMaintenanceConfigRequest {
+  // Data Lake db name a.k.a schema_name
+  google.protobuf.StringValue db_name = 1;
+  // Data Lake table name table_name
+  google.protobuf.StringValue table_name = 2;
+}
+
+// Response for get a table maintenance config
+message GetTableMaintenanceConfigResponse {
+  // Data Lake db name a.k.a schema_name
+  google.protobuf.StringValue db_name = 1;
+  // Data Lake table name table_name
+  google.protobuf.StringValue table_name = 2;
+  // SLA (in hours) of how frequent the auto table maintenance will run
+  google.protobuf.FloatValue sla = 3;
+  // Flag for whether to auto run table maintenance or not
+  google.protobuf.BoolValue enabled = 4;
+  // Parameters for RewriteDataFiles
+  RewriteDataFilesParams rewrite_data_files_params = 5;
+  // Flag for whether to execute RewriteDataFiles or not
+  google.protobuf.BoolValue rewrite_data_files_enabled = 6;
+  // Parameters for ExpireSnapshots
+  ExpireSnapshotsParams expire_snapshots_params = 7;
+  // Flag for whether to execute ExpireSnapshots or not
+  google.protobuf.BoolValue expire_snapshots_enabled = 8;
+  reserved 9;
+  reserved "rewrite_manifest_files_params";
+  // Flag for whether to execute RewriteManifestFiles
+  google.protobuf.BoolValue rewrite_manifest_files_enabled = 10;
+  // Parameters for RemoveOrphanFiles
+  RemoveOrphanFilesParams remove_orphan_files_params = 11;
+  // Flag for whether to execute RemoveOrphanFiles
+  google.protobuf.BoolValue remove_orphan_files_enabled = 12;
+}

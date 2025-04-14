@@ -1,0 +1,400 @@
+syntax = "proto3";
+
+package merchant_product_gateway.v1;
+
+import "common/experiment.proto";
+import "common/inventory.proto";
+import "common/ratings.proto";
+import "common/service_client_config.proto";
+import "doordash.retail.serving.v1/common.proto";
+import "doordash.retail.serving.v1/retail_product.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_product_gateway/validation_entity.proto";
+import "promotion/service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.mpg";
+
+// This is the service for merchant product gateway.
+service MerchantProductGatewayService {
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Returns the health check information of MPG gateway
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Returns inventory entities given list of MsIds
+  rpc GetInventoryEntitiesByMerchantSuppliedIds(GetInventoryEntitiesByMerchantSuppliedIdsRequest) returns (GetInventoryEntitiesByMerchantSuppliedIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Validate entities in an order/ cart and throws errors if any, entity can refer to an item (product) and the associated extras and options
+  rpc ValidateEntities(ValidateEntitiesRequest) returns (ValidateEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Fetch retail item promotions with given consumer, store and item info
+  rpc GetRetailItemPromosByDdsics(GetRetailItemPromosByDdsicsRequest) returns (GetRetailItemPromosByDdsicsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of reviews for a retail product
+  rpc GetRetailItemReviews(GetRetailItemReviewsRequest) returns (GetRetailItemReviewsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of global catalog by ddsic
+  rpc GetGlobalCatalogsByDdsics(GetGlobalCatalogsByDdsicsRequest) returns (GetGlobalCatalogsByDdsicsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // API to return list of global catalog by gtin14 codes
+  rpc GetGlobalCatalogsByGtin14Codes(GetGlobalCatalogsByGtin14CodesRequest) returns (GetGlobalCatalogsByGtin14CodesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // get only tags from retail products by merchant catalog id (msid)
+  // use this API if you need only the product tags and not the full retail product
+  rpc GetProductsTagsByMerchantCatalogIds(GetProductsTagsByMerchantCatalogIdsRequest) returns (GetProductsTagsByMerchantCatalogIdsResponse) {}
+
+  // get retail products by merchant catalog id (msid)
+  // this is the equivalent of GetRetailProductsByMerchantSuppliedIds on MDG
+  rpc GetRetailProductsByMerchantCatalogIds(GetRetailProductsByMerchantCatalogIdsRequest) returns (GetRetailProductsByMerchantCatalogIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // API to return list of store-level items by ddsic
+  rpc GetRetailProductsByDdsics(GetRetailProductsByDdsicsRequest) returns (GetRetailProductsByDdsicsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // API to return list of catalog by ddsic
+  rpc GetMerchantCatalogsByDdsics(GetMerchantCatalogsByDdsicsRequest) returns (GetMerchantCatalogsByDdsicsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  // API to return list of merchant catalog entries by given business id and price lookup code
+  rpc GetMerchantCatalogsByPluCodes(GetMerchantCatalogsByPluCodesRequest) returns (GetMerchantCatalogsByPluCodesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // API to return list of merchant catalog entries by given business id and catalog merchant ids
+  rpc GetMerchantCatalogsByIds(GetMerchantCatalogsByIdsRequest) returns (GetMerchantCatalogsByIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+}
+
+// request format for GetMerchantCatalogsByDdsics
+message GetMerchantCatalogsByDdsicsRequest {
+  // business ID
+  string business_id = 1;
+  // list of global catalog IDs
+  repeated string ddsics = 2;
+}
+
+// response format for GetMerchantCatalogsByDdsics
+message GetMerchantCatalogsByDdsicsResponse {
+  // retail product response map
+  // key: global catalog ID
+  // value: merchant catalog response
+  map<string, MerchantCatalogResponse> merchant_catalog_response_map = 1;
+}
+
+// request format for GetMerchantCatalogsByIds
+message GetMerchantCatalogsByIdsRequest {
+  // business ID
+  string business_id = 1;
+  // list of merchant supplied IDs
+  repeated string merchant_catalog_ids = 2;
+}
+
+// response format for GetMerchantCatalogsByIds
+message GetMerchantCatalogsByIdsResponse {
+  // retail product response map
+  // key: merchant catalog ID
+  // value: merchant catalog response
+  map<string, MerchantCatalogResponse> merchant_catalog_response_map = 1;
+}
+
+// request format for GetRetailProductsByMerchantCatalogIds
+message GetRetailProductsByMerchantCatalogIdsRequest {
+  // store ID
+  string store_id = 1;
+  // merchant catalog id (msid).
+  // this is the equivalent of mx_supplied_ids on MDG
+  repeated string merchant_catalog_ids = 2;
+  // timestamp when the order is/ will be created. For scheduled orders, it uses a future time.
+  google.protobuf.Timestamp serving_time = 3;
+}
+
+// response format for GetRetailProductsByMerchantCatalogIds
+message GetRetailProductsByMerchantCatalogIdsResponse {
+  // retail product response map
+  // key: merchant catalog id
+  // value: retail product response
+  map<string, RetailProductResponse> retail_product_response_map = 1;
+}
+
+// request format for GetProductsTagsByMerchantCatalogIds
+// this API has the same signature as GetRetailProductsByMerchantCatalogIds
+message GetProductsTagsByMerchantCatalogIdsRequest {
+  // store ID
+  string store_id = 1;
+  // merchant catalog id (msid)
+  repeated string merchant_catalog_ids = 2;
+  // timestamp when the order is/ will be created. For scheduled orders, it uses a future time.
+  google.protobuf.Timestamp serving_time = 3;
+}
+
+// the response from GetProductsTagsByMerchantCatalogIds
+// these product tags are the same as the ones that can be found in RetailProduct
+message GetProductsTagsByMerchantCatalogIdsResponse {
+  // product tags
+  // key: merchant catalog id (msid)
+  // value: product tag responses
+  map<string, ProductTagResponse> product_tag_response_map = 1;
+}
+
+// request format for GetRetailProductsByDdsics
+message GetRetailProductsByDdsicsRequest {
+  // store ID
+  string store_id = 1;
+  // business ID
+  string business_id = 2;
+  // list of global catalog IDs
+  repeated string ddsics = 3;
+}
+
+// response format for GetRetailProductsByDdsics
+message GetRetailProductsByDdsicsResponse {
+  // retail product response map
+  // key: global catalog ID
+  // value: retail product response
+  map<string, RetailProductResponse> retail_product_response_map = 1;
+}
+
+// Request format for GetGlobalCatalogsByDdsics
+message GetGlobalCatalogsByDdsicsRequest {
+  // global catalog IDs
+  repeated string ddsics = 1;
+}
+
+// Response format for GetGlobalCatalogsByDdsics
+message GetGlobalCatalogsByDdsicsResponse {
+  // global catalog response map
+  // key: global catalog ID
+  // value: global catalog response
+  map<string, GlobalCatalogResponse> global_catalog_response_map = 1;
+}
+
+// Request format for GetGlobalCatalogsByGtinCodes
+// There is a max GTIN 14 code limit of 100
+message GetGlobalCatalogsByGtin14CodesRequest {
+  // global catalog gtin 14 codes
+  repeated string gtin14_codes = 1;
+}
+
+// Response format for GetGlobalCatalogsByGtin14Codes
+message GetGlobalCatalogsByGtin14CodesResponse {
+  // global catalog response map
+  // key: global catalog gtin 14 codes
+  // value: global catalog response
+  map<string, RepeatedGlobalCatalogResponse> global_catalog_response_map = 1;
+}
+
+// Global catalog response repeated
+message RepeatedGlobalCatalogResponse {
+  reserved 1;
+  reserved "global_catalog_responses";
+  // Result Info
+  ResultInfo result_info = 2;
+  // global catalog content
+  repeated doordash.retail.serving.v1.RetailCatalog global_catalogs = 3;
+}
+
+// Global catalog item-level response format
+message GlobalCatalogResponse {
+  // Result Info
+  ResultInfo result_info = 1;
+  // global catalog content
+  doordash.retail.serving.v1.RetailCatalog global_catalog = 2;
+}
+
+// Request for health check
+message HealthCheckRequest {}
+
+// Response for health check
+message HealthCheckResponse {
+  // Greeting message.
+  string messages = 1;
+}
+
+// GetInventoryEntitiesByMerchantSuppliedIdsRequest is the request body for fetching inventory entities by merchant supplied ids.
+message GetInventoryEntitiesByMerchantSuppliedIdsRequest {
+  // Store id for the entities.
+  string store_menu_id = 1;
+  // Menu id for the entities.
+  string menu_id = 2;
+  // Merchant supplied ids for the entities.
+  repeated string mx_supplied_ids = 3;
+}
+
+// GetInventoryEntitiesByMerchantSuppliedIdsResponse is the response body for fetching inventory entities by merchant supplied ids.
+message GetInventoryEntitiesByMerchantSuppliedIdsResponse {
+  // List of inventory entities.
+  repeated common.inventory.v1.InventoryEntityInfo inventory_entity_info = 1;
+}
+
+// ValidateEntitiesRequest is the request body for validating the entities in an order/ cart.
+// Entity can refer to an item (product) and the associated extras and options
+// Currently we still use the item concept and we may deprecate it in favor of product concept in the future with the RPS migration
+message ValidateEntitiesRequest {
+  // entities in the orders/ carts
+  repeated ValidationEntity validation_entities = 1;
+  // whether to enable the validation on modifiers. only apply to items where modifiers are enabled
+  google.protobuf.BoolValue modifiers_combination_check = 2;
+  // timestamp when the order is/ will be created. For scheduled orders, it uses a future time.
+  google.protobuf.Timestamp serving_time = 3;
+  // Store id for the entities.
+  string store_id = 4;
+  // When product identifiers are item_id, menu_id is for identifying the the entities when they are shared in menu domain.
+  // When product identifiers are merchant_supplied_id, menu_id is not required. For example, NV does not need to provide it.
+  string menu_id = 5;
+  // Consumer context required for A/B experiments
+  common.experiment.v1.ConsumerContext consumer_context = 6;
+}
+
+// ValidateEntitiesRequest is the response body for validating the entities in an order/ cart.
+message ValidateEntitiesResponse {
+  // validation errors if any, if no validation errors, it will be empty
+  repeated ValidationError validation_errors = 1;
+  // entity maps given the entities in the request.
+  // when the validation fails, if an entity does not exist in menu storage, it will not be populated
+  // if the entity exists in menu storage but fails validation since it is deactivated/ suspended, it will still be populated
+  EntityMaps entity_maps = 2;
+  // menu and category the entities belong to. Currently required for both nv and rx stores, in the future, will be an optional field for nv stores.
+  repeated EntityIdentifierInfo entity_identifier_infos = 3;
+}
+
+// GetRetailItemPromosByDdsicsRequest is the request body for fetching retailItemPromos with given consumer, store and ddsics
+message GetRetailItemPromosByDdsicsRequest {
+  // store id to fetch retailItemPromos
+  string store_id = 1;
+  // item ddSic to fetch retailItemPromos
+  repeated string dd_sics = 2;
+  // consumer id to check the consumer eligibility of the promotion
+  string consumer_id = 3;
+  // business id to evaluate cx a/b for mx ingested item promo
+  string business_id = 4;
+}
+
+// GetRetailItemPromosByDdsicsResponse is the response body for fetching retailItemPromos with given consumer, store and ddsics
+message GetRetailItemPromosByDdsicsResponse {
+  // list of product data
+  repeated promotion_service.ProductData product_data = 1;
+}
+
+// common result info for fetching apis
+enum ResultInfo {
+  // ---- Common ones ----
+  // Unspecified
+  RESULT_INFO_UNSPECIFIED = 0;
+  // Not Found
+  RESULT_INFO_NOT_FOUND = 1;
+  // OK
+  RESULT_INFO_OK = 2;
+
+  // ---- Retail product specific ones ----
+  // Retail product was not found in the catalog
+  RESULT_INFO_CATALOG_NOT_FOUND = 3;
+  // Retail product was not found in the inventory
+  RESULT_INFO_INVENTORY_NOT_FOUND = 4;
+}
+
+// RetailProductResponse
+message RetailProductResponse {
+  // Result Info
+  ResultInfo result_info = 1;
+  // Retail product result
+  doordash.retail.serving.v1.RetailProduct retail_product = 2;
+}
+
+// The product tag response for an item
+message ProductTagResponse {
+  // Result Info
+  ResultInfo result_info = 1;
+  // Product tags
+  repeated doordash.retail.serving.v1.ProductTag product_tags = 2;
+}
+
+// MerchantCatalogResponse
+message MerchantCatalogResponse {
+  // Result Info
+  ResultInfo result_info = 1;
+  // merchant catalog entity list for one-to-one use cases
+  doordash.retail.serving.v1.RetailCatalog merchant_catalog = 2;
+}
+
+// MultiMerchantCatalogResponse
+message MultiMerchantCatalogResponse {
+  // Result Info
+  ResultInfo result_info = 1;
+  // merchant catalog entity list for one-to-many use cases
+  repeated doordash.retail.serving.v1.RetailCatalog merchant_catalogs = 2;
+}
+
+// Request to get item reviews
+message GetRetailItemReviewsRequest {
+  // Business ID for the store
+  google.protobuf.StringValue business_id = 1;
+  // DD SIC for the product
+  google.protobuf.StringValue dd_sic = 2;
+  // MSID for the product
+  google.protobuf.StringValue merchant_supplied_id = 3;
+  // Pagination Information
+  common.ratings.v1.ReviewPaginationInfo pagination = 4;
+  // List filter applied to show reviews
+  repeated doordash.retail.serving.v1.ReviewFilter review_filters = 5;
+  // sort by order
+  doordash.retail.serving.v1.ReviewSortByType sort_by = 6;
+}
+
+// Response to get item reviews
+message GetRetailItemReviewsResponse {
+  // List of reviews
+  repeated common.ratings.v1.RetailProductItemReview reviews = 1;
+  // Pagination Information
+  common.ratings.v1.ReviewPaginationInfo pagination = 2;
+  // BE driven filter allowed values
+  repeated doordash.retail.serving.v1.ReviewResponseFilter filters = 3;
+}
+
+// GetMerchantCatalogsByPluRequest
+message GetMerchantCatalogsByPluCodesRequest {
+  // business id
+  string business_id = 1;
+  // price lookup codes
+  repeated string plu_codes = 2;
+}
+
+// GetMerchantCatalogsByPluResponse
+message GetMerchantCatalogsByPluCodesResponse {
+  // merchant catalog response map
+  // key: plu
+  // value: merchant catalog responses
+  map<string, MultiMerchantCatalogResponse> merchant_catalog_response_map = 1;
+}

@@ -1,0 +1,130 @@
+syntax = "proto3";
+package common.marketplace_purchase.v1;
+
+import "common/datatypes.proto";
+import "common/money.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/common";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.common";
+
+// Represents the type of measurement for purchase
+enum MeasurementUnit {
+  // PLEASE SPECIFY a Measurement unit
+  MEASUREMENT_UNIT_UNSPECIFIED = 0;
+  // Measurement by pounds (lbs)
+  MEASUREMENT_UNIT_LBS = 1;
+  // Measurement by Ounces (oz)
+  MEASUREMENT_UNIT_OZ = 2;
+  // Measurement by Kilograms (kg)
+  MEASUREMENT_UNIT_KG = 3;
+  // Measurement by Grams (g)
+  MEASUREMENT_UNIT_G = 4;
+}
+
+// The PurchaseType defines the workflow of how the item is purchased
+enum PurchaseType {
+  // PLEASE SPECIFY Purchase Type.
+  PURCHASE_TYPE_UNSPECIFIED = 0;
+  // The default is by Unit - Each
+  PURCHASE_TYPE_UNIT = 1;
+  // Purchase by Measurement Ex: $1.00/lbs
+  PURCHASE_TYPE_MEASUREMENT = 2;
+  // Purchase by Unit, but process and fulfill by Measurement.
+  PURCHASE_TYPE_UNIT_TO_MEASUREMENT = 3;
+  // Purchase by using suggested or custom price dynamically.
+  PURCHASE_TYPE_DYNAMIC_PRICE = 4;
+}
+
+// Different prices can represent the same item. DD uses price_source to distinguish the different types.
+// Currently Delivery and Pickup prices exist.
+// The purchase represents ItemPriceInfo as a list.
+message ItemPriceInfo {
+  // PriceSource has been used to define Price type (Delivery, Pickup, etc)
+  money.PriceSource price_source = 1;
+  // The amount to charge.
+  money.MonetaryFields price = 2;
+}
+
+// PurchaseType of Each
+message UnitPurchaseInfo {
+  // List of different prices for the EA use case.
+  repeated ItemPriceInfo price_info = 1;
+  // Packaging info (plastic bag, dozen box, etc)
+  string unit_description = 2;
+}
+
+// Represents purchasing by measurement Ex: $1.00/lbs
+message MeasurementPurchaseInfo {
+  // List of price source and price. (delivery price, pickup price, etc)
+  repeated ItemPriceInfo price_info = 1;
+  // The unit of measurement (lbs, oz) that is charged
+  MeasurementUnit unit = 2;
+  // Represents by what measurement the quantity should increment at.
+  // Ex: $1.00 / oz (unit) .25 (increment_factor), means sell  $1.00/.25 oz
+  datatypes.v1.BigDecimal increment_factor = 3;
+  // Represents the measurement of a single unit.
+  // Ex: The item is a banana and weighs 118 oz.
+  // 118 is represented by approximate_sold_as_quantity
+  // oz is represented by approximate_sold_as_unit
+  datatypes.v1.BigDecimal approximate_sold_as_quantity = 4;
+  // Measurement Unit that works hand in hand with approximate_sold_as_quantity
+  // It is not required for it  be the same as "unit"
+  MeasurementUnit approximate_sold_as_unit = 5;
+}
+
+//Consumer on DD purchases as Each but during fulfillment it is translated and converted as Measurement.
+message UnitToMeasurementPurchase {
+  // The type of packaging allowed for this UNIT/EACH purchase
+  enum PackageType {
+    // Make sure to specify the packaging type.
+    PACKAGE_TYPE_UNSPECIFIED = 0;
+    // A fixed package priced by measurement (typically pre-packed)
+    // Ex: Chicken wings are pre-packed based on certain measurement, Cx purchase those pre-packed as each will
+    // select this type of packaging
+    PACKAGE_TYPE_FIXED_PACKAGING = 1;
+    // Loose and defined at the discretion of the Dx/Sx
+    PACKAGE_TYPE_LOOSE_PACKAGING = 2;
+  }
+  // The unit information to represent the flow for the consumer.
+  UnitPurchaseInfo purchase_by_unit = 1;
+  // The measurement information that represents the flow for the Mx
+  MeasurementPurchaseInfo fulfilled_by_measurement = 2;
+  // How this purchase should be packed.
+  PackageType package_type = 3;
+}
+
+// Represents purchase information required for items that have the price set dynamically by the cx during the
+// purchase process (eg. gift cards, donations). See link for more context and example
+// https://docs.google.com/document/d/1OOiLrWrmwT8GXS5MKCA_yM-IRCGXdEZLtgCRK-5J9gU/edit#bookmark=id.5175etl0td10
+message DynamicPricePurchase {
+  // (Required) list of suggested prices for the item
+  repeated money.MonetaryFields suggested_price = 1;
+  // (Optional) is a purchase price outside of suggested prices allowed for the item
+  bool allow_custom_price = 2;
+  // (Optional) min purchase price allowed for the item
+  money.MonetaryFields min_price = 3;
+  // (Optional) max purchase price allowed for the item
+  money.MonetaryFields max_price = 4;
+  // (Optional) min stepper price allowed for price increments for the item
+  money.MonetaryFields min_step = 5;
+}
+
+// A concise way to identify the Purchase
+message ItemPurchaseInfo {
+  // The type of purchase.
+  PurchaseType purchase_type = 1;
+  // This should map to the selected purchase_type.
+  oneof purchase {
+    // Legacy and default in Doordash
+    UnitPurchaseInfo unit = 2;
+    // By measurement
+    MeasurementPurchaseInfo measurement = 3;
+    // Consumer purchases by unit, but then translates to measurement
+    UnitToMeasurementPurchase unit_to_measurement = 4;
+    // Cx uses this info to set item price dynamically
+    DynamicPricePurchase dynamic_price_info = 5;
+  }
+}

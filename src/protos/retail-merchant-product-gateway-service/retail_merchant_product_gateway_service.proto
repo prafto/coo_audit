@@ -1,0 +1,574 @@
+syntax = "proto3";
+
+package doordash.retail.merchant_product_gateway_service.v1;
+
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.retail.merchantproductgateway";
+
+/**
+   * RetailMerchantProductGatewayService provides a set of read and write APIs that can be used by
+   * New Vertical - Merchant Experience components (e.g. Retail Merchant Service, SSIM BFF) to easily
+   * obtain merchant product related data from downstream services as well as to push data changes downstream.
+   *
+   * It is a facade layer which can simplify upstream logics, can act as interceptors, monitor/record/validate
+   * traffic as a gateway, and facilitate downstream migration at one place.
+   *
+   * Design doc: https://docs.google.com/document/d/1SVQleALT-5U_jAJP09QJieV3T6K-YP-FncvcsbPvtws/edit#
+   *
+   * API styles to follow https://google.aip.dev/1
+   **/
+service RetailMerchantProductGatewayService {
+  option (service_client.client_config).service_name = "retail-merchant-product-gateway-service";
+  option (service_client.client_config).service_app = "web";
+  /**
+     * List store’s merchant products.
+     * Unlike restaurant merchants, NV merchants often have thousands to tens of thousands of selections.
+     * Callers may need to call the API multiple times with pagination parameters in order to fetch all merchant product
+     * data from the store.
+     **/
+  rpc ListStoreMerchantProducts(ListStoreMerchantProductsRequest) returns (ListStoreMerchantProductsResponse);
+
+  // Get a single store merchant product from a store.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetStoreMerchantProduct(GetStoreMerchantProductRequest) returns (StoreMerchantProduct);
+
+  // Update a single store merchant product. Only inventory attribute changes will be accepted.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc UpdateStoreMerchantProduct(UpdateStoreMerchantProductRequest) returns (StoreMerchantProduct);
+
+  /**
+     * Update multiple merchant products. Only inventory attribute changes will be accepted.
+     **/
+  rpc BatchUpdateStoreMerchantProducts(BatchUpdateStoreMerchantProductsRequest) returns (BatchUpdateStoreMerchantProductsResponse);
+
+  /**
+     * Diff store merchant products.
+     * Only inventory attributes provided as diff_mask will be compared.
+     * Store merchant products without any changes won’t be returned.
+     * e.g. If 100 store merchant products were provided and only 10 of them have inventory attribute differences,
+     * the API response object will contain 10 store merchant products.
+     **/
+  rpc DiffStoreMerchantProducts(DiffStoreMerchantProductsRequest) returns (DiffStoreMerchantProductsResponse);
+
+  /**
+     * Get multiple business level merchant products.
+     **/
+  rpc BatchGetMerchantProducts(BatchGetMerchantProductsRequest) returns (BatchGetMerchantProductsResponse);
+
+  /**
+     * Get store merchant products by searching a product.
+     * The API response object contains the top suggestions for the search.
+     **/
+  rpc SearchStoreMerchantProducts(SearchStoreMerchantProductsRequest) returns (SearchStoreMerchantProductsResponse);
+
+  /**
+     * Busts the cache of StoreMerchantProducts
+     **/
+  rpc StoreMerchantProductsCacheBust(StoreMerchantProductsCacheBustRequest) returns (StoreMerchantProductsCacheBustResponse);
+
+  /**
+     * Get the navigational categories on a business.
+     * The response object is a list of all business categories.
+     **/
+  rpc ListMerchantNavigationalCategories(ListMerchantNavigationalCategoriesRequest) returns (ListMerchantNavigationalCategoriesResponse);
+
+  /**
+     * Busts the cache of MerchantNavigationalCategories
+     **/
+  rpc MerchantNavigationalCategoriesCacheBust(MerchantNavigationalCategoriesCacheBustRequest) returns (MerchantNavigationalCategoriesCacheBustResponse);
+}
+
+/**
+   * Request object for ListStoreMerchantProducts API.
+   **/
+message ListStoreMerchantProductsRequest {
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+
+  // Maximum number of StoreMerchantProducts to return.
+  // The service may return fewer than the value provided.
+  // If absent 10 entries will be returned to the caller.
+  // Maximum possible value is 1000. Higher value will be coerced to 1000.
+  int32 page_size = 2;
+
+  // `next_page_token` returned in the last ListStoreMerchantProducts call.
+  // If not provided, iteration will start from the beginning.
+  string page_token = 3;
+
+  // offset to skip.
+  // maximum possible value is 15000. Higher value will be coerced to 15000.
+  int32 skip = 4;
+
+  // List of StoreMerchantProduct fields that need to be returned.
+  // If none are provided, error will be thrown.
+  google.protobuf.FieldMask read_mask = 5;
+
+  // Enum of pagination type
+  enum PaginationType {
+    // DEFAULT.
+    PAGINATION_TYPE_UNSPECIFIED = 0;
+
+    // OFFSET (page_size, skip) pagination.
+    // 'page_token' will be ignored.
+    PAGINATION_TYPE_OFFSET = 1;
+
+    // CURSOR (page_size, page_token) pagination
+    // 'skip' will be ignored.
+    PAGINATION_TYPE_CURSOR = 2;
+  }
+
+  // Type of pagination. If not provided, any of pagination type may be used.
+  PaginationType pagination_type = 6;
+
+  // If set to false or/and 'read_mask' does not contain catalog fields
+  // the service will return all result set back to caller. (default behavior)
+  //
+  // If set to true and `read_mask` contains catalog fields, the service will
+  // filter out StoreMerchantProducts without catalog data from the list.
+  // The list may contain fewer items than what was initially provided in `page_size`.
+  //
+  // In either case, 'total_size' in response object will remain unchanged.
+  bool filter_missing_catalog = 7;
+}
+
+/**
+   * Response object for ListStoreMerchantProducts API.
+   **/
+message ListStoreMerchantProductsResponse {
+  // List of store merchant products
+  repeated StoreMerchantProduct store_merchant_products = 1;
+
+  // Page token that should be passed to subsequent requests to fetch more data.
+  // Will only be provided when cursor pagination is used & when there are more records to continue iteration.
+  string next_page_token = 2;
+
+  // Total size of store merchant product in a store.
+  // Will only be provided when offset pagination is used.
+  // May be absent in case of cursor pagination.
+  int32 total_size = 3;
+}
+
+/**
+   * Request object for GetStoreMerchantProductRequest API.
+   **/
+message GetStoreMerchantProductRequest {
+  // Reserved for `name`. AIP-122
+  reserved 1;
+
+  //  As of today, we rely on merchant_supplied_item_id to uniquely identify an item under a store/business.
+  // `parent` & `merchant_supplied_item_id` will be required until we properly design and define resource `name`
+  // for the StoreMerchantProduct.
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 2;
+
+  // Merchant supplied item id.
+  string merchant_supplied_item_id = 3;
+
+  // StoreMerchantProduct fields that need to be returned.
+  // If none are provided, error will be thrown.
+  google.protobuf.FieldMask read_mask = 4;
+}
+
+/**
+   * Request object for UpdateMerchantProductRequest API.
+   **/
+message UpdateStoreMerchantProductRequest {
+  //  As of today, we rely on merchant_supplied_item_id to uniquely identify an item under a store/business.
+  // `parent` will be required until we properly design and define resource `name` for the StoreMerchantProduct.
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+
+  // Entity with updated values.
+  StoreMerchantProduct store_merchant_product = 2;
+
+  // Data provider that contributed this update.
+  ProviderMetadata provider_metadata = 3;
+
+  // List of StoreMerchantProduct fields that have updated values.
+  // If empty, none of the fields will be accepted.
+  google.protobuf.FieldMask update_mask = 4;
+}
+
+/**
+   * Request object for BatchUpdateStoreMerchantProducts API.
+   * All included requests must have the matching parent values.
+   **/
+message BatchUpdateStoreMerchantProductsRequest {
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+
+  // List of individual update requests.
+  repeated UpdateStoreMerchantProductRequest requests = 2;
+}
+
+/**
+   * Response object for BatchUpdateStoreMerchantProducts API.
+   **/
+message BatchUpdateStoreMerchantProductsResponse {
+  //List of updated store merchant products.
+  repeated StoreMerchantProduct store_merchant_products = 1;
+
+  // List of unknown merchant supplied item ids among provided StoreMerchantProducts.
+  repeated string unknown_merchant_supplied_item_ids = 2;
+}
+
+/**
+   * Request object for DiffStoreMerchantProducts API.
+   **/
+message DiffStoreMerchantProductsRequest {
+  // `parent` will be needed until we properly design and define the `name` field for the StoreMerchantProduct resource.
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+
+  // List of store merchant products with new inventory attributes.
+  repeated StoreMerchantProduct store_merchant_products = 2;
+
+  // List of StoreMerchantProduct fields that have updated values.
+  // If empty, none of the fields will be diffed, and before/after returned will all contain the same value.
+  google.protobuf.FieldMask diff_mask = 4;
+}
+
+/**
+   * Response object for DiffStoreMerchantProducts API.
+   **/
+message DiffStoreMerchantProductsResponse {
+  // List of before/after diff based on provided store merchant products.
+  repeated StoreMerchantProductDiff store_merchant_products_diffs = 1;
+
+  // List of unknown merchant supplied item ids among provided StoreMerchantProducts.
+  repeated string unknown_merchant_supplied_item_ids = 2;
+}
+
+/**
+   * Individual request object to retrieve MerchantProduct from a business.
+   **/
+message GetMerchantProductRequest {
+  // Reserved for `name`. AIP-122
+  reserved 1;
+
+  //  As of today, we rely on merchant_supplied_item_id to uniquely identify an item under a business.
+  // `parent` & `merchant_supplied_item_id` will be required until we properly design and define resource `name`
+  // for the MerchantProduct.
+  // Format: businesses/{business_id}
+  string parent = 2;
+
+  // Merchant supplied item id.
+  string merchant_supplied_item_id = 3;
+
+  // MerchantProduct fields that need to be returned.
+  // If none are provided, error will be thrown.
+  google.protobuf.FieldMask read_mask = 4;
+}
+
+/**
+   * Request object for BatchGetMerchantProducts API.
+   * All included requests must have the matching parent values.
+   **/
+message BatchGetMerchantProductsRequest {
+  // Format: businesses/{business_id}
+  string parent = 1;
+
+  // List of GetMerchantProductRequest
+  repeated GetMerchantProductRequest requests = 2;
+}
+
+/**
+   * Response object for BatchGetMerchantProducts API.
+   **/
+message BatchGetMerchantProductsResponse {
+  // List of updated store merchant products.
+  repeated MerchantProduct merchant_products = 1;
+}
+
+/**
+   * Request object for SearchStoreMerchantProducts API.
+   *  Filtering will be based on filter or category_id_filter. When both are present the result
+   *  will use "AND" logic and return the union of both query "filter" and "category_id_filter"
+   **/
+message SearchStoreMerchantProductsRequest {
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+
+  // The search query.
+  string filter = 2;
+
+  // Maximum number of StoreMerchantIds to return.
+  // Maximum possible value is 1000.
+  int32 search_size = 3;
+
+  // StoreMerchantProduct fields that need to be returned.
+  // If none are provided, error will be thrown.
+  google.protobuf.FieldMask read_mask = 4;
+
+  // offset to skip.
+  // maximum possible value is 15000. Higher value will be coerced to 15000.
+  int32 skip = 5;
+
+  // Category filter ID
+  string category_id_filter = 6;
+}
+
+/**
+   * Response object for SearchStoreMerchantProducts API.
+   **/
+message SearchStoreMerchantProductsResponse {
+  // List of store merchant products
+  repeated StoreMerchantProduct store_merchant_products = 1;
+
+  // Total size of store merchant product in a store with the searched literal.
+  int32 total_size = 2;
+
+  // Flag that indicates that store products are being loaded into the cache
+  bool products_loading = 3;
+}
+
+/**
+   * StoreMerchantProductsSnapshotInternal is used for the data storage model for index storage.
+   * NOTE : This member is only for internal use to be used by retail product gateway service.
+*/
+message StoreMerchantProductsSnapshotInternal {
+  // List of store merchant products
+  repeated StoreMerchantProduct store_merchant_products = 1;
+
+  // Cache is loading flag
+  bool cache_loading = 2;
+}
+
+// Category of merchant product.
+message Category {
+  // category id.
+  string category_id = 1;
+  // category name.
+  string category_name = 2;
+}
+
+// Category data with relational association or "parents" that are used in sorting/filtering data
+message NavigationalCategory {
+  // ID of the category's parent
+  string parent_id = 1;
+  // reference to category metadata
+  Category category = 2;
+}
+
+/**
+   * StoreMerchantProduct is a store-level view of a merchant’s product. It consists of a set of inventory attributes as
+   * well as catalog attributes.
+   **/
+message StoreMerchantProduct {
+  // Reserved for resource name.
+  reserved 1;
+
+  // Merchant provided identifying key for this item. aka SKU
+  google.protobuf.StringValue merchant_supplied_item_id = 2;
+
+  /**
+     * Inventory Attributes
+     **/
+
+  // Basic price of an item. aka Raw Mx Price
+  money.MonetaryFields price = 3;
+
+  // Indicates whether or not an item is in stock in a given store. aka Mx Availability
+  google.protobuf.BoolValue in_stock = 4;
+
+  // Measurement price of the item, required for weighted item.
+  money.MonetaryFields measurement_price = 11;
+
+  /**
+     * Catalog Attributes
+     **/
+
+  // Item’s display name.
+  google.protobuf.StringValue item_name = 5;
+
+  // Item’s details.
+  google.protobuf.StringValue item_details = 6;
+
+  // List of UPCs associated with the item.
+  repeated string upcs = 7;
+
+  // Item’s L1 category.
+  Category l1_category = 8;
+
+  // Item’s L2 category.
+  Category l2_category = 9;
+
+  // Primary image url of the product.
+  google.protobuf.StringValue primary_image_url = 10;
+
+  // For weighted item only
+  google.protobuf.DoubleValue approximate_sold_as_quantity = 12;
+
+  // For weighted items only. Unit used in approximate_sold_as_quantity
+  google.protobuf.StringValue approximate_sold_as_unit = 13;
+
+  // Enum indicating purchase type
+  common.marketplace_purchase.v1.PurchaseType purchase_type = 14;
+
+  // For weighted items only. Unit for measurement price
+  google.protobuf.StringValue measurement_unit = 15;
+}
+
+/**
+   * MerchantProduct is a business-level entity that consists of a set of catalog attributes.
+   **/
+message MerchantProduct {
+  // Reserved for resource name.
+  reserved 1;
+
+  // Item’s display name.
+  google.protobuf.StringValue item_name = 2;
+
+  // Item’s description.
+  google.protobuf.StringValue item_details = 3;
+
+  // List of UPCs associated with the item.
+  repeated string upcs = 4;
+
+  // Item’s L1 category.
+  Category l1_category = 5;
+
+  // Item’s L2 category.
+  Category l2_category = 6;
+
+  // Primary image url of the product.
+  google.protobuf.StringValue primary_image_url = 7;
+
+  // Merchant provided identifying key for this item. aka SKU
+  google.protobuf.StringValue merchant_supplied_item_id = 8;
+
+  // For weighted item only
+  google.protobuf.DoubleValue approximate_sold_as_quantity = 9;
+
+  // For weighted items only. Unit used in approximate_sold_as_quantity
+  google.protobuf.StringValue approximate_sold_as_unit = 10;
+
+  // Enum indicating purchase type
+  common.marketplace_purchase.v1.PurchaseType purchase_type = 11;
+
+  // For weighted items only. Unit for measurement price
+  google.protobuf.StringValue measurement_unit = 12;
+}
+
+/**
+   * ProviderMetadata contains the source contributor information.
+   * TODO: Add processors, systems which have processed submissions.
+   **/
+message ProviderMetadata {
+  // Source data contributor
+  Contributor contributor = 1;
+}
+
+/**
+   * Data contributor.
+   **/
+message Contributor {
+  // Types of contributor.
+  enum ContributorType {
+    // Default contributor type.
+    CONTRIBUTOR_TYPE_UNKNOWN_UNSPECIFIED = 0;
+    // Merchant contributing data.
+    CONTRIBUTOR_TYPE_MERCHANT = 1;
+    // Operator contributing data.
+    CONTRIBUTOR_TYPE_OPERATOR = 2;
+  }
+  // Contributor id.
+  // If multiple submissions have the same contributor_id, it implies that those submissions were
+  // submitted by the same person/group/entity.
+  string id = 1;
+
+  // Contributor external id. External id that is meaningful in contributor_type's context.
+  string external_id = 2;
+
+  // Type of a contributor.
+  ContributorType type = 3;
+
+  // Time when it was contributed.
+  google.protobuf.Timestamp contribute_time = 4;
+}
+
+/**
+   * Store Merchant Product Diff.
+   * Passed catalog attributes will be re-used & re-decorated in both before & after.
+   **/
+message StoreMerchantProductDiff {
+  // Before
+  StoreMerchantProduct before = 1;
+
+  // After
+  StoreMerchantProduct after = 2;
+}
+
+/**
+   ** Request object for ListMerchantNavigationalCategories
+   **/
+message ListMerchantNavigationalCategoriesRequest {
+  // Format: businesses/{business_id}
+  string parent = 1;
+}
+
+/**
+   ** Response object for ListMerchantNavigationalCategories
+   **/
+message ListMerchantNavigationalCategoriesResponse {
+  // List of all category groupings for a given business id
+  repeated NavigationalCategory categories = 1;
+  // Flag that indicates that categories are being loaded into the cache
+  bool categories_loading = 2;
+}
+
+/**
+   * MerchantProductCategoriesSnapshotInternal is used for the data storage model for index storage.
+   * NOTE : This member is only for internal use to be used by retail product gateway service.
+*/
+message MerchantProductCategoriesSnapshotInternal {
+  // List of business merchant product categories
+  repeated NavigationalCategory categories = 1;
+
+  // Cache is loading flag
+  bool cache_loading = 2;
+}
+
+/**
+   ** Request object for busting StoreMerchantProduct redis cache
+*/
+message StoreMerchantProductsCacheBustRequest {
+  // `parent` will be needed until we properly design and define the `name` field for the StoreMerchantProduct cache resource.
+  // Format: businesses/{business_id}/stores/{store_id}
+  string parent = 1;
+}
+
+/**
+   ** Request object for busting StoreMerchantProduct redis cache
+*/
+message StoreMerchantProductsCacheBustResponse {
+  // The total count of StoreMerchantProduct items removed from the cache
+  int32 removed = 1;
+}
+
+/**
+   ** Request object for busting MerchantNavigationalCategories redis cache
+*/
+message MerchantNavigationalCategoriesCacheBustRequest {
+  // `parent` will be needed until we properly design and define the `name` field for the MerchantNavigationalCategories cache resource.
+  // Format: businesses/{business_id}
+  string parent = 1;
+}
+
+/**
+   ** Request object for busting MerchantNavigationalCategories redis cache
+*/
+message MerchantNavigationalCategoriesCacheBustResponse {
+  // The total count of MerchantNavigationalCategories items removed from the cache
+  int32 removed = 1;
+}

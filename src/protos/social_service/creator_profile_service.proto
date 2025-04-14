@@ -1,0 +1,284 @@
+syntax = "proto3";
+
+package social_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+import "ratings_service/common.proto";
+import "social_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.social_service";
+
+// This service is used display consumer profiles, which are externally viewable profile pages that display user-submitted content
+service CreatorProfileService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "social-service-web.service.prod.ddsd",
+    name_spaces: ["profile"]
+    owner: {
+      id: "social-proof"
+      name: "social-service"
+      slack_channel: "#ask-social-proof"
+      email_alias: "social-proof-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).service_name = "social-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // Get Creator Profile -- Page that showcases all of a user's generated/submitted content
+  rpc GetCreatorProfile(GetCreatorProfileRequest) returns (GetCreatorProfileResponse) {
+    option (google.api.http) = {get: "/profile/v1/creator_profile/{target_consumer_uuid}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Get Tier Details Page -- Educates/informs users of various creator profile tiers, their benefits,
+  // and progress made towards each tier
+  rpc GetBadgeTierDetailsPage(GetBadgeTierDetailsPageRequest) returns (GetBadgeTierDetailsPageResponse) {
+    option (google.api.http) = {get: "/profile/v1/creator_profile/badge_tier_details_page/{consumer_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_GUEST,
+        CX_LITE_GUEST,
+        CX_USER
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+  }
+
+  // Method to fetch the details of Creator profiles given a list of Creator ids
+  rpc GetCreatorProfilesDetails(GetCreatorProfilesDetailsRequest) returns (GetCreatorProfilesDetailsResponse);
+}
+
+// Request message for GetCreatorProfile -- specifies input parameters for fetching a creator profile
+message GetCreatorProfileRequest {
+  // the consumer uuid/string id of the creator profile we are targeting to fetch
+  google.protobuf.StringValue target_consumer_uuid = 1;
+  // the consumer id that is loading/requesting this profile
+  google.protobuf.Int64Value requester_consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // whether to include private content (e.g. content that did not pass moderation)
+  google.protobuf.BoolValue include_private_content = 3;
+  // latitude of the consumer requesting this profile load
+  google.protobuf.DoubleValue lat = 4;
+  // longitude of the consumer requesting this profile load
+  google.protobuf.DoubleValue lng = 5;
+  // offset of post count, to enable pagination (offset 0 is most recent post)
+  google.protobuf.Int32Value offset = 6;
+  // limit of max number of posts to include back in response
+  google.protobuf.Int32Value limit = 7;
+}
+
+// Response message for GetCreatorProfile -- powers the data needed to display consumer profile page
+message GetCreatorProfileResponse {
+  // the header that is shown at the top of the creator profile page
+  ProfileHeaderDM profile_header = 1;
+  // list of user submitted content card display modules
+  repeated ProfileContentDM user_submitted_content = 2;
+  // Profile status of the creator profile
+  ratings_service.ProfileStatus profile_status = 3;
+  // business ratings
+  BusinessRatingsDM business_ratings = 4;
+}
+
+// Consumer profile header display module. Contains metadata to display for the creator
+message ProfileHeaderDM {
+  // display module id
+  google.protobuf.StringValue id = 1;
+  // display module type
+  google.protobuf.StringValue type = 2;
+  // display module version
+  google.protobuf.StringValue version = 3;
+  // display module sort order
+  google.protobuf.UInt32Value sort_order = 4;
+  // actual data for the display module
+  Data data = 5;
+
+  // actual data for the display module (all info that is not strictly metadata for the display module)
+  message Data {
+    // profile/avatar/display photo associated with the creator
+    ImageContent profile_image = 1 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+    // tier associated with creator (e.g. local expert, emerging expert). used to display badge next to name
+    CreatorProfileTier creator_profile_tier = 2;
+    // various information regarding the creator to display in the header, presented as metadata next to profile photo
+    repeated ContentRow metadata_line_items = 3;
+    // creator display name
+    google.protobuf.StringValue creator_display_name = 4;
+    // various information to display underneath the profile photo and title
+    repeated ContentRow body_line_items = 5;
+    // various information related to badge tiers to be shown on the creator profile page.
+    repeated BadgeTierBannerData badge_tier_data = 6;
+    // list of banners to display on the profile page
+    repeated Banner banners = 7;
+  }
+
+  // Additional data related to badge tiers to be shown on the Creator Profile page.
+  message BadgeTierBannerData {
+    // Line items related to badge tier.
+    repeated ContentRow line_items = 1;
+    // progress bar for a badge tier
+    BadgeTierDetailsDM.ProgressBar progress_bar = 2;
+    // status of the badge tier.
+    BadgeTierDetailsDM.BadgeTierStatus badge_tier_status = 3;
+  }
+}
+
+// Profile Tier Details Page, where users can gain more information into the badging systems for creator profiles
+message GetBadgeTierDetailsPageRequest {
+  // consumer_id of user loading page
+  google.protobuf.Int64Value consumer_id = 1;
+  // set for true if we wish to omit the current status being made towards tiers
+  google.protobuf.BoolValue omit_status = 2;
+}
+
+// Profile Tier Details Page, where users can gain more information into the badging systems for creator profiles
+message GetBadgeTierDetailsPageResponse {
+  // header of the Badge tier details page -- contains title and short detail string
+  repeated Header header = 1 [deprecated = true];
+  // list of different tiers applicable, and explanation/details for each
+  repeated BadgeTierDetailsDM badge_tier_details_list = 2;
+  // header text content - title and description
+  repeated TextContent header_content = 3;
+}
+
+// UI component that corresponds with explanation/education for a specific profile tier
+message BadgeTierDetailsDM {
+  // optional progress bar that is placed on top
+  ProgressBar progress_bar = 1;
+
+  // information/education that is included to educate user on tier
+  repeated ContentRow line_items = 2;
+
+  // status applicable for consumer to tier. used by client for UI-related changes (e.g. whether to gray out section)
+  repeated BadgeTierStatus badge_tier_status = 3;
+
+  // header of the badge tier -- contains title and short detail string
+  repeated Header header = 4 [deprecated = true];
+
+  // header text content - title and description
+  repeated TextContent header_content = 5;
+
+  // progress bar metadata to indicate progress towards specific tier
+  message ProgressBar {
+    // progress in percentage (0.1 for 10%) towards completing tier
+    google.protobuf.DoubleValue percentage_towards_tier_completion = 1;
+    // progress display string (e.g. 2/5)
+    google.protobuf.StringValue tier_progress_display_string = 2;
+  }
+
+  // status of current consumer towards a specific tier
+  enum BadgeTierStatus {
+    // unspecified status
+    BADGE_TIER_STATUS_UNSPECIFIED = 0;
+    // user is making progress towards tier
+    BADGE_TIER_STATUS_IN_PROGRESS = 1;
+    // user has achieved this tier and is achieving benefits associated with tier
+    BADGE_TIER_STATUS_COMPLETE = 2;
+    // tier is currently locked for user
+    BADGE_TIER_STATUS_INACTIVE = 3;
+  }
+}
+
+// Tiers associated with creator profile
+enum CreatorProfileTier {
+  // unspecified tier
+  CREATOR_PROFILE_TIER_UNSPECIFIED = 0;
+  // emerging expert
+  CREATOR_PROFILE_TIER_EMERGING_EXPERT = 1;
+  // local expert
+  CREATOR_PROFILE_TIER_LOCAL_EXPERT = 2;
+}
+
+// Type of Creator
+enum CreatorType {
+  // unspecified creator type
+  CREATOR_TYPE_UNSPECIFIED = 0;
+  // a DD consumer
+  CREATOR_TYPE_DOORDASH_CONSUMER = 1;
+}
+
+// Reqeust for fetching the Profiles data for multiple creators.
+message GetCreatorProfilesDetailsRequest {
+  // data associated with the request
+  repeated Data data = 1;
+
+  // Data class
+  message Data {
+    // creator_id
+    google.protobuf.StringValue creator_id = 1;
+    // creator_type
+    CreatorType creator_type = 2;
+    // request masks
+    google.protobuf.FieldMask request_mask = 3;
+  }
+
+  // consumer id of the caller
+  google.protobuf.Int64Value requester_consumer_id = 2;
+}
+
+// Additional details related to the Creator profile, such as the profile picture, Bio, and other data
+message GetCreatorProfilesDetailsResponse {
+  // response data
+  repeated CreatorProfileDetails creator_profiles_details = 1;
+}
+
+// Data class representing various details related to the Creator Profile.
+message CreatorProfileDetails {
+  // creator_id
+  google.protobuf.StringValue creator_id = 1;
+  // creator_type
+  CreatorType creator_type = 2;
+  // display name of the creator profile
+  google.protobuf.StringValue display_name = 3;
+  // first name of the creator
+  google.protobuf.StringValue first_name = 10;
+  // last name of the creator
+  google.protobuf.StringValue last_name = 11;
+  // profile picture url for the Creator Profile
+  google.protobuf.StringValue profile_picture_url = 4;
+  // bio description for this creator profile
+  google.protobuf.StringValue bio_description = 5;
+  // Profile status of the creator profile
+  ratings_service.ProfileStatus profile_status = 6;
+  // creator profile tier
+  CreatorProfileTier creator_profile_tier = 7;
+  // bio data line items, to display additional data about their preferred cuisine,
+  // duration of stay in current location, etc.
+  repeated ContentRow bio_data_line_items = 8;
+  // Tags to display alongside the Creator name, such as Local Expert, Local Creator etc.
+  repeated TagContent tags = 9;
+}

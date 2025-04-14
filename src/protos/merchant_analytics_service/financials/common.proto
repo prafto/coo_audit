@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package doordash.merchant_analytics.service.v1.financials.v1;
+
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_analytics_service/common.proto";
+
+option go_package = "merchant_analytics/financials";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.merchant_analytics.v1.financials.v1";
+
+// Represents the Summary Tab Type
+enum SummaryTabType {
+  // unspecificed
+  SUMMARY_TAB_TYPE_UNSPECIFIED = 0;
+  // net total
+  SUMMARY_TAB_TYPE_NET_TOTAL = 1;
+  // sales
+  SUMMARY_TAB_TYPE_SALES = 2;
+  // amendments
+  SUMMARY_TAB_TYPE_AMENDMENTS = 3;
+  // doordash services
+  SUMMARY_TAB_TYPE_DOORDASH_SERVICES = 4;
+  // commission & fees
+  SUMMARY_TAB_TYPE_COMMISSION_AND_FEES = 5;
+  // marketing spend
+  SUMMARY_TAB_TYPE_MARKETING_SPEND = 6;
+}
+
+// Represents a Summary Tab Item
+// Change Summary/Key Points:
+// (1) In UDL this is the "included_component" field
+// (1) These are the individual rows that make up the children item Summary Tab (Dynamically rendered by server)
+// (3) Refactor names
+message SummaryTabItem {
+  // "Subtotal", "Tax", "Tip", etc. (localized)
+  google.protobuf.StringValue display_name = 1;
+  // "Total price of all orders before taxes, commissions, fees, error charges, and tips." (localized)  - used in tooltip
+  google.protobuf.StringValue description = 2;
+  // "$1,3000" (this can be any value) based on the tab
+  oneof tab_total {
+    // int32
+    ComparableInt32Field tab_total_int32 = 3;
+    // int64
+    ComparableInt64Field tab_total_int64 = 4;
+    // double
+    ComparableDoubleField tab_total_double = 5;
+    // monetary
+    ComparableMonetaryField tab_total_monetary = 6;
+  }
+  // Breakdown of this item into sub-items
+  repeated SummaryTabItem breakdowns = 9;
+}
+
+// Represents a Summary Tab which is used on Payout Details and Transaction Pages
+// Change Summary/Key Points:
+// (1) Make fields that could be compared in the future as comparable fields (ex. totals are typically compared to previous)
+// (2) Made "summary_tab_total" a oneof field to represent the total value of different types (Ex. $1,3000 for sales but 20 for order count)
+// (3) Moved PercentageComparison into Comparable
+// (4) Refactor renaming to drop redundant "summary"
+message SummaryTab {
+  // "SALES" (enum)
+  SummaryTabType tab_type = 1;
+  // "Sales" (localized)
+  google.protobuf.StringValue display_name = 2;
+  // "Total revenue from all DoorDash orders." (localized) - used in tooltip
+  google.protobuf.StringValue description = 3;
+  // [{"name": "Subtotal", "amount": "$100.00", "tooltip": "Total price of all orders before taxes, commissions, fees, error charges, and tips."}]
+  repeated SummaryTabItem tab_items = 4;
+  // "$1,3000" (this can be any value) based on the tab
+  oneof tab_total {
+    // int 32
+    ComparableInt32Field tab_total_int32 = 5;
+    // int 64
+    ComparableInt64Field tab_total_int64 = 6;
+    // double
+    ComparableDoubleField tab_total_double = 7;
+    // monetary
+    ComparableMonetaryField tab_total_monetary = 8;
+  }
+}
+
+// Represents a Filter Item which is a key-value pair used to render filter options
+// Change Summary/Key Points:
+// (1) Used by FE to render drop-downs for options to filter on
+// (2) "key" - for "revenue_centers", this is user-provided, we will not have key if BE cannot find key, BE will create hash/slug from the "friendly_name" -> "key" chan-In-store B -> chan-in-store-b
+// (3) "friendly_name" - for "revenue_centers", this is user-provided (ex. "in-store foo") and not sanitized. This can be edited. FE needs to encode this to pass through URL for sharing pages with filters BE needs to translate from KEY to localized "friendly_name", else use DB provided friendly_name, else fallback to KEY name
+message FilterItem {
+  // "DemandGen" (provided by DB - "internal_name")
+  google.protobuf.StringValue key = 1;
+  // "Self-Delivery" (localized for all except revenue_centers which is user provided, this is pass-through)
+  google.protobuf.StringValue friendly_name = 2;
+}
+
+// Transaction Filters
+message Filter {
+  // "REVENUE_CENTERS"
+  TransactionsFilterType type = 1;
+  // "CHANNEL"
+  TransactionsFilterType parent_type = 2;
+  // "In-Store (Revenue Centers)"
+  google.protobuf.StringValue friendly_name = 3;
+  // "For Here", "UberEats”
+  repeated FilterItem filters = 4;
+  // Will be null for most filters unless theres a parent
+  // Ex. For Revenue centers, it will have the key of the FilterItem In-Store (So we know when we come across a filter item with the key in-store )
+  FilterItem parent_filter_item = 5;
+  // Used for localization of labels for when filters are selected to render drop-down filter component
+  FilterSelectionLabels filter_selection_labels = 6;
+}
+
+// Localized text for frontend dropdown component selection state
+message FilterSelectionLabels {
+  // "All Channels"
+  google.protobuf.StringValue all_select_label = 1;
+  // "1 Channel Selected"
+  google.protobuf.StringValue singular_select_label = 2;
+  // "%@ Channels Selected" - FE will replace the %@ with a numerical value
+  google.protobuf.StringValue plural_select_label = 3;
+}
+
+// Transaction Filter Type
+enum TransactionsFilterType {
+  // unspecified
+  TRANSACTIONS_FILTER_TYPE_UNSPECIFIED = 0;
+  // channels
+  TRANSACTIONS_FILTER_TYPE_CHANNELS = 1;
+  // transaction types
+  TRANSACTIONS_FILTER_TYPE_TRANSACTION_TYPES = 2;
+  // payment methods
+  TRANSACTIONS_FILTER_TYPE_PAYMENT_METHODS = 3;
+  // revenue centers
+  TRANSACTIONS_FILTER_TYPE_REVENUE_CENTERS = 4;
+}

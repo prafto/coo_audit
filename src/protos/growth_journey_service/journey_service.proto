@@ -1,0 +1,415 @@
+syntax = "proto3";
+
+package growth_journey_service.v1;
+
+import "google/protobuf/wrappers.proto";
+import "growth_journey_service/event.proto";
+import "growth_journey_service/journey_common.proto";
+import "growth_journey_service/journey_ecosystem.proto";
+import "growth_journey_service/journey_ecosystem_service.proto";
+import "growth_journey_service/journey_ui.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/growth_journey_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.growth_journey_service";
+
+// define journey service
+service JourneyService {
+  // Trigger a workflow for entities
+  rpc TriggerWorkflow(TriggerWorkflowRequest) returns (TriggerWorkflowResponse);
+  // Send Entity to node, execute the workflow
+  rpc SendEntityToNode(SendEntityToNodeRequest) returns (SendEntityToNodeResponse);
+  // create a new journey template
+  rpc CreateJourney(CreateJourneyRequest) returns (CreateJourneyResponse);
+  // get journey template
+  rpc GetJourney(GetJourneyRequest) returns (GetJourneyResponse);
+  // update journey template
+  rpc UpdateJourney(UpdateJourneyRequest) returns (UpdateJourneyResponse);
+  // update journey metadata by template name
+  rpc UpdateJourneyMetadata(UpdateJourneyMetadataRequest) returns (UpdateJourneyMetadataResponse);
+  // get all journey templates
+  rpc GetAllJourneys(GetAllJourneysRequest) returns (GetAllJourneysResponse);
+  // get attribute definitions
+  rpc GetActionDefinitions(GetActionDefinitionsRequest) returns (GetActionDefinitionsResponse);
+  // get attribute definitions
+  rpc GetAttributeDefinitions(GetAttributeDefinitionsRequest) returns (GetAttributeDefinitionsResponse);
+  // get DV definitions
+  rpc GetDVDefinitions(GetDVDefinitionsRequest) returns (GetDVDefinitionsResponse);
+  // get user entry count on nodes
+  rpc GetUserEntryCountOnNodes(GetUserEntryCountOnNodesRequest) returns (GetUserEntryCountOnNodesResponse);
+  // clone a given journey
+  rpc CloneJourney(CloneJourneyRequest) returns (CloneJourneyResponse);
+  // validate a list of journey nodes
+  rpc ValidateNodes(ValidateNodesRequest) returns (ValidateNodesResponse);
+  // terminate a list of entities in a given workflow
+  rpc TerminateEntities(TerminateEntitiesRequest) returns (TerminateEntitiesResponse);
+  // invoke journey workflow via API
+  rpc InvokeJourney(InvokeJourneyRequest) returns (InvokeJourneyResponse);
+}
+
+// TriggerWorkflowRequest
+message TriggerWorkflowRequest {
+  // workflow id
+  WorkflowIdentifier workflow_identifier = 1;
+  // the list of entities to trigger
+  repeated Entity entities = 2;
+  // indicate if it is in test mode - not supported yet
+  google.protobuf.BoolValue test_mode = 3;
+  // indicate if it generate request or kafka event
+  google.protobuf.BoolValue is_event = 4;
+}
+
+// TriggerWorkflowResponse
+message TriggerWorkflowResponse {
+  // define success
+  message Success {}
+  // define error
+  message Error {
+    // define error code enum
+    enum ErrorCode {
+      // unknown error
+      ERROR_CODE_UNSPECIFIED = 0;
+    }
+
+    // define error code
+    ErrorCode error_code = 1;
+    // define error message
+    google.protobuf.StringValue message = 2;
+  }
+
+  // defined a result
+  message Result {
+    // define entity in the result
+    Entity entity = 1;
+    // define result
+    oneof result {
+      // define a success result
+      Success success = 2;
+      // define an error result
+      Error error = 3;
+    }
+  }
+  // the list of results
+  repeated Result results = 1;
+}
+
+// request of SendEntityToNode
+message SendEntityToNodeRequest {
+  // workflow uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // node uuid - from which node to resume this workflow
+  google.protobuf.StringValue node_uuid = 2;
+  // list of user context or event payload
+  repeated UserContext user_context = 3;
+}
+
+// User context such as event payload or user attributes
+message UserContext {
+  // consumer_id
+  google.protobuf.StringValue entity_id = 1;
+  // attributes required by node
+  repeated AttributePayload attribute_payloads = 2;
+  // remaining duration in minutes when sending to wait until node
+  google.protobuf.Int64Value duration_remaining_in_minutes = 3;
+}
+
+// response of SendEntityToNode
+message SendEntityToNodeResponse {}
+
+// request of GetAllJourneys
+message GetAllJourneysRequest {}
+
+// response of GetAllJourneys
+message GetAllJourneysResponse {
+  // journey meta data, except workflow template content
+  repeated JourneyMetadata journey_metadata = 1;
+}
+
+// request of CreateJourney
+message CreateJourneyRequest {
+  // journey metadata
+  JourneyMetadata metadata = 1;
+  // journey UI data
+  google.protobuf.StringValue ui_data = 2;
+  // one of the trigger source
+  oneof trigger_source {
+    // trigger a journey by an event
+    EventTrigger event_trigger = 10;
+    // trigger a journey by ep program
+    EPTrigger ep_trigger = 11;
+    // trigger a journey through an api
+    APITrigger api_trigger = 13;
+  }
+}
+
+// response of CreateJourney
+message CreateJourneyResponse {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version
+  google.protobuf.Int32Value version = 2;
+  // trigger uuid
+  google.protobuf.StringValue trigger_uuid = 3;
+}
+
+// request of GetJourney
+message GetJourneyRequest {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version
+  google.protobuf.Int32Value version = 2;
+}
+
+// response of GetJourney
+message GetJourneyResponse {
+  // journey metadata
+  JourneyMetadata metadata = 1;
+  // UI data for render the journey template graph
+  google.protobuf.StringValue ui_data = 2;
+  // action nodes
+  repeated ActionNode action_nodes = 3;
+  // boolean split nodes
+  repeated BooleanSplitNode boolean_split_nodes = 4;
+  // DV nodes
+  repeated DVNode dv_nodes = 5;
+  // Wait on event nodes
+  repeated WaitOnEventNode wait_on_event_nodes = 6;
+  // Wait until nodes
+  repeated WaitUntilNode wait_until_nodes = 7;
+  // one of the trigger source
+  oneof trigger_source {
+    // trigger a journey by an event
+    EventTrigger event_trigger = 10;
+    // trigger a journey by ep program
+    EPTrigger ep_trigger = 11;
+    // trigger a journey through an api
+    APITrigger api_trigger = 13;
+  }
+}
+
+// request of UpdateJourney
+message UpdateJourneyRequest {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version
+  google.protobuf.Int32Value version = 2;
+  // UI data for render the journey template graph
+  google.protobuf.StringValue ui_data = 3;
+  // action nodes to be updated
+  repeated ActionNode action_nodes_to_update = 11;
+  // boolean split nodes to be updated
+  repeated BooleanSplitNode boolean_split_nodes_to_update = 12;
+  // DV nodes to be updated
+  repeated DVNode dv_nodes_to_update = 13;
+  // Wait on event nodes to be updated
+  repeated WaitOnEventNode wait_on_event_nodes_to_update = 14;
+  // Wait until nodes to be updated
+  repeated WaitUntilNode wait_until_nodes_to_update = 15;
+  // action nodes to be created
+  repeated ActionNode action_nodes_to_create = 21;
+  // boolean split nodes to be created
+  repeated BooleanSplitNode boolean_split_nodes_to_create = 22;
+  // DV nodes nodes to be created
+  repeated DVNode dv_nodes_to_create = 23;
+  // Wait on event nodes to be created
+  repeated WaitOnEventNode wait_on_event_nodes_to_create = 24;
+  // Wait until nodes nodes to be created
+  repeated WaitUntilNode wait_until_nodes_to_create = 25;
+
+  // one of the trigger source to be updated
+  oneof trigger_source_to_update {
+    // event trigger to be updated
+    EventTrigger event_trigger_to_update = 31;
+    // EP trigger to be updated
+    EPTrigger ep_trigger_to_update = 32;
+    // API trigger to be updated
+    APITrigger api_trigger_to_update = 34;
+  }
+
+  // one of the trigger source to be created
+  oneof trigger_source_to_create {
+    // event trigger to be created
+    EventTrigger event_trigger_to_create = 41;
+    // EP trigger to be created
+    EPTrigger ep_trigger_to_create = 42;
+    // API trigger to be created
+    APITrigger api_trigger_to_create = 44;
+  }
+}
+
+// response of UpdateJourney
+message UpdateJourneyResponse {}
+
+// request of UpdateJourneyMetadataByName
+message UpdateJourneyMetadataRequest {
+  // journey metadata
+  JourneyMetadata metadata = 1;
+}
+
+// response of UpdateJourneyByName
+message UpdateJourneyMetadataResponse {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version
+  google.protobuf.Int32Value version = 2;
+}
+
+// request of GetAttributeDefinitions
+message GetAttributeDefinitionsRequest {
+  // event or rpc
+  AttributeType attribute_type = 1;
+  // all or consumer or dasher or merchant
+  JourneyEntityType entity_type = 2;
+  // whether it should return batch level attributes
+  google.protobuf.BoolValue is_batch = 4;
+}
+
+// response of GetAttributeDefinitions
+message GetAttributeDefinitionsResponse {
+  // attribute definitions
+  repeated AttributeDefinition attribute_definitions = 1;
+  // all supported operators
+  repeated Operator all_supported_operators = 2;
+  // all supported value types
+  repeated ValueType all_value_types = 3;
+}
+
+// request of GetActionDefinitions
+message GetActionDefinitionsRequest {
+  // all or consumer or dasher or merchant
+  JourneyEntityType entity_type = 1;
+  // whether it should return batch level actions
+  google.protobuf.BoolValue is_batch = 4;
+}
+
+// response of GetActionDefinitions
+message GetActionDefinitionsResponse {
+  // action definitions
+  repeated ActionDefinition action_definitions = 1;
+}
+
+// request of GetDVDefinitions
+message GetDVDefinitionsRequest {}
+
+// response of GetDVDefinitions
+message GetDVDefinitionsResponse {
+  // dv definitions
+  repeated DVDefinition dv_definitions = 1;
+}
+
+// request of GetUserEntryCountOnNodes
+message GetUserEntryCountOnNodesRequest {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version of workflow, if not provided, then the latest version
+  google.protobuf.Int32Value version = 2;
+  // node uuids, if not provided, returns the user entry count of all the non deleted nodes
+  repeated google.protobuf.StringValue node_uuids = 3;
+  // if true only return test entry count otherwise, return only live entry count
+  google.protobuf.BoolValue is_test = 4;
+}
+
+// response of GetUserEntryCountOnNodes
+message GetUserEntryCountOnNodesResponse {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // version of workflow
+  google.protobuf.Int32Value version = 2;
+  // user entry count on nodes
+  repeated UserEntryCountOnNode user_entry_count_on_nodes = 3;
+  // total active entry count
+  google.protobuf.Int32Value total_active_entry_count = 4;
+  // total terminated entry count
+  google.protobuf.Int32Value total_terminated_entry_count = 5;
+}
+
+// request of CloneJourney
+message CloneJourneyRequest {
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // if not provided then the API will copy the latest
+  google.protobuf.Int32Value version = 2;
+}
+
+// response of CloneJourney
+message CloneJourneyResponse {
+  // new journey uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // new journey version
+  google.protobuf.Int32Value version = 2;
+}
+
+// request of ValidateNodesRequest
+message ValidateNodesRequest {
+  // action node to be validated
+  repeated ActionNode action_nodes_to_validate = 1;
+  // boolean split node to be validated
+  repeated BooleanSplitNode boolean_split_nodes_to_validate = 2;
+  // DV node to be validated
+  repeated DVNode dv_nodes_to_validate = 3;
+  // Wait on event node to be validated
+  repeated WaitOnEventNode wait_on_event_nodes_to_validate = 4;
+  // Wait until node to be validated
+  repeated WaitUntilNode wait_until_nodes_to_validate = 5;
+  // Event trigger to be validated
+  EventTrigger event_trigger_to_validate = 6;
+  // journey uuid
+  google.protobuf.StringValue journey_uuid = 7;
+  // version
+  google.protobuf.Int32Value version = 8;
+}
+
+// response of ValidateNodesResponse
+message ValidateNodesResponse {}
+
+// request of TerminateEntitiesInWorkflow
+message TerminateEntitiesRequest {
+  // UUID of the journey
+  google.protobuf.StringValue journey_uuid = 1;
+  // list of entity IDs to terminate
+  repeated google.protobuf.StringValue entity_ids = 2;
+  // UUID of the node (optional). If provided, only entities within this node will be terminated.
+  google.protobuf.StringValue node_uuid = 3;
+}
+
+// response of TerminateEntitiesInWorkflow
+message TerminateEntitiesResponse {
+  // List of statuses for each terminated entity
+  repeated EntityTerminationStatus entity_termination_status = 1;
+}
+
+// Individual status for an entity
+message EntityTerminationStatus {
+  // The ID of the entity
+  google.protobuf.StringValue entity_id = 1;
+  // The termination status ("terminated", "not_found / already terminated")
+  google.protobuf.StringValue status = 2;
+}
+
+// request of InvokeJourney
+message InvokeJourneyRequest {
+  // workflow uuid
+  google.protobuf.StringValue journey_uuid = 1;
+  // entity metadata payload
+  repeated EntityPayload entity_payloads = 2;
+}
+
+// entity metadata payload
+message EntityPayload {
+  // entity_id for example consumer_id, merchant_id
+  google.protobuf.StringValue entity_id = 1;
+  // metadata map (key, value) pair
+  repeated APITriggerPayload api_trigger_payloads = 2;
+}
+
+// API trigger payload
+message APITriggerPayload {
+  // name of the filed
+  google.protobuf.StringValue field_name = 1;
+  // value of the field
+  google.protobuf.StringValue field_value = 2;
+}
+
+// response of InvokeJourney
+message InvokeJourneyResponse {}

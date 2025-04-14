@@ -1,0 +1,349 @@
+syntax = "proto3";
+
+package doordash.retail.inventory_ingestion_workflow_service.v1;
+
+import "common/code.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.retail.inventoryingestion";
+
+/**
+ * RetailInventoryIngestionWorkflowService provides a set of APIs that can be used by
+ * New Vertical merchants to ingest inventory related files into the Doordash system.
+ *
+ * Design doc: <To be added>
+ *
+ **/
+service RetailInventoryIngestionWorkflowService {
+  // Example Hermes client config. The options not listed here use Hermes default.
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Starts processing the the input inventory file
+  rpc ProcessInventoryInputFile(ProcessInventoryInputFileRequest) returns (ProcessInventoryInputFileResponse);
+
+  // Signal events to workflow
+  rpc SignalWorkflow(SignalWorkflowRequest) returns (SignalWorkflowResponse);
+
+  // Ingest input file with config
+  rpc IngestFile(IngestFileRequest) returns (IngestFileResponse);
+
+  // create a s3 presigned url for ingestion
+  rpc CreateIngestionUrl(CreateIngestionUrlRequest) returns (CreateIngestionUrlResponse);
+
+  // ingest receipt data and trigger transformation flow to publish to baseline
+  rpc IngestJson(IngestJsonRequest) returns (IngestJsonResponse);
+
+  // Starts processing the the input inventory file in batches
+  rpc BatchProcessInventoryInputFile(BatchProcessInventoryInputFileRequest) returns (BatchProcessInventoryInputFileResponse);
+
+  // Starts processing the inventory file based on merchant ingestion on specified date
+  rpc SyncInventory(SyncInventoryRequest) returns (SyncInventoryResponse);
+}
+
+// Request for IngestJson
+message IngestJsonRequest {
+  // Receipt Data Content
+  google.protobuf.Value data = 1;
+  // Merchant Name
+  google.protobuf.StringValue merchant_name = 2;
+  // Request ID
+  google.protobuf.StringValue request_id = 3;
+  // Ingestion Type
+  IngestionType ingestion_type = 4;
+}
+
+//Response for IngestJson
+message IngestJsonResponse {
+  // Status code
+  code.Code code = 1;
+  // Request ID
+  google.protobuf.StringValue request_id = 2;
+  // error message if failed
+  google.protobuf.StringValue message = 3;
+  // Error list when error
+  repeated FieldError field_errors = 4;
+}
+
+// Request for ProcessInventoryInputFile
+message ProcessInventoryInputFileRequest {
+  // input s3 bucket name of the inventory file
+  google.protobuf.StringValue input_s3_bucket_name = 1;
+  // input s3 bucket name of the object key
+  google.protobuf.StringValue input_s3_object_key = 2;
+  // last modified at timestamp of the inventory file
+  google.protobuf.Timestamp last_modified_at_timestamp = 3;
+}
+
+// Response for ProcessInventoryInputFile
+message ProcessInventoryInputFileResponse {
+  // response message
+  google.protobuf.StringValue message = 1;
+}
+
+// Request for batches of ProcessInventoryInputFile
+message BatchProcessInventoryInputFileRequest {
+  // input s3 bucket name of the inventory file
+  google.protobuf.StringValue input_s3_bucket_name = 1;
+  // input s3 bucket name of the object key
+  repeated google.protobuf.StringValue input_s3_object_key = 2;
+}
+
+// Response for BatchProcessInventoryInputFile
+message BatchProcessInventoryInputFileResponse {
+  // Status code
+  code.Code code = 1;
+  // response message
+  google.protobuf.StringValue request_id = 2;
+}
+
+// Request for SyncInventory
+// (-- api-linter: core::0142::time-field-type=disabled
+//     aip.dev/not-precedent: Legacy date for Inventory Feed Sync uses date string)
+message SyncInventoryRequest {
+  // Merchant Name
+  google.protobuf.StringValue merchant_name = 1;
+  // Doordash business id
+  google.protobuf.Int64Value business_id = 2;
+  // List of store IDs
+  repeated google.protobuf.Int64Value store_ids = 3;
+  // List of location IDs
+  repeated google.protobuf.StringValue location_ids = 4;
+  // Determine if we want to update feed
+  google.protobuf.BoolValue update_feed = 5;
+  // Determine if we want to update menu
+  google.protobuf.BoolValue update_menu = 6;
+  // Determine what type of integration to sync
+  google.protobuf.StringValue integration_type = 7;
+  // Determine what type of feed to sync
+  google.protobuf.StringValue feed_type = 8;
+  // Determine if we want to process testing stores
+  google.protobuf.BoolValue process_testing_stores = 9;
+  // Determine if we want to process inactive stores
+  google.protobuf.BoolValue process_inactive_stores = 10;
+  // Determine if we want to skip price guardrail in the inventory process
+  google.protobuf.BoolValue skip_price_guardrail = 11;
+  // Determine if we want to do a sync for partial update
+  google.protobuf.BoolValue partial_update = 12;
+  // Date string
+  google.protobuf.StringValue date = 13;
+}
+
+// Response for SyncInventory
+message SyncInventoryResponse {
+  // response message
+  google.protobuf.StringValue request_id = 1;
+}
+
+// Request to SignalWorkflow
+message SignalWorkflowRequest {
+  // type of signal to send to workflow
+  google.protobuf.StringValue signal_type = 1;
+  // event/signal attributes
+  google.protobuf.Value data = 2;
+}
+
+// Response for SignalWorkflow
+message SignalWorkflowResponse {
+  // response message
+  google.protobuf.StringValue message = 1;
+}
+
+// Request to ingest file
+message IngestFileRequest {
+  // Required - input metadata
+  IngestFileInputMetadata input_metadata = 1;
+  // input schema for file parsing
+  InputSchema input_schema = 2;
+  // Required - transform config used for ingestion
+  TransformConfig config = 3;
+}
+
+// Response for file ingestion
+message IngestFileResponse {
+  // Status code
+  code.Code code = 1;
+  // Error message the code is OK
+  string error_message = 2;
+  // UUID that is associated with the operation
+  string operation_id = 3;
+}
+
+// request to create presigned ingestion URL from a file
+message CreateIngestionUrlRequest {
+  // business id
+  google.protobuf.StringValue business_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // provider name
+  google.protobuf.StringValue provider_name = 3;
+  // create by user
+  google.protobuf.StringValue created_by = 4;
+  // Required - file name
+  google.protobuf.StringValue file_name = 5;
+  // Required - ingestion namespace
+  IngestionType ingestion_type = 6;
+  // Required - idempotency token
+  google.protobuf.StringValue idempotency_token = 10;
+}
+
+// response for presigned ingestion URL creation
+message CreateIngestionUrlResponse {
+  // UUID that is associated with the operation
+  string operation_id = 3;
+  // presigned s3 url
+  google.protobuf.StringValue presigned_url = 2;
+}
+
+// Input metadata for IngestFileRequest
+message IngestFileInputMetadata {
+  // Required - list of input scope e.g, bizId, storeId
+  repeated InputScope input_scope = 1;
+  // Required - ingestion namespace
+  IngestionType ingestion_type = 2;
+  // Required - relative file path to ingest
+  InputSource input_source = 3;
+  // external id provided by clients for tracking
+  string client_correlation_id = 4;
+}
+
+// Input Scope for IngestFileInputMetadata
+message InputScope {
+  // Required - input file scope type
+  InputScopeType type = 1;
+  // Required - e.g, exact businessId if the type is BUSINESS_ID
+  string value = 2;
+}
+
+// Input Source for IngestFileInputMetadata
+message InputSource {
+  // Required - input source location.
+  InputSourceType type = 1;
+  // Required - e.g, relative s3 path if the type is RELATIVE_PATH_S3
+  string value = 2;
+}
+
+// Input schema for IngestFileRequest
+message InputSchema {
+  // input attributes
+  repeated Attribute attributes = 1;
+}
+
+// TransformConfig for IngestFileRequest
+message TransformConfig {
+  // Required - output schema name
+  string output_schema_name = 1;
+  // Required - output schema version
+  int64 output_schema_version = 2;
+  // Required - schema mapping between input& output
+  repeated SchemaMapping schema_mappings = 3;
+  // skip first N rows
+  int64 skip_first_rows = 4;
+}
+
+// Schema mapping for TransformConfig
+message SchemaMapping {
+  // Required - input_col_index
+  int64 input_column_index = 1;
+  // Required - output_attribute_id
+  int64 output_attribute_id = 2;
+  // Required if it's not in the standard output schema
+  Attribute other_attribute = 3;
+}
+
+// Field Error defined for erroneous responses
+message FieldError {
+  // Name of the field whose value couldn't be validated
+  google.protobuf.StringValue field = 1;
+  // The error that was encountered when validating the field's value
+  google.protobuf.StringValue error = 2;
+}
+
+// Phase.I It’s not exposed to clients, for `SchemaMapping` reference only.
+message OutputSchema {
+  // Required - schema name
+  string schema_name = 1;
+  // Required - schema version
+  int64 version = 2;
+  // Required - output attributes
+  repeated Attribute attributes = 3;
+}
+
+// Attribute used in schema
+message Attribute {
+  // id related to this attribute
+  int64 attribute_id = 1;
+  // name related to this attribute
+  string attribute_name = 2;
+  // type related to this attribute
+  AttributeType attribute_type = 3;
+}
+
+// Input scope type enums
+enum InputScopeType {
+  // default
+  INPUT_SCOPE_TYPE_UNSPECIFIED = 0;
+  // inputs under business level
+  INPUT_SCOPE_TYPE_BUSINESS_ID = 1;
+  // inputs under store level
+  INPUT_SCOPE_TYPE_STORE_ID = 2;
+  // inputs under provider level
+  INPUT_SCOPE_TYPE_PROVIDER_NAME = 3;
+}
+
+// Ingestion type enums
+enum IngestionType {
+  // default
+  INGESTION_TYPE_UNSPECIFIED = 0;
+  // ingestion for catalog
+  INGESTION_TYPE_CATALOG = 1;
+  // ingestion for dashmart
+  INGESTION_TYPE_DASHMART = 2;
+  // ingestion for inventory
+  INGESTION_TYPE_INVENTORY = 3;
+  // ingestion for inventory
+  INGESTION_TYPE_RECEIPTS = 4;
+  // ingestion for open api
+  INGESTION_TYPE_OPEN_API = 5;
+}
+
+// Input Source type enums
+enum InputSourceType {
+  // default
+  INPUT_SOURCE_TYPE_UNSPECIFIED = 0;
+  // input in S3 with relative path
+  INPUT_SOURCE_TYPE_RELATIVE_PATH_S3 = 1;
+  // input in S3 with relative path
+  INPUT_SOURCE_TYPE_ABSOLUTE_PATH_S3 = 2;
+  // JSON input
+  INPUT_SOURCE_TYPE_JSON = 3;
+}
+
+// Attribute type enums
+enum AttributeType {
+  // default
+  ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+  // string type
+  ATTRIBUTE_TYPE_STRING = 1;
+  // int type
+  ATTRIBUTE_TYPE_INT64 = 2;
+  // double type
+  ATTRIBUTE_TYPE_DOUBLE = 3;
+  // boolean type
+  ATTRIBUTE_TYPE_BOOLEAN = 4;
+}

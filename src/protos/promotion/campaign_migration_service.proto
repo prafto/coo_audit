@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+
+// This service defines endpoints that are used to migrate campaigns from cassandra to crdb
+service CampaignMigrationService {
+  // migration endpoint to backfill campaign by id
+  rpc BackfillCampaignById(BackfillCampaignByIdRequest) returns (BackfillCampaignByIdResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // migration endpoint to backfill campaign history by id
+  rpc BackfillCampaignHistoryById(BackfillCampaignHistoryByIdRequest) returns (BackfillCampaignHistoryByIdResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to backfill non ads manager created campaign - primarily used for onboarding Mx to Ads Manager
+  rpc BackfillNonAdsManagerCampaign(BackfillNonAdsManagerCampaignRequest) returns (BackfillNonAdsManagerCampaignResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to remove daily budget from campaigns configured with lifetime budget
+  // see: https://doordash.atlassian.net/browse/AAP-1139
+  rpc RemoveDailyBudgetFromBudget(RemoveDailyBudgetFromBudgetRequest) returns (RemoveDailyBudgetFromBudgetResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to get and update campaign by id
+  rpc GetAndUpdateCampaignById(GetAndUpdateCampaignByIdRequest) returns (GetAndUpdateCampaignByIdResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to remove state from misaligned state and isActive fields
+  rpc RemoveStateFromCampaign(RemoveStateFromCampaignRequest) returns (RemoveStateFromCampaignResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to backfill campaign with global search placement
+  rpc BackfillCampaignWithGlobalSearch(BackfillCampaignWithGlobalSearchRequest) returns (BackfillCampaignWithGlobalSearchResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to backfill campaign status flow history given a campaign id
+  rpc BackfillStatusFlowHistoryById(BackfillStatusFlowHistoryByIdRequest) returns (BackfillStatusFlowHistoryByIdResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+
+  // endpoint to backfill audience to Smart Targeting given campaign id and business id
+  rpc BackfillSmartTargetingCampaign(BackfillSmartTargetingCampaignRequest) returns (BackfillSmartTargetingCampaignResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+}
+
+// Request to backfill campaign by id
+message BackfillCampaignByIdRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+  // backfill type
+  BackfillType backfill_type = 2;
+
+  // CDC message type
+  CdcMessageType cdc_message_type = 3;
+
+  // Enum to specify the type of backfill
+  enum BackfillType {
+    // unspecified
+    BACKFILL_TYPE_UNSPECIFIED = 0;
+    // Backfill the campaign with the latest data
+    BACKFILL_TYPE_LATEST = 1;
+    // Backfill the campaign with the full history data
+    BACKFILL_TYPE_FULL = 2;
+  }
+
+  // Type to determine which cdc message to publish on backfill
+  enum CdcMessageType {
+    // unspecified
+    CDC_MESSAGE_TYPE_UNSPECIFIED = 0;
+    // CDC message type for live path
+    CDC_MESSAGE_TYPE_LIVE = 1;
+    // CDC message type for backfill path
+    CDC_MESSAGE_TYPE_BACKFILL = 2;
+  }
+}
+
+// No response is expected
+message BackfillCampaignByIdResponse {}
+
+// Request to backfill campaign history by id
+message BackfillCampaignHistoryByIdRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+// No response is expected
+message BackfillCampaignHistoryByIdResponse {}
+
+// request body to backfill non ads manager created campaign
+message BackfillNonAdsManagerCampaignRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+  // advertiser id
+  google.protobuf.StringValue advertiser_id = 2;
+  // advertiser name
+  google.protobuf.StringValue advertiser_name = 3;
+  // is dry run flag
+  google.protobuf.BoolValue is_dry_run = 4;
+  // Enable only appending advertiser ID without transformation, default to be false in the service code
+  google.protobuf.BoolValue append_only = 5;
+  // Add config to support rate limit threshold for backfilling
+  google.protobuf.Int32Value rate_limit_threshold = 6;
+}
+
+// response body to backfill non ads manager created campaign
+message BackfillNonAdsManagerCampaignResponse {
+  // campaign proto that is backfilled
+  Campaign backfilled_campaign = 1;
+  // a boolean indicating the success of the backfill
+  google.protobuf.BoolValue is_success = 2;
+  // error message if backfill failed
+  google.protobuf.StringValue error_message = 3;
+}
+
+// Request to remove daily budget campaign by id
+message RemoveDailyBudgetFromBudgetRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+  // is dry run flag
+  google.protobuf.BoolValue is_dry_run = 2;
+}
+
+// Response to remove daily budget campaign by id
+message RemoveDailyBudgetFromBudgetResponse {
+  // campaign proto that is backfilled
+  Campaign backfilled_campaign = 1;
+  // a boolean indicating whether the campaign was persisted
+  google.protobuf.BoolValue is_persisted = 2;
+}
+
+// Request to get and update campaign by id
+message GetAndUpdateCampaignByIdRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+// Response to get and update campaign by id
+message GetAndUpdateCampaignByIdResponse {
+  // campaign proto that is backfilled
+  Campaign campaign = 1;
+}
+
+// Request to remove state from campaign
+message RemoveStateFromCampaignRequest {
+  // campaign id to backfill
+  string campaign_id = 1;
+  // is dry run flag
+  google.protobuf.BoolValue is_dry_run = 2;
+}
+
+// Response to remove state from campaign
+message RemoveStateFromCampaignResponse {
+  // campaign proto that is backfilled
+  Campaign campaign = 1;
+}
+
+// Request to backfill campaign with global search placement
+message BackfillCampaignWithGlobalSearchRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+  // is dry run flag
+  google.protobuf.BoolValue is_dry_run = 2;
+}
+
+// Response to backfill campaign with global search placement - no response expected
+message BackfillCampaignWithGlobalSearchResponse {}
+
+// Request to backfill campaign history by id
+message BackfillStatusFlowHistoryByIdRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+// No response is expected
+message BackfillStatusFlowHistoryByIdResponse {}
+
+// Request to backfill audience to Smart Targeting
+message BackfillSmartTargetingCampaignRequest {
+  // campaign id to backfill
+  google.protobuf.StringValue campaign_id = 1;
+  // business id
+  google.protobuf.StringValue business_id = 2;
+  // is dry run flag
+  google.protobuf.BoolValue is_dry_run = 3;
+}
+
+// Response from Smart Targeting audience backfill
+message BackfillSmartTargetingCampaignResponse {
+  // map of response fields
+  map<string, string> response_fields = 1;
+}

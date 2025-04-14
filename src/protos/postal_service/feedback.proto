@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package postal_service.v1;
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.postal_service";
+option go_package = "github.com/doordash/services-protobuf/generated/postal_service";
+
+import "common/code.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "postal_service/postal_service_common.proto";
+
+// Service for handling feedback signals
+service FeedbackService {
+	// Timeout after 700 milliseconds.
+	option (service_client.client_config).response_attempt_timeout_millis = 700;
+	// Make a total 4 attempts (initial + three retries).
+	option (service_client.client_config).retry_config.max_attempts = 4;
+	// Add RESOURCE_EXHAUSTED to the set of retriable codes.
+	option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+	// Break the circuit if the error rate exceeds 80%.
+	option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+	// Ignore NOT_FOUND from circuit breaker error rate calculation.
+	option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+	// Send a feedback signal
+	rpc SendFeedbackSignal(SendFeedbackSignalRequest) returns (SendFeedbackSignalResponse);
+}
+
+// Request for SendFeedbackSignal RPC
+message SendFeedbackSignalRequest {
+	// push_event_id (correlates with the one Postal Service sends to iOS/Android apps)
+	string push_event_id = 1;
+
+	// enum used to distinguish between different types of feedback signals
+	EventType event_type = 2;
+
+	// can be added when we want to separate push signal from app state and get more granular signal plus app state
+	FeedbackSignalMetadata metadata = 3;
+}
+
+// Response for SendFeedbackSignal RPC
+message SendFeedbackSignalResponse {
+}
+
+// enum used to distinguish between different types of feedback signals
+enum EventType {
+	// Unspecified
+	EVENT_TYPE_UNSPECIFIED = 0;
+
+	// Used to indicate the user device downloaded the image associated with the push notif
+	EVENT_TYPE_PUSH_NOTIF_IMAGE_DOWNLOADED = 1;
+
+	// Used to indicate the push notification is received by user's device
+	EVENT_TYPE_PUSH_NOTIF_RECEIVED = 2;
+
+	// Used to indicate the push notification is presented to user
+	EVENT_TYPE_PUSH_NOTIF_PRESENTED = 3;
+
+	// Used to indicate the user interacts with the push notification (long-hold, react to the options offered by push, etc..)
+	EVENT_TYPE_PUSH_NOTIF_INTERACT = 4;
+
+	// Used to indicate the user is being redirected on the push notification
+	EVENT_TYPE_PUSH_NOTIF_REDIRECTED = 5;
+}
+
+// metadata about the client and signal at the time of the signal sent
+message FeedbackSignalMetadata {
+	// The state of the app when the feedback signal was sent
+	AppState app_state = 1;
+}
+
+// enum used to distinguish between different types of App States
+enum AppState {
+	// Unspecified
+	APP_STATE_UNSPECIFIED = 0;
+
+	// app was running in the foreground on the user's device when push signal is triggered
+	APP_STATE_FOREGROUNDED = 1;
+
+	// app was running in the background on the user's device when push signal is triggered
+	APP_STATE_BACKGROUNDED = 2;
+
+	// DO NOT USE. This is temporary enum with the same meaning as APP_STATE_UNSPECIFIED
+	// This is being added to accommodate an issue on the mobile app side where the wrong string is being sent
+	APP_STATE_UNDEFINED = 3;
+}

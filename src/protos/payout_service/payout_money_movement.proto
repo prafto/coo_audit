@@ -1,0 +1,717 @@
+syntax = "proto3";
+
+package doordash.payout_service;
+
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payment/common.proto";
+import "payout_service/payout_service.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payout_service";
+
+// service that handles money movement
+service PayoutMoneyMovementService {
+  // Stripe integration related endpoint
+  rpc SetupIntent(SetupIntentRequest) returns (SetupIntentResponse);
+
+  // Transfer related endpoints
+  rpc CreateExternalTransfer(CreateExternalTransferRequest) returns (CreateExternalTransferResponse);
+  // cancel transfer initiated by user
+  rpc CancelExternalTransfer(CancelExternalTransferRequest) returns (CancelExternalTransferResponse);
+  // get money movement accounts
+  rpc GetAllMoneyMovementAccounts(GetAllMoneyMovementAccountsRequest) returns (GetAllMoneyMovementAccountsResponse);
+
+  // Plaid integration related endpoint
+  rpc CreateLinkToken(CreateLinkTokenRequest) returns (CreateLinkTokenResponse);
+  // this API does few things:
+  // 	1. exchanges public_token with access_token
+  // 	2. generates processor_token using the access_token
+  // 	3. adds external funding sources to marqeta
+  //    4. keep record of user connection status
+  rpc AddExternalAccountFundingSource(AddExternalAccountFundingSourceRequest) returns (AddExternalAccountFundingSourceResponse);
+  // handles webhook data from money movement provider
+  rpc HandleMoneyMovementProviderWebhook(HandleMoneyMovementProviderWebhookRequest) returns (HandleMoneyMovementProviderWebhookResponse);
+  // retrieve a list of accounts associated with any linked external account
+  rpc GetExternalAccounts(GetExternalAccountsRequest) returns (GetExternalAccountsResponse);
+  // retrieve real-time accounts balance
+  rpc GetExternalAccountsBalances(GetExternalAccountsBalancesRequest) returns (GetExternalAccountsBalancesResponse);
+  // retrieve JSON Web Key (JWK) to verify the authenticity of incoming webhooks using JWT header
+  rpc GetMoneyMovementWebhookVerificationKey(GetMoneyMovementWebhookVerificationKeyRequest) returns (GetMoneyMovementWebhookVerificationKeyResponse);
+  // In the short term, api will be used internally but future use Cases might include:
+  // 1. delete linked account based on user(Dx) request
+  // 2. account was inactive for a long time
+  // 3. account is no longer functional due to error state
+  // 4. user(Dx) unlinks their linked bank account
+  rpc DeleteExternalAccountLinkRecord(DeleteExternalAccountLinkRecordRequest) returns (DeleteExternalAccountLinkRecordResponse);
+  // This API initiate provider migration and setup for subsequent fund transfer:
+  // 1. link bank account between user's originating and destination provider bank account
+  // 2. redeem rewards if there is any
+  // 3. retrieve originating account's balance
+  // 4. record consents
+  rpc AddExternalFundingSourceForMigration(AddExternalFundingSourceForMigrationRequest) returns (AddExternalFundingSourceForMigrationResponse);
+}
+
+// request to get all money movement accounts
+message GetAllMoneyMovementAccountsRequest {
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 1;
+  // money movement provider
+  doordash.payout_service.PayoutProvider provider = 2;
+}
+
+// response received after getting all money movement accounts
+message GetAllMoneyMovementAccountsResponse {
+  // list of all money movement accounts
+  repeated MoneyMovementAccount accounts = 1;
+}
+
+// message to represent money movement account
+message MoneyMovementAccount {
+  // account id
+  google.protobuf.StringValue id = 1;
+  // account name
+  google.protobuf.StringValue name = 2;
+  // account type
+  AccountType internal_account_type = 3;
+  // account subtype
+  MoneyMovementExternalAccountSubType account_type = 4;
+  // account balance
+  MoneyMovementExternalAccountBalances balance = 5 [deprecated = true];
+  // last 4 digits of account number
+  google.protobuf.StringValue mask = 6;
+  // logo img url
+  google.protobuf.StringValue logo_img_url = 7;
+  // bank name
+  google.protobuf.StringValue bank_name = 8;
+  // obj describing the balance for an account
+  money.MonetaryFields available_balance = 9;
+  // status of account
+  MoneyMovementAccountStatus status = 10;
+}
+
+// money movement account status
+enum MoneyMovementAccountStatus {
+  // not specified
+  MONEY_MOVEMENT_ACCOUNT_STATUS_UNSPECIFIED = 0;
+  // account is active
+  MONEY_MOVEMENT_ACCOUNT_STATUS_ACTIVE = 1;
+  // account is inactive
+  MONEY_MOVEMENT_ACCOUNT_STATUS_INACTIVE = 2;
+  // account is in error state
+  MONEY_MOVEMENT_ACCOUNT_STATUS_ERROR = 3;
+  // account is disconnected
+  MONEY_MOVEMENT_ACCOUNT_STATUS_DISCONNECTED = 4;
+  // account is pending verification state
+  MONEY_MOVEMENT_ACCOUNT_STATUS_PENDING_VERIFICATION = 5;
+  // account verification timed out
+  MONEY_MOVEMENT_ACCOUNT_STATUS_VERIFICATION_TIMED_OUT = 6;
+}
+
+// message to setup intent to link external bank account
+message SetupIntentRequest {
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 1;
+  // money movement provider
+  doordash.payout_service.PayoutProvider provider = 2;
+}
+
+// response received for setup intent request
+message SetupIntentResponse {
+  // action to take to continue setup e.g redirect url
+  NextAction next_action = 1;
+  // used to initiate the auth flow Financial Connection UI
+  google.protobuf.StringValue client_secret = 2;
+  // publishable key
+  google.protobuf.StringValue publishable_key = 3;
+}
+
+// Contains instructions for authenticating a payment by
+// redirecting your customer to another page or application.
+message RedirectToUrl {
+  // The URL you must redirect your customer to in order to authenticate.
+  google.protobuf.StringValue url = 1;
+  // If the customer does not exit their browser while authenticating,
+  // they will be redirected to this specified URL after completion
+  google.protobuf.StringValue return_url = 2;
+}
+
+// actions you need to take in order for your customer to continue payment setup.
+message NextAction {
+  // Contains instructions for authenticating a payment by redirecting
+  // your customer to another page or application
+  RedirectToUrl redirect_to_url = 1;
+}
+
+// message to cancel transfer initiated by user
+message CancelExternalTransferRequest {
+  // transfer id to associated with the transfer request
+  google.protobuf.StringValue transfer_id = 1;
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 2;
+  // money movement processor provider
+  doordash.payout_service.PayoutProvider provider = 3;
+}
+
+// response received after cancelling transfer
+message CancelExternalTransferResponse {
+  // status of cancel request e.g success, failure
+  StatusType status = 2;
+}
+
+// message to initiate transfer to/from DxDirect account to External Linked Account
+// account type for money movement
+enum AccountType {
+  // not specified
+  ACCOUNT_TYPE_UNSPECIFIED = 0;
+  // Dasher Direct account
+  ACCOUNT_TYPE_DASHER_DIRECT = 1;
+  // External Linked Account
+  ACCOUNT_TYPE_EXTERNAL_LINKED_ACCOUNT = 2;
+}
+
+// account from/to which amount is to be transferred
+message AccountIdAndType {
+  // account id
+  google.protobuf.StringValue id = 1;
+  // determines if account is Dasher Direct, External Linked Account, etc
+  AccountType account_type = 2;
+}
+
+// message to initiate transfer to/from DxDirect account to External Linked Account
+message CreateExternalTransferRequest {
+  reserved 2;
+  reserved "from_account_id";
+
+  reserved 3;
+  reserved "to_account_id";
+
+  // amount user is requesting to transfer
+  money.MonetaryFields amount = 1;
+  // account from which amount is to be transferred
+  AccountIdAndType from_account = 4;
+  // account to which amount is to be transferred
+  AccountIdAndType to_account = 5;
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 6;
+  // money movement processor provider
+  doordash.payout_service.PayoutProvider provider = 7;
+  // money movement transfer type
+  TransferType transfer_type = 8;
+}
+
+// response received after initiating transfer
+message CreateExternalTransferResponse {
+  // error sent in response, nullable
+  Error error = 1;
+  // status for the transfer e.g. success, failure
+  StatusType status = 2;
+  // unique identifier for the transfer request
+  google.protobuf.StringValue transfer_id = 3;
+}
+
+// error sent in response, nullable
+message Error {
+  // error code
+  google.protobuf.Int32Value error_code = 1;
+  // error message
+  google.protobuf.StringValue error_message = 2;
+}
+
+// request type
+// when request is from webhook set to WEBHOOK
+// when request is form doordash internal service set to INTERNAL
+enum ExternalAccountRequestType {
+  // not specified
+  EXTERNAL_ACCOUNT_REQUEST_TYPE_UNSPECIFIED = 0;
+  // request from webhook
+  EXTERNAL_ACCOUNT_REQUEST_TYPE_WEBHOOK = 1;
+  // request from internal service
+  EXTERNAL_ACCOUNT_REQUEST_TYPE_INTERNAL = 2;
+}
+
+// message to delete linked external account
+message DeleteExternalAccountLinkRecordRequest {
+  // Payment account id associated with the requesting user
+  // passed when request is from internal service
+  google.protobuf.Int64Value payment_account_id = 1;
+  reserved 2;
+  reserved "provider";
+  // linked account id
+  google.protobuf.StringValue linked_account_id = 3;
+  // payout provider associated with payment account
+  doordash.payout_service.PayoutProvider payout_provider = 4;
+  // request type
+  ExternalAccountRequestType request_type = 5;
+  reserved 6;
+  reserved "provider_account_resource_id";
+  // provider account id
+  // passed when request is from webhook
+  google.protobuf.StringValue provider_account_id = 7;
+}
+
+// response received deleting a linked external account
+message DeleteExternalAccountLinkRecordResponse {
+  // linked account id
+  google.protobuf.StringValue linked_account_id = 1;
+}
+
+// message to retrieve JSON Web Key (JWK)
+message GetMoneyMovementWebhookVerificationKeyRequest {
+  // The key ID ( kid ) from the JWT header
+  google.protobuf.StringValue key_id = 1;
+}
+
+// A JSON Web Key (JWK) obj
+message MoneyMovementWebhookVerificationKey {
+  // The alg member identifies the cryptographic algorithm family used with the key.
+  google.protobuf.StringValue alg = 1;
+  // The crv member identifies the cryptographic curve used with the key.
+  google.protobuf.StringValue crv = 2;
+  // The kid (Key ID) member can be used to match a specific key.
+  google.protobuf.StringValue kid = 3;
+  // The kty (key type) parameter identifies the cryptographic algorithm family used with the key, such as RSA or EC.
+  google.protobuf.StringValue kty = 4;
+  // The use (public key use) parameter identifies the intended use of the public key.
+  google.protobuf.StringValue use = 5;
+  // The x member contains the x coordinate for the elliptic curve point,
+  // provided as a base64url-encoded string of the coordinate's big endian representation.
+  google.protobuf.StringValue x = 6;
+  // The y member contains the y coordinate for the elliptic curve point,
+  // provided as a base64url-encoded string of the coordinate's big endian representation.
+  google.protobuf.StringValue y = 7;
+  // The timestamp when the key was created, in Unix time.
+  google.protobuf.Timestamp created_at = 8;
+  // The timestamp when the key expired, in Unix time.
+  google.protobuf.Timestamp expired_at = 9;
+}
+
+// response for money movement webhook verification key
+message GetMoneyMovementWebhookVerificationKeyResponse {
+  // A JSON Web Key (JWK) that can be used to verify Plaid webhooks
+  MoneyMovementWebhookVerificationKey key = 1;
+  // unique identifier for the request
+  google.protobuf.StringValue request_id = 2;
+}
+
+// message to retrieve real-time accounts balance
+message GetExternalAccountsBalancesRequest {
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 1;
+  // money movement provider
+  MoneyMovementProvider provider = 2;
+}
+
+// response for most up-to-date balance information directly from the financial institution
+message GetExternalAccountsBalancesResponse {
+  // list of financial institution accounts associated with the Item
+  repeated MoneyMovementExternalAccount accounts = 1;
+  // unique identifier for the request
+  google.protobuf.StringValue request_id = 2;
+}
+
+// message to retrieve a list of accounts associated with any linked external account
+message GetExternalAccountsRequest {
+  // Payment account id associated with the requesting user
+  google.protobuf.Int64Value payment_account_id = 1;
+  // money movement provider
+  MoneyMovementProvider provider = 2;
+}
+
+// response returned with external account
+message GetExternalAccountsResponse {
+  // list of financial institution accounts associated with the Item
+  repeated MoneyMovementExternalAccount accounts = 1;
+  // unique identifier for the request
+  google.protobuf.StringValue request_id = 2;
+}
+
+// financial institution account
+message MoneyMovementExternalAccount {
+  // plaid’s unique identifier for the account
+  google.protobuf.StringValue account_id = 1;
+  // obj describing the balance for an account
+  MoneyMovementExternalAccountBalances balances = 2 [deprecated = true];
+  // The last 2-4 alphanumeric characters of an account's official account number
+  google.protobuf.StringValue mask = 3;
+  // The name of the account, either assigned by the user or by the financial institution itself
+  google.protobuf.StringValue name = 4;
+  // The official name of the account as given by the financial institution
+  google.protobuf.StringValue official_name = 5;
+  // account type
+  MoneyMovementExternalAccountType type = 6;
+  // account subtype
+  MoneyMovementExternalAccountSubType subtype = 7;
+  // The current verification status of an Auth Item initiated through Automated or Manual micro-deposits.  Returned for Auth Items only.
+  MoneyMovementExternalAccountVerificationStatusType verification_status = 8;
+  // obj describing the balance for an account
+  money.MonetaryFields available_balance = 9;
+}
+
+// balance for an account
+message MoneyMovementExternalAccountBalances {
+  // amount of funds available to be withdrawn from the account
+  google.protobuf.DoubleValue available = 1;
+  // total amount of funds in or owed by the account
+  google.protobuf.DoubleValue current = 2;
+  // For credit-type accounts, this represents the credit limit
+  // For depository-type accounts, this represents the pre-arranged overdraft limit
+  google.protobuf.DoubleValue limit = 3;
+  // currency code of the balance. Always null if unofficial_currency_code is non-null
+  doordash.payment.common.Currency iso_currency_code = 4;
+  // unofficial currency code associated with the balance. Always null if iso_currency_code is non-null
+  doordash.payment.common.Currency unofficial_currency_code = 5;
+  // indicating the oldest acceptable balance when making a request to /accounts/balance/get
+  google.protobuf.Timestamp last_updated_datetime = 6;
+}
+
+// message to use when initiating connection to external banks through plaid
+message CreateLinkTokenRequest {
+  // Name of application, displayed in Link
+  google.protobuf.StringValue client_name = 1;
+  // represents location of user's financial institution
+  // only US and Canada are enabled by default
+  repeated google.protobuf.StringValue country_codes = 2;
+  // end user information
+  EndUserInfo end_user_info = 3;
+  // destination URL to which any webhooks should be sent
+  google.protobuf.StringValue webhook = 4; // optional
+  // a destination user will be forwarded to after completing Link flow
+  google.protobuf.StringValue redirect_uri = 5;
+  // required if link_token is used to initalize Link on Andriod
+  google.protobuf.StringValue andriod_package_name = 6;
+  // plaid product user will be using
+  repeated google.protobuf.StringValue products = 7;
+  //the language that Link should be displayed in
+  google.protobuf.StringValue language = 8;
+}
+
+// end user information
+message EndUserInfo {
+  // unique Id representing end user
+  google.protobuf.StringValue client_user_id = 1;
+  // name object of end user
+  EndUserName name = 2;
+  // address object of end user
+  doordash.payment.common.Address address = 3;
+}
+
+// end user name
+message EndUserName {
+  // given_name of end user
+  google.protobuf.StringValue given_name = 1;
+  // family_name of end user
+  google.protobuf.StringValue family_name = 2;
+}
+
+// response received after creating link token with plaid
+message CreateLinkTokenResponse {
+  // link_token that will be passed to plaid UI to fetch public_token
+  google.protobuf.StringValue link_token = 1;
+  // timestamp for link_token expiration
+  google.protobuf.Timestamp expiration = 2;
+  // unique id for request
+  google.protobuf.StringValue request_id = 3;
+}
+
+// message to use when adding external funding source
+message AddExternalAccountFundingSourceRequest {
+  reserved 4;
+  reserved "account_id";
+  reserved 1;
+  reserved "public_token";
+  reserved 5;
+  reserved "account_ids";
+  // DoorDash payment account id
+  google.protobuf.Int64Value payment_account_id = 2;
+  // payout provider associated with payment account
+  doordash.payout_service.PayoutProvider payout_provider = 3;
+  // Stripe payment method id obtained from successful account linking
+  google.protobuf.StringValue payment_method_id = 6;
+}
+
+// message to use when initiate a fund migration from one provider to another
+message AddExternalFundingSourceForMigrationRequest {
+  // DoorDash payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider initiate the migration from
+  PayoutProvider originating_provider = 2;
+  // payout provider the migration is targetting
+  PayoutProvider destination_provider = 3;
+  // list of consent items associated with the migration
+  repeated ConsentItem expressed_consent = 4;
+}
+
+// account details associated with migration provider accounts
+message AddExternalFundingSourceForMigrationResponse {
+  // originating provider account details
+  MoneyMovementAccount originating_provider_account_details = 1;
+  // destination provider account details , it won't have available_balance fields populated
+  MoneyMovementAccount destination_provider_account_details = 2;
+}
+
+// consent item
+message ConsentItem {
+  // name
+  google.protobuf.StringValue name = 1;
+  // date consented
+  google.protobuf.StringValue date = 2; // YYYY-MM-DD
+  // whether accepted or not
+  google.protobuf.BoolValue accepted = 3;
+}
+
+// current verification status of an Auth Item
+enum MoneyMovementExternalAccountVerificationStatusType {
+  // not specified
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_UNSPECIFIED = 0;
+  // Item is pending automatic verification
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_PENDING_AUTOMATIC_VERIFICATION = 1;
+  // Item is pending manual micro-deposit verification.
+  // Items remain in this state until the user successfully verifies the micro-deposit.
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_PENDING_MANUAL_VERIFICATION = 2;
+  // Item has successfully been automatically verified
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_AUTOMATICALLY_VERIFIED = 3;
+  // Item has successfully been manually verified
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_MANUALLY_VERIFIED = 4;
+  // Plaid was unable to automatically verify the deposit within 7 calendar days
+  // and will no longer attempt to validate the Item.
+  // Users may retry by submitting their information again through Link.
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_VERIFICATION_EXPIRED = 5;
+  // Item failed manual micro-deposit verification because
+  // the user exhausted all 3 verification attempts.
+  // Users may retry by submitting their information again through Link.
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_VERIFICATION_FAILED = 6;
+  // The Item has successfully been verified using Plaid's data sources.
+  // Note: Database Match is currently a beta feature,
+  // please contact your account manager for more information.
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_DATABASE_MATCHED = 7;
+  // Other or unknown verification
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_VERIFICATION_STATUS_TYPE_OTHER = 8;
+}
+
+// types Plaid recognizes and reports for financial institution accounts
+enum MoneyMovementExternalAccountType {
+  // not specified
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_UNSPECIFIED = 0;
+  // account type holding cash, in which funds are deposited
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_DEPOSITORY = 1;
+  // credit card type account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_CREDIT = 2;
+  // loan type account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_LOAN = 3;
+  // investment account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_INVESTMENT = 4;
+  // Other or unknown account type
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_TYPE_OTHER = 5;
+}
+
+// sub types Plaid recognizes and reports for financial institution accounts
+enum MoneyMovementExternalAccountSubType {
+  // not specified
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_UNSPECIFIED = 0;
+
+  //// depository
+  // Checking account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CHECKING = 1;
+  // Savings account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_SAVINGS = 2;
+  // Health Savings Account (US only) that can only hold cash
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_HSA_DEPOSIT = 3;
+  // Certificate of deposit account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CD = 4;
+  // Money market account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_MONEY_MARKET = 5;
+  // PayPal depository account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PAYPAL_DEPOSIT = 6;
+  // Prepaid debit card
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PREPAID = 7;
+  // A cash management account, typically a cash account at a brokerage
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CASH_MANAGEMENT = 8;
+
+  //// credit
+  // Bank-issued credit card
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CREDIT_CARD = 9;
+  // PayPal-issued credit card
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PAYPAL_CREDIT = 10;
+
+  //// loan
+  // Auto loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_AUTO = 11;
+  // Business loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_BUSINESS = 12;
+  // Commercial loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_COMMERCIAL = 13;
+  // Construction loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CONSTRUCTION = 14;
+  // Consumer loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CONSUMER = 15;
+  // Home Equity Line of Credit (HELOC)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_HOME_EQUITY = 16;
+  // General loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LOAN = 17;
+  // Mortgage loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_MORTGAGE = 18;
+  // Pre-approved overdraft account, usually tied to a checking account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_OVERDRAFT = 19;
+  // Pre-approved line of credit
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LINE_OF_CREDIT = 20;
+  // Student loan
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_STUDENT = 21;
+
+  //// Other or unknown type
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_OTHER = 22;
+
+  //// investment
+  // Tax-advantaged college savings and prepaid tuition 529 plans (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_529 = 23;
+  // Employer-sponsored money-purchase 401(a) retirement plan (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_401A = 24;
+  // Standard 401(k) retirement account (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_401K = 25;
+  // 403(b) retirement savings account for non-profits and schools (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_403B = 26;
+  // Tax-advantaged deferred-compensation 457(b) retirement plan for governments and non-profits (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_457B = 27;
+  // Standard brokerage account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_BROKERAGE = 28;
+  // Individual Savings Account (ISA) that pays interest tax-free (UK)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CASH_ISA = 29;
+  // Standard cryptocurrency exchange account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_CRYPTO_EXCHANGE = 30;
+  // Tax-advantaged Coverdell Education Savings Account (ESA) (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_EDUCATION_SAVINGS_ACCOUNT = 31;
+  // Fixed annuity
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_FIXED_ANNUITY = 32;
+  // Guaranteed Investment Certificate (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_GIC = 33;
+  // Tax-advantaged Health Reimbursement Arrangement (HRA) benefit plan (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_HRA = 34;
+  // Non-cash tax-advantaged medical Health Savings Account (HSA) (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_HSA_INVESTMENT = 35;
+  // Traditional Individual Retirement Account (IRA) (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_IRA = 36;
+  // Non-cash Individual Savings Account (ISA) (UK)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_ISA = 37;
+  // Keogh self-employed retirement plan (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_KEOGH = 38;
+  // Life Income Fund (LIF) retirement account (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LIF = 39;
+  // Life insurance account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LIFE_INSURANCE = 40;
+  // Locked-in Retirement Account (LIRA) (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LIRA = 41;
+  // Locked-in Retirement Savings Plan (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_LRSP = 42;
+  // Mutual fund account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_MUTUAL_FUND = 43;
+  // A cryptocurrency wallet where the user controls the private key
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_NON_CUSTODIAL_WALLET = 44;
+  // A non-taxable brokerage account that is not covered by a more specific subtype
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_NON_TAXABLE_BROKERAGE_ACCOUNT = 45;
+  // An annuity account not covered by other subtypes
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_OTHER_ANNUITY = 46;
+  // An insurance account not covered by other subtypes
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_OTHER_INSURANCE = 47;
+  // Standard pension account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PENSION = 48;
+  // Prescribed Registered Retirement Income Fund (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PRIF = 49;
+  // Plan that gives employees share of company profits
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_PROFIT_SHARING = 50;
+  // Qualifying share account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_QSHR = 51;
+  // Registered Disability Savings Plan (RSDP) (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RDSP = 52;
+  // Registered Education Savings Plan (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RESP = 53;
+  // Retirement account not covered by other subtypes
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RETIREMENT = 54;
+  // Restricted Life Income Fund (RLIF) (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RLIF = 55;
+  // Roth IRA (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_ROTH = 56;
+  // Employer-sponsored Roth 401(k) plan (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_ROTH_401K = 57;
+  // Registered Retirement Income Fund (RRIF) (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RRIF = 58;
+  // Registered Retirement Savings Plan (Canadian, similar to US 401(k))
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_RRSP = 59;
+  // Salary Reduction Simplified Employee Pension Plan (SARSEP), discontinued retirement plan (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_SARSEP = 60;
+  // Simplified Employee Pension IRA (SEP IRA), retirement plan for small businesses and self-employed (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_SEPIRA = 61;
+  // Savings Incentive Match Plan for Employees IRA, retirement plan for small businesses (US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_SIMPLE_IRA = 62;
+  // Self-Invested Personal Pension (SIPP) (UK)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_SIPP = 63;
+  // Standard stock plan account
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_STOCK_PLAN = 64;
+  // Tax-Free Savings Account (TFSA), a retirement plan similar to a Roth IRA (Canada)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_TFSA = 65;
+  // Account representing funds or assets held by a trustee for the benefit of a beneficiary.
+  // Includes both revocable and irrevocable trusts.
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_TRUST = 66;
+  // 'Uniform Gift to Minors Act' (brokerage account for minors, US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_UGMA = 67;
+  // 'Uniform Transfers to Minors Act' (brokerage account for minors, US)
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_UTMA = 68;
+  // Tax-deferred capital accumulation annuity contract
+  MONEY_MOVEMENT_EXTERNAL_ACCOUNT_SUB_TYPE_VARIABLE_ANNUITY = 69;
+}
+
+// the status of adding external funding source
+enum StatusType {
+  // not specified
+  STATUS_TYPE_UNSPECIFIED = 0;
+  // funding source added successfully
+  STATUS_TYPE_SUCCESS = 1;
+  // failed to add funding source
+  STATUS_TYPE_FAILURE = 2;
+  // adding external funding source is pending
+  STATUS_TYPE_PENDING = 3;
+}
+
+// response received after adding external funding source
+message AddExternalAccountFundingSourceResponse {
+  // indicates connection status
+  StatusType status = 1;
+  // unique id for request
+  google.protobuf.StringValue request_id = 2;
+  // linked account id
+  google.protobuf.StringValue linked_account_id = 3;
+}
+
+// money movement provider webhook request
+message HandleMoneyMovementProviderWebhookRequest {
+  // provider sending webhook request
+  MoneyMovementProvider provider = 1;
+  // webhook data
+  google.protobuf.StringValue webhook_data = 2;
+}
+
+// response sent to webhook
+message HandleMoneyMovementProviderWebhookResponse {
+  /* empty */
+}
+
+// external providers for money movement
+enum MoneyMovementProvider {
+  // not specified
+  MONEY_MOVEMENT_PROVIDER_UNSPECIFIED = 0;
+  // plaid
+  MONEY_MOVEMENT_PROVIDER_PLAID = 1;
+  // stripe
+  MONEY_MOVEMENT_PROVIDER_STRIPE = 2;
+}
+
+// money movement transfer type
+enum TransferType {
+  // not specified
+  TRANSFER_TYPE_UNSPECIFIED = 0;
+  // regular ACH transfer
+  TRANSFER_TYPE_REGULAR_ACH = 1;
+  // same day ACH transfer
+  TRANSFER_TYPE_SAME_DAY_ACH = 2;
+}

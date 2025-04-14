@@ -1,0 +1,690 @@
+syntax = "proto3";
+
+package dashmart.v1;
+
+import "common/date.proto";
+import "dashmart/common.proto";
+import "dashmart/dashmart.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "dashmart_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashmart.v1";
+
+// API's related to bin level tracking in DashMart
+service BinLevelTrackingService {
+  // Unified gateway config, comment out if using kreya for local testing
+  option (doordash.api.service) = {
+    port: 50051
+    name: "dashmart-service-web"
+    url: "dashmart-service-web.service.prod.ddsd"
+    name_spaces: ["dashmart"]
+    api_key_name: "DASHMART-API-KEY"
+    owner: {
+      name: "dashmart"
+      id: "dashmart"
+      slack_channel: "#dashmart-eng"
+      email_alias: "dashmart-eng@doordash.com",
+    }
+  };
+  // Create a new bin
+  rpc CreateBin(CreateBinRequest) returns (CreateBinResponse);
+  // Do a count of an item accounting for bins
+  rpc DoItemInBinCountTask(DoItemInBinCountTaskRequest) returns (DoItemInBinCountTaskResponse);
+  // Get the bin_id given a bin name and facility
+  rpc GetBinByName(GetBinByNameRequest) returns (GetBinByNameResponse);
+  // Do Inventory Adjustment for item in bin
+  rpc AdjustInventoryInBin(AdjustInventoryInBinRequest) returns (AdjustInventoryInBinResponse);
+  // Get the list of bin location info for item in facility
+  rpc GetItemLocations(GetItemLocationsRequest) returns (GetItemLocationsResponse);
+  // Get the list of Zones information in facility
+  rpc GetZonesForFacility(GetZonesForFacilityRequest) returns (GetZonesForFacilityResponse);
+  // Bulk creates bins. Does not create duplicate bins or fail the request if given bins have already been created. Instead, does a no-op.
+  rpc BulkCreateBins(BulkCreateBinsRequest) returns (BulkCreateBinsResponse);
+  // Returns the items in the given bin
+  rpc GetItemsInBin(GetItemsInBinRequest) returns (GetItemsInBinResponse);
+  // Get activities by item id
+  rpc GetActivitiesById(GetActivitiesByIdRequest) returns (GetActivitiesByIdResponse);
+  // Get bins given a facility and display name prefix
+  rpc SearchBinsByName(SearchBinsByNameRequest) returns (SearchBinsByNameResponse);
+  // Start migration process
+  rpc StartMigrationProcess(StartMigrationProcessRequest) returns (StartMigrationProcessResponse);
+  // Finish migration process
+  rpc FinishMigrationProcess(FinishMigrationProcessRequest) returns (FinishMigrationProcessResponse);
+  // Get ItemAndBin objects given a facility and either a bin display name or an item id
+  rpc GetItemsAndBins(GetItemsAndBinsRequest) returns (GetItemsAndBinsResponse);
+  // Get expiring items with pull at date of today given a facility
+  rpc GetExpiringItems(GetExpiringItemsRequest) returns (GetExpiringItemsResponse);
+  // Submit expiring items
+  rpc SubmitExpiringItems(SubmitExpiringItemsRequest) returns (SubmitExpiringItemsResponse);
+  // Update bins information
+  rpc UpdateBins(UpdateBinsRequest) returns (UpdateBinsResponse);
+  // Get bins by facility
+  rpc GetBinsByFacilityId(GetBinsByFacilityIdRequest) returns (GetBinsByFacilityIdResponse);
+  // Bulk delete bins by bin_ids
+  rpc BulkDeleteBins(BulkDeleteBinsRequest) returns (BulkDeleteBinsResponse);
+  // Convert an item and move it to another bin
+  rpc ConvertItem(ConvertItemRequest) returns (ConvertItemResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/item/convert",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_dashmart_internal_tool"]
+      }
+      target_products: [CX]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"}]
+    };
+  }
+  // Get bin info for stocking
+  rpc GetBinInfoForStocking(GetBinInfoForStockingRequest) returns (GetBinInfoForStockingResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/bin-location/bin-info-for-stocking",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"}]
+    };
+  }
+  // Get activities by facility id and sku ddid
+  rpc GetActivitiesByIdV2(GetActivitiesByIdV2Request) returns (GetActivitiesByIdV2Response) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/activities",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "facility-id"}]
+    };
+  }
+}
+
+// Request to create a bin
+message CreateBinRequest {
+  reserved 6;
+  reserved "zone_name";
+  // Facility ID of the facility to associate this new bin with
+  int32 facility_id = 1;
+  // Name, e.g. "A8.S4.L3.B1" or "Freezer1.B2"
+  string display_name = 2;
+  // Bin type
+  BinType bin_type = 3;
+  // Temperature
+  dashmart.v1.Temperature temperature = 4;
+  // Dimensions in cm
+  dashmart.v1.Dimensions dimensions = 5;
+  // id of the zone associated with this bin in this facility
+  string zone_id = 7;
+  // Aisle number
+  int32 aisle = 8;
+}
+
+// Response to create a bin
+message CreateBinResponse {}
+
+// Request to bulk create bins
+message BulkCreateBinsRequest {
+  // Facility ID of the facility to associate the new bins with
+  int32 facility_id = 1;
+  // Bin creation parameters
+  repeated BinCreationParams bins_to_create = 3;
+}
+
+// Response to bulk create bins
+message BulkCreateBinsResponse {}
+
+// Bin Types
+enum BinType {
+  // Unspecified
+  BIN_TYPE_UNSPECIFIED = 0;
+  // Front stock
+  BIN_TYPE_FRONT_STOCK = 1;
+  // Back stock
+  BIN_TYPE_BACK_STOCK = 2;
+  // Transport
+  BIN_TYPE_TRANSPORT = 3;
+  // Trash
+  BIN_TYPE_TRASH = 4;
+  // Donation
+  BIN_TYPE_DONATION = 5;
+  // Parcel
+  BIN_TYPE_PARCEL = 6;
+}
+
+// Entity that represents an existing Bin
+message Bin {
+  // id
+  string bin_id = 1;
+  // display name
+  string display_name = 2;
+  // Bin type
+  BinType type = 3;
+  // facility where the bin is located
+  int32 facility_id = 4;
+  // name of the zone where the bin is located
+  string zone_name = 5;
+  // Temperature
+  string temperature = 6;
+}
+
+// Bin creation parameters
+message BinCreationParams {
+  // Name, e.g. "A8.S4.L3.B1" or "Freezer1.B2"
+  string display_name = 1;
+  // Bin type
+  BinType bin_type = 2;
+  // Temperature
+  dashmart.v1.Temperature temperature = 3;
+  // Dimensions in cm
+  dashmart.v1.Dimensions dimensions = 4;
+  // Zone to bulk create the bins for. If this zone doesn't already exist for this facility, creates the zone for this facility. Otherwise uses the existing zone associated with this facility.
+  string zone_name = 5;
+  // Aisle number
+  int32 aisle = 6;
+}
+
+// Bin edit parameters
+message BinUpdateParams {
+  reserved 5;
+  reserved "aisle";
+
+  // Bin id
+  string bin_id = 1;
+  // Bin type
+  BinType bin_type = 2;
+  // Dimensions in cm
+  dashmart.v1.Dimensions dimensions = 3;
+  // Zone id
+  string zone_id = 4;
+}
+
+// Request to the DoItemInBinCountTask API
+message DoItemInBinCountTaskRequest {
+  // counts done
+  repeated CompletedItemInBinCount counts = 1;
+  // user who completed the task
+  string user_id = 2;
+  // facility on which the task was completed
+  int32 facility_id = 3;
+}
+
+// Response to the DoItemInBinCountTask API
+message DoItemInBinCountTaskResponse {}
+
+// Info on the task that was just completed
+message CompletedItemInBinCount {
+  reserved 6;
+  reserved "reason";
+
+  // which item was counted
+  string item_id = 1;
+  // bin in which the item was just counted
+  string bin_id = 2;
+  // how many did we count
+  int32 quantity = 3;
+  // soonest expiration date from all observed items
+  date.Date expiration = 4;
+  // date on which the count was requested
+  date.Date date_requested = 5;
+  // item count task reason id
+  string item_count_task_reason_id = 7;
+}
+
+// Payload to request a bin given its name and facility
+message GetBinByNameRequest {
+  // id of the facility to search
+  int32 facility_id = 1;
+  // display name of the bin
+  string bin_display_name = 2;
+}
+
+// Reponse bin that matches the name
+message GetBinByNameResponse {
+  // bin returned
+  Bin bin = 1;
+}
+
+// Request to AdjustInventoryInBinRequest API
+message AdjustInventoryInBinRequest {
+  // Adjustment items
+  repeated AdjustmentItemInBin adjustment_items_in_bin = 1;
+  // facility ID of facility associated with inventory adjustment
+  int32 facility_id = 2;
+}
+
+// Info for the adjustment Item in Bin
+message AdjustmentItemInBin {
+  // item being adjusted
+  AdjustmentItem adjustment_item = 1;
+  // bin id for the item that is being adjusted
+  string bin_id = 2;
+  // expiration date for items being added
+  date.Date expiration_date = 3;
+}
+
+// Response to the AdjustInventoryInBinRequest API
+message AdjustInventoryInBinResponse {}
+
+// Payload to Request an item's real-time locations in facility
+message GetItemLocationsRequest {
+  // id of the facility to search
+  int32 facility_id = 1;
+  // id of the item to search
+  string item_id = 2;
+}
+
+// Response to the GetItemLocationsRequest API
+message GetItemLocationsResponse {
+  // id
+  string item_id = 1;
+  // bins with quantity information
+  repeated BinWithQuantity bins_with_quantity = 2;
+}
+
+// info for item quantity in a bin
+message BinWithQuantity {
+  // quantity
+  int32 quantity = 1;
+  // Bin info
+  Bin bin = 2;
+}
+
+// Item with quantity
+message ItemWithQuantity {
+  // quantity
+  int32 quantity = 1;
+  // item
+  Item item = 2;
+}
+
+// Payload to request zone information
+message GetZonesForFacilityRequest {
+  // id of the facility to search
+  int32 facility_id = 1;
+}
+
+// Response to the GetZonesForFacility API
+message GetZonesForFacilityResponse {
+  // zone info returned
+  repeated Zone zones = 1;
+}
+
+// Entity that represent Zone Info
+message Zone {
+  // zone UUID
+  string zone_id = 1;
+  // name of the zone
+  string zone_name = 2;
+  // facility where the zone is located
+  int32 facility_id = 3;
+}
+
+// Payload to request items in bin
+message GetItemsInBinRequest {
+  // id of the facility to search
+  int32 facility_id = 1;
+  // display name of the bin
+  string display_name = 2;
+}
+
+// Response to items in bin
+message GetItemsInBinResponse {
+  // Items with quantity
+  repeated ItemWithQuantity items_with_quantity = 1;
+}
+
+// Request for GetActivitiesById API
+message GetActivitiesByIdRequest {
+  // facility id
+  int32 facility_id = 1;
+  // item id
+  string item_id = 2;
+  // date range [optional]
+  date.DateRange date_range = 3;
+}
+
+// Response for GetActivitiesById API
+message GetActivitiesByIdResponse {
+  // list of activities
+  repeated Activity activities = 1;
+  // Whether the query has reached the query limit set in the backend
+  bool reached_activity_limit = 12;
+}
+
+// Request for GetActivitiesByIdV2 API
+message GetActivitiesByIdV2Request {
+  reserved 1;
+  reserved "facility_id";
+
+  // [required] sku ddid
+  string ddid = 2;
+  // [optional] date range
+  date.DateRange date_range = 3;
+  // [optional] list of user ids
+  repeated string user_ids = 4;
+  // [optional] list of activity codes
+  repeated string activity_codes = 5;
+  // [optional] page size
+  int32 page_size = 6;
+  // [optional] pagination token
+  string page_token = 7;
+}
+
+// Internal pagination token for GetActivitiesByIdV2 API, internal use only
+message InternalGetActivitiesByIdV2PaginationToken {
+  reserved 7, 8;
+  reserved "last_event_dttm", "last_activity_id";
+  // facility id
+  int32 facility_id = 1;
+  // sku ddid
+  string ddid = 2;
+  // [optional] date range
+  date.DateRange date_range = 3;
+  // [optional] list of user ids
+  repeated string user_ids = 4;
+  // [optional] list of activity codes
+  repeated string activity_codes = 5;
+  // [optional] pagination token created date time
+  google.protobuf.Timestamp page_token_created_dttm = 6;
+  // [optional] the last activity id of the current page
+  int64 last_event_id = 9;
+}
+
+// Response for GetActivitiesByIdV2 API
+message GetActivitiesByIdV2Response {
+  // list of activities
+  repeated Activity activities = 1;
+  // [optional] next pagination token
+  string next_page_token = 2;
+}
+
+// Activity Info
+message Activity {
+  reserved 14, 19, 20;
+  reserved "user_name", "prev_expiration_date", "new_expiration_date";
+
+  // activity id
+  int64 activity_id = 1;
+  // activity code
+  string activity_code = 2;
+  // [to be deprecated] quantity in units
+  int32 quantity = 3;
+  // quantity unit of measurement
+  UnitOfMeasure uom = 4;
+  // reason code
+  string reason_code = 5;
+  // [to be deprecated]created user id
+  string user_id = 6;
+  // event date time
+  google.protobuf.Timestamp event_datetime = 7;
+  // payload
+  string payload = 8;
+  // [to be deprecated] bin
+  Bin bin = 9;
+  // origin bin
+  Bin origin_bin = 10;
+  // destination bin
+  Bin destination_bin = 11;
+  // [to be deprecated] previous total on hand quantity in entire facility
+  int32 prev_quantity_in_entire_facility = 12;
+  // current total on hand quantity in entire facility
+  int32 current_quantity_in_entire_facility = 13;
+  // Information about the user who took the action
+  UserInfo userinfo = 15;
+  // [Optional] quantity in units
+  google.protobuf.Int32Value quantity_nullable = 16;
+  // [Optional] previous total on hand quantity in entire facility
+  google.protobuf.Int32Value prev_quantity_in_entire_facility_nullable = 17;
+  // [Optional]Credit Request Quantity
+  google.protobuf.Int32Value credit_request_quantity = 18;
+  // Attempt Expiration Date
+  date.Date attempt_expiration_date = 21;
+  // Final Expiration Date
+  date.Date final_expiration_date = 22;
+}
+
+// Request for SearchBinsByName API
+message SearchBinsByNameRequest {
+  // Facility ID of the facility to fetch bins from
+  int32 facility_id = 1;
+  // Prefix of the display name of bins to fetch [optional]
+  string display_name = 2;
+  // Limit for number of bins wanted in response [optional] (Default = 6)
+  int32 limit = 3;
+}
+
+// Response for SearchBinsByName API
+message SearchBinsByNameResponse {
+  // Bins in facility that are prefixed by the specified display_name
+  repeated Bin bin = 1;
+}
+
+// Start migration process request.
+message StartMigrationProcessRequest {
+  // facility for which we want to start the process for migrating to BLT
+  int32 facility_id = 1;
+  // DoIt param. If set to false, this will return a list of item/quantity that will move to the Unbinned.Items.
+  // It set to true, we will perform the move
+  bool do_it = 2;
+}
+
+// Finish migration process response
+message StartMigrationProcessResponse {
+  // Items that will be moved/moved to Unbinned.Items bin.
+  repeated ItemWithQuantity items_with_quantity = 1;
+}
+
+// Finish migration process request.
+message FinishMigrationProcessRequest {
+  // facility for which we want to finish the process
+  int32 facility_id = 1;
+  // DoIt param. If set to false, this will return a list of item/quantity that are still on the Unbinned.Items.
+  // It set to true, we will zero them out.
+  bool do_it = 2;
+}
+
+// Finish migration process response
+message FinishMigrationProcessResponse {
+  // Items that are non zero in the Unbinned.Items bin.
+  repeated ItemWithQuantity items_with_quantity = 1;
+}
+
+// GetItemsAndBins request
+message GetItemsAndBinsRequest {
+  reserved 2, 4;
+  reserved "bin_display_name", "bin_id";
+  // Facility id
+  int32 facility_id = 1;
+  // 1 or both of bin_id and item_id should be specified
+  // Item id
+  string item_id = 3;
+  // bin Ids
+  repeated string bin_ids = 5;
+  // Flag to include empty location
+  bool include_empty_location = 6;
+}
+
+// GetItemsAndBins response
+message GetItemsAndBinsResponse {
+  // ItemAndBin
+  repeated ItemAndBin item_and_bin = 1;
+}
+
+// Item, bin and quantity of that item in that bin
+message ItemAndBin {
+  // Item
+  Item item = 1;
+  // Bin
+  Bin bin = 2;
+  // Quantity
+  int32 quantity = 3;
+  // Expiration Date
+  date.Date expiration_date = 4;
+}
+
+// GetExpiringItems request
+message GetExpiringItemsRequest {
+  // facility id
+  int32 facility_id = 1;
+  // pagination token
+  string pagination_id = 2;
+  // page size
+  int32 page_size = 3;
+}
+
+// GetExpiringItems response
+message GetExpiringItemsResponse {
+  // Expiring items
+  repeated ExpiringItem expiring_item = 1;
+  // pagination token
+  string pagination_id = 2;
+}
+
+// Expiring item and its information.
+message ExpiringItem {
+  reserved 2, 11;
+  reserved 'expiration_detail', 'pull_at_date';
+
+  // Item
+  Item item = 1;
+  // expiration date
+  date.Date expiration_date = 3;
+  // quantity
+  int32 quantity = 4;
+  // Bin [optional]
+  Bin bin = 5;
+}
+
+// SubmitExpiringItems request
+message SubmitExpiringItemsRequest {
+  // facility id
+  int32 facility_id = 1;
+  // expiring item counts
+  repeated ExpiringItemCount expiring_item_count = 2;
+}
+
+// SubmitExpiringItems response
+message SubmitExpiringItemsResponse {}
+
+// Expiring item count to submit
+message ExpiringItemCount {
+  // item id
+  string item_id = 1;
+  // expiring quantity
+  int32 expiring_quantity = 2;
+  // bin id [optional]
+  string bin_id = 3;
+  // next expiration date of the remaining non expired items
+  date.Date expiration_date = 4;
+}
+
+// Update bin information request
+message UpdateBinsRequest {
+  // Bin update parameters
+  repeated BinUpdateParams bins_to_update = 1;
+}
+
+// Update bin information response
+message UpdateBinsResponse {}
+
+// Get Bins By facility id request
+message GetBinsByFacilityIdRequest {
+  // Facility ID of the facility to get bins info
+  int32 facility_id = 1;
+  // Bin types
+  repeated BinType bin_types = 2;
+}
+
+// Get bings by facility id response
+message GetBinsByFacilityIdResponse {
+  // Bin returned
+  repeated Bin bin = 1;
+}
+
+// Bulk delete bins request
+message BulkDeleteBinsRequest {
+  // bin_id list to delete
+  repeated string bin_ids = 1;
+}
+
+// Bulk delete bins response
+message BulkDeleteBinsResponse {}
+
+// Convert Item request
+message ConvertItemRequest {
+  // Ddid of Item to convert
+  string ddid = 1;
+  // Quantity of Item to convert
+  int32 quantity = 2;
+  // bin uuid of origin bin
+  string origin_bin_uuid = 3;
+  // bin uuid of destination bin
+  string destination_bin = 4;
+  // Expiration date of new Items
+  date.Date expiration_date = 5;
+}
+
+// Convert Item response
+message ConvertItemResponse {}
+
+// GetBinInfoForStocking request
+message GetBinInfoForStockingRequest {
+  // facility id
+  int32 facility_id = 1;
+  // ddid of the item
+  string ddid = 2;
+  // destination bin display name
+  string destination_bin_display_name = 4;
+  // item quantity
+  int32 item_quantity = 5;
+  // expiration date
+  date.Date expiration_date = 6;
+}
+
+// GetBinInfoForStocking response
+message GetBinInfoForStockingResponse {
+  // bin if validation passes
+  Bin bin = 1;
+  // item info in the bin
+  ItemInBin item_in_bin = 2;
+}
+
+// the info of item in bin
+message ItemInBin {
+  // ddid of the item
+  string ddid = 1;
+  // available quantity
+  int32 available_quantity = 2;
+  // expiration date
+  date.Date expiration_date = 3;
+  // inventory block type: not_blocked, soft_blocked, hard_blocked
+  string inventory_block_type = 4;
+  // expiration days threshold in one bin
+  int32 expiration_days_threshold_in_one_bin = 5;
+}

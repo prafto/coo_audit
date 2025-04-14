@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package pkg.processing.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pkg_processing/offline_processing_common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.pkg.processing";
+
+// Tag Offline Processing Service
+service TagOfflineProcessingService {
+  // We separate the upsert tag metadata endpoint from the linking tag to entity endpoint for precise control over tag
+  // onboarding and granular management of storage entities.
+  // Currently, tag deletion is not supported (as it may lead to huge fanout)
+  // Upsert tag metadata for onboarding or updating.
+  rpc UpsertTagMetadata(UpsertTagMetadataRequest) returns (UpsertTagMetadataResponse);
+
+  // Upsert tag link between tag and entities.
+  // DEPRECATED. Please use the ManageTagLinks endpoint for managing tags.
+  rpc UpsertTagLink(UpsertTagLinkRequest) returns (UpsertTagLinkResponse) {
+    option deprecated = true;
+  }
+
+  // Manage tag links between tags and items.
+  rpc ManageTagLinks(ManageTagLinksRequest) returns (ManageTagLinksResponse);
+}
+
+// Request body for the UpsertTagMetadata endpoint.
+message UpsertTagMetadataRequest {
+  // As name indicates
+  ControlParameters control_parameters = 1;
+  // Tag metadata that needs to be created or updated for onboarding.
+  TagMetadata tag_metadata = 2;
+}
+
+// Response body for the UpsertTagMetadata endpoint.
+message UpsertTagMetadataResponse {
+  // As name indicates
+  CommonResponse common_response = 1;
+}
+
+// The request body for the ManageTagLinks endpoint.
+message ManageTagLinksRequest {
+  // As name indicates
+  ControlParameters control_parameters = 1;
+  // The operations this request to perform on the tag links.
+  repeated TagLinkOperation tag_link_operations = 2;
+}
+
+// Response body for the ManageTagLinks endpoint.
+message ManageTagLinksResponse {
+  // As name indicates
+  CommonResponse common_response = 1;
+}
+
+// Operation to manage the tag links for an entity.
+message TagLinkOperation {
+  // one of the business_id or store_id needs to be
+  // provided for identifying the level under which
+  // the item needs to be tagged
+  oneof identifier {
+    // business_id and item_id which needs to be tagged
+    BusinessItemIdentifier business_item_id = 2;
+    // store_id and item_id which needs to be tagged
+    StoreItemIdentifier store_item_id = 3;
+  }
+  // the tags which need to be attached to or removed from the item.
+  // It internally contains the tag_id and a list
+  // of parameters.
+  repeated Tag tags = 4;
+  // The tag types we want to operate on.
+  // We are only planning to support delete by tag types
+  repeated string tag_types = 5;
+  // To indicate if we want to delete the link between the tags and the item. Default is false.
+  // deletion will be operated ahead of upsert.
+  bool is_delete = 6;
+}
+
+// Request body for the UpsertTagLink endpoint.
+// Deprecated. Please use the ManageTagLinksRequest instead.
+message UpsertTagLinkRequest {
+  option deprecated = true;
+  // As name indicates
+  ControlParameters control_parameters = 1;
+  // one of the business_id or store_id needs to be
+  // provided for identifying the level under which
+  // the item needs to be tagged
+  oneof identifier {
+    // business_id and item_id which needs to be tagged
+    BusinessItemIdentifier business_item_id = 2;
+    // store_id and item_id which needs to be tagged
+    StoreItemIdentifier store_item_id = 3;
+  }
+  // the tags which need to be attached to the item.
+  // It internally contains the tag_id and a list
+  // of parameters.
+  repeated Tag tag = 4;
+}
+
+// Response body for the UpsertTagLink endpoint.
+// Deprecated. Please use the ManageTagLinksResponse instead.
+message UpsertTagLinkResponse {
+  option deprecated = true;
+  // As name indicates
+  CommonResponse common_response = 1;
+}
+
+// The identifier for item that needs to be tagged for a given business.
+message BusinessItemIdentifier {
+  // business_id under which item is tagged
+  int64 business_id = 1;
+  // merchant supplied id of the item that needs to
+  // be tagged.
+  string merchant_supplied_id = 2;
+}
+
+// The identifier for item that needs to be tagged for a given store.
+message StoreItemIdentifier {
+  // store_id under which the item is tagged
+  int64 store_id = 1;
+  // merchant supplied id of the item that needs to
+  // be tagged.
+  oneof item_identifier {
+    // The merchant supplied id of the item that needs to be tagged.
+    // This is the unique identifier used in NV space
+    string merchant_supplied_id = 2;
+    // The menu item id of the item that needs to be tagged.
+    // This is the unique identifier used in the Restaurant space
+    string menu_item_id = 3;
+  }
+}
+
+// TagParam is a key value pair for the tags. This is to provide additional properties
+// for the tags. An example would be x in stock, where the quantity x can be provided
+// in this param.
+message TagParam {
+  // The key for the tag param
+  string key = 1;
+  // The value for the tag param
+  string value = 2;
+}
+
+// Tag is a generic concept that can be used to tag any item in the system.
+message Tag {
+  // the config key for this tag,
+  // differnet config will end up with different behavior
+  // examples of tag_id are "x_in_stock", "low_stock", "high_stock"
+  // "vegan", "vegetarian", "gluten_free", "dairy_free"
+  string tag_id = 1;
+  // key value pair for the tags. An example would be
+  // x in stock, where the quantity x can be provided
+  // in this param. Or for the "low_stock" we have "start_at",
+  // "end_at", "experiment_group_id" etc to pass additional
+  // parameters.
+  repeated TagParam tag_param = 2;
+}
+
+// Tag metadata which is used to define the static information for the tag.
+// This is used for the request validation of the linking.
+message TagMetadata {
+  // The unique identifier for the tag
+  string tag_id = 1;
+  // The type of the tag. eg: "stock_level", "dietary" etc.
+  string tag_type = 2;
+  // The scope of the tag where it is applied. eg: "store", "business" etc.
+  string tag_scope = 3;
+  // The owner of the tag id. eg: INF-P, DASHMART. The owning entity would
+  // be allowed to make tagging requests
+  string tag_owner = 4;
+  // The key value pair for the tags. This would contain the static properties
+  // for the tags that don't change by items.
+  // The assumption now is that this tag param field should not affect serving,
+  // therefore indexer can ignore the changes to this field.
+  // We may revisit this assumption in the future if certain use cases arise.
+  repeated TagParam tag_param = 5;
+}

@@ -1,0 +1,1672 @@
+syntax = "proto3";
+
+package doordash.payout_service;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payment/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payout_service";
+
+service PayoutService {
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 100;
+  option (service_client.client_config).retry_config.wait_multiplier = 2;
+
+  rpc GetPayoutAccount(GetPayoutAccountRequest) returns (GetPayoutAccountResponse);
+  rpc GetProviderAccount(GetProviderAccountRequest) returns (GetProviderAccountResponse);
+  rpc GetProviderVerificationFormLink(GetProviderVerificationFormLinkRequest) returns (GetProviderVerificationFormLinkResponse);
+
+  // Signs a user up for a payout experience
+  rpc SignupForPayoutExperience(SignupForPayoutExperienceRequest) returns (SignupForPayoutExperienceResponse);
+  rpc UpdateProviderAccount(UpdateProviderAccountRequest) returns (UpdateProviderAccountResponse);
+  rpc UpdateProviderAccountVerificationInfo(UpdateProviderAccountVerificationInfoRequest) returns (UpdateProviderAccountVerificationInfoResponse);
+  rpc CloseProviderAccount(CloseProviderAccountRequest) returns (CloseProviderAccountResponse);
+
+  rpc HandleProviderWebhook(HandleProviderWebhookRequest) returns (HandleProviderWebhookResponse);
+
+  // payout experience handling
+  rpc GetSelectedPayoutExperience(GetSelectedPayoutExperienceRequest) returns (GetSelectedPayoutExperienceResponse);
+  rpc SetPayoutExperience(SetPayoutExperienceRequest) returns (SetPayoutExperienceResponse);
+  rpc ListPayoutExperiences(ListPayoutExperiencesRequest) returns (ListPayoutExperiencesResponse);
+
+  // Dasher direct related endpoints
+  rpc ListPayouts(ListPayoutsRequest) returns (ListPayoutsResponse);
+  rpc CreatePayout(CreatePayoutRequest) returns (CreatePayoutResponse);
+  rpc SubmitPayout(SubmitPayoutRequest) returns (SubmitPayoutResponse);
+  rpc DeletePayout(DeletePayoutRequest) returns (DeletePayoutResponse);
+
+  // Fingerprint related endpoints
+  rpc CreatePayoutMethodFingerprint(CreatePayoutMethodFingerprintRequest) returns (CreatePayoutMethodFingerprintResponse);
+  rpc ListPayoutMethodFingerprints(ListPayoutMethodFingerprintsRequest) returns (ListPayoutMethodFingerprintsResponse);
+
+  // Fast pay related endpoints
+  rpc CheckFastPayEligibility(CheckFastPayEligibilityRequest) returns (CheckFastPayEligibilityResponse);
+  rpc CheckFastPayStatus(CheckFastPayStatusRequest) returns (CheckFastPayStatusResponse);
+  // DXPAYOUT-1120: Increase the SubmitPayout API to 30s as the previous value before migration
+  rpc SubmitFastPay(SubmitFastPayRequest) returns (SubmitFastPayResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 30000;
+  }
+  rpc ListFastPayout(ListFastPayoutRequest) returns (ListFastPayoutResponse);
+  // this endpoint may be deprecated after we migrate webhook handling logic from ps to pp
+  rpc SendFastPayEmail(SendFastPayEmailRequest) returns (SendFastPayEmailResponse);
+
+  // Creates Authentication Token for provider
+  rpc CreatePayoutProviderAuthenticationToken(CreatePayoutProviderAuthenticationTokenRequest) returns (CreatePayoutProviderAuthenticationTokenResponse);
+  // Updates provider payout method status
+  rpc UpdateProviderPayoutMethodStatus(UpdateProviderPayoutMethodStatusRequest) returns (UpdateProviderPayoutMethodStatusResponse);
+  // Recreates provider payout method
+  rpc RecreateProviderPayoutMethod(RecreateProviderPayoutMethodRequest) returns (RecreateProviderPayoutMethodResponse);
+  // Recreates provider payout method
+  rpc CreateProviderPayoutMethod(CreateProviderPayoutMethodRequest) returns (CreateProviderPayoutMethodResponse);
+  // Track provider payout method after shipping
+  rpc TrackProviderPayoutMethodShipping(TrackProviderPayoutMethodShippingRequest) returns (TrackProviderPayoutMethodShippingResponse);
+  // Gets shipping address for payout account
+  rpc GetProviderPayoutAccountShippingAddress(GetProviderPayoutAccountShippingAddressRequest) returns (GetProviderPayoutAccountShippingAddressResponse);
+  // Create BatchCreatePayouts Workflow
+  rpc BatchCreatePayouts(BatchCreatePayoutsRequest) returns (BatchCreatePayoutsResponse);
+  // Send fraud signal to payout provider
+  rpc SendPayoutProviderFraudSignal(SendPayoutProviderFraudSignalRequest) returns (SendPayoutProviderFraudSignalResponse);
+  // Get Payout ProviderAccount balance, including rewards
+  rpc GetPayoutProviderAccountBalances(GetPayoutProviderAccountBalancesRequest) returns (GetPayoutProviderAccountBalancesResponse);
+  // Get Payout Provider card transactions
+  rpc GetProviderPayoutMethodTransactions(GetProviderPayoutMethodTransactionsRequest) returns (GetProviderPayoutMethodTransactionsResponse);
+  // Create Payout Provider card transactions
+  rpc CreateProviderPayoutMethodTransaction(CreateProviderPayoutMethodTransactionRequest) returns (CreateProviderPayoutMethodTransactionResponse);
+  // Redeem Provider Account rewards
+  rpc RedeemProviderAccountRewards(RedeemProviderAccountRewardsRequest) returns (RedeemProviderAccountRewardsResponse);
+  // Get Payout Provider card transaction details
+  rpc GetProviderPayoutMethodTransactionDetails(GetProviderPayoutMethodTransactionDetailsRequest) returns (GetProviderPayoutMethodTransactionDetailsResponse);
+  // Get Payout Provider account statements
+  rpc GetPayoutProviderAccountStatements(GetPayoutProviderAccountStatementsRequest) returns (GetPayoutProviderAccountStatementsResponse);
+  // Get Payout Provider account statement content
+  rpc GetPayoutProviderAccountStatementContent(GetPayoutProviderAccountStatementContentRequest) returns (GetPayoutProviderAccountStatementContentResponse);
+  // Get Payout Provider Account direct deposit information
+  rpc GetPayoutProviderAccountDirectDepositInformation(GetPayoutProviderAccountDirectDepositInformationRequest) returns (GetPayoutProviderAccountDirectDepositInformationResponse);
+  // Get Payout Provider Account direct deposit information form
+  rpc GetPayoutProviderAccountDirectDepositInformationForm(GetPayoutProviderAccountDirectDepositInformationFormRequest) returns (GetPayoutProviderAccountDirectDepositInformationFormResponse);
+  // Get Payout Provider card rewards transactions
+  rpc GetProviderPayoutMethodRewardsTransactions(GetProviderPayoutMethodRewardsTransactionsRequest) returns (GetProviderPayoutMethodRewardsTransactionsResponse);
+  // Activate payout method
+  rpc ActivateProviderPayoutMethod(ActivateProviderPayoutMethodRequest) returns (ActivateProviderPayoutMethodResponse);
+  // Update PIN
+  rpc UpdateProviderPayoutMethodPIN(UpdateProviderPayoutMethodPINRequest) returns (UpdateProviderPayoutMethodPINResponse);
+  // Get OTP Delivery Mechanism
+  rpc GetProviderPayoutMethodOTPDeliveryMechanism(GetProviderPayoutMethodOTPDeliveryMechanismRequest) returns (GetProviderPayoutMethodOTPDeliveryMechanismResponse);
+  // Send OTP
+  rpc SendProviderPayoutMethodOTP(SendProviderPayoutMethodOTPRequest) returns (SendProviderPayoutMethodOTPResponse);
+  // Sync ProviderPayoutMethod from provider
+  rpc SyncProviderPayoutMethodFromProvider(SyncProviderPayoutMethodFromProviderRequest) returns (SyncProviderPayoutMethodFromProviderResponse);
+  // Sync ProviderAccount from provider
+  rpc SyncProviderAccountFromProvider(SyncProviderAccountFromProviderRequest) returns (SyncProviderAccountFromProviderResponse);
+
+  // List Payout with different payout experience
+  rpc ListPayoutsV2(ListPayoutsV2Request) returns (ListPayoutsV2Response);
+
+  // Fetch Payout Statement for a dasher, generated based on month/date range
+  rpc GetPayoutStatementV1(GetPayoutStatementV1Request) returns (GetPayoutStatementV1Response);
+  // List available payout statements for a dasher
+  rpc ListPayoutStatementsV1(ListPayoutStatementsV1Request) returns (ListPayoutStatementsV1Response);
+
+  // Get tax documents for dashers
+  rpc GetTaxDocumentsInfo(GetTaxDocumentsInfoRequest) returns (GetTaxDocumentsInfoResponse);
+  rpc GetPaperlessTaxDocumentsConsent(GetPaperlessTaxDocumentsConsentRequest) returns (GetPaperlessTaxDocumentsConsentResponse);
+  rpc GetTaxDocumentPdf(GetTaxDocumentPdfRequest) returns (GetTaxDocumentPdfResponse);
+}
+
+service ExperimentService {
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 100;
+  option (service_client.client_config).retry_config.wait_multiplier = 2;
+
+  rpc GetExposure(GetExposureRequest) returns (GetExposureResponse);
+  rpc CreateExposure(CreateExposureRequest) returns (CreateExposureResponse);
+}
+
+message GetExposureRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue experiment_name = 2;
+}
+
+message GetExposureResponse {
+  google.protobuf.BoolValue is_exposed = 1;
+  google.protobuf.Timestamp exposed_at = 2;
+}
+
+message CreateExposureRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue experiment_name = 2;
+}
+
+// empty
+message CreateExposureResponse {}
+
+message GetPayoutAccountRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+}
+
+message GetPayoutAccountResponse {
+  google.protobuf.StringValue payout_account_id = 1;
+  google.protobuf.StringValue payment_account_id = 2;
+  map<string, string> metadata = 3;
+  repeated ProviderAccount provider_accounts = 4;
+}
+
+message GetProviderAccountRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  PayoutProvider provider = 2;
+  google.protobuf.StringValue country = 3;
+}
+
+message GetProviderAccountResponse {
+  ProviderAccount provider_account = 1;
+}
+
+message GetProviderVerificationFormLinkRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  PayoutProvider provider = 2;
+  google.protobuf.StringValue country = 3;
+}
+
+message GetProviderVerificationFormLinkResponse {
+  google.protobuf.StringValue form_url = 1;
+}
+
+message SignupForPayoutExperienceRequest {
+  // consent item
+  message ConsentItem {
+    // name
+    google.protobuf.StringValue name = 1;
+    // date consented
+    google.protobuf.StringValue date = 2; // YYYY-MM-DD
+    // whether accepted or not
+    google.protobuf.BoolValue accepted = 3;
+  }
+
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // country in which signup to have signup
+  google.protobuf.StringValue country = 3;
+  // email
+  google.protobuf.StringValue email = 4;
+  // phone number
+  google.protobuf.StringValue phone_number = 5;
+  // first name
+  google.protobuf.StringValue first_name = 6;
+  // middle name
+  google.protobuf.StringValue middle_name = 7;
+  // last name
+  google.protobuf.StringValue last_name = 8;
+  // date of birth
+  google.protobuf.StringValue date_of_birth = 9; // YYYY-MM-DD
+
+  // home address used for identity verification
+  doordash.payment.common.Address home_address = 10;
+  // shipping address where to ship items (eg. card, documents)
+  doordash.payment.common.Address shipping_address = 11;
+
+  // consent items that the dasher must have agreed to
+  repeated ConsentItem expressed_consent = 12;
+
+  // SSN (will be a tokenized value through tokenizer)
+  google.protobuf.StringValue tax_id = 13;
+
+  // Payout experience for which this signup is occurring
+  PayoutExperienceType payout_experience_type = 14;
+
+  // Signup request metadata
+  map<string, string> metadata = 15;
+
+  // Submit async
+  google.protobuf.BoolValue submit_async = 16;
+
+  // PayoutProvider (eg. Payfare, Marqeta)
+  PayoutProvider provider = 17;
+}
+
+// payout experience types
+enum PayoutExperienceType {
+  // not specified
+  PAYOUT_EXPERIENCE_TYPE_UNSPECIFIED = 0;
+  // dasher direct
+  PAYOUT_EXPERIENCE_TYPE_DASHER_DIRECT = 1;
+  // weekly deposit
+  PAYOUT_EXPERIENCE_TYPE_WEEKLY_DEPOSIT = 2;
+  // fastpay
+  PAYOUT_EXPERIENCE_TYPE_FAST_PAY = 3;
+}
+
+message SignupForPayoutExperienceResponse {
+  /* empty */
+}
+
+message UpdateProviderAccountRequest {
+  message UpdatePayfareAccountData {
+    message Address {
+      google.protobuf.StringValue line1 = 1;
+      google.protobuf.StringValue line2 = 2;
+      google.protobuf.StringValue city = 3;
+      google.protobuf.StringValue region = 4; // ISO-3166-2 subdivision code
+      google.protobuf.StringValue country_code = 5;
+      google.protobuf.StringValue postal_code = 6;
+    }
+
+    message ConsentItem {
+      google.protobuf.StringValue name = 1;
+      google.protobuf.StringValue date = 2; // YYYY-MM-DD
+      google.protobuf.BoolValue accepted = 3;
+    }
+
+    google.protobuf.StringValue email = 1;
+    google.protobuf.StringValue phone_number = 2;
+    google.protobuf.StringValue first_name = 3;
+    google.protobuf.StringValue middle_name = 4;
+    google.protobuf.StringValue last_name = 5;
+    google.protobuf.StringValue embossed_name = 6;
+    google.protobuf.StringValue date_of_birth = 7; // YYYY-MM-DD
+    Address home_address = 8;
+    Address shipping_address = 9;
+
+    repeated ConsentItem expressed_consent = 10;
+
+    google.protobuf.StringValue reward_tier = 11;
+  }
+
+  message UpdateFiservAccountData {
+    message Address {
+      google.protobuf.StringValue line1 = 1;
+      google.protobuf.StringValue line2 = 2;
+      google.protobuf.StringValue city = 3;
+      google.protobuf.StringValue region = 4; // ISO-3166-2 subdivision code
+      google.protobuf.StringValue country_code = 5;
+      google.protobuf.StringValue postal_code = 6;
+    }
+
+    google.protobuf.StringValue phone_number = 1;
+    Address shipping_address = 2;
+  }
+
+  google.protobuf.StringValue payment_account_id = 1;
+  PayoutProvider provider = 2;
+  google.protobuf.StringValue country = 3;
+
+  oneof data {
+    UpdatePayfareAccountData payfare = 4;
+    UpdateFiservAccountData fiserv = 5;
+  }
+}
+
+message UpdateProviderAccountResponse {
+  /* empty */
+}
+
+message CloseProviderAccountRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+message CloseProviderAccountResponse {
+  /* empty */
+}
+
+message UpdateProviderAccountVerificationInfoRequest {
+  /* All values in this message are expected to have been passed
+   * through a tokenizer service first to obscure PII
+   */
+  message TokenizedPayfareVerificationInfoData {
+    google.protobuf.StringValue tax_id = 1;
+    google.protobuf.StringValue occupation = 2;
+    google.protobuf.StringValue job_level = 3;
+  }
+
+  message TokenizedMarqetaVerificationInfoData {
+    google.protobuf.StringValue tax_id = 1;
+    google.protobuf.StringValue occupation = 2;
+    google.protobuf.StringValue job_level = 3;
+  }
+
+  message TokenizedFiservVerificationInfoData {
+    google.protobuf.StringValue tax_id = 1;
+    google.protobuf.StringValue dasher_applicant_unique_link = 2; // Not tokenized, needed for KYC call
+  }
+
+  google.protobuf.StringValue payment_account_id = 1;
+  PayoutProvider provider = 2;
+  google.protobuf.StringValue country = 3;
+
+  oneof data {
+    TokenizedPayfareVerificationInfoData payfare = 4;
+    TokenizedMarqetaVerificationInfoData marqeta = 5 [deprecated = true];
+    TokenizedFiservVerificationInfoData fiserv = 6;
+  }
+}
+
+message UpdateProviderAccountVerificationInfoResponse {
+  /* empty */
+}
+
+message HandleProviderWebhookRequest {
+  PayoutProvider provider = 1;
+  google.protobuf.StringValue webhook_data = 2;
+  google.protobuf.StringValue country = 3;
+}
+
+message HandleProviderWebhookResponse {
+  /* empty */
+}
+
+message GetSelectedPayoutExperienceRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue country = 2;
+}
+
+message GetSelectedPayoutExperienceResponse {
+  PayoutExperience selected_experience = 1;
+}
+
+message SetPayoutExperienceRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue payout_experience_id = 2;
+  google.protobuf.StringValue country = 3;
+}
+
+message SetPayoutExperienceResponse {
+  /* empty */
+}
+
+message ListPayoutExperiencesRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue country = 2;
+
+  google.protobuf.UInt32Value page_size = 3;
+  google.protobuf.StringValue page_token = 4;
+}
+
+message ListPayoutExperiencesResponse {
+  repeated PayoutExperience experiences = 1;
+
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+message ListPayoutsRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.BoolValue include_admin_metadata = 2;
+
+  google.protobuf.UInt32Value page_size = 3;
+  google.protobuf.StringValue page_token = 4;
+}
+
+message ListPayoutsResponse {
+  repeated Payout payouts = 1;
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+message CreatePayoutRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  // if not given, will default to start of time
+  google.protobuf.Timestamp balance_start_timestamp = 2;
+  // if not given, will default to "now", as seen by processor
+  google.protobuf.Timestamp balance_end_timestamp = 3;
+  // type of payout to be created (e.g. onDemand or scheduled)
+  PayoutType payout_type = 4;
+  google.protobuf.StringValue submitted_by_user_id = 5;
+  // if not given, will default to false, not allowing $0 payout
+  google.protobuf.BoolValue allow_zero_dollar_payout = 6;
+}
+
+message CreatePayoutResponse {
+  // Will be null if there was no unpaid balance to pay out.
+  Payout payout = 2;
+}
+
+message SubmitPayoutRequest {
+  google.protobuf.StringValue payout_id = 1;
+  google.protobuf.StringValue submitted_by_user_id = 2;
+}
+
+message SubmitPayoutResponse {
+  enum ErrorCode {
+    ERROR_UNSPECIFIED = 0;
+    NOT_FOUND = 1;
+  }
+
+  message Error {
+    ErrorCode error_code = 1;
+  }
+
+  Error error = 1;
+}
+
+message DeletePayoutRequest {
+  google.protobuf.StringValue payout_id = 1;
+}
+
+message DeletePayoutResponse {}
+
+message CreatePayoutMethodFingerprintRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue external_account_id = 2;
+  google.protobuf.StringValue provider_resource_id = 3;
+  PayoutProvider provider = 4;
+  google.protobuf.StringValue external_fingerprint = 5;
+  google.protobuf.StringValue doordash_fingerprint = 6;
+  map<string, string> metadata = 7;
+}
+
+message CreatePayoutMethodFingerprintResponse {
+  PayoutMethodFingerprint payout_method_fingerprint = 1;
+}
+
+message ListPayoutMethodFingerprintsRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue external_account_id = 2;
+  google.protobuf.StringValue provider_resource_id = 3;
+  PayoutProvider provider = 4;
+  google.protobuf.StringValue external_fingerprint = 5;
+  google.protobuf.StringValue doordash_fingerprint = 6;
+}
+
+message ListPayoutMethodFingerprintsResponse {
+  repeated PayoutMethodFingerprint payoutMethodFingerprint = 1;
+}
+
+enum PayoutFrequency {
+  PAYOUT_FREQUENCY_UNSPECIFIED = 0;
+  PAYOUT_FREQUENCY_DAILY = 1;
+  PAYOUT_FREQUENCY_WEEKLY = 2;
+  PAYOUT_FREQUENCY_ASAP = 3;
+}
+
+enum PayoutType {
+  PAYOUT_UNSPECIFIED = 0;
+  PAYOUT_SCHEDULED = 1;
+  PAYOUT_ON_DEMAND = 2;
+}
+
+enum PayoutMethodType {
+  PAYOUT_METHOD_UNSPECIFIED = 0;
+  PAYOUT_METHOD_BANK = 1;
+  PAYOUT_METHOD_DEBIT_CARD = 2;
+}
+
+enum ProviderPayoutMethodStatus {
+  PROVIDER_PAYOUT_METHOD_STATUS_UNSPECIFIED = 0;
+  PROVIDER_PAYOUT_METHOD_STATUS_ACTIVE = 1;
+  PROVIDER_PAYOUT_METHOD_STATUS_INACTIVE = 2;
+  PROVIDER_PAYOUT_METHOD_STATUS_CLOSED = 3;
+  PROVIDER_PAYOUT_METHOD_STATUS_SHIPPED = 4;
+  PROVIDER_PAYOUT_METHOD_STATUS_PRE_ACTIVE = 5;
+  PROVIDER_PAYOUT_METHOD_STATUS_STOLEN = 6;
+  PROVIDER_PAYOUT_METHOD_STATUS_REISSUE = 7;
+  PROVIDER_PAYOUT_METHOD_STATUS_SUSPENDED = 8;
+  PROVIDER_PAYOUT_METHOD_STATUS_FRAUD_BLOCK = 9;
+  PROVIDER_PAYOUT_METHOD_STATUS_FROZEN = 10;
+  PROVIDER_PAYOUT_METHOD_STATUS_DAMAGED = 11;
+  PROVIDER_PAYOUT_METHOD_STATUS_LOST = 12;
+}
+
+enum PayoutProvider {
+  PAYOUT_PROVIDER_UNSPECIFIED = 0;
+  PAYOUT_PROVIDER_STRIPE = 1;
+  PAYOUT_PROVIDER_PAYFARE = 2;
+  PAYOUT_PROVIDER_MARQETA = 3;
+  PAYOUT_PROVIDER_FISERV = 4;
+}
+
+enum PayoutStatus {
+  PAYOUT_STATUS_UNSPECIFIED = 0;
+  PAYOUT_STATUS_CREATED = 1; // payout is created in payout service but not yet submitted
+  PAYOUT_STATUS_SUBMITTED = 2; // We have sent the payout to our Payout Provider
+  PAYOUT_STATUS_PROCESSING = 3; // Money is in-flight to user's account
+  PAYOUT_STATUS_FAILED = 4;
+  PAYOUT_STATUS_COMPLETED = 5;
+  PAYOUT_STATUS_CANCELED = 6;
+  PAYOUT_STATUS_PENDING_ACTION = 7; // certain action is pending before this payout can proceed
+  PAYOUT_STATUS_DELETED = 8;
+  PAYOUT_STATUS_PENDING = 9;
+}
+
+enum ProviderAccountVerificationStatus {
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_UNSPECIFIED = 0;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING = 1;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING_ID = 2;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING_ADDITIONAL_INFORMATION = 3;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING_OOW = 4;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PROCESSING_OOW = 5;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_FAILED = 6;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_VERIFIED = 7;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING_MANUAL_VERIFICATION = 8;
+  PROVIDER_ACCOUNT_VERIFICATION_STATUS_PENDING_TIN_RETRY = 9;
+}
+
+enum ProviderAccountStatus {
+  PROVIDER_ACCOUNT_STATUS_UNSPECIFIED = 0;
+  PROVIDER_ACCOUNT_STATUS_PENDING = 1;
+  PROVIDER_ACCOUNT_STATUS_ACTIVE = 2;
+  PROVIDER_ACCOUNT_STATUS_CLOSED = 3;
+  PROVIDER_ACCOUNT_STATUS_INVITED = 4;
+  PROVIDER_ACCOUNT_STATUS_PENDING_SUBMISSION = 5;
+  PROVIDER_ACCOUNT_STATUS_PENDING_ASYNC_SUBMISSION = 6;
+}
+
+enum OtpMediaType {
+  OTP_MEDIA_TYPE_UNSPECIFIED = 0;
+  OTP_MEDIA_TYPE_TEXT = 1;
+  OTP_MEDIA_TYPE_EMAIL = 2;
+  OTP_MEDIA_TYPE_VOICE = 3;
+}
+
+enum TaxDocumentsProvider {
+  TAX_DOCUMENTS_PROVIDER_UNSPECIFIED = 0;
+  TAX_DOCUMENTS_PROVIDER_TAXBIT = 1;
+  TAX_DOCUMENTS_PROVIDER_STRIPE = 2;
+}
+
+/*
+   A PayoutProcessingError explains why an *existing* payout wasn't successfully completed
+   and any action needed for client / user to proceed.
+*/
+message PayoutProcessingError {
+  google.protobuf.StringValue error_code = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message Payout {
+  message AdminMetadata {
+    google.protobuf.StringValue created_by = 1;
+    google.protobuf.StringValue canceled_by = 2;
+    google.protobuf.StringValue manual_transfer_reason = 3;
+
+    google.protobuf.StringValue failure_code = 4;
+    google.protobuf.StringValue active_provider_url = 5;
+  }
+
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue payment_account_id = 2;
+  PayoutMethod payout_method = 3;
+  PayoutStatus status = 4;
+  PayoutProvider provider = 5;
+
+  google.protobuf.UInt64Value amount = 6;
+  google.protobuf.StringValue currency = 7;
+
+  // Contains information to populate internal tooling views,
+  // null unless requested.
+  AdminMetadata admin = 8;
+
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp submitted_at = 11;
+  google.protobuf.Timestamp canceled_at = 12;
+
+  PayoutProcessingError payout_error = 13;
+
+  google.protobuf.StringValue payout_account_id = 14;
+
+  PayoutType payout_type = 15;
+
+  // if deposited, it shows the timing when the amount is arrived
+  google.protobuf.Timestamp arrived_at = 16;
+  // if in transition to be deposited, it shows the estimate arrival timing
+  TimeRange estimate_arrival = 17;
+
+  // provider-specific error information for the payout
+  oneof payout_provider_error_info {
+    StripePayoutErrorInfo stripe_error_info = 18;
+  }
+}
+
+message StripePayoutErrorInfo {
+  // Stripe submission error code
+  google.protobuf.StringValue stripe_submission_error_code = 1;
+  // Stripe failure code
+  google.protobuf.StringValue stripe_failure_code = 2;
+}
+
+message PayoutMethod {
+  message CardMetadata {
+    google.protobuf.StringValue branding = 1; // "Visa", etc.
+    google.protobuf.StringValue last4 = 2;
+    google.protobuf.UInt32Value exp_month = 3;
+    google.protobuf.UInt32Value exp_year = 4;
+    google.protobuf.BoolValue is_virtual = 5;
+    google.protobuf.UInt64Value pin_updated_at = 6;
+    google.protobuf.UInt64Value pin_set = 7 [deprecated = true];
+    google.protobuf.BoolValue is_pin_set = 8;
+    google.protobuf.BoolValue has_redeemed_rewards = 9;
+  }
+
+  message BankMetadata {
+    google.protobuf.StringValue institution = 1;
+    google.protobuf.StringValue last4 = 2;
+  }
+
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue payment_account_id = 2;
+  PayoutMethodType type = 3;
+  google.protobuf.BoolValue is_default = 4;
+  google.protobuf.StringValue country = 5;
+  google.protobuf.StringValue currency = 6;
+
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+
+  oneof metadata {
+    CardMetadata card = 9;
+    BankMetadata bank = 10;
+  }
+
+  ProviderPayoutMethodStatus status = 11;
+}
+
+message ProviderAccount {
+  google.protobuf.StringValue id = 1; // Our id for this account
+  google.protobuf.StringValue provider_account_id = 2 [deprecated = true]; // External API's id for this account
+  PayoutProvider provider = 3;
+  ProviderAccountVerificationStatus verification_status = 4;
+
+  google.protobuf.StringValue provider_url = 6;
+  ProviderAccountStatus status = 7;
+  google.protobuf.StringValue closed_reason = 8;
+
+  google.protobuf.StringValue provider_resource_id = 9; // Replaces provider_account_id
+
+  // the timestamp at which first logged into app
+  google.protobuf.Timestamp first_app_login_at = 10;
+
+  // are there payouts associated with this provider account
+  google.protobuf.BoolValue has_payouts = 11;
+
+  // account metadata
+  google.protobuf.StringValue metadata = 12;
+}
+
+message PayoutExperience {
+  message ScheduledPayoutConfig {
+    PayoutFrequency payout_frequency = 1;
+    PayoutMethod default_payout_method = 2;
+  }
+
+  message OnDemandPayoutConfig {
+    PayoutMethod default_payout_method = 1;
+
+    google.protobuf.UInt32Value fee = 2;
+    google.protobuf.StringValue fee_currency = 3;
+  }
+
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue display_name = 2;
+
+  google.protobuf.BoolValue is_selected = 3;
+
+  ProviderAccount provider_account = 4;
+
+  ScheduledPayoutConfig scheduled_payout_config = 5;
+  OnDemandPayoutConfig on_demand_payout_config = 6;
+
+  google.protobuf.BoolValue is_eligible = 7;
+}
+
+message PayoutMethodFingerprint {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue payment_account_id = 2;
+  google.protobuf.StringValue external_account_id = 3;
+  google.protobuf.StringValue provider_resource_id = 4;
+  PayoutProvider provider = 5;
+  google.protobuf.StringValue external_fingerprint = 6;
+  google.protobuf.StringValue doordash_fingerprint = 7;
+  map<string, string> metadata = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// fast pay
+message FastPayFraudConfig {
+  // daily amount allowed for fast pay
+  google.protobuf.Int64Value allowed_daily_cap = 1;
+  // amount allowed in lookback hours
+  google.protobuf.Int64Value amount_allowed_in_lookback_hours = 2;
+  // bypass daily cap check for fast pay
+  google.protobuf.BoolValue bypass_daily_cap_check = 3;
+  // bypass daily number of times check for fast pay
+  google.protobuf.BoolValue bypass_daily_limit_check = 4;
+  // bypass amount and frequency check
+  google.protobuf.BoolValue bypass_rolling_amount_and_freq_check = 5;
+  // frequency allowed in lookback hours
+  google.protobuf.Int64Value freq_allowed_in_lookback_hours = 6;
+  // lookback hours for frequency and amount check
+  google.protobuf.Int64Value lookback_hours = 7;
+  // block days when new card added for fast pay
+  google.protobuf.Int64Value payout_card_change_block_days = 8;
+}
+
+// the request for fast pay eligibility check
+message CheckFastPayEligibilityRequest {
+  // payout account id
+  google.protobuf.Int64Value payout_account_id = 1;
+  // fast payout entity's local start of today in timestamp
+  google.protobuf.Int64Value local_start_of_day = 2;
+  // the amount of fast payout fee (in cents). If not specified, a flat fee is applied
+  google.protobuf.Int64Value fee = 3; // optional
+  // fraud config
+  FastPayFraudConfig fast_pay_fraud_config = 4;
+}
+
+// the response for fast pay eligibility check
+message CheckFastPayEligibilityResponse {
+  // payout account id request for fast pay
+  google.protobuf.Int64Value payout_account_id = 1;
+  // eligibility of this fast pay
+  google.protobuf.BoolValue eligible = 2;
+  // reason of eligibility
+  PaymentEligibilityReasons reason = 3; // optional
+  // detail of the reason
+  google.protobuf.StringValue details = 4; // optional
+  // balance
+  google.protobuf.Int64Value balance = 5; // optional
+  // currency
+  google.protobuf.StringValue currency = 6;
+  // Timestamp of when it was created
+  google.protobuf.Int64Value fee = 7; // optional
+}
+
+// the request for fast pay status
+message CheckFastPayStatusRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // timezone
+  google.protobuf.StringValue timezone = 2;
+  // locale
+  google.protobuf.StringValue locale = 3;
+  // country shortname
+  doordash.payment.common.Country country_shortname = 4;
+  // dasher contract type
+  google.protobuf.StringValue contract_type = 5;
+  // dasher created at
+  google.protobuf.StringValue created_at = 6;
+  // dasher lifetime number of deliveries made
+  google.protobuf.Int32Value lifetime_num_deliveries_made = 7;
+  // dasher is eligible contract
+  google.protobuf.BoolValue is_eligible_contract = 8;
+  // dasher is qualifying num deliveries
+  google.protobuf.BoolValue is_qualifying_num_deliveries = 9;
+}
+
+// the response for fast pay status
+message CheckFastPayStatusResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+  // fast pay fee monetary fields
+  money.MonetaryFields fast_pay_fee_monetary_fields = 2;
+  // balance monetary fields
+  money.MonetaryFields balance_monetary_fields = 3;
+  // transfer total monetary fields
+  money.MonetaryFields transfer_total_monetary_fields = 4; // optional
+  // reason
+  google.protobuf.StringValue reason = 5; // optional
+  // fast pay fee
+  google.protobuf.Int32Value fast_pay_fee = 6;
+  // balance
+  google.protobuf.Int32Value balance = 7;
+  // transfer total
+  google.protobuf.Int32Value transfer_total = 8; // optional
+  // cards changed
+  repeated PayoutCard cards_changed = 9;
+  // available at
+  google.protobuf.StringValue available_at = 10; // optional
+  // latest card
+  PayoutCard latest_card = 11;
+}
+
+// each payout card for payment method
+message PayoutCard {
+  // payout card id
+  google.protobuf.Int64Value payout_card_id = 1;
+  // last 4
+  google.protobuf.StringValue last_4 = 2;
+  // expiry month
+  google.protobuf.Int32Value exp_month = 3;
+  // expiry year
+  google.protobuf.Int32Value exp_year = 4;
+  // created at
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// the request of submit fast pay
+message SubmitFastPayRequest {
+  // The payment account id under which the fast payout should be submitted
+  google.protobuf.Int64Value payout_account_id = 1;
+  // The amount of fast payout in cents, without fee
+  google.protobuf.Int64Value amount = 2;
+  // The currency code for the transaction to be created
+  google.protobuf.StringValue currency = 3;
+  // The payout card to fast payout to. If not provided, use default payout card
+  google.protobuf.StringValue card = 4; // optional
+  // The amount of fast payout fee (in cents). If not specified, a flat fee is applied
+  google.protobuf.Int64Value fee = 5; // optional
+  // Fraud config
+  FastPayFraudConfig fast_pay_fraud_config = 6;
+}
+
+// the response of submit fast pay
+message SubmitFastPayResponse {
+  // The payment account id under which the fast payout should be submitted
+  google.protobuf.Int64Value payout_account_id = 1;
+  // fast payout id
+  google.protobuf.Int64Value payout_id = 2;
+  // The amount of fast payout in cents, without fee
+  google.protobuf.Int64Value amount = 3;
+  // The currency code for the transaction to be created
+  google.protobuf.StringValue currency = 4;
+  // The fee of the fast payout
+  google.protobuf.Int64Value fee = 5;
+  // status of the fast payout
+  FastPayoutStatus status = 6;
+  // the payout card of the fast Payout
+  google.protobuf.StringValue card = 7;
+  // created time of payout
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// each fast payout in the list of payout
+message FastPayoutItem {
+  // payout account id
+  google.protobuf.Int64Value payout_account_id = 1;
+  // payout id
+  google.protobuf.Int64Value payout_id = 2;
+  // The amount of fast payout in cents, without fee
+  google.protobuf.Int64Value amount = 3;
+  // The currency code for the transaction to be created
+  google.protobuf.StringValue currency = 4;
+  // The amount of fast payout fee (in cents). If not specified, a flat fee is applied
+  google.protobuf.Int64Value fee = 5;
+  // payout status
+  FastPayoutStatus status = 6;
+  // pgp payout id
+  google.protobuf.StringValue pgp_payout_id = 7; // optional
+  // created time of payout
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// the request of the list of fast payout
+message ListFastPayoutRequest {
+  // payout account id
+  google.protobuf.Int64Value payout_account_id = 1;
+  // number of payout to retrieve
+  google.protobuf.Int64Value limit = 2;
+  // cursor
+  google.protobuf.StringValue cursor = 3;
+}
+
+// the response of the list of fast payout
+message ListFastPayoutResponse {
+  // count of fast payouts
+  google.protobuf.Int64Value count = 1;
+  // list of fast_pay
+  repeated FastPayoutItem fast_payout_item = 2;
+  // cursor
+  google.protobuf.StringValue cursor = 3; // optional
+}
+
+// the reasons for payment eligibility
+enum PaymentEligibilityReasons {
+  // not specified
+  PAYMENT_ELIGIBILITY_REASONS_UNSPECIFIED = 0;
+  // "payout_account_not_exist"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_ACCOUNT_NOT_EXIST = 1;
+  //"payout_account_type_not_supported"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_ACCOUNT_TYPE_NOT_SUPPORTED = 2;
+  //"payout_pgp_account_not_setup"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_PGP_ACCOUNT_NOT_SETUP = 3;
+  //"payout_pgp_account_not_exist"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_PGP_ACCOUNT_NOT_EXIST = 4;
+  //"payout_account_country_not_supported"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_ACCOUNT_COUNTRY_NOT_SUPPORTED = 5;
+  //"payout_pgp_account_not_verified"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_PGP_ACCOUNT_NOT_VERIFIED = 6;
+  //"payout_card_not_setup"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_CARD_NOT_SETUP = 7;
+  //"payout_card_changed_recently"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_CARD_CHANGED_RECENTLY = 8;
+  //"payout_card_not_eligible_for_fast_pay"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_CARD_NOT_ELIGIBLE_FOR_FAST_PAY = 9;
+  //"balance_insufficient"
+  PAYMENT_ELIGIBILITY_REASONS_INSUFFICIENT_BALANCE = 10;
+  //"already_paid_out_today"
+  PAYMENT_ELIGIBILITY_REASONS_ALREADY_PAID_OUT_TODAY = 11;
+  //"payout_exceeds_limit"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_EXCEEDS_LIMIT = 12;
+  //"payout_account_handled_by_payout_service"
+  PAYMENT_ELIGIBILITY_REASONS_PAYOUT_ACCOUNT_HANDLED_BY_PAYOUT_SERVICE = 13;
+  //"amount_too_large"
+  PAYMENT_ELIGIBILITY_REASONS_AMOUNT_TOO_LARGE = 14;
+}
+
+// the status of fast payouts
+enum FastPayoutStatus {
+  // not specified
+  FAST_PAYOUT_STATUS_UNSPECIFIED = 0;
+  // When the fast payout record is created internally
+  FAST_PAYOUT_STATUS_NEW = 1;
+  // When submitted to PGP
+  FAST_PAYOUT_STATUS_PENDING = 2;
+  // When PGP return paid
+  FAST_PAYOUT_STATUS_PAID = 3;
+  //When PGP return cancelled
+  FAST_PAYOUT_STATUS_CANCELLED = 4;
+  //When PGP return canceled (Stripe returning status is `canceled`)
+  FAST_PAYOUT_STATUS_CANCELED = 5;
+  //When PGP return failed
+  FAST_PAYOUT_STATUS_FAILED = 6;
+  // When there is error submitting fast payout
+  FAST_PAYOUT_STATUS_ERROR = 7;
+}
+
+// request used to send payout status update email
+message SendFastPayEmailRequest {
+  // payout id for the payout
+  google.protobuf.Int64Value payout_id = 1;
+  // payout status for the payout
+  FastPayoutStatus status = 2;
+}
+
+// request used to send payout status update email
+message SendFastPayEmailResponse {}
+
+// Request for creating provider authentication token
+message CreatePayoutProviderAuthenticationTokenRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// response for creating provider authentication token
+message CreatePayoutProviderAuthenticationTokenResponse {
+  // authentication token (tokenized value)
+  google.protobuf.StringValue authentication_token = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // time to live
+  google.protobuf.Duration ttl = 3;
+  // provider resource id for account
+  google.protobuf.StringValue provider_resource_id = 4;
+}
+
+// request for retrieving shipping address for account
+message GetProviderPayoutAccountShippingAddressRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// response for retrieving shipping address
+message GetProviderPayoutAccountShippingAddressResponse {
+  // shipping address
+  doordash.payment.common.Address shipping_address = 1;
+}
+
+// request for retrieving shipping address for account
+message TrackProviderPayoutMethodShippingRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// response for retrieving shipping address
+message TrackProviderPayoutMethodShippingResponse {
+  // shipping address
+  ProviderPayoutMethodShippingStatus shipping_status = 1;
+  // first name
+  google.protobuf.StringValue first_name = 2;
+  //last name
+  google.protobuf.StringValue last_name = 3;
+  // shipping address
+  doordash.payment.common.Address shipping_address = 4;
+}
+
+// Reasons for payout method recreation
+enum ProviderPayoutMethodShippingStatus {
+  // unspecified
+  PROVIDER_PAYOUT_METHOD_SHIPPING_STATUS_UNSPECIFIED = 0;
+  // lost status
+  PROVIDER_PAYOUT_METHOD_SHIPPING_STATUS_PREPARING = 1;
+  // damanged status
+  PROVIDER_PAYOUT_METHOD_SHIPPING_STATUS_SHIPPED = 2;
+  // stolen status
+  PROVIDER_PAYOUT_METHOD_SHIPPING_STATUS_ARRIVED = 3;
+}
+
+// Update provider payout method request
+message UpdateProviderPayoutMethodStatusRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // payout method status
+  ProviderPayoutMethodStatus provider_payout_method_status = 3;
+}
+
+// Update provider payout method response
+message UpdateProviderPayoutMethodStatusResponse {}
+
+// Send provider fraud signal request
+message SendPayoutProviderFraudSignalRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // fraud reason
+  google.protobuf.StringValue fraud_reason = 2;
+  // payout provider
+  PayoutProvider payout_provider = 3;
+  // country
+  google.protobuf.StringValue country = 4;
+  // clawback amount
+  google.protobuf.DoubleValue clawback_amount = 5;
+}
+
+// Send provider fraud signal response
+message SendPayoutProviderFraudSignalResponse {}
+
+// Get payout provider account and rewards balance request
+message GetPayoutProviderAccountBalancesRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// Get payout provider account and rewards balance response
+message GetPayoutProviderAccountBalancesResponse {
+  // Monetary balance in account
+  money.MonetaryFields account_balance = 1;
+  // Rewards balance in account
+  money.MonetaryFields rewards_balance = 2;
+}
+
+// Get payout provider rewards transactions request
+message GetProviderPayoutMethodRewardsTransactionsRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // start date
+  google.protobuf.Timestamp start_date = 3;
+  // end date
+  google.protobuf.Timestamp end_date = 4;
+}
+
+// Get payout provider rewards transactions response
+message GetProviderPayoutMethodRewardsTransactionsResponse {
+  // transactions
+  repeated ProviderPayoutMethodTransaction transactions = 1;
+}
+
+// Activate provider payout method request
+message ActivateProviderPayoutMethodRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // exp month
+  google.protobuf.Int32Value exp_month = 3;
+  // exp year
+  google.protobuf.Int32Value exp_year = 4;
+  // last4
+  google.protobuf.StringValue last4 = 5;
+}
+
+// Get payout provider rewards transactions response
+message ActivateProviderPayoutMethodResponse {}
+
+// update pin token request
+message UpdateProviderPayoutMethodPINRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // tokenized pin
+  google.protobuf.StringValue pin_token = 3;
+}
+
+// update pin token response
+message UpdateProviderPayoutMethodPINResponse {}
+
+// get OTP delivery mechanism request
+message GetProviderPayoutMethodOTPDeliveryMechanismRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// get OTP delivery mechanism response
+message GetProviderPayoutMethodOTPDeliveryMechanismResponse {
+  // email address
+  google.protobuf.StringValue email_address = 1;
+  // home phone
+  google.protobuf.StringValue home_phone = 2;
+  // work phone
+  google.protobuf.StringValue work_phone = 3;
+  // cell phone
+  google.protobuf.StringValue cell_phone = 4;
+  // text address
+  google.protobuf.StringValue text_address = 5;
+  // Non transactional card token
+  google.protobuf.StringValue non_trans_token = 6;
+  // jwt token
+  google.protobuf.StringValue jwt_token = 7 [deprecated = true]; // Deprecated "jwt_token"
+}
+
+// send OTP request
+message SendProviderPayoutMethodOTPRequest {
+  // media type
+  OtpMediaType media_type = 1;
+  // media address
+  google.protobuf.StringValue media_address = 2;
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 3;
+  // payout provider
+  PayoutProvider payout_provider = 4;
+}
+
+// send OTP response
+message SendProviderPayoutMethodOTPResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+  // Non transactional card token
+  google.protobuf.StringValue non_trans_token = 2;
+  // jwt token
+  google.protobuf.StringValue jwt_token = 3;
+}
+
+// Get payout provider transactions request
+message GetProviderPayoutMethodTransactionsRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // start date
+  google.protobuf.Timestamp start_date = 3;
+  // end date
+  google.protobuf.Timestamp end_date = 4;
+}
+
+// Create payout provider transactions request
+message CreateProviderPayoutMethodTransactionRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // category
+  ProviderPayoutMethodTransactionCategory category = 3;
+  // amount
+  money.MonetaryFields amount = 4;
+  // status
+  ProviderPayoutMethodTransactionStatus status = 5;
+  // transaction id
+  google.protobuf.StringValue id = 6;
+  // mcc category
+  google.protobuf.StringValue mcc_category = 7;
+}
+
+// Create payout provider transactions response
+message CreateProviderPayoutMethodTransactionResponse {}
+
+// Get payout provider transactions response
+message GetProviderPayoutMethodTransactionsResponse {
+  // transactions
+  repeated ProviderPayoutMethodTransaction transactions = 1;
+}
+
+// Redeem Provider Account rewards request
+message RedeemProviderAccountRewardsRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+// Redeem Provider Account rewards response
+message RedeemProviderAccountRewardsResponse {}
+
+enum ProviderPayoutMethodTransactionStatus {
+  // unspecified
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_STATUS_UNSPECIFIED = 0;
+  // posted
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_STATUS_POSTED = 1;
+  // pending
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_STATUS_PENDING = 2;
+}
+
+enum ProviderPayoutMethodTransactionCategory {
+  // unspecified
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_UNSPECIFIED = 0;
+  // pos
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_POS = 1;
+  // bill pay
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_BILL_PAY = 2;
+  // ach
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_ACH = 3;
+  // ach reverse
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_ACH_REVERSE = 4;
+  // goal transfer
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_GOAL_TRANSFER = 5;
+  // payout
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_PAYOUT = 6;
+  // reissue card
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_REISSUE_CARD = 7;
+  // rewards credit
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_REWARDS_CREDIT = 8;
+  // cash withdrawal
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_CASH_WITHDRAWAL = 9;
+  // prepaid activation and load
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_PREPAID_ACTIVATION_AND_LOAD = 10;
+  // load money onto card
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_LOAD_MONEY_ONTO_CARD = 11;
+  // card replacement fee
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_CARD_REPLACEMENT_FEE = 12;
+  // card replacement fee reversal
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_CARD_PLACEMENT_FEE_REVERSAL = 13;
+  // dormancy fee
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_DORMANCY_FEE = 14;
+  // dormancy fee reversal
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_DORMANCY_FEE_REVERSAL = 15;
+  // card to card transfers
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_CARD_TO_CARD_TRANSFER = 16;
+  // rewards transaction
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_REWARDS_TRANSACTION = 17;
+  // account credit
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_CREDIT = 18;
+  // account debit
+  PROVIDER_PAYOUT_METHOD_TRANSACTION_CATEGORY_DEBIT = 19;
+}
+
+// Payout provider transaction
+message ProviderPayoutMethodTransaction {
+  // display date
+  google.protobuf.Timestamp transaction_date = 1;
+  // statement descriptor
+  google.protobuf.StringValue statement_descriptor = 2;
+  // category
+  ProviderPayoutMethodTransactionCategory category = 3;
+  // amount
+  money.MonetaryFields amount = 4;
+  // status
+  ProviderPayoutMethodTransactionStatus status = 5;
+  // transaction id
+  google.protobuf.StringValue id = 6;
+  // mcc category
+  google.protobuf.StringValue mcc_category = 7;
+  // rewards earned
+  money.MonetaryFields rewards_earned = 8;
+  // transaction order
+  TransactionOrder transactionOrder = 9;
+  // active hold
+  google.protobuf.BoolValue active_hold = 10;
+  // is cancellable
+  google.protobuf.BoolValue is_cancellable = 11;
+}
+
+// Get provider payout transaction details request
+message GetProviderPayoutMethodTransactionDetailsRequest {
+  // transaction id
+  google.protobuf.StringValue transaction_id = 1;
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 2;
+  // payout provider
+  PayoutProvider payout_provider = 3;
+}
+
+// Get provider payout transaction details response
+message GetProviderPayoutMethodTransactionDetailsResponse {
+  // transaction details
+  ProviderPayoutMethodTransactionDetails transaction_details = 1;
+}
+
+// Card transaction details
+message ProviderPayoutMethodTransactionDetails {
+  // rewards earned
+  money.MonetaryFields rewards_earned = 1;
+  // category
+  google.protobuf.StringValue category = 2;
+  // transaction total
+  money.MonetaryFields transaction_total = 3;
+}
+
+// message for transaction order
+message TransactionOrder {
+  // transaction order to e.g. transfer to
+  TransactionOrderDetail transaction_order_to = 1;
+  // transaction order from e.g. transfer from
+  TransactionOrderDetail transaction_order_from = 2;
+}
+
+// message for transaction order detail
+message TransactionOrderDetail {
+  // last 4 digit of transaction account
+  google.protobuf.StringValue account_last4 = 1;
+  // account title e.g. crimson
+  google.protobuf.StringValue account_title = 2;
+  // account type e.g. checking
+  google.protobuf.StringValue account_type = 3;
+}
+
+message GetPayoutProviderAccountStatementsRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+message GetPayoutProviderAccountStatementsResponse {
+  // statements
+  repeated PayoutProviderAccountStatement statements = 1;
+  // time to live
+  google.protobuf.Duration ttl = 2;
+}
+
+message GetPayoutProviderAccountStatementContentRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // statement id
+  google.protobuf.StringValue statement_id = 3;
+}
+
+message GetPayoutProviderAccountStatementContentResponse {
+  // pdf statement
+  bytes pdf_statement = 1;
+}
+
+message PayoutProviderAccountStatement {
+  // url
+  google.protobuf.StringValue url = 1;
+  // start date
+  google.protobuf.Timestamp start_date = 2;
+  // end date
+  google.protobuf.Timestamp end_date = 3;
+  // statement_id
+  google.protobuf.StringValue statement_id = 4;
+}
+
+message GetPayoutProviderAccountDirectDepositInformationRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+message GetPayoutProviderAccountDirectDepositInformationResponse {
+  // Account number
+  google.protobuf.StringValue dda_number = 1;
+  // Routing number
+  google.protobuf.StringValue routing_number = 2;
+  // Account type
+  google.protobuf.StringValue account_type = 3;
+  // Bank name
+  google.protobuf.StringValue bank_name = 4;
+}
+
+message GetPayoutProviderAccountDirectDepositInformationFormRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+message GetPayoutProviderAccountDirectDepositInformationFormResponse {
+  // url
+  google.protobuf.StringValue url = 1;
+  // time to live
+  google.protobuf.Duration ttl = 2;
+}
+
+// Request to recreate provider payout method
+message RecreateProviderPayoutMethodRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // payout method shipping address
+  doordash.payment.common.Address shipping_address = 3;
+  // reason code
+  RecreateProviderPayoutMethodReasonCode recreate_provider_payout_method_reason_code = 4;
+  // description
+  google.protobuf.StringValue description = 5;
+}
+
+// Reasons for payout method recreation
+enum RecreateProviderPayoutMethodReasonCode {
+  // unspecified
+  RECREATE_PROVIDER_PAYOUT_METHOD_REASON_CODE_UNSPECIFIED = 0;
+  // lost status
+  RECREATE_PROVIDER_PAYOUT_METHOD_REASON_CODE_LOST = 1;
+  // damanged status
+  RECREATE_PROVIDER_PAYOUT_METHOD_REASON_CODE_DAMAGED = 2;
+  // stolen status
+  RECREATE_PROVIDER_PAYOUT_METHOD_REASON_CODE_STOLEN = 3;
+  // never arrived
+  RECREATE_PROVIDER_PAYOUT_METHOD_REASON_CODE_NEVER_ARRIVED = 4;
+}
+
+// Recreate provider payout method response
+message RecreateProviderPayoutMethodResponse {
+  // provider payout method id
+  google.protobuf.StringValue provider_payout_method_id = 1;
+}
+
+// Request to create provider payout method
+message CreateProviderPayoutMethodRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+}
+
+message CreateProviderPayoutMethodResponse {
+  // provider payout method id
+  google.protobuf.StringValue provider_payout_method_id = 1;
+}
+
+// Request to sync provider payout method
+message SyncProviderPayoutMethodFromProviderRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // country
+  google.protobuf.StringValue country = 3;
+}
+
+message SyncProviderPayoutMethodFromProviderResponse {
+  // provider payout method id
+  google.protobuf.StringValue provider_payout_method_id = 1;
+}
+
+// Request to sync provider account
+message SyncProviderAccountFromProviderRequest {
+  // payment account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  // country
+  google.protobuf.StringValue country = 3;
+}
+
+message SyncProviderAccountFromProviderResponse {
+  // provider account
+  ProviderAccount provider_account = 1;
+}
+
+// Request to batch create payouts
+message BatchCreatePayoutsRequest {
+  // payout account ids
+  repeated google.protobuf.StringValue payout_account_ids = 1;
+  // payout provider
+  PayoutProvider payout_provider = 2;
+  google.protobuf.Timestamp start_timestamp = 3;
+  google.protobuf.Timestamp end_timestamp = 4;
+}
+
+// Response of batch create payouts
+message BatchCreatePayoutsResponse {
+  google.protobuf.StringValue workflow_id = 1;
+}
+
+message TimeRange {
+  // start time of the record
+  google.protobuf.Timestamp start_timestamp = 7;
+  // (optional) end time of the record
+  google.protobuf.Timestamp end_timestamp = 8;
+}
+
+// Month/Year for Statement Time Period
+message StatementTimePeriod {
+  // month for statement
+  google.protobuf.Int32Value month = 1;
+  // year for statement
+  google.protobuf.Int32Value year = 2;
+}
+
+// list payouts v2 request, used for fetching all kinds of payout
+message ListPayoutsV2Request {
+  // payment account id for the target type, not the payout account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // whether payout method info needs to be included, default is false
+  google.protobuf.BoolValue include_payout_method_info = 2;
+  // whether the admin metadata (ops done on the payout) needs to be included, default is false
+  google.protobuf.BoolValue include_admin_metadata = 3;
+  // start_time and end_time
+  TimeRange time_range = 4;
+  // limit of the number of payouts to return
+  google.protobuf.Int32Value limit = 5;
+  // if provided, only return payouts to these providers
+  repeated PayoutProvider payout_providers = 6;
+  // if provided, only return payouts of these payout type
+  repeated PayoutType payout_types = 7;
+  // whether to include detailed information about any errors that occurred during the payout
+  google.protobuf.BoolValue include_error_info = 8;
+}
+
+message ListPayoutsV2Response {
+  repeated Payout payouts = 1;
+}
+
+// Fetch Payout Statement for a dasher, generated based on month/date range request
+message GetPayoutStatementV1Request {
+  // payment account id for the target type, not the payout account id
+  google.protobuf.Int64Value payment_account_id = 1;
+  // Duration of time, i.e. start date/end date or single month/year
+  oneof statement_period {
+    // Range of dates to generate a statement for
+    TimeRange time_range = 2;
+    // Statement time period represented via month/year
+    StatementTimePeriod time_period = 3;
+  }
+  // payout_statement_entity
+  PayoutStatementEntity payout_statement_entity = 4;
+  // reimbursement transaction ids
+  repeated google.protobuf.Int64Value reimbursement_transaction_ids = 5;
+}
+
+message PayoutStatementEntity {
+  // dasher id
+  google.protobuf.Int64Value dasher_id = 1;
+  // first name
+  google.protobuf.StringValue first_name = 2;
+  // last name
+  google.protobuf.StringValue last_name = 3;
+  // email
+  google.protobuf.StringValue email = 4;
+  // timezone
+  google.protobuf.StringValue timezone = 5;
+  // country shortname
+  doordash.payment.common.Country country_shortname = 6;
+}
+
+// Fetch Payout Statement for a dasher, generated based on month/date range request
+message GetPayoutStatementV1Response {
+  // pdf statement
+  bytes pdf_statement = 1;
+  // pdf link
+  google.protobuf.StringValue pdf_link = 2;
+  // html statement
+  google.protobuf.StringValue html_statement = 3;
+}
+
+// List available payout statements for a dasher request
+message ListPayoutStatementsV1Request {
+  // payment account id for the target type, not the payout account id
+  google.protobuf.Int64Value payment_account_id = 1;
+}
+
+// List available payout statements for a dasher response
+message ListPayoutStatementsV1Response {
+  // List of Payout Statements
+  repeated PayoutStatement statements = 1;
+}
+
+// Payout Statement entity
+message PayoutStatement {
+  // display name of statement
+  google.protobuf.StringValue display_name = 1;
+  // time period of statement
+  StatementTimePeriod time_period = 2;
+}
+
+// Get Tax Document info for Dashers
+message GetTaxDocumentsInfoRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+  google.protobuf.StringValue country = 2;
+}
+
+message TaxDocumentInfo {
+  google.protobuf.StringValue type = 1;
+  google.protobuf.StringValue url = 2;
+  google.protobuf.Int32Value year = 3;
+  google.protobuf.Timestamp created_date = 4;
+  google.protobuf.StringValue ttl = 5;
+  reserved 6; // pdf_statement
+  reserved "pdf_statement";
+  google.protobuf.StringValue document_id = 7;
+}
+
+// Response with the tax document info or error message
+message GetTaxDocumentsInfoResponse {
+  repeated TaxDocumentInfo documents = 1;
+  TaxDocumentsProvider provider = 2;
+}
+
+// Get Paperless Tax Document Consent info for Dashers
+message GetPaperlessTaxDocumentsConsentRequest {
+  google.protobuf.StringValue payment_account_id = 1;
+}
+
+// Response with the paperless tax document consent
+message GetPaperlessTaxDocumentsConsentResponse {
+  google.protobuf.BoolValue consented_to_paperless_delivery = 1;
+}
+
+// Get the PDF of the tax document for dashers
+message GetTaxDocumentPdfRequest {
+  google.protobuf.StringValue document_id = 1;
+  google.protobuf.StringValue country = 2;
+  google.protobuf.StringValue payment_account_id = 3;
+}
+
+// Response with the PDF of the tax document for dashers
+message GetTaxDocumentPdfResponse {
+  bytes pdf_statement = 1;
+}

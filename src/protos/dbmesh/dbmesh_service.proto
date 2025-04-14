@@ -1,0 +1,260 @@
+syntax = "proto3";
+
+package dbmesh.v1;
+
+import "dbmesh/dbmesh_repository.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dbmesh";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.dbmesh";
+
+/*
+ * `DbmeshService` exposes endpoints for accessing data via registered query.
+ *
+ * RESPONSE HEADERS:
+ * - `X-REQUEST-ID` a unique request ID assigned to this request on dbmesh (for tracing purposes).
+ * - `X-TIME-ELAPSED` total time in consumed (milliseconds) while processing request on server.
+ */
+service DbmeshService {
+  // Execute registered queries in dbmesh.
+  rpc ExecQuery(ExecQueryRequest) returns (ExecQueryResponse);
+}
+
+// `ExecQueryRequest` contains the information needed by the data mesh
+// to execute a registered query.
+message ExecQueryRequest {
+  // Target backend database. Aliases are configured on the dbmesh service.
+  // When absent, dbmesh will try to figure out automatically which backend storage should be used.
+  string db_alias = 1;
+  // The list of queries to execute.
+  repeated Query queries = 2;
+  // Optional consistency level.
+  ReadConsistencyLevel read_consistency_level = 3;
+  // Optional registry version requested.
+  RegistryVersion registry_version = 4;
+  // Optional in-line query registry. This will be registered on the server side.
+  // Might not be available in all environments.
+  QueryRepository registry = 5;
+}
+
+// `ExecQueryResponse` represents the response to a raw SQL statement execution.
+message ExecQueryResponse {
+  // Result set of the input query.
+  repeated Result results = 1; // TODO: verify multi-query results.
+}
+
+// `Query` represents a registered query in dbmesh.
+message Query {
+  // ID of the registered query.
+  string id = 1;
+  // Parameters that bind to the parametrized query.
+  repeated NamedParameter parameters = 2;
+  // Template arguments.
+  repeated TemplateArg template_args = 3;
+}
+
+// `NamedParameter` represents a typed parameter that can be bound to a
+// parametrized SQL statement by name.
+message NamedParameter {
+  // Parameter name.
+  string name = 1;
+  // Parameter value. Can be null, a number, a string, a boolean, or a list of values.
+  Value value = 2;
+}
+
+// `TemplateArg` represents an argument used in query template.
+message TemplateArg {
+  string name = 1;
+  Value value = 2;
+}
+
+// `Result` represents the result of a query.
+message Result {
+  // Number of rows affected by the executed sql statement.
+  int64 affected_rows = 1;
+  // Returned rows, if any. Order from the backend storage response is preserved.
+  repeated Row rows = 2;
+}
+
+// `Row` Represents a single row returned by the backend storage.
+message Row {
+  // Columns in a row.
+  map<string, Value> entries = 1;
+}
+
+// `ReadConsistencyLevel` is an enum type that represents different level of database read consistency.
+enum ReadConsistencyLevel {
+  UNSPECIFIED = 0;
+  DEFAULT = 1; // Read replica allowed.
+  // Force reads to primary DB or through consensus.
+  // Has a performance penalty and should only be used when absolutely necessary.
+  FORCE_PRIMARY_READ = 2;
+}
+
+// `MapFieldEntry` represents a field in a map. This is needed as by default protobuf only allows integral or string key type
+// https://protobuf.dev/programming-guides/proto3/#maps
+message MapFieldEntry {
+  Value key = 1;
+  Value value = 2;
+}
+
+// `Value` is mostly inspired from google.protobuf.Value, minus the Struct and plus some
+// specific SQL types.
+message Value {
+  // Type of the value.
+  oneof type {
+    // Represents a null value.
+    google.protobuf.NullValue null_value = 1;
+    // Represents a double value.
+    double double_value = 2;
+    // Represents a string value.
+    string string_value = 3;
+    // Represents a boolean value.
+    bool bool_value = 4;
+    // Represents a bytes value.
+    bytes bytes_value = 5;
+    // Represents a 32-bit signed integer value.
+    int32 int_value = 6;
+    // Represents a 64-bit signed integer value.
+    int64 long_value = 7;
+    // Represents a float value
+    float float_value = 8;
+    // Represents a list of Values.
+    ListValue list_value = 9;
+    // Represents a timestamp value.
+    google.protobuf.Timestamp timestamp_value = 10;
+    // Represents a Decimal number.
+    Decimal decimal_value = 11;
+    // Represents a Date value.
+    Date date_value = 12;
+    // Represents a Time value.
+    Time time_value = 13;
+    // Represents a UUID value.
+    UUID uuid_value = 14;
+    // Represents a Jsonb value.
+    Jsonb jsonb_value = 15;
+    // Represents a Geometry value
+    Geometry geometry_value = 16;
+    // Represents a Geography value
+    Geography geography_value = 17;
+    // Represents a Interval value
+    Interval interval_value = 18;
+    // Represents a Duration value
+    Duration duration_value = 19;
+    // Represents a Set of values
+    SetValue set_value = 20;
+    // Represents a Map of values
+    MapValue map_value = 21;
+    // Represents a Tuple of values
+    TupleValue tuple_value = 22;
+  }
+}
+
+// `SetValue` represents a set of `Value`
+message SetValue {
+  // Values in the set.
+  repeated Value value = 1;
+}
+
+// `MapValue` represents a map of `Value`
+message MapValue {
+  // Values in the map.
+  repeated MapFieldEntry value = 1;
+}
+
+// `TupleValue` represents a tuple of `Value`
+message TupleValue {
+  // Values in the tuple.
+  repeated Value value = 1;
+}
+
+// `ListValue` represents a list of `Value`
+message ListValue {
+  // Values in the list.
+  repeated Value values = 1;
+}
+
+// `Date` represents a date.
+message Date {
+  // Year of date. Must be from 1 to 9999, or 0 if specifying a date without
+  // a year.
+  int32 year = 1;
+
+  // Month of year. Must be from 1 to 12, or 0 if specifying a year without a
+  // month and day.
+  int32 month = 2;
+
+  // Day of month. Must be from 1 to 31 and valid for the year and month, or 0
+  // if specifying a year by itself or a year and month where the day is not
+  // significant.
+  int32 day = 3;
+}
+
+// `Decimal` is the string representation of a decimal.
+// Copied from https://github.com/googleapis/googleapis/blob/master/google/type/decimal.proto.
+message Decimal {
+  string value = 1;
+}
+
+// `Time` represents a time of day without time zone in the form of number of microseconds since midnight.
+message Time {
+  int64 microseconds = 1;
+}
+
+// `UUID` represents a UUID value.
+message UUID {
+  string value = 1;
+}
+
+// `Jsonb` represents a PostgreSQL jsonb value. Notice that this type does NOT represent the PostgreSQL json data type
+// and it will NOT be supported as json data type exists only for backward compatibility purpose. CRDB also treat json
+// as just an alias of jsonb data type.
+message Jsonb {
+  // data is the actual JSON payload.
+  // To support raw bytes representation of json data, this field can be extended with "bytes data_as_bytes = 2;".
+  oneof data {
+    // Represents the payload in string format.
+    string data_as_string = 1;
+  }
+}
+
+// `Geometry` represents the PostGIS/CRDB GEOMETRY data type. The geometry data is stored in a oneof field for
+// future-proof purpose, NOT because dbmesh server returns the geometry data either in string format (WKT/EWKT) or in
+// binary format (WKB/EWKB). Instead, the current implementation of dbmesh server always returns geometry data in
+// WKB/EWKB format.
+message Geometry {
+  // data is the geometry data payload.
+  oneof data {
+    string data_as_string = 1;
+    bytes data_as_bytes = 2;
+  }
+  // If in the future we want to be able to send geometry data in different formats (WKB/EWKB v.s. WKT/EWKT) in
+  // different scenarios, we can extend this message with more metadata fields to indicate the format info, etc.
+}
+
+// `Geography` represents the PostGIS/CRDB GEOGRAPHY data type. The geography data is stored in a oneof field for
+// future-proof purpose, NOT because dbmesh server returns the geography data either in string format (WKT/EWKT) or
+// binary format (WKB/EWKB). Instead, the current implementation of dbmesh server always returns geometry data in
+// WKB/EWKB format.
+message Geography {
+  // data is the geography data payload.
+  oneof data {
+    string data_as_string = 1;
+    bytes data_as_bytes = 2;
+  }
+  // If in the future we want to be able to send geography data in different formats (WKB/EWKB v.s. WKT/EWKT) in
+  // different scenarios, we can extend this message with more metadata fields to indicate the format info, etc.
+}
+
+// Represents an Interval data type
+message Interval {
+  string value = 1;
+}
+
+// Represents an Duration data type
+message Duration {
+  string value = 1;
+}

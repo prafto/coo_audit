@@ -1,0 +1,349 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package loyalty_serivce;
+
+import "cart/event.proto";
+import "common/service_client_config.proto";
+import "delivery_intelligence_platform/delivery_event_service.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "loyalty_service/loyalty_event.proto";
+import "loyalty_service/merchant_loyalty.proto";
+import "merchant_integrations/card_linking.proto";
+import "merchant_integrations/order.proto";
+import "order/order_lifecycle.proto";
+import "promotion/redemption.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.loyalty.doordash";
+
+// Homegrown loyalty service
+service DebugService {
+  // debug api for order lifecycle event
+  rpc TriggerOrderLifecycleEvent(TriggerOrderLifecycleEventRequest) returns (TriggerOrderLifecycleEventResponse);
+  // debug api for promotion redemption event
+  rpc TriggerMarketplaceRedemptionEvent(TriggerMarketplaceRedemptionEventRequest) returns (TriggerMarketplaceRedemptionEventResponse);
+  // internal use API for configuring a new merchant loyalty program (homegrown loyalty)
+  rpc ConfigureMerchantLoyalty(ConfigureMerchantLoyaltyRequest) returns (ConfigureMerchantLoyaltyResponse);
+  // debug api for program data migration
+  rpc TriggerProgramDataMigration(TriggerProgramDataMigrationRequest) returns (TriggerProgramDataMigrationResponse);
+  // debug API to fix campaigns and set their marketing fee
+  rpc FixCampaignMarketingFee(FixCampaignMarketingFeeRequest) returns (FixCampaignMarketingFeeResponse);
+  // debug API to add placement type FEED to loyalty campaigns
+  rpc FixCampaignFeedPlacementType(FixCampaignFeedPlacementTypeRequest) returns (FixCampaignFeedPlacementTypeResponse);
+  // debug API to add alcohol exclusion user cart criteria to loyalty campaigns
+  rpc FixCampaignAlcoholExclusion(FixCampaignAlcoholExclusionRequest) returns (FixCampaignAlcoholExclusionResponse);
+  // debug API to fix mis-configured programIds within a programs campaigns
+  rpc FixCampaignProgramIds(FixCampaignProgramIdsRequest) returns (FixCampaignProgramIdsResponse);
+  // debug API for processing loyalty program event
+  rpc TriggerLoyaltyProgramEvent(TriggerLoyaltyProgramEventRequest) returns (TriggerLoyaltyProgramEventResponse);
+  // debug API for processing cart event
+  rpc TriggerCartEvent(TriggerCartEventRequest) returns (TriggerCartEventResponse);
+  // debug API for get order from MIS
+  rpc GetMisOrder(GetMisOrderRequest) returns (GetMisOrderResponse);
+  // clear loyalty points for business with cutoff date
+  rpc ClearConsumerLoyaltyPointsForBusinessWithCutoffDate(ClearConsumerLoyaltyPointsForBusinessWithCutoffDateRequest) returns (ClearConsumerLoyaltyPointsForBusinessWithCutoffDateResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+  // migrate to SAVy campaigns
+  rpc MigrateToSavyCampaigns(MigrateToSavyCampaignsRequest) returns (MigrateToSavyCampaignsResponse);
+  // update promotion titles for loyalty redesign
+  rpc UpdatePromotionTitleForRedesign(UpdatePromotionTitleForRedesignRequest) returns (UpdatePromotionTitleForRedesignResponse);
+  // rollback SAVy migration
+  rpc RollbackSavyMigration(RollbackSavyMigrationRequest) returns (RollbackSavyMigrationResponse);
+  // debug dbmesh repository queries
+  rpc DBMeshQuery(DBMeshQueryRequest) returns (DBMeshQueryResponse);
+  // endpoint for transferring loyalty points from existing program to a new OCL program
+  rpc TransferPointsToOCL(TransferPointsToOCLRequest) returns (TransferPointsToOCLResponse);
+  // endpoint for syncing/back-filling loyalty incentive and currency with campaign
+  rpc SyncLoyaltyIncentiveAndCurrency(SyncLoyaltyIncentiveAndCurrencyRequest) returns (SyncLoyaltyIncentiveAndCurrencyResponse);
+  // endpoint for deleting loyalty consumer info
+  rpc DeleteLoyaltyConsumerInfo(DeleteLoyaltyConsumerInfoRequest) returns (DeleteLoyaltyConsumerInfoResponse);
+  // endpoint for testing card linking transaction event
+  rpc TriggerCardLinkedTransactionEvent(TriggerCardLinkedTransactionEventRequest) returns (TriggerCardLinkedTransactionEventResponse);
+  // endpoint for testing delivery event
+  rpc TriggerDeliveryEvent(TriggerDeliveryEventRequest) returns (TriggerDeliveryEventResponse);
+}
+
+// request containing event message
+message TriggerOrderLifecycleEventRequest {
+  // event payload
+  order_service.OrderLifecycleEvent order_lifecycle_events = 1;
+}
+
+// debug response
+message TriggerOrderLifecycleEventResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request containing event message
+message TriggerMarketplaceRedemptionEventRequest {
+  // event payload
+  promotion_service.Redemption redemption_event = 1;
+}
+
+// debug response
+message TriggerMarketplaceRedemptionEventResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request that contains all details for configuring merchant homegrown loyalty program
+message ConfigureMerchantLoyaltyRequest {
+  // the merchant loyalty program details
+  UpsertProgramRequest program = 1;
+  // the merchant loyalty promotion details
+  repeated UpsertProgramPromotionRequest promotions = 2;
+  // the accelerators that the program will have
+  repeated UpsertProgramAcceleratorRequest accelerators = 3;
+}
+
+// response of configure merchant loyalty
+message ConfigureMerchantLoyaltyResponse {
+  // the upsert program response
+  UpsertProgramResponse program_response = 1;
+  // the upsert program promotion response
+  repeated UpsertProgramPromotionResponse promotions_response = 2;
+  // the upsert accelerator response
+  repeated UpsertProgramAcceleratorResponse accelerators_response = 3;
+}
+
+// Enum for migration type
+enum MigrationType {
+  // unspecified
+  MIGRATION_TYPE_UNSPECIFIED = 0;
+  // migrate data for all programs
+  MIGRATION_TYPE_FULL = 1;
+  // migrate data for selected programs
+  MIGRATION_TYPE_SELECTED_PROGRAMS = 2;
+}
+
+// request object for TriggerProgramDataMigration
+message TriggerProgramDataMigrationRequest {
+  // Migration Type - Full migration or just for listed programIds
+  MigrationType migration_type = 1;
+  // List of programIds
+  repeated string program_ids = 2;
+}
+
+// debug response
+message TriggerProgramDataMigrationResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request for fixing campaign marketing fee
+message FixCampaignMarketingFeeRequest {}
+
+// response to fixing campaign marketing fee
+message FixCampaignMarketingFeeResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request for adding feed placement type into loyalty campaign
+message FixCampaignFeedPlacementTypeRequest {
+  // List of campaignIds (optional), run for all if no campaign ids are passed in
+  repeated string campaign_ids = 1;
+}
+
+// response to adding feed placement type campaign
+message FixCampaignFeedPlacementTypeResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request for fixing campaign alcohol exclusion
+message FixCampaignAlcoholExclusionRequest {
+  // List of campaignIds (optional), run for all if no campaign ids are passed in
+  repeated string campaign_ids = 1;
+}
+
+// response for fixing campaign alcohol exclusion
+message FixCampaignAlcoholExclusionResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// request for fixing campaign program ids
+message FixCampaignProgramIdsRequest {
+  // List of campaignIds (optional), run for all if no campaign ids are passed in
+  repeated string campaign_ids = 1;
+}
+
+// response for fixing campaign program ids
+message FixCampaignProgramIdsResponse {
+  // map of fields
+  map<string, string> response_fields = 1;
+}
+
+// trigger loyalty program event request
+message TriggerLoyaltyProgramEventRequest {
+  // event payload
+  LoyaltyProgramEvent loyalty_program_event = 1;
+}
+
+// trigger loyalty program event response
+message TriggerLoyaltyProgramEventResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// trigger cart event request
+message TriggerCartEventRequest {
+  // event payload
+  cart_service.v1.CartLifecycleEvent cart_lifecycle_event = 1;
+}
+
+// trigger cart event response
+message TriggerCartEventResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// get order request from MIS
+message GetMisOrderRequest {
+  // MIS GetOrderRequest object
+  merchant_integrations.GetOrderRequest get_order_request = 1;
+}
+
+// get order response from MIS
+message GetMisOrderResponse {
+  // MIS GetOrderResponse object
+  merchant_integrations.GetOrderResponse get_order_response = 1;
+}
+
+// clear cx points request
+message ClearConsumerLoyaltyPointsForBusinessWithCutoffDateRequest {
+  // business id
+  google.protobuf.StringValue business_id = 1;
+  // program id
+  google.protobuf.StringValue program_id = 2;
+  // cutoff date
+  google.protobuf.Timestamp cutoff_date_time = 3;
+}
+
+// clear cx points response
+message ClearConsumerLoyaltyPointsForBusinessWithCutoffDateResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// migrate to savy campaigns for the following programs
+message MigrateToSavyCampaignsRequest {
+  // List of programIds (optional), run for all programs if no programId passed
+  repeated string program_ids = 1;
+}
+
+// response for savy migration
+message MigrateToSavyCampaignsResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// update promotion title for redesign response
+message UpdatePromotionTitleForRedesignRequest {
+  // list of campaign_ids (optional) needing update. Update all if not set
+  repeated string campaign_ids = 1;
+}
+
+// update promotion title for redesign response
+message UpdatePromotionTitleForRedesignResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// Roll back SAVy migration request
+message RollbackSavyMigrationRequest {
+  // List of programIds (optional), run for all programs if no programId passed
+  repeated string program_ids = 1;
+}
+
+// Roll back SAVy migration response
+message RollbackSavyMigrationResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// debug dbmesh repository queries request
+message DBMeshQueryRequest {
+  // request fields
+  map<string, string> request_fields = 1;
+}
+
+// debug dbmesh repository queries response
+message DBMeshQueryResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// endpoint for transferring points when enabling OCL
+message TransferPointsToOCLRequest {
+  // Program id to transfer points from
+  string from_program_id = 1;
+  // Program id to transfer points to
+  string to_program_id = 2;
+  // Map of Cx ids and their phone numbers
+  map<string, string> cx_id_to_phone_number = 3;
+}
+
+// response for transferring points when enabling OCL
+message TransferPointsToOCLResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// request for syncing loyalty incentive and currency with campaign
+message SyncLoyaltyIncentiveAndCurrencyRequest {
+  // List of programIds (optional), run for all programs if no programId passed
+  repeated string program_ids = 1;
+}
+
+// response for syncing loyalty incentive and currency with campaign
+message SyncLoyaltyIncentiveAndCurrencyResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// request for deleting loyalty consumer data
+message DeleteLoyaltyConsumerInfoRequest {
+  // consumer id
+  string consumer_id = 1;
+  // loyalty program id
+  string program_id = 2;
+}
+
+// response for deleting loyalty consumer data
+message DeleteLoyaltyConsumerInfoResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// request for triggering card linking transaction event
+message TriggerCardLinkedTransactionEventRequest {
+  // event payload
+  merchant_integrations.CardLinkedTransactionEvent card_linked_transaction_event = 1;
+}
+
+// response for triggering card linking transaction event
+message TriggerCardLinkedTransactionEventResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}
+
+// request for triggering delivery event
+message TriggerDeliveryEventRequest {
+  // event payload
+  doordash.delivery_intelligence_platform.v1.DeliveryIntelEventMessage delivery_event = 1;
+}
+
+// response for triggering delivery event
+message TriggerDeliveryEventResponse {
+  // response fields
+  map<string, string> response_fields = 1;
+}

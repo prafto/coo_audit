@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+package ads_billing_event_worker.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "iguazu/kafka_headers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/ads_billing_event_worker/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ads_billing_event_worker.rpc.api";
+
+// This service processes ads-billing-invoicing related events
+service AdsBillingEventWorkerService {
+  option (service_client.client_config).service_name = "ad_billing_event_worker";
+  option (service_client.client_config).service_app = "web-ad_billing_event_worker";
+
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  // process a single event
+  rpc ProcessEvent(ProcessEventRequest) returns (ProcessEventResponse);
+
+  // proxy a single event to a kafka topic
+  rpc ProxyEvent(ProxyEventRequest) returns (ProxyEventResponse);
+  // proxy callback
+  rpc ProxyEventCallback(ProxyEventCallbackRequest) returns (ProxyEventCallbackResponse);
+  // get sample event
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
+}
+
+// event type
+enum EventType {
+  // default value
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // RAW_AD_CLICK event
+  EVENT_TYPE_RAW_AD_CLICK = 1;
+  // BUDGET_TRANSACTION event
+  EVENT_TYPE_BUDGET_TXN = 2;
+  // CONSUMER_PLACEMENT event
+  EVENT_TYPE_COMSUMER_PLACEMENT = 3;
+  // IMPRESSION_BATCH event
+  EVENT_TYPE_IMPRESSION_BATCH = 4;
+  // OrderConfirmationEvent event
+  EVENT_TYPE_ORDER_CONFIRMATION = 5;
+  // MerchantOrderEvent event
+  EVENT_TYPE_MERCHANT_ORDER = 6;
+  // STORE_CLICK_EVENT event - legacy click event used by wolt
+  EVENT_TYPE_STORE_CLICK = 7;
+  // OrderLifecycleEvent event
+  EVENT_TYPE_ORDER_LIFECYCLE = 8;
+  // AdCampaignPerformanceMetrics event
+  EVENT_TYPE_AD_CAMPAIGN_PERFORMANCE_METRICS = 9;
+}
+
+// payload type
+enum PayloadType {
+  // default value
+  PAYLOAD_TYPE_UNSPECIFIED = 0;
+  // protobuf
+  PAYLOAD_TYPE_PROTOBUF = 1;
+  // avro, in iguazu format
+  PAYLOAD_TYPE_IGUAZU_AVRO = 2;
+  // json
+  PAYLOAD_TYPE_JSON = 3;
+  // adhoc string
+  PAYLOAD_TYPE_STRING = 4;
+}
+
+// process a single event request
+message ProcessEventRequest {
+  // type of event, event schema is outside this package
+  EventType event_type = 1;
+  // payload type, use protobuf in prod, json for testing
+  PayloadType payload_type = 2;
+  // actual payload
+  oneof payload {
+    // bytes payload for protobuf
+    bytes bytes_payload = 3;
+    // string payload for json
+    google.protobuf.StringValue string_payload = 4;
+  }
+  // debug options
+  repeated DebugOption debug_options = 5;
+
+  // iguazu headers
+  com.doordash.iguazu.KafkaHeaders iguazu_headers = 6;
+
+  // debug option
+  message DebugOption {
+    // debug option key
+    google.protobuf.StringValue key = 1;
+    // debug option value
+    google.protobuf.StringValue value = 2;
+  }
+}
+
+// process a single event response
+message ProcessEventResponse {
+  // whether the event is successfully processed
+  bool is_success = 1;
+  // error message if request failed
+  repeated google.protobuf.StringValue error_message = 2;
+  // trace of intermediate messages, used for debugging
+  repeated google.protobuf.StringValue trace = 3;
+  // workers that proccessed the request, used for debugging
+  repeated google.protobuf.StringValue processed_by = 4;
+}
+
+// status for event envelope
+enum EventEnvelopeStatus {
+  // default value
+  EVENT_ENVELOPE_STATUS_UNSPECIFIED = 0;
+  // pending
+  EVENT_ENVELOPE_STATUS_PENDING = 1;
+  // completed
+  EVENT_ENVELOPE_STATUS_COMPLETED = 2;
+  // session window
+  EVENT_ENVELOPE_STATUS_SESSION_WINDOW = 3;
+}
+
+// another way of triggering event processing by sending EventEnvelope to a Kafka topic
+message EventEnvelope {
+  // type of event, event schema is outside this package
+  EventType event_type = 1;
+  // protobuf bytes
+  bytes bytes_payload = 2;
+  // status
+  EventEnvelopeStatus status = 3;
+  // idempotent key, for status PENDING and COMPLETED
+  google.protobuf.StringValue idempotent_key = 4;
+  // resume after not receiving completion, for status PENDING
+  google.protobuf.Int32Value resume_seconds = 5;
+  // window key, for status SESSION_WINDOW
+  google.protobuf.StringValue window_key = 6;
+  // window duration, for status SESSION_WINDOW
+  google.protobuf.Int32Value window_seconds = 7;
+  // event timestamp generated from local server time
+  google.protobuf.Timestamp timestamp = 8;
+}
+
+// proxy a single event request
+message ProxyEventRequest {
+  // input payload, normally in json format
+  google.protobuf.StringValue input_payload = 1;
+  // proxy id, to get response back if needed
+  google.protobuf.StringValue proxy_id = 2;
+  // name of the kafka cluster
+  google.protobuf.StringValue kafka_cluster_name = 3;
+  // name of the kafka topic
+  google.protobuf.StringValue kafka_topic = 4;
+  // output payload type, the payload type to send to the kafka topic
+  PayloadType output_payload_type = 5;
+  // output event type, required for proto or iguazu type
+  EventType event_type = 6;
+  // time to wait for response from callback
+  google.protobuf.Int32Value wait_time_seconds = 7;
+  // iguazu event name
+  google.protobuf.StringValue iguazu_event_name = 8 [deprecated = true];
+  // input payload type, could be json string that maps to proto or a raw string
+  PayloadType input_payload_type = 9;
+  // iguazu custom attributes
+  map<string, string> iguazu_attributes = 10 [deprecated = true];
+  // iguazu headers
+  com.doordash.iguazu.KafkaHeaders iguazu_headers = 11;
+}
+
+// proxy a single event response
+message ProxyEventResponse {
+  // whether the event is successfully processed
+  bool is_success = 1;
+  // error messages if request failed
+  repeated google.protobuf.StringValue error_message = 2;
+  // response messages
+  repeated google.protobuf.StringValue message = 3;
+}
+
+// proxy callback request
+message ProxyEventCallbackRequest {
+  // proxy id, should match with proxy id in request
+  google.protobuf.StringValue proxy_id = 1;
+  // response messages
+  repeated google.protobuf.StringValue messages = 2;
+}
+
+// proxy callback response
+message ProxyEventCallbackResponse {
+  // whether the callback is successfully processed
+  bool is_success = 1;
+}
+
+// get random event request
+message GetEventRequest {
+  // type of event
+  EventType event_type = 1;
+  // payload must contain
+  repeated google.protobuf.StringValue payload_contains = 2;
+}
+
+// get random event response
+message GetEventResponse {
+  // event type
+  EventType event_type = 1;
+  // can be copied directly to ProxyRequest
+  google.protobuf.StringValue input_payload = 2;
+  // can be copied directly to ProxyRequest
+  com.doordash.iguazu.KafkaHeaders iguazu_headers = 3;
+}

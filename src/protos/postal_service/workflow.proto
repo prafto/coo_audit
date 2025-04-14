@@ -1,0 +1,154 @@
+syntax = "proto3";
+
+package postal_service.v1;
+
+import "common/code.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "postal_service/postal_service_common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/postal_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.postal_service";
+
+// Service for triggering workflows and executing provider APIs
+// Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/2819953492/Postal+Service+gRPC+Endpoints#Workflows-(grpc-workflow)
+service WorkflowService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retryable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Asynchronously triggers a provider workflow
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/3053363773
+  rpc TriggerWorkflow(TriggerWorkflowRequest) returns (TriggerWorkflowResponse);
+
+  // Asynchronously executes a provider API call
+  // Documentation: https://doordash.atlassian.net/wiki/spaces/Eng/pages/3054862337
+  rpc ExecuteApi(ExecuteApiRequest) returns (ExecuteApiResponse);
+}
+
+// Request for TriggerWorkflow RPC
+message TriggerWorkflowRequest {
+  // configuration id
+  google.protobuf.StringValue configuration_id = 1;
+  // optional. additional data associated with triggering event
+  google.protobuf.Struct data_fields = 2;
+  // optional, valid for Iterable workflows. trigger workflow for given email address
+  google.protobuf.StringValue email = 3;
+  // optional, valid for Braze workflows. trigger workflow for given profide id (Cx or Dx id)
+  google.protobuf.Int64Value profile_id = 8;
+  // DEPRECATED(no active usage): optional, valid for Iterable workflows. trigger workflow for Iterable user id
+  google.protobuf.StringValue provider_user_id = 4 [deprecated = true];
+  // DEPRECATED(no active usage): optional, valid for Iterable workflows. trigger workflow for Iterable list
+  google.protobuf.Int64Value provider_list_id = 5 [deprecated = true];
+  // (Optional) For tracking purposes.
+  // Must be a randomly generated 128-bit UUID. This field is persisted in each request's Iguazu table entry under
+  // dd_event_id. If this field is not set, it will be set to the randomly generated UUID.
+  google.protobuf.StringValue workflow_event_id = 6;
+  // DO NOT USE. To be deprecated. Do not send final payload to provider.
+  bool shadow_request = 7;
+}
+
+// Response for TriggerWorkflow RPC
+message TriggerWorkflowResponse {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Request for ExecuteApi RPC
+message ExecuteApiRequest {
+  // these are deleted values, do not reuse
+  reserved 2;
+  // these are deleted fields, do not reuse
+  reserved "data_fields";
+
+  // configuration id
+  google.protobuf.StringValue configuration_id = 1;
+  // json payload to send when calling API
+  google.protobuf.Struct payload = 6;
+  // url query fields
+  map<string, string> url_fields = 3;
+  // (Optional) For tracking purposes.
+  // Must be a randomly generated 128-bit UUID. This field is persisted in each request's Iguazu table entry under
+  // dd_event_id. If this field is not set, it will be set to the randomly generated UUID.
+  google.protobuf.StringValue workflow_event_id = 4;
+  // DO NOT USE. To be deprecated. Do not send final payload to provider.
+  bool shadow_request = 5;
+}
+
+// Response for ExecuteApi RPC
+message ExecuteApiResponse {
+  // Unique Message ID to track events/statuses.
+  string message_id = 1;
+}
+
+// Used to track workflow and api update events through Iguazu
+// Workflow & API tracking: https://doordash.atlassian.net/wiki/spaces/Eng/pages/3056534436
+message WorkflowEvent {
+  // internal event id, generated to represent the workflow or api request
+  string dd_event_id = 1;
+
+  // configuration id
+  string configuration_id = 2;
+
+  // workflow id
+  string workflow_id = 3;
+
+  // status timestamp
+  google.protobuf.Timestamp status_timestamp = 4;
+
+  // workflow or api provider
+  string provider = 5;
+
+  // provider event id
+  string provider_event_id = 6;
+
+  // message delivery status reported by provider (e.g. emailSend, pushSend, etc.)
+  string provider_message_status = 7;
+
+  // (optional) email address of the user the workflow was triggered for
+  string email = 8;
+
+  // (optional) profile id (Cx or Dx id) of the user the workflow was triggered for
+  string profile_id = 19;
+
+  // (optional) provider user id of the user the workflow was triggered for
+  string provider_user_id = 9;
+
+  // (optional) id of the provider list the workflow was triggered for
+  string provider_list_id = 10;
+
+  // url query fields for the api request
+  string url_fields = 11;
+
+  // additional data associated with triggering the event or calling the api
+  string data_fields = 12;
+
+  // status code
+  string status_code = 13;
+
+  // data sent along with the request
+  string metadata = 14;
+
+  // caller
+  string source = 15;
+
+  // internal message status
+  string internal_message_status = 16;
+
+  // message delivery status detail reported by provider, error details also tracked here
+  string message_status_detail = 17;
+
+  // payload sent to the provider to trigger the workflow or call the api
+  string payload = 18;
+}

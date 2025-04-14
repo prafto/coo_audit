@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+package generic_entity_storage_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ges";
+
+// This is the service for Generic Entity Store Service.
+service GenericEntityStoreService {
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Returns the health check information of Generic Entity Store Service
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  // Single entity upsert RPC. A batch upsert RPC will be added later.
+  rpc UpsertGesEntity(UpsertGesEntityRequest) returns (UpsertGesEntityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Bulk GES entities upsert RPC.
+  rpc BulkUpsertGesEntities(BulkUpsertGesEntitiesRequest) returns (BulkUpsertGesEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Delete GES entity RPC.
+  rpc BulkDeleteGesEntities(BulkDeleteGesEntitiesRequest) returns (BulkDeleteGesEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Bulk GES entities read RPC.
+  rpc BulkGetGesEntities(BulkGetGesEntitiesRequest) returns (BulkGetGesEntitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+}
+
+// Request for deleteGesEntity RPC.
+message BulkDeleteGesEntitiesRequest {
+  // The entity to be deleted from the GES table.
+  repeated GesEntityKey ges_entity_keys = 1;
+  // Optional GesRequestContext
+  GesRequestContext context = 2;
+}
+
+// Response for deleteGesEntity RPC.
+message BulkDeleteGesEntitiesResponse {
+  // The overall response status of the batch delete operation.
+  Status status = 2;
+}
+
+// Request for BulkGetGesEntities RPC.
+message BulkGetGesEntitiesRequest {
+  // The list of entities to be read from the GES tables.
+  repeated GesEntityKey ges_entity_keys = 1;
+  // GesRequestContext - All the keys are fetched from the same table.
+  GesRequestContext context = 2;
+}
+
+// Response for BulkGetGesEntities RPC.
+message BulkGetGesEntitiesResponse {
+  // The data for each of the entities found the GES tables.
+  repeated GetGesEntityResponse ges_entity_responses = 1;
+  // The overall response status of the batch read operation.
+  Status status = 2;
+}
+
+// Response for getGesEntity RPC.
+message GetGesEntityResponse {
+  // The entity to be read from the GES table.
+  GesEntityKey ges_entity_key = 1;
+  // The entity data - either we found the entity or hit an error.
+  // The client needs to check if the result.hasError()
+  oneof result {
+    // GesEntity object is set if the request succeeds.
+    GesEntity entity = 2;
+    // Error object is set if the request fails.
+    Error error = 3;
+  }
+}
+
+// The message set upon error
+message Error {
+  // Error code enum
+  ErrorCode code = 1;
+  // Detailed error message
+  string reason = 2;
+}
+
+// Enum for the error codes
+enum ErrorCode {
+  // ignore 0 as it is the default value
+  ERROR_CODE_UNSPECIFIED = 0;
+  // The entity is not found in the GES table
+  ERROR_CODE_ENTITY_NOT_FOUND = 1;
+}
+
+// Request for upsertGesEntity RPC.
+// This will upsert specifically in the GES table - GesRequestContext's  ges_table_name.
+message UpsertGesEntityRequest {
+  // The entity to be upserted in the GES table.
+  GesEntity entity = 1;
+  // Optional GesRequestContext
+  GesRequestContext context = 2;
+}
+
+// message UpsertGesEntityResponse
+message UpsertGesEntityResponse {
+  // The response status of the upsert operation.
+  Status status = 1;
+}
+
+// message BulkUpsertGesEntitiesRequest
+message BulkUpsertGesEntitiesRequest {
+  // Ges entities to be upserted.
+  repeated GesEntity entities = 1;
+  // GesRequestContext
+  GesRequestContext context = 2;
+}
+
+// message BulkUpsertGesEntitiesResponse
+message BulkUpsertGesEntitiesResponse {
+  // The overall response status of the batch upsert operation.
+  Status status = 1;
+}
+
+// Message GesEntityKey
+message GesEntityKey {
+  // The entity to be read from the GES table.
+  string group_id = 1;
+  // The entity's unique identifier. eg: i_1234, o_123, "structure" etc.
+  string entity_id = 2;
+  // The entity's type. eg: item, option, structure etc.
+  string entity_type = 3;
+}
+
+// Message GesEntity
+message GesEntity {
+  // It represents the partition key concept (Cassandra) for the GES table.
+  // https://docs.google.com/document/d/1Op9fWoeRVHV29rEJVsStTA7m1Gxcyk0Q7vfqeF5ONW0/edit#bookmark=id.2qaeobbe9cmz
+  string group_id = 1;
+  // The entity's unique identifier. eg: i_1234, o_123, "structure" etc.
+  // NOTE: To represent "structure" like entity that does not have a unique identifier,
+  // the proposal here is to send the entity type as the entity id. i.e
+  // for structure entity, the entity id will be "structure" and entity type is "structure" as well.
+  // This will enforce uniformity in the proto and also make it easy to query for entities.
+  string entity_id = 2;
+  // The entity's type. eg: item, option, structure etc.
+  string entity_type = 3;
+  // The binary BLOB data representing the entity.
+  bytes data = 4;
+  // Optional - the secondary identifiers data
+  map<string, string> data_secondary = 5;
+}
+
+// Message GesRequestContext
+message GesRequestContext {
+  // This is a placeholder for request contexts that could be used for
+  // tracing, consumer-id, business-id, experiment context etc, versioning etc.
+
+  // The domain of the request. eg: "menu", "catalog"
+  string domain = 1;
+
+  // The table name of the request. eg: "StoreMenuEntry", "Suspension" etc.
+  string table_name = 2;
+}
+
+// Request for health check
+message HealthCheckRequest {}
+
+// Response for health check
+message HealthCheckResponse {
+  // Status of the server.
+  string status = 1;
+}
+
+// Message Status.
+message Status {
+  // https://grpc.github.io/grpc/core/md_doc_statuscodes.html
+  int32 code = 1;
+
+  // A developer-facing human-readable error message in English. It should
+  // both explain the error and offer an actionable resolution to it.
+  string message = 2;
+
+  // Additional error information that the client code can use to handle
+  // the error, such as retry info or a help link.
+  map<string, string> details = 3;
+}

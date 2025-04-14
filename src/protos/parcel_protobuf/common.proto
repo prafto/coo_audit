@@ -1,0 +1,355 @@
+syntax = "proto3";
+
+package parcel_service.v1;
+
+import "common/common.proto";
+import "dasher_service/dasher_dasher.proto";
+import "doordash.api/client.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "drive_parcel_service";
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.parcel";
+
+// Represents a time interval between start_time and end_time
+message TimeInterval {
+  // Start time of the range. Should be less than or equal to end_time.
+  google.protobuf.Timestamp start_time = 1;
+  // end_time of this range
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// Represents the event type of a parcel planner run event
+enum ParcelPlannerRunEventType {
+  // parcel planner run is not specified
+  PARCEL_PLANNER_RUN_EVENT_TYPE_UNSPECIFIED = 0;
+  // parcel planner run is pending
+  PARCEL_PLANNER_RUN_EVENT_TYPE_PENDING = 1;
+  // parcel planner run is started
+  PARCEL_PLANNER_RUN_EVENT_TYPE_STARTED = 2;
+  // parcel planner run is complete
+  PARCEL_PLANNER_RUN_EVENT_TYPE_COMPLETE = 3;
+  // parcel planner run is failed
+  PARCEL_PLANNER_RUN_EVENT_TYPE_FAILED = 4;
+}
+
+// Represents a parcel planner run mode
+enum ParcelPlannerRunMode {
+  // parcel planner run mode is not specified
+  PARCEL_PLANNER_RUN_MODE_UNSPECIFIED = 0;
+  // parcel planner run mode default, only batches deliveries without bins and deliveries without force batch id
+  PARCEL_PLANNER_RUN_MODE_DEFAULT = 1;
+  // parcel planner run mode append only, try adding orphans to existing batches first, then create new batches
+  PARCEL_PLANNER_RUN_MODE_APPEND_ONLY = 2;
+}
+
+// ParcelPlannerRunEvent is ...
+message ParcelPlannerRunEvent {
+  // time of the event
+  google.protobuf.Timestamp event_timestamp = 1;
+  // event type of the parcel planner run
+  ParcelPlannerRunEventType event_type = 2;
+}
+
+// ParcelPlannerRun is a request or status of a parcel planner run for a facility
+message ParcelPlannerRun {
+  // unique id for the request
+  string id = 1;
+  // facility id for the request
+  int32 facility_id = 2;
+  // Default mode for now
+  ParcelPlannerRunMode parcel_planner_run_mode = 3;
+  // parcel planner run history
+  repeated ParcelPlannerRunEvent events = 4;
+  // start time range for parcels to include in parcel planner run
+  google.protobuf.Timestamp parcel_range_start_time = 5;
+  // end time range for parcels to include in parcel planner run
+  google.protobuf.Timestamp parcel_range_end_time = 6;
+}
+
+// Facility Info
+message Facility {
+  // facility id
+  int32 facility_id = 1;
+  // facility code
+  string facility_code = 2;
+  // merchant code (eg. DD, LCL)
+  string mx_code = 3;
+  // timezone of the facility
+  string timezone = 4;
+  // state/province of the facility
+  string state_province = 5;
+  // market id
+  int32 market_id = 6;
+  // hub type or spoke type
+  FacilityType facility_type = 7;
+}
+
+// Parcel-native facility model, used to model Doordash hubs and spokes
+message FacilityV2 {
+  // Facility code
+  string facility_code = 1;
+  // Deprecated ID corresponding to Dashmart facility ID
+  int32 facility_id = 2 [deprecated = true];
+  // Whether the facility is a hub or a spoke
+  FacilityType facility_type = 3;
+  // Address of facility. Useful for sort app UI to render location information in search tool
+  common.CommonAddress address = 4;
+}
+
+// Facility Type
+enum FacilityType {
+  // UNSPECIFIED
+  FACILITY_TYPE_UNSPECIFIED = 0;
+  // Hub facility
+  FACILITY_TYPE_HUB = 1;
+  // Spoke facility
+  FACILITY_TYPE_SPOKE = 2;
+}
+
+// Raven roles relevant to Parcels
+enum ParcelRole {
+  // Unspecified
+  PARCEL_ROLE_UNSPECIFIED = 0;
+  // Raven role perm_parcel_operator
+  PARCEL_ROLE_OPERATOR = 1;
+  // Raven role perm_parcel_site_lead
+  PARCEL_ROLE_SITE_LEAD = 2;
+  // Raven role perm_parcel_admin
+  PARCEL_ROLE_ADMIN = 3;
+}
+
+// basic parcel details.
+// NOTE: Parcel object is more descriptive than ParcelDetails. ParcelDetails is light weight and will be used for
+// read heavy operations.
+message ParcelDetails {
+  // Parcel id
+  string id = 1; // id in uuid format
+  // barcode
+  string barcode = 2;
+  // drive_order_id
+  int64 drive_order_id = 3;
+  // hub_facility_id
+  int32 hub_facility_id = 4;
+  // hub_external_store_id
+  string hub_external_store_id = 5;
+  // business_name
+  string business_name = 6;
+  // parent container id
+  google.protobuf.StringValue parent_container_id = 7;
+  // parcel bin name
+  google.protobuf.StringValue bin_name = 8;
+  // dasher_name
+  google.protobuf.StringValue dasher_name = 9;
+  // force_batch_id
+  google.protobuf.StringValue force_batch_id = 10;
+  // last_scanned_at
+  google.protobuf.Timestamp last_scanned_at = 11;
+  // last_scanned_facility_code
+  google.protobuf.StringValue last_scanned_facility_code = 12;
+  // quoted_pickup_time
+  google.protobuf.Timestamp quoted_pickup_time = 13;
+  // customer_name
+  google.protobuf.StringValue customer_name = 14;
+  // is stowed to a bin (i.e. if parcel has been put to bin for dispatch)
+  bool is_stowed_to_bin = 15;
+}
+
+// Represents employee account information including user ID, email, and roles
+message EmployeeAccountInfo {
+  // User ID of the employee
+  string user_id = 1;
+  // Email address of the employee
+  string email = 2;
+  // First name of the employee
+  string first_name = 3;
+  // Last name of the employee
+  string last_name = 4;
+  // Parcel raven roles associated with the employee
+  repeated ParcelRole roles = 5;
+}
+
+// Parcel Qa Status
+enum ParcelQaStatus {
+  // The default status that gets applied if this is not set. This is not expected to be used.
+  PARCEL_QA_STATUS_UNSPECIFIED = 0;
+  // Indicates the parcel is an extra parccel and its original batch is already QAed
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_QAED_BATCH = 1;
+  // Indicates the parcel is an extra parccel and its original batch is not QAed yet
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_NONQAED_BATCH = 2;
+  // Indicates the parcel is an extra parccel and its original batch is already dispatched
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_DISPATCHED_BATCH = 3;
+  // Indicates the parcel is correct parcel in the batch which is currently being QAed
+  PARCEL_QA_STATUS_CORRECT_PARCEL = 4;
+  // Indicates the parcel is already scanned in this QA process
+  PARCEL_QA_STATUS_ALREADY_SCANNED_PARCEL = 5;
+  // Indicates the scanned barcode is not a recognized in this QA process
+  PARCEL_QA_STATUS_NOT_FOUND_PARCEL = 6;
+  // Indicates the scanned barcode has no force_batch_id in this QA process
+  PARCEL_QA_STATUS_NOT_EXTRA_PARCEL_FOR_NO_BATCH = 7;
+}
+
+// Enum to indicate the status of parcel batch journey
+enum BatchStatusType {
+  // The default status that gets applied if this is not set. This is the expected state for search functionality.
+  BATCH_STATUS_TYPE_UNSPECIFIED = 0;
+
+  // A runner has left the geofence of the sortation center
+  BATCH_STATUS_TYPE_RUNNER_HANDOFF_COMPLETE = 1;
+  // (To be deprecated) A runner is not yet assigned; default status for parcels
+  BATCH_STATUS_TYPE_RUNNER_NOT_ASSIGNED = 2;
+  // A runner has confirmed to pick up a parcel batch
+  BATCH_STATUS_TYPE_RUNNER_ASSIGNED = 3;
+  // A runner has started scanning batch; this status is set after first parcel is scanned
+  BATCH_STATUS_TYPE_RUNNER_SCANNING_BATCH = 4;
+  // A runner has crossed into the geofence of a sortation center
+  BATCH_STATUS_TYPE_RUNNER_APPROACHING = 5;
+  // (Not used for now) A runner has been checked in at sortation center by associate
+  BATCH_STATUS_TYPE_RUNNER_WAITING_FOR_BATCH = 6;
+  // Batch is not yet complete with scan and QA
+  BATCH_STATUS_TYPE_PREPARING = 7;
+  // Batch QA'ed that are ready to be assigned
+  BATCH_STATUS_TYPE_READY_TO_DISPATCH = 8;
+}
+
+// Encompasses state of the parcel to show on FE and color
+message ParcelState {
+  // state of the parcel
+  string parcel_state = 1;
+  // color corresponding to state of the parcel. IE #000000
+  string parcel_state_color_hex = 2;
+}
+
+// Parcel
+message Parcel {
+  reserved 13; // removing/deprecating first_ingested_at field
+  // id
+  string id = 1; // id in uuid format
+  // drive_order_id
+  int64 drive_order_id = 2;
+  // hub_facility_id
+  int32 hub_facility_id = 3;
+  // hub_external_store_id
+  string hub_external_store_id = 4;
+  // business_name
+  string business_name = 5;
+  // force_batch_id
+  google.protobuf.StringValue force_batch_id = 6;
+  // delivery_id
+  google.protobuf.Int64Value delivery_id = 7;
+  // delivery_uuid
+  google.protobuf.StringValue delivery_uuid = 8;
+  // dasher_name
+  google.protobuf.StringValue dasher_name = 9;
+  // barcode
+  string barcode = 10;
+  // first_scanned_at
+  google.protobuf.Timestamp first_scanned_at = 11 [(doordash.api.client.nullable) = true];
+  // last_scanned_at
+  google.protobuf.Timestamp last_scanned_at = 12 [(doordash.api.client.nullable) = true];
+  // customer_name
+  google.protobuf.StringValue customer_name = 14;
+  // dasher_confirmed_time
+  google.protobuf.Timestamp dasher_confirmed_time = 15 [(doordash.api.client.nullable) = true];
+  // cancelled_at
+  google.protobuf.Timestamp cancelled_at = 16 [(doordash.api.client.nullable) = true];
+  // actual_pickup_time
+  google.protobuf.Timestamp actual_pickup_time = 17 [(doordash.api.client.nullable) = true];
+  // actual_dropoff_time
+  google.protobuf.Timestamp actual_dropoff_time = 18 [(doordash.api.client.nullable) = true];
+  // estimated_pickup_time
+  google.protobuf.Timestamp estimated_pickup_time = 19 [(doordash.api.client.nullable) = true];
+  // quoted_pickup_time
+  google.protobuf.Timestamp quoted_pickup_time = 20 [(doordash.api.client.nullable) = true];
+  // redelivery_attempts
+  int32 redelivery_attempts = 21;
+  // redelivery_requested_at
+  google.protobuf.Timestamp redelivery_requested_at = 22 [(doordash.api.client.nullable) = true];
+  // created_at
+  google.protobuf.Timestamp created_at = 23 [(doordash.api.client.nullable) = true];
+  // bin_name
+  google.protobuf.StringValue bin_name = 24;
+  // first_ready_at
+  google.protobuf.Timestamp first_ready_at = 25 [(doordash.api.client.nullable) = true];
+  // last_ready_at
+  google.protobuf.Timestamp last_ready_at = 26 [(doordash.api.client.nullable) = true];
+  // last_qa_time
+  google.protobuf.Timestamp last_qa_time = 27 [(doordash.api.client.nullable) = true];
+  // last_qa_status
+  ParcelQaStatus last_qa_status = 28;
+  // last_qa_force_batch_id
+  google.protobuf.StringValue last_qa_force_batch_id = 29;
+  // business_id
+  google.protobuf.Int64Value business_id = 30;
+  // return_delivery_actual_dropoff_time
+  google.protobuf.Timestamp return_delivery_actual_dropoff_time = 31 [(doordash.api.client.nullable) = true];
+  // bin_id
+  google.protobuf.StringValue bin_id = 32;
+  // dasher_shift_id
+  google.protobuf.Int64Value dasher_shift_id = 33;
+  // current_batch_status
+  BatchStatusType current_batch_status = 34;
+  // current_batch_status_timestamp
+  google.protobuf.Timestamp current_batch_status_timestamp = 35 [(doordash.api.client.nullable) = true];
+  // first_quoted_pickup_time
+  google.protobuf.Timestamp first_quoted_pickup_time = 36 [(doordash.api.client.nullable) = true];
+  // last_scanned_facility_code
+  google.protobuf.StringValue last_scanned_facility_code = 37;
+  // returned_to_mx_at
+  google.protobuf.Timestamp returned_to_mx_at = 38 [(doordash.api.client.nullable) = true];
+  // return_delivery_id
+  google.protobuf.Int64Value return_delivery_id = 39;
+  // parcel_state object
+  ParcelState parcel_state = 40 [(doordash.api.client.optional) = true];
+  // is_parcel_unassignable
+  bool is_parcel_unassignable = 41 [(doordash.api.client.optional) = true];
+}
+
+// Runner Detail
+message RunnerDetail {
+  // dasher id
+  google.protobuf.Int32Value dasher_id = 1;
+  // runner name
+  google.protobuf.StringValue runner_name = 2 [(doordash.api.client.optional) = true];
+  // runner contract type (e.g. LCSP, etc)
+  dasher_service.dasher.DasherContractType contract_type = 3 [(doordash.api.client.optional) = true];
+  // Shift id of the runner associated with this parcel batch
+  google.protobuf.Int64Value shift_id = 4 [(doordash.api.client.optional) = true];
+}
+
+// Batch Qa Status
+enum BatchQaStatus {
+  // The default status that gets applied if this is not set. This is not expected to be used.
+  BATCH_QA_STATUS_UNSPECIFIED = 0;
+  // Indicates the batch qa process is not started yet
+  BATCH_QA_STATUS_NOT_STARTED = 1;
+  // Indicates the batch qa process is in progress
+  BATCH_QA_STATUS_IN_PROGRESS = 2;
+  // Indicates the batch qa process is complete
+  BATCH_QA_STATUS_COMPLETE = 3;
+}
+
+// Batch detail
+message BatchDetail {
+  // force batch id for the batch
+  google.protobuf.StringValue force_batch_id = 1;
+  // bin name for the batch
+  google.protobuf.StringValue bin_name = 2;
+  // qa start time
+  google.protobuf.Timestamp qa_start_time = 3 [(doordash.api.client.nullable) = true];
+  // qa end time
+  google.protobuf.Timestamp qa_end_time = 4 [(doordash.api.client.nullable) = true];
+  // batch size
+  google.protobuf.Int32Value batch_size = 5;
+  // correct parcel scanned
+  google.protobuf.Int32Value correct_parcel_scanned = 6;
+  // count of ready to stow parcels that are expected to be delivered
+  google.protobuf.Int32Value total_ready_to_stow = 7;
+  // runner detail
+  RunnerDetail runner_detail = 8 [(doordash.api.client.optional) = true];
+  // batch QA status
+  BatchQaStatus batch_qa_status = 9 [(doordash.api.client.optional) = true];
+  // batch status
+  BatchStatusType batch_status_type = 10 [(doordash.api.client.optional) = true];
+}

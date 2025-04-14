@@ -1,0 +1,295 @@
+syntax = "proto3";
+
+package authorization.authorization_management_service.v2;
+
+import "authorization/authorization-management-service/resource_documentation.proto";
+import "authorization/common.proto";
+import "doordash.api/client.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/authorization/authorization_management_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.authorization";
+
+// A generic metadata object that can be used for any entity in this service. Standardizes how we
+// store key pieces of information like who created/updated the entity, and when it was created/updated.
+message Metadata {
+  // user_id of user that created this entity.
+  string created_by = 1;
+  // user_id of user that last updated this entity.
+  string updated_by = 2;
+  // Timestamp of when this entity was created.
+  google.protobuf.Timestamp created_at = 3;
+  // Timestamp of when this entity was last updated.
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// Describes the operator to use when comparing an attribute to a required value.
+enum AttributeOperator {
+  // An unknown attribute operator. Do not use.
+  ATTRIBUTE_OPERATOR_UNSPECIFIED = 0;
+  // Equals operator. i.e. `attribute == value`
+  ATTRIBUTE_OPERATOR_EQUALS = 1;
+  // Not equals operator. i.e. `attribute != value`
+  ATTRIBUTE_OPERATOR_NOT_EQUALS = 2;
+  // Contains operator. i.e. `attribute.contains(value)`
+  ATTRIBUTE_OPERATOR_CONTAINS = 3;
+  // Not contains operator. i.e. `!attribute.contains(value)`
+  ATTRIBUTE_OPERATOR_NOT_CONTAINS = 4;
+  // Greater than operator. i.e. `attribute > value`
+  ATTRIBUTE_OPERATOR_GREATER_THAN = 5;
+  // Less than operator. i.e. `attribute < value`
+  ATTRIBUTE_OPERATOR_LESS_THAN = 6;
+  // Greater than or equals operator. i.e. `attribute >= value`
+  ATTRIBUTE_OPERATOR_GREATER_THAN_OR_EQUALS = 7;
+  // Less than or equals operator. i.e. `attribute <= value`
+  ATTRIBUTE_OPERATOR_LESS_THAN_OR_EQUALS = 8;
+  // Operator to check if the attribute is before the given date. i.e. `attribute < date`
+  ATTRIBUTE_OPERATOR_BEFORE = 9;
+  // Operator to check if the attribute is after the given date. i.e. `attribute > date`
+  ATTRIBUTE_OPERATOR_AFTER = 10;
+  // Check if an value is in a set. i.e. `user_id =~ [1, 2, 3]`
+  ATTRIBUTE_OPERATOR_IN = 11;
+  // Check if an value is NOT in a set. i.e. `user_id !~ [1, 2, 3]`
+  ATTRIBUTE_OPERATOR_NOT_IN = 12;
+}
+
+// THe logical gate to union two different requirements together
+enum LogicalGate {
+  // DO NOT USE
+  LOGICAL_GATE_UNSPECIFIED = 0;
+  // AND logic with next requirement
+  LOGICAL_GATE_AND = 1;
+  // OR logic with next requirement
+  LOGICAL_GATE_OR = 2;
+}
+
+// Scope of user set
+enum UserType {
+  // DO NOT USE
+  USER_TYPE_UNSPECIFIED = 0;
+  // The scope of user set is doordash internal user
+  USER_TYPE_DOORDASH_INTERNAL_EMPLOYEE = 1;
+  // The scope of user set is for the external user
+  USER_TYPE_EXTERNAL_USER = 2;
+  // The scope of user type is service to service
+  USER_TYPE_SERVICE = 3;
+}
+
+// The requirement for the attribute, it can be either an expression or a condition
+message AttributeClause {
+  reserved 2;
+  reserved "condition";
+  // A basic expression represents a single attribute expression ex. Department is identity-platform
+  AttributeExpression expression = 1;
+  // A condition represents multiple expressions combined with logical gates
+  AttributeCriteria criteria = 3 [(doordash.api.client.optional) = true];
+}
+
+// For when we define user sets or resource sets, we usually want to restrict the users/resources in the set by
+// defining some criteria that they must meet. This is where we define those criteria.
+message AttributeCriteria {
+  // The basic expression, example: "Department is identity".
+  // [Optional] The logical gate to glue all requirements . For example, <A> "AND" <B> "AND" (<C> "OR" <D>)
+  // Notes: You can't have mixture of AND and OR in the same level. such as <A> "AND" <B> "OR" <C> is not allowed
+  LogicalGate logical_gate = 1;
+  // list of the conditions, expressions in the level
+  repeated AttributeClause clauses = 2;
+}
+
+// The basic expression to describe user set
+message AttributeExpression {
+  // For the given AttributeType, the field name. For example, "Department" in Workday
+  string name = 1;
+  // The operator to use when comparing the attribute to the required value. i.e. "equals", "not equals", "contains", etc.
+  AttributeOperator operator = 2;
+  // The value that the attribute must match
+  string value = 3;
+}
+
+// The admin user info
+message AdminUser {
+  // User id of Admin user
+  string id = 1;
+  // The first name of admin user
+  string first_name = 2;
+  // The last name of admin user
+  string last_name = 3;
+  // The email address associated with the admin user
+  string email = 4;
+}
+
+// An Application represents a namespace within the DoorDash platform. It can be a web app, a service,
+// or any domain that requires access control. An Application must be tied to an existing software asset
+// in the DevConsole catalog: https://devconsole.doordash.team/catalog
+message Application {
+  reserved 5;
+  reserved "admins";
+  // ID of the Application.
+  string id = 1;
+  // Human readable name for this Application.
+  string name = 2;
+  // Human readable description for this Application.
+  string description = 3;
+
+  // State of the Application (live, deleted, etc)
+  enum LifecycleState {
+    // Do not use
+    LIFECYCLE_STATE_UNSPECIFIED = 0;
+    // Active
+    LIFECYCLE_STATE_ACTIVE = 1;
+    // Disabled
+    LIFECYCLE_STATE_DISABLED = 2;
+  }
+
+  // State of the Application
+  LifecycleState lifecycle_state = 4;
+  // List of admin user IDs
+  repeated AdminUser admin_users = 7;
+  // Metadata for this Application
+  Metadata metadata = 6;
+  // User types in Application
+  repeated UserType user_types = 8;
+  // SLA achievement for the Application
+  float sla_achievement = 9;
+  // The support Slack channel for the Application
+  string support_channel = 10;
+}
+
+// User sets are a collection of users that can be referenced in an access management policy. It provides
+// a helpful abstraction to select a group of users based on their attributes )()
+message UserSet {
+  reserved 5, 6;
+  reserved "requirements", "condition";
+
+  // ID of the user set.
+  string id = 1;
+  // Human readable name for this user set.
+  string name = 2;
+  // Human readable description for this user set.
+  string description = 3;
+  // Metadata for this user set.
+  Metadata metadata = 4;
+  // The criteria that users must meet to be in this user set.
+  AttributeCriteria criteria = 9;
+  // The scope of user set
+  UserType user_type = 7;
+  // The application id that this user set belongs to
+  string application_id = 8;
+}
+
+// Resource sets are a collection of resources that can be referenced in an access management policy.
+// This provides a helpful abstraction to select a group of resources based on their attributes.
+message ResourceSet {
+  reserved 5, 6;
+  reserved "requirements", "condition";
+
+  // ID of the resource set.
+  string id = 1;
+  // Human readable name for this resource set.
+  string name = 2;
+  // Human readable description for this resource set.
+  string description = 3;
+  // Metadata for this resource set.
+  Metadata metadata = 4;
+  // The criteria that resources must meet to be in this resource set.
+  AttributeCriteria criteria = 9;
+  // The scope of resource type
+  string resource_type = 7;
+  // The application id that this resource set belongs to
+  string application_id = 8;
+  // Compliance documentation
+  ResourceDocumentation documentation = 10;
+}
+
+// The compound identifier of a policy
+message PolicyIdentifier {
+  // The Application to which the Policy will be attached.
+  string application_id = 1;
+  // User Set ID for the policy
+  string user_set_id = 2;
+  // Resource Set ID for the policy
+  string resource_set_id = 3;
+  // The action that this policy allows the given user sets to perform on the given resource sets.
+  authorization.v2.Action action = 4;
+}
+
+// Status of the policy
+enum PolicyStatus {
+  // An unknown status. Do not use.
+  POLICY_STATUS_UNSPECIFIED = 0;
+  // The policy is disabled.
+  POLICY_STATUS_DISABLED = 1;
+  // The policy is enabled.
+  POLICY_STATUS_ENABLED = 2;
+}
+
+// Policies connect user sets to resource sets and allow operators to define rules on who can perform actions
+// on specific resource sets. The actions are constrained to an ENUM of common verbs like "read", "write", "delete", etc.
+message Policy {
+  reserved 1 to 3, 5 to 9;
+  reserved "id", "user_set", "resource_set", "action", "status", "version", "name", "description";
+  // ID of the policy.
+  PolicyIdentifier identifier = 10;
+  // Metadata for this policy.
+  Metadata metadata = 4;
+  // Current status of the policy.
+  PolicyStatus policy_status = 12;
+}
+
+// All the user actions that are possible within the Application Platform UX
+enum OperationType {
+  // Do not use
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  // Creation
+  OPERATION_TYPE_CREATE = 1;
+  // Update
+  OPERATION_TYPE_UPDATE = 2;
+  // delete
+  OPERATION_TYPE_DELETE = 3;
+  // ENABLE
+  OPERATION_TYPE_ENABLE = 4;
+  // DISABLE
+  OPERATION_TYPE_DISABLE = 5;
+}
+
+// The database entity type that this event is associated with. i.e. "application", "user_set", "resource_set", etc.
+enum EntityType {
+  // Do not use
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // Application
+  ENTITY_TYPE_APPLICATION = 1;
+  // User Set
+  ENTITY_TYPE_USER_SET = 2;
+  // Resource Set
+  ENTITY_TYPE_RESOURCE_SET = 3;
+  // Policy
+  ENTITY_TYPE_POLICY = 4;
+}
+
+// A history event represents an item in the history of an Application. This includes things like adding/removing/updating user
+// sets, resource sets, policies, and more. It also includes policy approvals.
+message AuthorizationHistoryEvent {
+  reserved 5;
+  reserved "event_type";
+
+  // The ID of this history event.
+  string id = 1;
+  // The ID of the Application that this history event is associated with.
+  string application_id = 2;
+  // The user ID of the user that performed this action.
+  string user_id = 3;
+  // The timestamp of when this event occurred.
+  google.protobuf.Timestamp created_at = 4;
+  // The data associated with this event. This is a JSON string that can be parsed to get more information about the event.
+  string event_data = 6;
+  // The type of operation that was performed. i.e. "create", "update", "delete", etc.
+  OperationType operation_type = 7;
+  // The type of entity that this event is associated with. i.e. "application", "user_set", "resource_set", etc.
+  EntityType entity_type = 8;
+  // The entity ID that this event is associated with.
+  string entity_id = 9;
+  // The approval request id that this event is associated with.
+  string approval_request_id = 10;
+}

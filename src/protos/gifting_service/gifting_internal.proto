@@ -1,0 +1,385 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package doordash_gifting_service.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "gifting_service/gifting_external.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "gifting_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.gifting.service";
+
+// internal gifting service
+service GiftingInternalService {
+  //annotated with the doordash.api.service option for metadata and traffic routing
+  option (doordash.api.service) = {
+    name: "gifting-internal-service-grpc"
+    url: "gifting-internal-service-grpc.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["gifting-internal-service"]
+    owner: {
+      name: "gifting-internal-service"
+      id: "storefront-integrations-default-buck"
+      slack_channel: "#ask-storefront-integrations"
+      email_alias: "external-gift-cards@doordash.com"
+    }
+    target_products: [
+      MX,
+      INTERNAL
+    ]
+  };
+
+  // link/update store id given a external reference id type
+  rpc UpsertInternalExternalStoreId(UpsertInternalExternalStoreIdRequest) returns (UpsertInternalExternalStoreIdResponse);
+  // upsert external store mapping endpoint
+  rpc UpsertExternalStoreMapping(UpsertExternalStoreMappingRequest) returns (UpsertExternalStoreMappingResponse);
+  // get external store mapping endpoint
+  rpc GetExternalStoreMapping(GetExternalStoreMappingRequest) returns (GetExternalStoreMappingResponse);
+  // delete external store mapping endpoint
+  rpc DeleteExternalStoreMapping(DeleteExternalStoreMappingRequest) returns (DeleteExternalStoreMappingResponse);
+  // upsert external gift card provider
+  rpc UpsertExternalGiftCardProvider(UpsertExternalGiftCardProviderRequest) returns (UpsertExternalGiftCardProviderResponse);
+  // get external gift card provider
+  rpc GetExternalGiftCardProvider(GetExternalGiftCardProviderRequest) returns (GetExternalGiftCardProviderResponse);
+  // delete external gift card provider
+  rpc DeleteExternalGiftCardProvider(DeleteExternalGiftCardProviderRequest) returns (DeleteExternalGiftCardProviderResponse);
+  // onboard external gift card merchant
+  rpc OnBoardExternalGiftCardMerchant(OnBoardExternalGiftCardMerchantRequest) returns (OnBoardExternalGiftCardMerchantResponse) {
+    option (google.api.http) = {
+      post: "/gifting-internal-service/v1/onboard_external_giftcard_merchant_request"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [
+        DD_EMPLOYEE,
+        DD_USER,
+        MX_USER
+      ]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["security-raven-managed-authorization"]
+      }
+      target_products: [
+        MX,
+        INTERNAL
+      ]
+    };
+  }
+  // request for unblocking a consumer, fingerprint or ja3 which might have been blocked due to fraud
+  rpc UnBlockExternalGiftCardUser(UnBlockExternalGiftCardUserRequest) returns (UnBlockExternalGiftCardUserResponse);
+}
+
+// Request to link/update store id given a external reference id type
+message UpsertInternalExternalStoreIdRequest {
+  //doordash store id
+  google.protobuf.StringValue internal_store_id = 1;
+  //store id in external source
+  google.protobuf.StringValue external_store_id = 2;
+  //provider id
+  google.protobuf.StringValue gift_card_provider_id = 3;
+  //experience
+  google.protobuf.StringValue experience = 4;
+  // client id/user id to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_key = 10;
+  // password/client-secret to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_value = 11;
+}
+
+// Response for store id mapping between external business group and doordash
+message UpsertInternalExternalStoreIdResponse {
+  // on success, return store id mapping
+  message Success {
+    //success message
+    google.protobuf.StringValue message = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return best attempt doordash to external store id
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// message representing external gift card provider
+message ExternalGiftCardProvider {
+  // UUID for the record, leave empty if insert
+  google.protobuf.StringValue uuid = 1;
+  // name of the provider use business name, business group name or store name depending on reference type used.
+  google.protobuf.StringValue name = 2;
+  // reference id for the provider use store id, business id or business group id.
+  google.protobuf.StringValue reference_id = 3;
+  // use store, business or business_group
+  google.protobuf.StringValue reference_type = 4;
+  // merchant id or some unique id to represent this provider to the external integration. This is integration specific
+  google.protobuf.StringValue external_reference_id = 5;
+  // experience, use either of doordash, storefront or caviar. if empty default will be set to storefront for insert
+  google.protobuf.StringValue experience = 6;
+  // use add_to_database or send_to_provider depending on how merchant wants it to be configured
+  google.protobuf.StringValue refund_type = 7;
+  // threshold for max number of invalid attempts a user is allowed during adding a gift card during the time window.
+  // default is 10
+  google.protobuf.Int32Value max_attempts = 8;
+  // time window for the threshold in seconds, default is 86400 (24 hours)
+  google.protobuf.Int32Value attempt_window = 9;
+  // supported card type, use one from pin_optional, pin_required, no_pin
+  google.protobuf.StringValue supported_card_type = 10;
+  // represents whether the provider is enabled, default is true
+  google.protobuf.BoolValue is_enabled = 11;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue created_at = 12;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue updated_at = 13;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue active_from = 14;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue deactivated_at = 15;
+  // provider type, must not be null and should have correct value, if upsert, empty value is ok
+  google.protobuf.StringValue provider_type = 16;
+  // client id/user id to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_key = 17;
+  // password/client-secret to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_value = 18;
+  // max fraud threshold for cloud fare ja3 before disabling the ja3, similar to fingerprint but at traffic level
+  google.protobuf.Int32Value max_traffic_attempts = 19;
+  // max fraud threshold for store before disabling it
+  google.protobuf.Int32Value max_store_attempts = 20;
+  // max fraud threshold for provider before disabling it
+  google.protobuf.Int32Value max_provider_attempts = 21;
+}
+
+// message representing external store mapping
+message ExternalStoreMapping {
+  // UUID for the record, leave empty if insert
+  google.protobuf.StringValue uuid = 1;
+  // internal store id
+  google.protobuf.StringValue internal_store_id = 2;
+  // external store id
+  google.protobuf.StringValue external_store_id = 3;
+  // external gift card provider id
+  google.protobuf.StringValue external_gift_card_provider_id = 4;
+  // represents whether the provider is enabled, default is true
+  google.protobuf.BoolValue is_enabled = 5;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue created_at = 6;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue updated_at = 7;
+  // string representation of date, not used during upsert or insert
+  google.protobuf.StringValue deactivated_at = 8;
+  // experience, use either of doordash, storefront or caviar. if empty default will be set to storefront for insert
+  google.protobuf.StringValue experience = 9;
+  // client id/user id to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_key = 10;
+  // password/client-secret to be used for this transaction. This should be the tokenized value when skip_vgs=false.
+  // May not be needed for all integrations. Client implementation will use this when it is present.
+  google.protobuf.StringValue secret_value = 11;
+}
+
+// request message for UpsertExternalGiftCardProvider
+message UpsertExternalGiftCardProviderRequest {
+  // provider to upsert
+  ExternalGiftCardProvider provider = 1;
+}
+
+// Response for UpsertExternalGiftCardProvider
+message UpsertExternalGiftCardProviderResponse {
+  // success object
+  message Success {
+    // latest provider object in the db
+    ExternalGiftCardProvider provider = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for GetExternalGiftCardProvider
+message GetExternalGiftCardProviderRequest {
+  // uuid of the external gift card provider to delete
+  google.protobuf.StringValue uuid = 1;
+}
+
+// Response for GetExternalGiftCardProvider
+message GetExternalGiftCardProviderResponse {
+  // success object
+  message Success {
+    // latest provider object in the db
+    ExternalGiftCardProvider provider = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for DeleteExternalGiftCardProvider
+message DeleteExternalGiftCardProviderRequest {
+  // uuid of the external gift card provider to delete
+  google.protobuf.StringValue uuid = 1;
+  // should this operation also delete the transaction logs related to this provider
+  google.protobuf.BoolValue should_delete_transaction_logs = 2;
+}
+
+// Response for DeleteExternalGiftCardProvider
+message DeleteExternalGiftCardProviderResponse {
+  // success object
+  message Success {
+    // number of stores mapping which got deleted
+    google.protobuf.Int32Value deleted_store_mapping_count = 1;
+    // number of transactions logs which got deleted
+    google.protobuf.Int32Value deleted_transaction_log_count = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for UpsertExternalStoreMapping
+message UpsertExternalStoreMappingRequest {
+  // store mapping to upsert
+  ExternalStoreMapping store_mapping = 1;
+}
+
+// Response for UpsertExternalStoreMapping
+message UpsertExternalStoreMappingResponse {
+  // success object
+  message Success {
+    // latest external store mapping object in the db
+    ExternalStoreMapping external_store_mapping = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for GetExternalStoreMapping
+message GetExternalStoreMappingRequest {
+  // internal store id
+  google.protobuf.StringValue internal_store_id = 1;
+  // experience, use either of doordash, storefront or caviar. if empty default will be set to storefront
+  google.protobuf.StringValue experience = 2;
+  // uuid of the external gift card provider to delete
+  google.protobuf.StringValue uuid = 3;
+}
+
+// Response for GetExternalStoreMapping
+message GetExternalStoreMappingResponse {
+  // success object
+  message Success {
+    // latest external store mapping object in the db
+    ExternalStoreMapping provider = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for DeleteExternalStoreMapping
+message DeleteExternalStoreMappingRequest {
+  // internal store id to delete
+  google.protobuf.StringValue internal_store_id = 1;
+  // experience, use either of doordash, storefront or caviar. if empty default will be set to storefront
+  google.protobuf.StringValue experience = 2;
+  // uuid of the external gift card provider to delete
+  google.protobuf.StringValue uuid = 3;
+}
+
+// Response for DeleteExternalStoreMapping
+message DeleteExternalStoreMappingResponse {
+  // success object
+  message Success {
+    // number of stores mapping which got deleted
+    google.protobuf.Int32Value deleted_store_mapping_count = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for UpsertExternalStoreMapping
+message OnBoardExternalGiftCardMerchantRequest {
+  // provider details
+  ExternalGiftCardProvider provider = 1;
+  // external store mappings to link with this provider
+  repeated ExternalStoreMapping store_mappings = 2;
+}
+
+// request message for UpsertExternalStoreMapping
+message OnBoardExternalGiftCardMerchantResponse {
+  // success object
+  message Success {
+    // provider details
+    ExternalGiftCardProvider provider = 1;
+    // external store mappings to link with this provider
+    repeated ExternalStoreMapping store_mappings = 2;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}
+
+// request message for unblocking a user, fingerprint or ja3 which might have been blocked due to fraud
+message UnBlockExternalGiftCardUserRequest {
+  // list of all the ids which needs to be unblocked
+  repeated google.protobuf.StringValue ids = 1;
+}
+
+// request message for UpsertExternalStoreMapping
+message UnBlockExternalGiftCardUserResponse {
+  // success object
+  message Success {
+    // list of all the ids which were unblocked
+    repeated google.protobuf.StringValue ids = 1;
+  }
+  // result is either success or error
+  oneof result {
+    // on success, return success object
+    Success success = 1;
+    // on failure, return error
+    ExternalGiftCardServiceError error = 2;
+  }
+}

@@ -1,0 +1,369 @@
+syntax = "proto3";
+package feed_service;
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/struct.proto";
+import "feed_service/common.proto";
+import "feed_service/facet_response_v2.proto";
+import "common/service_client_config.proto";
+
+option java_package = "com.doordash.rpc.feed_service.home_page";
+option java_outer_classname = "HomepageFeedApi";
+option java_multiple_files = true;
+option java_generic_services = true;
+
+service HomepageFeedService {
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+  option (service_client.client_config).response_attempt_timeout_millis = 6000;
+  rpc GetHomepageFeed (GetHomepageFeedRequest) returns (GetHomepageFeedResponse){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+  rpc GetStoreCarousel (GetDMRequest) returns (StoreCarouselDM){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3700;
+  }
+  rpc GetPickupFeed (GetPickupFeedRequest) returns (GetPickupFeedResponse){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 6000;
+  }
+  rpc GetPickupStoreCarousel (GetPickupStoreCarouselRequest) returns (StoreCarouselDM){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+}
+
+service DealFeedService {
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+  rpc GetDealFeed (GetDealFeedRequest) returns (GetDealFeedResponse){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 4500;
+  }
+  rpc GetDineInDealFeed (GetDineInDealFeedRequest) returns (GetDineInDealFeedResponse){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  rpc GetDealFeedFilters (GetDealFeedFiltersRequest) returns (GetDealFeedFiltersResponse){
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2200;
+  }
+}
+
+message GetHomepageFeedResponse {
+  repeated StoreCarouselDM store_carousels = 1;
+  repeated StoreListDM store_lists = 2;
+  DMNext next = 3;
+  google.protobuf.UInt32Value total_stores = 4;
+  repeated DealListDM deal_list = 5;
+  repeated CollectionDM collections = 6;
+  google.protobuf.BoolValue has_available_stores = 7; // whether the response has any stores returned
+  MarketState market_state = 8;
+  repeated BookmarkCarouselDM bookmark_carousels = 9;
+
+  enum MarketState {
+    NORMAL = 0;
+    NO_DELIVERY_BUT_PICKUP_AVAILABLE = 1;
+  }
+
+
+}
+
+// A generic display module that wraps around a Lego FacetV2 component.
+message FacetDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+
+  // The FacetV2 Lego response serialized as Json-string
+  string data_str = 5 [deprecated = true];
+  google.protobuf.StringValue version = 6;
+
+  // Use this strongly typed field instead of data_str
+  FacetV2 data = 7;
+}
+
+message StoreCarouselDM {
+  reserved 10;
+  reserved "should_default_to_schedule";
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+  Data data = 5;
+  google.protobuf.StringValue version = 6;
+  google.protobuf.StringValue fulfillment_type = 7;
+  google.protobuf.DoubleValue prediction_score = 8; // final score
+  google.protobuf.DoubleValue score_multiplier = 9;
+  // google.protobuf.BoolValue should_default_to_schedule = 10; is DEPRECATED
+
+  message Data {
+    repeated Store content = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.StringValue description = 3;
+  }
+}
+
+message StoreListDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+  Data data = 5;
+  google.protobuf.StringValue version = 6;
+
+  message Data {
+    repeated Store content = 1;
+  }
+}
+
+message CollectionDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+  oneof data_facet_or_str {
+    Facet data = 5;
+
+    // Adding as a string because using a generated class in the middle of a non-generated in iOS is tricky.
+    google.protobuf.StringValue data_str = 7;
+
+    // Container to wrap Lego response in the display module.
+    FacetV2 facet_v2 = 10;
+  }
+  google.protobuf.StringValue version = 6;
+  google.protobuf.DoubleValue prediction_score = 8; // final score
+  google.protobuf.DoubleValue score_multiplier = 9;
+
+  // Keeping this separate from the main, so that iteration can happen independently
+  // This DM style will ultimately cease to exist.
+  message Facet {
+    google.protobuf.StringValue id = 1;
+    Component component = 2;
+    Text text = 3;
+    Images images = 4;
+    google.protobuf.Struct custom = 5;
+    Events events = 6;
+    repeated Facet children = 7;
+    // Only contains event data. The event name is implicit based on the placement of the "logging" field.
+    // This one refers to clicks and views
+    google.protobuf.Struct logging = 8;
+
+    message Component {
+      google.protobuf.StringValue id = 1;
+      // This can in the future to define fallback component group for old(er) app versions
+      google.protobuf.StringValue category = 2;
+    }
+
+    message Text {
+      google.protobuf.StringValue title = 1;
+      google.protobuf.StringValue subtitle = 2;
+      google.protobuf.StringValue accessory = 3;
+      google.protobuf.StringValue description = 4;
+      map<string, google.protobuf.StringValue> custom = 5;
+    }
+
+    message Images {
+      Image main = 1;
+      Image icon = 2;
+      Image background = 3;
+      map<string, Image> custom = 4;
+    }
+
+    message Image {
+      google.protobuf.StringValue uri = 1;
+      google.protobuf.StringValue placeholder = 2;
+      Style style = 3;
+
+      enum Style {
+        DEFAULT = 0;
+        ROUNDED = 1;
+        // Add more here as needed
+      }
+    }
+
+    message Events {
+      Action click = 1;
+    }
+
+    message Action {
+      google.protobuf.StringValue name = 1;
+      google.protobuf.Struct data = 2;
+    }
+  }
+}
+
+message DealListDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+  DealData data = 5;
+  google.protobuf.StringValue version = 6;
+  google.protobuf.DoubleValue prediction_score = 7; // final score
+  google.protobuf.DoubleValue score_multiplier = 8;
+
+  message DealData {
+    repeated Deal content = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.StringValue description = 3;
+  }
+}
+
+message BookmarkCarouselDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  DMNext next = 4;
+  google.protobuf.StringValue version = 5;
+  // Adding string for Saved Stores carousel which will be lego response stringified
+  google.protobuf.StringValue data_str = 6;
+}
+
+// Keep this outside since this is common across all DMs
+message DMNext {
+  google.protobuf.StringValue cursor = 1;
+}
+
+message GetHomepageFeedRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.Int64Value dedupe_config_id = 7;
+  google.protobuf.StringValue time_zone = 8;
+  google.protobuf.StringValue scheduled_time = 9;
+  google.protobuf.StringValue country_shortname = 10;
+}
+
+message GetDMRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.StringValue time_zone = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+  DmParams dm_params = 9;
+}
+
+message DmParams {
+  google.protobuf.StringValue cursor = 1;
+  google.protobuf.StringValue dm_id = 2;
+}
+
+message GetDealFeedResponse {
+  repeated DealListDM deal_list = 1;
+  DMNext next = 2;
+  google.protobuf.UInt32Value total_deals = 3;
+  // Banner information is fetched from promotion service. This data is consumed by consumer-bff to fetch content from CMS
+  Metadata banner_info = 4;
+}
+
+message Metadata {
+    repeated Banner banner_list = 1;
+
+    message Banner {
+        google.protobuf.StringValue type = 1;
+        string content_identifier = 2;
+        google.protobuf.Struct metadata = 3;
+    }
+}
+
+message GetDealFeedRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.StringValue time_zone = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+  repeated EFSFilter efs_filters = 9;
+  google.protobuf.Int64Value num_top_deals = 10;
+}
+
+message GetDineInDealFeedResponse {
+  repeated DealListDM deal_list = 1;
+  DMNext next = 2;
+  google.protobuf.UInt32Value total_deals = 3;
+}
+
+message GetDineInDealFeedRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.StringValue time_zone = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+}
+
+message GetDealFeedFiltersResponse {
+  Cuisines cuisines = 1;
+  repeated Filter filters = 2;
+}
+
+message GetDealFeedFiltersRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.StringValue time_zone = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+  google.protobuf.StringValue country_shortname = 9;
+}
+
+message GetPickupFeedRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.Int64Value dedupe_config_id = 7;
+  google.protobuf.StringValue time_zone = 8;
+  google.protobuf.StringValue scheduled_time = 9;
+  google.protobuf.DoubleValue consumer_lat = 10;
+  google.protobuf.DoubleValue consumer_lng = 11;
+  MapBoundingBox map_bounding_box = 12;
+  google.protobuf.DoubleValue delivery_lat = 13 [deprecated = true];
+  google.protobuf.DoubleValue delivery_lng = 14 [deprecated = true];
+  SearchUseCase search_use_case = 15;
+  // Information needed to calculate delivery availability and ETAs
+  NearbyMapDeliveryInfo nearby_map_delivery_info = 16;
+}
+
+message GetPickupStoreCarouselRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue cursor = 6;
+  google.protobuf.StringValue time_zone = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+  DmParams dm_params = 9;
+  google.protobuf.DoubleValue consumer_lat = 10;
+  google.protobuf.DoubleValue consumer_lng = 11;
+}
+
+message GetPickupFeedResponse {
+  // List of containers for Lego components to be included in the bottom sheet of the pickup/nearby tab. For example,
+  // the reorder Lego carousel will be returned here.
+  repeated FacetDM facets = 5;
+
+  repeated StoreCarouselDM store_carousels = 1;
+  repeated StoreListDM store_lists = 2;
+  DMNext next = 3;
+  google.protobuf.UInt32Value total_stores = 4;
+  // Eyebrow on top of the map bottom sheet
+  EyebrowDetails eyebrow_details = 6;
+
+  // Index for the next page in reservation pagination.
+  // If this is empty or -1, that means there are no more pages available
+  google.protobuf.UInt32Value next_reservations_index = 7;
+}

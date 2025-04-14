@@ -1,0 +1,467 @@
+syntax = "proto3";
+
+package seamless_experience.v1;
+
+import "common/post_checkout.proto";
+import "delivery_experience/order_status.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/facet_response_v2.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.seamless_experience.api";
+
+// Seamless Experience gRPC service.
+// SeamlessExperienceService is used by Cx mobile BFFs and Unified Gateway.
+// If you are making changes in this proto, then make sure that they are backwards compatible.
+// Also, consider updating proto release version in all clients: Cx Mobile BFFs and Unified Gateway.
+service SeamlessExperienceService {
+  option (doordash.api.service) = {
+    name: "seamless-experience"
+    url: "seamless-experience-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["seamless"]
+    api_key_name: "SEAMLESS-EXPERIENCE-API-KEY"
+    owner: {
+      name: "Seamless-Experience"
+      id: "seamless-experience"
+      slack_channel: "#eng-delivery-experience-alerts"
+      email_alias: "team-post-checkout@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  /* Executes order prompt action. */
+  rpc ExecuteOrderPromptAction(ExecuteOrderPromptActionRequest) returns (ExecuteOrderPromptActionResponse);
+  /* Fetches Mosaic based page that can be rendered using Mosaic Framework on FE. */
+  rpc GetMosaicPage(GetMosaicPageRequest) returns (GetMosaicPageResponse) {
+    option (google.api.http) = {get: "/seamless/v1/mosaic_page"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+  /* Fetches Lego based page that can be rendered using Lego Framework on FE. */
+  rpc GetLegoPage(GetLegoPageRequest) returns (GetLegoPageResponse) {
+    option (google.api.http) = {get: "/seamless/v1/lego_page"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+  /* Executes action on the order tracking page. */
+  rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse) {
+    option (google.api.http) = {
+      post: "/seamless/v1/execute_action"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+  /* Get backend drive UI data for self help refund page */
+  rpc GetSelfHelpRefundPage(GetSelfHelpRefundPageRequest) returns (GetSelfHelpRefundPageResponse);
+
+  /* Get backend drive UI data for self help preview page */
+  rpc GetSelfHelpPage(GetSelfHelpPageRequest) returns (GetSelfHelpPageResponse);
+}
+
+/* Request for ExecuteOrderPromptActionRequest. */
+message ExecuteOrderPromptActionRequest {
+  /* The order uuid. (Required) */
+  google.protobuf.StringValue order_uuid = 1;
+
+  /* The delivery uuid. (Required) */
+  google.protobuf.StringValue delivery_uuid = 2;
+
+  /* The resolution reason (order prompt type). (Required) */
+  delivery_experience.v1.OrderPromptDetails.ResolutionReason resolution_reason = 3;
+
+  // The prompt option.
+  // (required when resolution_reason is RESOLUTION_REASON_CANCELLATION_REFUND_SELECTION, optional otherwise)
+  delivery_experience.v1.PromptOption prompt_option = 4;
+
+  /* Map of order prompt context such as consumer_id, workflow id, workflow node id */
+  map<string, string> prompt_option_context = 5;
+}
+
+/* enum for execute order prompt action response status. */
+enum ExecuteOrderPromptActionResponseStatus {
+  // unspecified response status
+  EXECUTE_ORDER_PROMPT_ACTION_RESPONSE_STATUS_UNSPECIFIED = 0;
+  // status: refund success
+  EXECUTE_ORDER_PROMPT_ACTION_RESPONSE_STATUS_CANCELLATION_REFUND_SUCCESS = 1;
+  // status: show reorder experience success
+  EXECUTE_ORDER_PROMPT_ACTION_RESPONSE_STATUS_SHOW_REORDER_EXPERIENCE_SUCCESS = 2;
+}
+
+/* Response for ExecuteOrderPromptActionResponse */
+message ExecuteOrderPromptActionResponse {
+  /* Order prompt response for clients to update order prompt. */
+  delivery_experience.v1.OrderPromptDetails order_prompt_details = 1;
+
+  /* The order prompt action execution response status. */
+  ExecuteOrderPromptActionResponseStatus response_status = 2;
+}
+
+/**
+ * Request for GetMosaicPage.
+ * The fields below will be passed as query parameters through unified gateway.
+ */
+message GetMosaicPageRequest {
+  /**
+   * The consumer id. (Required)
+   * This field is injected by the unified gateway.
+   * The consumer_id is used to validated the requested order_uuid belongs to the CX user.
+   */
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  /* Each Mosaic page requires a page id. (Required) */
+  google.protobuf.StringValue page_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  /* The order uuid. (Required) */
+  google.protobuf.StringValue order_uuid = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+/* Response for GetMosaicPage */
+message GetMosaicPageResponse {
+  /* Standard Mosaic page response. */
+  lego.response.v1.LegoPageResponse lego_page = 1;
+  /* The details contains the data used to refresh the page again (e.g. page_id, order_uuid) */
+  common.post_checkout.v1.SduiApiDetails sdui_api_details = 2;
+}
+
+/**
+ * Request for GetLegoPage.
+ * The fields below will be passed as query parameters through unified gateway.
+ */
+message GetLegoPageRequest {
+  /**
+   * The consumer id. (Required)
+   * This field is injected by the unified gateway.
+   * The consumer_id is used to validated the requested order_uuid belongs to the CX user.
+   */
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  /* Each Lego page requires a page id. (Required) */
+  google.protobuf.StringValue page_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  /* The order uuid. (Optional) */
+  google.protobuf.StringValue order_uuid = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+/**
+ * Response for GetLegoPage
+ * The response contains the data required to render the Lego page.
+ * This is the same as feed_service.FacetFeedResponseV2
+ */
+message GetLegoPageResponse {
+  // Body-grouping of Facets
+  repeated feed_service.FacetSection body = 1;
+
+  // Action describing behavior on reaching end-of-page
+  feed_service.Page page = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Any data that doesn't fit other fields in this proto
+  google.protobuf.Struct custom = 3 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Header-grouping of Facets. May be treated / rendered with different behavior compared to Body.
+  repeated feed_service.FacetV2 header = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Only contains event data. The event name is implicit based on the placement of the "logging" field.
+  // This one refers to page loads
+  google.protobuf.Struct logging = 5 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // page level style
+  feed_service.Style style = 6 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // footer-grouping of Facets. May be treated / rendered with different behavior compared to Body.
+  repeated feed_service.FacetV2 footer = 7 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+/* Request for ExecuteAction */
+message ExecuteActionRequest {
+  /**
+   * The consumer id. (Required)
+   * This field is injected by the unified gateway.
+   * The consumer_id is used to validated the requested order_uuid belongs to the CX user.
+   */
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  /* The order uuid. (Required) */
+  google.protobuf.StringValue order_uuid = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  /* Action type. (Required) */
+  common.post_checkout.v1.ActionType action_type = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  /* The metadata of the action to be executed. (Optional) */
+  map<string, string> metadata = 4;
+}
+
+/* Enum for RefundOption. */
+enum RefundOption {
+  /* Unspecified refund option. If presents, should ignore the refund option. */
+  REFUND_OPTION_UNSPECIFIED = 0;
+  /* Refund to original payment method. */
+  REFUND_OPTION_TO_ORIGINAL_PAYMENT_METHOD = 1;
+  /* Refund to DoorDash credits. */
+  REFUND_OPTION_TO_DOORDASH_CREDITS = 2;
+}
+
+/* Response for ExecuteAction */
+message ExecuteActionResponse {
+  /* The success status of the action. Null with be treated as False */
+  google.protobuf.BoolValue success = 1;
+  /* A list of next steps that client should execute after getting this response. */
+  repeated Step next_steps = 2;
+}
+
+/* Step to be executed by the client. */
+message Step {
+  /* The type of action to be executed. (Required) */
+  StepType type = 1;
+  /* The metadata required by the step. (Optional) */
+  map<string, string> metadata = 2;
+}
+
+/* Enum for StepType. */
+enum StepType {
+  /* Unspecified step type. If presents, should ignore the step. */
+  STEP_TYPE_UNSPECIFIED = 0;
+  /*
+   * Navigate to cart. It contains
+   *   - cart_id: The cart id.
+   *   - store_id: The store id.
+   */
+  STEP_TYPE_NAVIGATE_TO_CART = 1;
+  /* Clear the current component. */
+  STEP_TYPE_CLEAR = 2;
+  /*
+   * Refresh the current component by leveraging the context in Step.
+   *   - sdui_details: The details in JSON format for calling BE to get the Mosaic SDUI.
+   */
+  STEP_TYPE_REFRESH = 3;
+}
+
+/* The self help refund page request. */
+message GetSelfHelpRefundPageRequest {
+  /* The delivery uuid. (Required) */
+  google.protobuf.StringValue delivery_uuid = 1;
+
+  /* The page id. (Required) */
+  google.protobuf.StringValue page_id = 2;
+
+  /* Metadata for GetSelfHelpRefundPageRequest (optional) */
+  google.protobuf.Struct metadata = 3;
+}
+
+/* The self help refund page response. */
+message GetSelfHelpRefundPageResponse {
+  /* The page id. */
+  google.protobuf.StringValue page_id = 1;
+
+  /* The delivery uuid. */
+  google.protobuf.StringValue delivery_uuid = 2;
+
+  /* The UI details. */
+  SelfHelpRefundPageDetails self_help_refund_page_details = 3;
+}
+
+/* The UI details for self help refund page. */
+message SelfHelpRefundPageDetails {
+  /* The refund options. */
+  RefundOptionType refund_options_type = 1;
+
+  /* The page title. */
+  google.protobuf.StringValue page_title = 2;
+
+  /* The title. */
+  google.protobuf.StringValue title = 3;
+
+  /* The subtitle. */
+  google.protobuf.StringValue subtitle = 4;
+
+  /* The refund options. */
+  repeated Options options = 5;
+
+  /* call to action text. */
+  google.protobuf.StringValue cta_text = 6;
+}
+
+/* The options for self help refund page. */
+message Options {
+  /* option id. */
+  google.protobuf.StringValue id = 1;
+
+  /* output name. */
+  google.protobuf.StringValue output_name = 2;
+
+  /* icon type. */
+  IconType icon_type = 3;
+
+  /* title. */
+  google.protobuf.StringValue title = 4;
+
+  /* subtitle. */
+  google.protobuf.StringValue subtitle = 5;
+
+  /* tag title. */
+  google.protobuf.StringValue tag_title = 6;
+
+  /* is default selection. */
+  google.protobuf.BoolValue is_default_selection = 7;
+
+  /* nested options. */
+  repeated Options nested_options = 8;
+
+  /* refund type. */
+  RefundType refund_type = 9;
+}
+
+/* Enum for RefundType. */
+enum RefundType {
+  /* Unspecified refund type. */
+  REFUND_TYPE_UNSPECIFIED = 0;
+
+  /* Refund type for full amount back. */
+  REFUND_TYPE_FULL_AMOUNT_BACK = 1;
+
+  /* Refund type for partial refund. */
+  REFUND_TYPE_PARTIAL_REFUND = 2;
+
+  /* Refund type for partial credit. */
+  REFUND_TYPE_PARTIAL_CREDIT = 3;
+}
+
+/* Enum for IconType. */
+enum IconType {
+  /* Unspecified icon type. */
+  ICON_TYPE_UNSPECIFIED = 0;
+
+  /* Icon type for order hotbad line. */
+  ICON_TYPE_ORDER_HOTBAG_LINE = 1;
+
+  /* Icon type for refund line. */
+  ICON_TYPE_REFUND_LINE = 2;
+
+  /* Icon type for card doordash color. */
+  ICON_TYPE_CARD_DOORDASH_COLOR = 3;
+
+  /* Icon type for card payment card. */
+  ICON_TYPE_CARD_PAYMENT_CARD = 4;
+}
+
+/* Enum for RefundOptionType. */
+enum RefundOptionType {
+  /* Unspecified refund option. */
+  REFUND_OPTION_TYPE_UNSPECIFIED = 0;
+
+  /* Provide full amount back with free express delivery when it was supposed to be no refund */
+  REFUND_OPTION_TYPE_NO_REFUND_FAB_WITH_FED = 1;
+
+  /* Provide full amount back without free express delivery when it was supposed to be no refund */
+  REFUND_OPTION_TYPE_NO_REFUND_FAB_WITHOUT_FED = 2;
+
+  /* Provide full amount back with free express delivery when it was supposed to be partial refund (credit only) */
+  REFUND_OPTION_TYPE_PARTIAL_REFUND_FAB_WITH_FED_CREDIT_ONLY = 3;
+
+  /* Provide full amount back without free express delivery when it was supposed to be partial refund (credit only) */
+  REFUND_OPTION_TYPE_PARTIAL_REFUND_FAB_WITHOUT_FED_CREDIT_ONLY = 4;
+
+  /* Provide full amount back with free express delivery
+     when it was supposed to be partial refund (credit or original payment) */
+  REFUND_OPTION_TYPE_PARTIAL_REFUND_FAB_WITH_FED_REFUND = 5;
+
+  /* Provide full amount back without free express delivery
+     when it was supposed to be partial refund (credit or original payment) */
+  REFUND_OPTION_TYPE_PARTIAL_REFUND_FAB_WITHOUT_FED_REFUND = 6;
+
+  /* Refund option provided when switching an order to pickup */
+  REFUND_OPTION_TYPE_SWITCH_TO_PICKUP_FULL_REFUND = 7;
+}
+
+/* The self help page request. */
+message GetSelfHelpPageRequest {
+  /* The delivery uuid. (Required) */
+  google.protobuf.StringValue delivery_uuid = 1;
+
+  /* The page id. (Required) */
+  google.protobuf.StringValue page_id = 2;
+
+  /* Metadata for GetSelfHelpPageRequest (optional) */
+  google.protobuf.Struct metadata = 3;
+}
+
+/* The self help page response. */
+message GetSelfHelpPageResponse {
+  /* The page id. */
+  google.protobuf.StringValue page_id = 1;
+
+  /* The delivery uuid. */
+  google.protobuf.StringValue delivery_uuid = 2;
+
+  /* The self help page UI details. */
+  SelfHelpPageDetails self_help_page_details = 3;
+}
+
+/* The UI details for self help page. */
+message SelfHelpPageDetails {
+  /* The refund option page details. */
+  SelfHelpRefundPageDetails self_help_refund_page_details = 1;
+
+  /* The switch to pickup preview details. */
+  SwitchToPickupPreviewDetails switch_to_pickup_preview_details = 2;
+}
+
+/* The UI details for switch to pickup preview page. */
+message SwitchToPickupPreviewDetails {
+  /* The page title. */
+  google.protobuf.StringValue page_title = 1;
+
+  /* The title. */
+  google.protobuf.StringValue title = 2;
+
+  /* The subtitle. */
+  google.protobuf.StringValue subtitle = 3;
+
+  /* The bold part of subtitle. */
+  google.protobuf.StringValue bold_subtitle = 4;
+
+  /* The merchant name. */
+  google.protobuf.StringValue merchant_name = 5;
+
+  /* The merchant address. */
+  google.protobuf.StringValue merchant_address = 6;
+
+  /* The merchant image url. */
+  google.protobuf.StringValue merchant_img_url = 7;
+
+  /* The merchant latitude. */
+  google.protobuf.DoubleValue merchant_latitude = 8;
+
+  /* The merchant longitude. */
+  google.protobuf.DoubleValue merchant_longitude = 9;
+
+  /* The cx to rx distance. */
+  google.protobuf.StringValue c2r_distance = 10;
+
+  /* The cx to rx time. */
+  google.protobuf.StringValue c2r_time = 11;
+
+  /* The message indicates if order ready for pickup. */
+  google.protobuf.StringValue order_ready_message = 12;
+
+  /* If order ready for pickup is estimated. */
+  google.protobuf.BoolValue is_estimated_order_ready = 13;
+
+  /* The message indicates if store closing soon. Only exist when store closing soon */
+  google.protobuf.StringValue store_closing_message = 14;
+}

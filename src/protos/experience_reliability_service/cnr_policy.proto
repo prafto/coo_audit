@@ -1,0 +1,223 @@
+syntax = "proto3";
+package experience_reliability_service.cnr_policy.v1;
+
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "consumer_pricing/pricing.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.cnr_policy";
+
+// credits and refunds policy APIs
+service CnRPolicyService {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // All of these endpoints are now in cnr-platform.
+  // get cancellation policy for a given order
+  rpc GetCancellationPolicy(GetCancellationPolicyRequest) returns (GetCancellationPolicyResponse);
+  //api to fetch cnr policies for all problems ( except cancel) from ERS
+  rpc GetIssuancePolicies(GetIssuancePoliciesRequest) returns (GetIssuancePoliciesResponse);
+}
+
+// request object for dynamic criteria
+// problems array may be passed only a single argument
+message GetIssuancePoliciesRequest {
+  // delivery uuid is mandatory
+  google.protobuf.StringValue delivery_uuid = 1;
+  // non-empty array of problems
+  repeated google.protobuf.StringValue problems = 2;
+  // consumer id [NOT needed for this request]
+  google.protobuf.StringValue consumer_id = 3;
+  // user id [NOT needed for this request]
+  google.protobuf.StringValue user_id = 4;
+  // segment id [NOT needed for this request]
+  google.protobuf.StringValue consumer_segment_id = 5;
+  // delivery id
+  google.protobuf.StringValue delivery_id = 6;
+  // source of request
+  reserved 7;
+  reserved "source";
+  // source of request
+  google.protobuf.StringValue request_source = 8;
+}
+
+//currently only 5 line items that are used today are added
+message CreditRefundFormulaLineItem {
+  //tip
+  google.protobuf.FloatValue tip = 1;
+  //delivery_fee
+  google.protobuf.FloatValue delivery_fee = 2;
+  //service_fee
+  google.protobuf.FloatValue service_fee = 3;
+  //delivery_fee_tax
+  google.protobuf.FloatValue delivery_fee_tax = 4;
+  //service_fee_tax
+  google.protobuf.FloatValue service_fee_tax = 5;
+  // subtotal
+  google.protobuf.FloatValue subtotal = 6;
+  // subtotal tax
+  google.protobuf.FloatValue subtotal_tax = 7;
+  // express_delivery_fee
+  google.protobuf.FloatValue express_delivery_fee = 8;
+  // express_delivery_fee_tax
+  google.protobuf.FloatValue express_delivery_fee_tax = 9;
+}
+
+//common structure for base_cnr_formula and apology_credit_formula
+message CreditRefundFormula {
+  //rounding to nearest 500 requirement
+  google.protobuf.Int32Value ceil_to_nearest_amount = 1;
+  //percentage value
+  google.protobuf.FloatValue gpv = 2;
+  // array of line items like tip, service_fee, delivery_fee
+  CreditRefundFormulaLineItem line_items = 3;
+  //this is guaranteed amount, maps to assured_amount
+  google.protobuf.Int32Value min_amount = 4;
+  //other amount
+  google.protobuf.Int32Value other_amount = 5;
+}
+
+//response structure for a single problem
+message PolicyForProblem {
+  //problem that request is addressing
+  google.protobuf.StringValue problem = 1;
+  //base cnr formula
+  CreditRefundFormula base_cnr_formula = 2;
+  //apology
+  CreditRefundFormula apology_credit_formula = 3;
+  //check is_allowed_redelivery
+  google.protobuf.BoolValue is_allowed_redelivery = 4;
+  //mxa policy
+  CreditRefundFormula mxa_formula = 5;
+  reserved 6;
+  reserved "policy_node_id";
+  //check if policy node should send new cnr email to DP Cx
+  google.protobuf.BoolValue should_send_dp_new_cnr_email = 7;
+  //problem id (problem name concatenated with order item id)
+  google.protobuf.StringValue problem_id = 8;
+}
+
+//response for GetIssuancePolicies api
+message GetIssuancePoliciesResponse {
+  //array of individual policies for each problem
+  repeated PolicyForProblem policies = 1;
+}
+
+// get cancellation policy request
+message GetCancellationPolicyRequest {
+  // merchant order status
+  consumer_pricing.MerchantOrderStatus merchant_order_status = 1;
+  // delivery status
+  consumer_pricing.DeliveryStatus delivery_status = 2;
+  // cancellation reason
+  order.CancellationReason.CancellationReasonCategory cancellation_reason = 3;
+  // if the order is test order
+  google.protobuf.BoolValue test_order = 4;
+  // estimated delivery time
+  google.protobuf.StringValue estimated_delivery_time = 5;
+  // dasher assigned time
+  google.protobuf.StringValue dasher_assigned_time = 6;
+  // restaurant order ready time
+  google.protobuf.StringValue restaurant_order_ready_time = 7;
+  // if the cancellation is eligible for apology credit
+  google.protobuf.BoolValue is_eligible_for_apology_credit = 8;
+  // if it is pickup order
+  google.protobuf.BoolValue is_pickup_order = 9;
+  // order uuid
+  google.protobuf.StringValue order_uuid = 10;
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 11;
+  // cancellation source string of order/consumer_order.OrderCancellationSource
+  google.protobuf.StringValue cancellation_source_string = 12;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 13;
+}
+
+// get cancellation policy response
+message GetCancellationPolicyResponse {
+  // pricing policies of the cancellation
+  repeated order.PricingPolicy pricing_policies = 1;
+  // apology credit of the
+  order.ApologyCredit apology_credits = 2;
+  // if we choose not return credits
+  google.protobuf.BoolValue do_not_return_credits = 3;
+  // whether we have cancellation policy in response
+  google.protobuf.BoolValue has_cancellation_policy = 4;
+}
+
+// structure representing C&R policy
+message CnRPolicy {
+  //Cx cnr policy
+  PolicyNode base_cnr = 1;
+  //merchant accountability policy
+  PolicyNode mxa = 2;
+  //apology credits policy
+  PolicyNode apology_credits = 3;
+  //apology credits max policy
+  PolicyNode apology_credits_max = 4;
+  //is redelivery allowed in the policy
+  google.protobuf.BoolValue is_redelivery_allowed = 5;
+  //promo cnr policy
+  PromoPolicyNode promo_cnr = 6;
+}
+
+// sub structure representing what all goes with in a policy
+message PolicyNode {
+  // value could be percentage, flat amount
+  // this field is ignored when ValueType is other than GMV_PERCENT, ITEM_PERCENT
+  google.protobuf.Int32Value value = 1;
+  // enum for different types of values
+  ValueType type = 2;
+  // if round-off_amount is provided, value will be rounded to nearest roundedoff_amount.
+  // actual currency is interpreted in backend.
+  google.protobuf.Int32Value roundoff_amount = 3;
+  // this is to ensure policy gives at least specified amount
+  // actual currency is interpreted in backend.
+  google.protobuf.Int32Value assured_amount = 4;
+  reserved 5, 6;
+  reserved "campaign_id", "promo_amount";
+}
+
+// sub structure representing a promotion that may be applied to a policy
+message PromoPolicyNode {
+  // campaign id of the promotion (from campaign manager)
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+// represents distinct types PolicyNode.value, that are interpretable
+enum ValueType {
+  // default unspecified
+  UNSPECIFIED = 0;
+  // to represent a PolicyNode.value like 75% of GMV
+  GMV_PERCENT = 1;
+  // to represent a PolicyNode.value like 75% of ITEM
+  ITEM_PERCENT = 2;
+  // where PolicyNode.value should be interpreted as flat amount
+  // currency will be interpreted appropriately in backend
+  FLAT_AMOUNT = 3;
+  // represents TIPS, PolicyNode.value is ignored
+  TIPS = 4;
+  // represents delivery fee, PolicyNode.value is ignored
+  DELIVERY_FEE = 5;
+  // represents service fee, PolicyNode.value is ignored
+  SERVICE_FEE = 6;
+  // represents tips and fees, PolicyNode.value is ignored
+  TIPS_AND_FEES = 7;
+  // represents subtotal and tax, PolicyNode.value is ignored
+  SUBTOTAL_AND_TAX = 8;
+  // a case when there is no charge or not applicable.
+  NOT_APPLICABLE = 9;
+  // represents express delivery fee, PolicyNode.value is ignored
+  EXPRESS_DELIVERY_FEE = 10;
+  // to represent a PolicyNode.value like 75% of side item
+  SIDE_ITEM_PERCENT = 11;
+}

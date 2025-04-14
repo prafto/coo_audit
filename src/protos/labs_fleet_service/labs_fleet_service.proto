@@ -1,0 +1,753 @@
+syntax = "proto3";
+
+package labs_fleet_service.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "identity/authentication.proto";
+import "labs_fleet_service/fleet_actions.proto";
+import "labs_fleet_service/mission.proto";
+import "robot/event.proto";
+import "robot/fleet_payload.proto";
+import "robot/mission.proto";
+import "robot/operating_zone.proto";
+import "robot/remote_assist_payload.proto";
+import "robot/robot.proto";
+import "robot/robot_payload.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.labs_fleet_service.v1";
+
+// Labs Fleet Service orchestrates the robot fleet of the labs team.
+service LabsFleetService {
+  // Unified gateway annotations
+  option (doordash.api.service) = {
+    name: "labs-fleet-service"
+    url: "labs-fleet-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["labs-fleet-service"]
+    owner: {
+      // https://doordash.chronosphere.io/collections/doordash-labs-remote-assistance-engi
+      id: "doordash-labs-remote-assistance-engi"
+      name: "ddlabs-ra-eng"
+      slack_channel: "#labs-fleet-service-builds"
+      email_alias: "ddlabs-ra-eng@doordash.com"
+    }
+    target_products: [CX] /* LFS UG APIs will only be used by internal tools */
+  };
+
+  // =======================================================
+  // User APIs
+  // =======================================================
+
+  // GetCurrentUser returns the current authenticated user's metadata
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse) {
+    option (google.api.http) = {get: "/labs-fleet-service/v1/user/current"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // =======================================================
+  // Fleet APIs
+  // =======================================================
+
+  // ListRobots returns a list of robot states
+  rpc ListRobots(ListRobotsRequest) returns (ListRobotsResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/listRobots"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // ListMissions returns a list of missions
+  rpc ListMissions(ListMissionsRequest) returns (ListMissionsResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/listMissions"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // GetMission returns a mission
+  rpc GetMission(GetMissionRequest) returns (GetMissionResponse) {
+    option (google.api.http) = {get: "/labs-fleet-service/v1/mission/{mission_id}"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // TerminateDelivery sets the terminal state of an order doing an internal
+  // hand-off
+  rpc TerminateDelivery(TerminateDeliveryRequest) returns (TerminateDeliveryResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/terminateDelivery"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // CancelMission initiate cancelation of an active or pending delivery;
+  // Functions similarly to DeliveryCancel - except DeliveryCancel serves
+  // requests from ADP only
+  rpc CancelMission(CancelMissionRequest) returns (CancelMissionResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/mission/{mission_id}/cancel"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Sends an mission state change request to the robot; this is used to signal
+  // the robot to transition to/from the READY and NOT_READY states
+  rpc TransitionMissionState(TransitionMissionStateRequest) returns (TransitionMissionStateResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/robot/{robot_id}/transition-mission-state"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // TestDeliveryAssign triggers a test delivery assignment
+  rpc TestDeliveryAssign(TestDeliveryAssignRequest) returns (TestDeliveryAssignResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/testDeliveryAssign"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // AssignRoute assigns a route to a robot
+  rpc AssignRoute(AssignRouteRequest) returns (AssignRouteResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/assignRoute"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // UpdateRobotConfig updates robot configurations
+  rpc UpdateRobotConfig(UpdateRobotConfigRequest) returns (UpdateRobotConfigResponse) {
+    option (google.api.http) = {
+      put: "/labs-fleet-service/v1/robotConfig/{canonical_id}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // ListOperatingZones returns all available operating zones
+  rpc ListOperatingZones(ListOperatingZonesRequest) returns (ListOperatingZonesResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/listOperatingZones"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // PerformFleetAction issues a command to robots in the fleet to execute.
+  rpc PerformFleetAction(PerformFleetActionRequest) returns (PerformFleetActionResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/performFleetAction"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // =======================================================
+  // Robot API
+  // =======================================================
+
+  // RobotCheckin upserts robot state
+  rpc RobotCheckin(RobotCheckinRequest) returns (RobotCheckinResponse) {}
+
+  // =======================================================
+  // Remote Assist APIs
+  // =======================================================
+
+  // OperatorCheckin updates the operator(RAC) states
+  rpc OperatorCheckin(OperatorCheckinRequest) returns (OperatorCheckinResponse);
+  // Connect initiates a connection between a robot and an operator
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Disconnect stops a remote assist connection between a robot and an
+  // operator
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+
+  // =======================================================
+  // Autonomous Platform Partner APIs
+  // =======================================================
+
+  // Returns the fleet's ability to fulfill a given a delivery
+  rpc DeliveryGetQuote(DeliveryGetQuoteRequest) returns (DeliveryGetQuoteResponse);
+  // Assigns a delivery
+  rpc DeliveryAssign(DeliveryAssignRequest) returns (DeliveryAssignResponse);
+  // Cancels a delivery
+  rpc DeliveryCancel(DeliveryCancelRequest) returns (DeliveryCancelResponse);
+  // Initiates a hand-off to/from robot (e.g. open hatch to load food)
+  rpc DeliveryHandoff(DeliveryHandoffRequest) returns (DeliveryHandoffResponse);
+
+  // =======================================================
+  // Test APIs
+  // =======================================================
+
+  // Creates a short-lived robot for testing
+  rpc CreateEphemeralRobot(CreateEphemeralRobotRequest) returns (CreateEphemeralRobotResponse) {}
+
+  // Updates the state of an existing ephemeral robot
+  rpc UpdateEphemeralRobot(UpdateEphemeralRobotRequest) returns (UpdateEphemeralRobotResponse) {}
+
+  // =======================================================
+  // Events APIs
+  // =======================================================
+
+  // Creates a robot event
+  rpc CreateRobotEvent(CreateRobotEventRequest) returns (CreateRobotEventResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/robotEvent/create"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Updates a robot event
+  rpc UpdateRobotEvent(UpdateRobotEventRequest) returns (UpdateRobotEventResponse) {
+    option (google.api.http) = {
+      put: "/labs-fleet-service/v1/robotEvent/{event_id}"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Lists robot events
+  rpc GetRobotEvents(GetRobotEventsRequest) returns (GetRobotEventsResponse) {
+    option (google.api.http) = {
+      post: "/labs-fleet-service/v1/robotEvents"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// GetCurrentUserRequest is used to get the authenticated user's metadata
+message GetCurrentUserRequest {}
+
+// GetCurrentUserResponse is the response for a GetCurrentUser query
+message GetCurrentUserResponse {
+  // User metadata
+  identity_service.UserInfo user = 1;
+}
+
+// Event creation request
+message CreateRobotEventRequest {
+  // Robot id associated with the event
+  string robot_id = 1;
+  // Priority of event
+  robot.v1.RobotEventSeverity severity = 2;
+  // Include event-specific metadata upon creation (e.g. rescue event data)
+  robot.v1.RobotEventData event_data = 3;
+  // Initial robot event state; can only be ROBOT_EVENT_STATE_NO_ACTION_NEEDED/ROBOT_EVENT_STATE_ACTION_NEEDED;
+  robot.v1.RobotEventState initial_event_state = 4;
+  // Description of the event; this may be left unspecified and filled in later
+  google.protobuf.StringValue description = 5;
+}
+
+// Event creation response
+message CreateRobotEventResponse {
+  // Created event
+  robot.v1.RobotEvent robot_event = 1;
+}
+
+// Event update request; updates mutable fields of an event
+message UpdateRobotEventRequest {
+  // Id of the event that is to be updated
+  string event_id = 1;
+  // Free form text description of the event
+  google.protobuf.StringValue description = 2;
+  // Event type specific data
+  robot.v1.RobotEventData event_data = 3;
+  // Robot event state; use to progress the event state machine
+  robot.v1.RobotEventState event_state = 4;
+}
+
+// Event update response
+message UpdateRobotEventResponse {
+  // Updated event
+  robot.v1.RobotEvent robot_event = 1;
+}
+
+// Event update request;
+message GetRobotEventsRequest {
+  reserved 4;
+  reserved "event_states";
+
+  // Return events matching any robot ids; when left unspecified, matches all robot_ids
+  repeated string robot_ids = 1; // e.g. badger-1, badger-3
+  // Return events matching any operation area ids; when left unspecified, matches all operation_area_ids
+  repeated string operation_area_ids = 2; // e.g. [Prod] Mesa 3
+  // Returns events matching any robot event ids; when left unspecified, matches all robot_event_ids
+  repeated string robot_event_ids = 3;
+  // Limit the number of events returned; when left unspecified, a default limit is used
+  google.protobuf.Int32Value limit = 5;
+  // Returns events matching event state; when left unspecified, matches all event_states
+  repeated robot.v1.RobotEventState event_states_filter = 6;
+}
+
+// Event update response
+message GetRobotEventsResponse {
+  // Robot events that matches the request filters
+  repeated robot.v1.RobotEvent robot_events = 1;
+}
+
+// RobotCheckinRequest updates the robot state
+message RobotCheckinRequest {
+  // Robot's unique identifier (e.g. badger-1)
+  string robot_canonical_id = 1;
+  // Request data
+  robot.v1.RobotCheckinRequestPayload payload = 2;
+  // [DEPRECATED] Populate robot_ip in RobotCheckinRequestPayload
+  string robot_ip = 3 [deprecated = true];
+}
+
+// RobotCheckinResponse response to a robot checkin
+message RobotCheckinResponse {
+  // Response data
+  robot.v1.RobotCheckinResponsePayload payload = 1;
+}
+
+// ListRobotsRequest is used to get a list of robots
+// It includes filters and other pagination options
+message ListRobotsRequest {
+  // Request data
+  robot.v1.ListRobotsRequestPayload payload = 1;
+}
+
+// ListRobotsResponse is the response for a ListRobots query
+message ListRobotsResponse {
+  // Response data
+  robot.v1.ListRobotsResponsePayload payload = 1;
+}
+
+// OperatorCheckinRequest updates the operator(RAC) state
+message OperatorCheckinRequest {
+  // Operator's unique identifier (e.g. ocu-1)
+  string operator_canonical_id = 1;
+  // Request data
+  robot.v1.OperatorCheckinRequestPayload payload = 2;
+}
+
+// OperatorCheckinResponse response to an operator checkin
+message OperatorCheckinResponse {
+  // Response data
+  robot.v1.OperatorCheckinResponsePayload payload = 1;
+}
+
+// ConnectRequest contains the necessary data to connect a robot to an
+// operator This can only be issued from an operator.
+message ConnectRequest {
+  // Operator's unique identifier (e.g. ocu-1)
+  string operator_canonical_id = 1;
+  // Request data
+  robot.v1.ConnectRequestPayload payload = 2;
+}
+
+// ConnectResponse is the confirmation of a successful connection to a robot
+message ConnectResponse {
+  // Response data
+  robot.v1.ConnectResponsePayload payload = 1;
+}
+
+// DisconnectRequest signals to disconnect self from an operator or robot.
+// This can be issued from either an operator or a robot.
+message DisconnectRequest {
+  // Operator's unique identifier (e.g. ocu-1)
+  string operator_canonical_id = 1;
+  // Robot's unique identifier (e.g. badger-1)
+  string robot_canonical_id = 2;
+  // Request data
+  robot.v1.DisconnectRequestPayload payload = 3;
+}
+
+// DisconnectResponse is issued when the disconnect was successful
+message DisconnectResponse {
+  // Response data
+  robot.v1.DisconnectResponsePayload payload = 1;
+}
+
+// DeliveryGetQuoteRequest includes delivery metadata that may be assigned to
+// fleet
+message DeliveryGetQuoteRequest {
+  // Pick-up location latitude coordinate
+  double pickup_lat = 1;
+  // Pick-up location longitude coordinate
+  double pickup_lon = 2;
+  // Drop-off location latitude coordinate
+  double dropoff_lat = 3;
+  // Drop-off location longitude coordinate
+  double dropoff_lon = 4;
+  // Estimated pickup time of the delivery
+  google.protobuf.Timestamp pickup_time = 5;
+  // Name of the merchant delivery originates from
+  string merchant_name = 6;
+  // Unique identifier for merchant
+  string merchant_id = 7;
+  // A postal address for pickup location
+  string pickup_address = 8;
+  // A postal address for dropoff location
+  string dropoff_address = 9;
+  // Whether the dropoff location was overridden by the CX
+  bool is_dropoff_overridden = 10;
+  // Whether an order is for testing purpose
+  google.protobuf.BoolValue is_test = 11;
+  // Internal DD delivery ID associated with the delivery
+  google.protobuf.Int64Value delivery_id = 12;
+  // Operation area id; DEPRECATED: use operation_areas
+  google.protobuf.StringValue operation_area_id = 13;
+  // Tags associated with the operation area; DEPRECATED: use operation_areas
+  repeated string operation_area_tags = 14 [deprecated = true];
+  // Vehicle config ids supported in this operation area; DEPRECATED: use
+  // operation_areas
+  repeated string allowed_vehicle_config_ids = 15 [deprecated = true];
+  // Explicit robot id to perform the quote on. This is used for ephemeral
+  // robots only.
+  google.protobuf.StringValue target_robot_id = 16;
+  // Operation area info for DeliveryGetQuote considered operation areas
+  message OperationArea {
+    // ID of operation area
+    string id = 1;
+    // Tags associated with the operation area
+    repeated string tags = 2;
+  }
+  // Operation areas considered for the delivery
+  repeated OperationArea operation_areas = 17;
+}
+
+// DeliveryGetQuoteResponse describes whether a delivery is fulfillable
+message DeliveryGetQuoteResponse {
+  // Whether the delivery is fulfillable by a robot in the fleet
+  // In the future, there may be additional fields to handle partially
+  // fulfillable deliveries
+  bool is_fulfillable = 1;
+  // Estimated time of pickup
+  google.protobuf.Timestamp eta_to_pickup_location = 2;
+  // Estimated duration of delivery from pick-up to drop-off in minutes
+  int32 estimated_delivery_duration = 3;
+  // Selected operation area; May be null if the provider does not support
+  // operation areas
+  google.protobuf.StringValue operation_area_id = 4;
+  // List of possible locations that are better suited for drop off
+  repeated robot.v1.LatitudeLongitude suggested_dropoff_locations = 5;
+}
+
+// DeliveryAssignRequest includes delivery information that needs to be
+// assigned to a robot
+message DeliveryAssignRequest {
+  // The delivery ID vended from fulfillment platform
+  string external_delivery_id = 1;
+  // Name of the merchant
+  string merchant_name = 2;
+  // Pick-up location latitude coordinate
+  double pickup_lat = 3;
+  // Pick-up location longitude coordinate
+  double pickup_lon = 4;
+  // Drop-off location latitude coordinate
+  double dropoff_lat = 5;
+  // Drop-off location longitude coordinate
+  double dropoff_lon = 6;
+  // First and last name initial of the consumer. e.g. John D.
+  string consumer_name = 7;
+  // Estimated pickup time of the delivery
+  google.protobuf.Timestamp pickup_time = 8;
+  // A postal address for pickup location
+  string pickup_address = 9;
+  // A postal address for dropoff location
+  string dropoff_address = 10;
+  // Unique identifier for merchant
+  string merchant_id = 11;
+  // Delivery instruction from consumer
+  google.protobuf.StringValue delivery_instruction = 12;
+  // Whether the dropoff location was overridden by the CX
+  bool is_dropoff_overridden = 13;
+  // Whether an order is for testing purpose
+  google.protobuf.BoolValue is_test = 14 [deprecated = true];
+  // Internal DD delivery ID associated with the delivery
+  google.protobuf.Int64Value delivery_id = 15;
+  // Operation area id
+  google.protobuf.StringValue operation_area_id = 16;
+  // Tags associated with the operation area
+  repeated string operation_area_tags = 17;
+  // Vehicle config ids supported in this operation area
+  repeated string allowed_vehicle_config_ids = 18;
+  // Explicit robot id to perform the assignment on. This is used for
+  // ephemeral robots only.
+  google.protobuf.StringValue target_robot_id = 19;
+}
+
+// DeliveryAssignResponse confirms that a robot has been assigned to a
+// delivery
+message DeliveryAssignResponse {
+  // Contains specifics about delivery fulfillment details
+  message DeliverySpec {
+    // The assigned delivery vehicle identifier
+    string vehicle_id = 1;
+    // Estimated time of pickup
+    google.protobuf.Timestamp eta_to_pickup_location = 2;
+    // Estimated duration of delivery from pick-up to drop-off in minutes
+    int32 estimated_delivery_duration = 3;
+    // First party delivery experience traking url, if it exists
+    google.protobuf.StringValue delivery_tracking_url = 4;
+    // Vehicle config id of the chosen vehicle
+    google.protobuf.StringValue vehicle_config_id = 5;
+  }
+  // Contains specifics about delivery fulfillment details
+  // Leaving this unset means the delivery could not be assigned
+  DeliverySpec delivery_spec = 1;
+}
+
+// DeliveryCancelRequest is the payload for cancelling deliveries
+message DeliveryCancelRequest {
+  // The delivery ID of the assigned delivery
+  string external_delivery_id = 1;
+}
+
+// DeliveryCancelResponse confirms the cancellation of a delivery
+message DeliveryCancelResponse {
+  // Cancellation response codes
+  enum CancelResponseCode {
+    // No cancel response code specified
+    CANCEL_RESPONSE_CODE_UNSPECIFIED = 0;
+    // Cancellation was successful
+    CANCEL_RESPONSE_CODE_OK = 1;
+  }
+
+  // Status message for the cancellation
+  string message = 1;
+  // Status code for this cancellation
+  CancelResponseCode code = 2;
+}
+
+// DeliveryHandoffRequest is used to open the cargo of the vehicle with the
+// delivery
+message DeliveryHandoffRequest {
+  // The delivery ID of the assigned delivery
+  string external_delivery_id = 1;
+}
+
+// DeliveryHandoffResponse confirms the execution of the hand-off
+message DeliveryHandoffResponse {
+  // Handoff response codes
+  enum HandoffResponseCode {
+    // No cancel response code specified
+    HANDOFF_RESPONSE_CODE_UNSPECIFIED = 0;
+    // Cancellation was successful
+    HANDOFF_RESPONSE_CODE_OK = 1;
+  }
+
+  // Status message for the hand-off
+  string message = 1;
+  // Status code for this hand-off
+  HandoffResponseCode code = 2;
+}
+
+// TestDeliveryAssignRequest includes simulated delivery information that
+// needs to be assigned to a robot
+message TestDeliveryAssignRequest {
+  // UUID for this test delivery. If not provided, a random UUID will be
+  // generated.
+  string external_delivery_id = 1;
+  // Name of the merchant
+  string merchant_name = 2;
+  // Preferred robot id to assign to
+  string robot_id = 7;
+  // Pickup location
+  robot.v1.Location pickup_location = 8;
+  // Dropoff location
+  robot.v1.Location dropoff_location = 9;
+  // Whether or not to bypass the labs-router-service for route eligibility
+  // and ETAs. Useful for testing changes to robot router.
+  bool force_bypass_router_service = 10;
+  // reserved fields - previously deprecated
+  reserved 3, 4, 5, 6;
+  reserved "pickup_lat", "pickup_lon", "dropoff_lat", "dropoff_lon";
+}
+
+// TestDeliveryAssignResponse confirms that a robot has been assigned to a
+// delivery
+message TestDeliveryAssignResponse {
+  // Contains specifics about delivery fulfillment details
+  // Leaving this unset means the delivery could not be assigned
+  DeliveryAssignResponse.DeliverySpec delivery_spec = 1;
+}
+
+// AssignRouteRequest contains route information
+message AssignRouteRequest {
+  // Robot id to assign the route to
+  string robot_id = 1;
+  // Destination lat/lon(s) for the robot to route to
+  repeated robot.v1.Location destinations = 3;
+  // Whether or not to bypass the labs-router-service for route eligibility
+  // and ETAs. Useful for testing changes to robot router.
+  bool force_bypass_router_service = 4;
+  // reserved - previously deprecated
+  reserved 2;
+  reserved "destination_latlons";
+}
+
+// AssignRouteResponse confirms that a robot has been assigned a route
+message AssignRouteResponse {}
+
+// List request filtering options
+message ListOperatingZonesRequest {
+  // Matches any of the operating zone id
+  repeated string operating_zone_id_filters = 1;
+  // Get operating zones for this robot
+  string robot_id = 2;
+}
+
+// Operating zone data
+message ListOperatingZonesResponse {
+  // Operating zones
+  repeated robot.v1.OperatingZone operating_zones = 1;
+}
+
+// Request to create an Ephemeral Robot
+message CreateEphemeralRobotRequest {
+  // In V1, ephemeral robot quotes and assignments will bypass the router
+  // service and make use of the flags below to decide if quotes and
+  // assignments should succeed or fail.
+
+  // Whether DeliveryGetQuote should return success or failure
+  google.protobuf.BoolValue pass_quote = 1;
+  // Whether DeliveryAssign should return success or failure
+  google.protobuf.BoolValue pass_assignment = 2;
+  // Name of the ADP sandbox hostname for ephemeral robot updates to be routed
+  // to. If not set, ADP requests will be sent to prod ADP.
+  // See 'Sandbox Headers' section in:
+  // https://docs.google.com/document/d/1Xk3TWget4xg-w4WWM94bbNECRXUhLUOCthV_EAOgRPk/edit#bookmark=id.op8eb3jq7rjt
+  // for more details.
+  google.protobuf.StringValue adp_sandbox_hostname = 3;
+}
+
+// Response for creating an Ephemeral Robot
+message CreateEphemeralRobotResponse {
+  // ID of the created robot - needed for state transition
+  // The robot_id returned will be the next available ID.
+  string robot_id = 1;
+}
+
+// Request to update an Ephemeral Robot
+message UpdateEphemeralRobotRequest {
+  // robot_id of an existing ephemeral robot (i.e returned from Create)
+  string robot_id = 1;
+  // Mission state to set the ephemeral robot to.
+  robot.v1.MissionState mission_state = 2;
+  // CompletionMethod or FailureAction needed to trigger
+  // the termination flow of a mission for the COMPLETED or FAILED states
+  // respectively
+  robot.v1.DirectiveResults directive_results = 3;
+  // For the robot's reported location to change so ADP to be able to
+  // e.g test the UI
+  robot.v1.LatitudeLongitude lat_long = 4;
+  // note that additional fields can be added as necessary.
+}
+
+// Response for updating an Ephemeral Robot
+message UpdateEphemeralRobotResponse {
+  // Current mission state of the ephemeral robot
+  robot.v1.MissionState mission_state = 1;
+}
+
+// Request to update Robot Config
+message UpdateRobotConfigRequest {
+  // Robot canonical id
+  string canonical_id = 1;
+  // Updated robot config
+  robot.v1.RobotConfig robot_config = 2;
+}
+
+// Response after updating Robot Config
+message UpdateRobotConfigResponse {}
+
+// Request for performing a fleet action
+message PerformFleetActionRequest {
+  // List of robot ids to perform the fleet action
+  repeated string robot_ids = 1;
+  // Fleet action to perform
+  FleetAction fleet_action = 2;
+}
+
+// Response after sending a fleet action command
+message PerformFleetActionResponse {}

@@ -1,0 +1,137 @@
+syntax = "proto3";
+package self_help_service.voice_platform.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.selfhelpservice.voice";
+
+// Service contract of Voice Platform. Voice Platform will be migrated to its own
+// service but for now we will host it under self-help-service web app
+// Endpoints are exposed using Unified Gateway.
+service VoicePlatform {
+  option (doordash.api.service) = {
+    name: "self-help-service"
+    // service: "self-help-service", app: web
+    url: "self-help-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["self_help"]
+    api_key_name: "SELF_HELP_SERVICE_API_KEY"
+    owner: {
+      id: "delivery-reliability-self-serve-expe"
+      name: "self-serve-experience-service"
+      slack_channel: "#ask-self-serve-experience"
+      email_alias: "eng-self-serve-experience@doordash.com"
+    }
+    // Target products include Internal Tx using THQ
+    target_products: [INTERNAL]
+  };
+
+  // RPC to get Amazon Connect contacts.
+  rpc GetConnectContacts(GetConnectContactsRequest) returns (GetConnectContactsResponse) {
+    option (google.api.http) = {
+      post: "/self_help/v1/voice/connect_contacts"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      inject_user_roles: true
+    };
+  }
+}
+
+// Represents request for getting Amazon Connect contact record for given case id.
+message GetConnectContactsRequest {
+  // Id representing an order or delivery or task group
+  oneof id {
+    // Id representing a salesforce case. This field is stored as attribute key
+    // "Case_id" in Amazon Connect. E.g. id "500Kd01234YSrFVIA1"
+    google.protobuf.StringValue salesforce_case_id = 1;
+    // Id representing a CMP case id. This field is stored as attribute key
+    // "cmp_case_id" in Amazon Connect. E.g. id "c88b333d-09f4-5dab-9daf-842c796cb54b"
+    google.protobuf.StringValue cmp_case_id = 2;
+  }
+  // --------------------------------------------------------------------------
+  // Amazon Connect searchContacts API allows clients to search for contacts in
+  // maximum of 8 weeks time window. Hence, when client does not set start_time
+  // and previous_days, then service will search from current timestamp till
+  // 56 days in past.
+  // --------------------------------------------------------------------------
+  // Timestamp representing the time since when to start the search.
+  // When not set, current timestamp is used.
+  google.protobuf.Timestamp start_time = 3;
+  // Int representing the number of previous days to search for.
+  // When not set, default 56 days are used.
+  // Maximum allowed value is 56. This limitation is imposed by
+  // Amazon Connect searchContacts API.
+  google.protobuf.Int32Value previous_days = 4;
+}
+
+// Represents response with Amazon Connect contact records.
+message GetConnectContactsResponse {
+  // Represents list of Amazon Connect contacts.
+  repeated ConnectContact contacts = 1;
+}
+
+// Represents Amazon Connect contact record.
+message ConnectContact {
+  // Information pertaining to the agent who worked on the contact.
+  Agent agent = 1;
+  // Pre-signed URL of S3 object representing audio recording.
+  google.protobuf.StringValue audio_recording_pre_signed_url = 2;
+  // Amazon Connect contact id.
+  google.protobuf.StringValue contact_id = 3;
+  // Information pertaining to the customer who initiated the contact.
+  Customer customer = 4;
+  // Contact disconnect timestamp.
+  google.protobuf.Timestamp disconnect_timestamp = 5;
+  // Duration in seconds of contact (disconnect time - initiation time).
+  google.protobuf.Int64Value duration_seconds = 6;
+  // Initiation method of the contact, e.g. INBOUND, OUTBOUND, TRANSFER.
+  google.protobuf.StringValue initiation_method = 7;
+  // Contact initiation timestamp.
+  google.protobuf.Timestamp initiation_timestamp = 8;
+}
+
+// Represents Connect agent information
+message Agent {
+  // Agent id registered in Connect.
+  google.protobuf.StringValue agent_id = 1;
+  // DoorDash user id of the agent
+  google.protobuf.StringValue dd_user_id = 2;
+  // Email of the agent
+  google.protobuf.StringValue email = 3;
+  // First name of the agent
+  google.protobuf.StringValue first_name = 4;
+  // Last name of the agent.
+  google.protobuf.StringValue last_name = 5;
+}
+
+// Represents customer information.
+message Customer {
+  // Type of the customer contact.
+  enum ContactType {
+    // Unspecified type
+    CONTACT_TYPE_UNSPECIFIED = 0;
+    // Consumer contact type
+    CONTACT_TYPE_CX = 1;
+    // Dasher contact type
+    CONTACT_TYPE_DX = 2;
+    // Merchant contact type
+    CONTACT_TYPE_MX = 3;
+  }
+  // Contact type.
+  ContactType contact_type = 1;
+  // Customer phone number.
+  google.protobuf.StringValue phone_number = 2;
+  // Customer name.
+  google.protobuf.StringValue customer_name = 3;
+}

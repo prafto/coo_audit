@@ -1,0 +1,221 @@
+syntax = "proto3";
+package experience_reliability_service.support_self_help.v1;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.support_self_help";
+
+service SupportSelfHelpService {
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  rpc GetDasherPayouts(GetDasherPayoutsRequest) returns (GetDasherPayoutsResponse);
+  // This is directly calling DRS to get never_delivered_flags
+  rpc GetNeverDeliveredFlags(NeverDeliveredFlagsRequest) returns (NeverDeliveredFlagsResponse);
+
+  // IsStoreClosed for Dasher Self Help in ERS
+  rpc IsStoreClosed(IsStoreClosedRequest) returns (IsStoreClosedResponse);
+
+  rpc PostAppFeedback(AppFeedbackRequest) returns (GeneralResponse);
+  rpc EscalateOrder(EscalateOrderRequest) returns (GeneralResponse);
+  rpc EscalateOrderResolution(EscalateOrderResolutionRequest) returns (GeneralResponse);
+  rpc SupportEscalate(SupportEscalateRequest) returns (GeneralResponse);
+  rpc GetDynamicMenu(DynamicMenuRequest) returns (DynamicMenuResponse);
+}
+
+message NeverDeliveredFlagsRequest {
+  google.protobuf.Int64Value consumer_id = 1;
+}
+
+// Exact field names coming from DRS
+message NeverDeliveredFlagsResponse {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.Int32Value cx_unavail_last_3_orders_flag = 2;
+  google.protobuf.Int32Value lifetime_nd_no_sms_flag = 3;
+  google.protobuf.Int32Value nd_l30d_flag = 4;
+}
+
+message GetDasherPayoutsRequest {
+  google.protobuf.Int64Value dasher_id = 1;
+
+  // This will return the first failed record if there's one, else it will return the first entry.
+  google.protobuf.BoolValue get_first_failed_or_first_entry = 2;
+}
+
+message GetDasherPayoutsResponse {
+  repeated DasherPayout payouts = 3;
+}
+
+enum PayoutType {
+  UNKNOWN_PAYOUT_TYPE = 0;
+  FAST_PAY = 1;
+  REGULAR = 2;
+  DASHER_DIRECT = 3;
+}
+
+enum PayoutStatus {
+  UNKNOWN_PAYOUT_STATUS = 0;
+  PAID = 1;
+  PENDING = 2;
+  FAILED = 3;
+  PENDING_ACTION = 4; // Dasher Direct status
+}
+
+enum PayoutIssueType {
+  UNKNOWN_ISSUE_TYPE = 0;
+  OTHER = 1;
+  STRIPE_PAYOUT_ACCT_MISSING = 2;
+  STRIPE_PAYOUT_DISALLOWED = 3;
+  FAST_PAY_DEBIT_CARD_ISSUE = 4;
+  DASHER_DIRECT_DEBIT_CARD_ISSUE = 5;
+}
+
+message PayoutIssue {
+  PayoutIssueType issue_type = 3;
+  google.protobuf.StringValue description = 5;
+}
+
+message DateRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+message DasherPayout {
+  PayoutType type = 1;
+
+  google.protobuf.StringValue id = 2;
+
+  // transfer.submitted_at
+  google.protobuf.Timestamp initiated_on = 3;
+
+  oneof deposited {
+    // only has value if StatusEnum == PAID
+    google.protobuf.Timestamp on = 4;
+
+    // if it's not deposited yet, we provide an estimate
+    DateRange estimate = 5;
+  }
+
+  // see https://github.com/doordash/payment-service-java-client/blob/master/payout_v1/docs/TransferWithReversalStatus.md#StatusEnum
+  PayoutStatus status = 6;
+
+  // last4 + branding/institution
+  google.protobuf.StringValue deposited_to = 7;
+
+  // only has value if status == FAILED
+  PayoutIssue issue = 10;
+
+  money.MonetaryFields money = 11;
+}
+
+/*
+ * Check if store is closed
+ */
+message IsStoreClosedRequest {
+  // Store id
+  google.protobuf.StringValue store_id = 2;
+}
+
+/*
+ * Store closed response
+ */
+message IsStoreClosedResponse {
+  /*
+   * Store status
+   */
+  google.protobuf.BoolValue status = 1;
+}
+
+message AppFeedbackRequest {
+  // delivery uuid for delivery. Will convert to delivery id in DRS
+  google.protobuf.StringValue delivery = 1;
+  google.protobuf.StringValue feedback = 2;
+}
+
+message GeneralResponse {
+  google.protobuf.StringValue message = 1;
+}
+
+message EscalateOrderRequest {
+  // delivery uuid for delivery. Will convert to delivery id in DRS
+  google.protobuf.StringValue delivery = 1;
+  google.protobuf.StringValue details = 2;
+}
+
+message EscalateOrderResolutionRequest {
+  // delivery uuid for delivery. Will convert to delivery id in DRS
+  google.protobuf.StringValue delivery = 1;
+  google.protobuf.StringValue id = 2;
+  google.protobuf.StringValue details = 3;
+}
+
+message SupportEscalateRequest {
+  google.protobuf.StringValue priority = 1; /* critical/rejected/urgent/cx-selfhelp-review/cx-selfhelp-follow-up*/
+  google.protobuf.StringValue issue_recap = 2; /* order resolution object */
+  google.protobuf.StringValue action_required = 3; /* resolve/resolved */
+  google.protobuf.Int64Value delivery_id = 4; /* delivery id because DRS  */
+  google.protobuf.Int64Value user_id = 5; /* user id */
+}
+
+// Self-help dynamic menus
+message DynamicMenuRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue request_type = 2;
+}
+
+message DynamicMenuResponse {
+  repeated SHProblem menu_problems = 1;
+}
+
+message SHProblem {
+  google.protobuf.StringValue problem_name = 1; // C&R problem name, e.g. "missing_main_item"
+  google.protobuf.StringValue display_name = 2; // Cx display name (translated). e.g. "Main item was missing"
+  google.protobuf.StringValue examples = 3; // e.g. "Didn't receive one of my tacos" (optional)
+  google.protobuf.StringValue problem_type = 4; // problem request type e.g. missing, incorrect, missing_incorrect, quality, dasher_quality
+  SHDetails details = 5; // details textbox
+  SHAddOn add_on = 6; // extra selectors (optional)
+  SHPhotoProofDetails photo_proof_details = 7; // details about photo proof
+}
+
+message SHDetails {
+  google.protobuf.BoolValue is_required = 1; // Is details description box required
+  google.protobuf.StringValue title = 2; // e.g. "Provide more details"
+  google.protobuf.StringValue subtitle = 3; // e.g. "Description"
+  google.protobuf.StringValue placeholder = 4; // e.g. "Your detailed feedback will help the merchant provide a better experience next time."
+  google.protobuf.StringValue description = 5; // e.g. "We want to understand what happened"
+}
+
+message SHAddOn {
+  google.protobuf.StringValue header = 1; // e.g. "What's missing or incorrect?"
+  google.protobuf.BoolValue is_required = 2; // are selectors required
+  google.protobuf.BoolValue show_item_list = 3; // Deprecated for show_main_item and show_extras_list. Do not use.
+  SHAddOnSelection selector = 4; // additional selectors
+  google.protobuf.BoolValue show_main_item = 5; // show main order item
+  google.protobuf.BoolValue show_extras_list = 6; // show list of order items/addons
+}
+
+message SHAddOnSelection {
+  google.protobuf.StringValue title = 1; // Section header e.g. "Which items?"
+  repeated SHAddOnOption options = 2; // List of selectors
+}
+
+message SHAddOnOption {
+  google.protobuf.StringValue display_text = 1; // Text next to selector
+  google.protobuf.StringValue metadata = 2; // Text to send to backend
+  google.protobuf.StringValue metadata_cx_localized = 3; // Metadata localized based on Cx language
+}
+
+message SHPhotoProofDetails {
+  google.protobuf.BoolValue photo_proof_required = 1; // Returns whether photo proof required(true), optional(false), or not required at all(null)
+  google.protobuf.BoolValue allow_gallery = 2; // Returns whether gallery is allowed(true), not allowed(false), or null when photo_proof_required is null
+}

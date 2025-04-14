@@ -1,0 +1,488 @@
+syntax = "proto3";
+
+package store_availability.v2;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "StoreAvailabilityProto";
+option java_package = "com.doordash.merchantdataservice.storeavailability.protobuf.v2";
+
+// The consumer-facing V2 StoreAvailabilityService.
+service StoreAvailabilityService {
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+
+  // Cx facing Store Availability V2 endpoint(single), provides more detailed information,
+  // including unavailable reason breakdown, next open/close time.
+  // Mostly backwards compatible with the v1 store_availability.StoreAvailabilityService.GetStoreAvailability endpoint.
+  // Reach out to the #eng-mx-platform channel if you want to start a migration.
+  rpc GetConsumerStoreAvailability(GetConsumerStoreAvailabilityRequest) returns (GetConsumerStoreAvailabilityResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+
+  // Cx facing Store Availability V2 endpoint(batch), provides fewer detailed information, but batch in multiple stores.
+  // This is introduced as a replacement for the REST batch endpoint `/v1/storehours/details` on MDS.
+  rpc GetConsumerStoreAvailabilities(GetConsumerStoreAvailabilitiesRequest) returns (GetConsumerStoreAvailabilitiesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Returns the store padding used to calculate Store Availability
+  rpc GetStoreHoursPaddingByStoreIds(GetStoreHoursPaddingByStoreIdsRequest) returns (GetStoreHoursPaddingByStoreIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Batch revalidates storeHoursDataEntry cache
+  rpc RevalidateStoreAvailabilityCaches(RevalidateStoreAvailabilityCachesRequest) returns (RevalidateStoreAvailabilityCachesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Batch revalidates geoDataEntry cache
+  rpc RevalidateGeoDataEntryCaches(RevalidateGeoDataEntryCachesRequest) returns (RevalidateGeoDataEntryCachesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Batch revalidates geoOperatingStatusEntry cache
+  rpc RevalidateGeoOperatingStatusEntryCaches(RevalidateGeoOperatingStatusEntryCachesRequest) returns (RevalidateGeoOperatingStatusEntryCachesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Batch generate and send UpdateStoreHoursEvents
+  rpc PublishUpdateStoreHoursEvents(PublishUpdateStoreHoursEventsRequest) returns (PublishUpdateStoreHoursEventsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+  }
+}
+
+// The single GetConsumerStoreAvailability call request to get Cx facing store availability with a list of store ids.
+message GetConsumerStoreAvailabilityRequest {
+  // Required, the requested store's Id, needs to be a valid Long.
+  int64 store_id = 1;
+
+  // Required, the combination of delivery option type and fulfillment type, e.g. [SCHEDULE, PICKUP].
+  // At least one StoreAvailabilityType needs to be provided.
+  repeated StoreAvailabilityType store_availability_types = 2;
+
+  // Optional, the number of days that requested, defaults to 1 day, maximum 14 days supported.
+  google.protobuf.Int32Value num_days = 3;
+
+  // Optional, the scheduled Cx delivery time that if Mx would be able to fulfill, only used for delivery option
+  // is SCHEDULE.
+  // If not passed in, defaults to current time, represents STANDARD(ASAP) orders.
+  google.protobuf.Timestamp scheduled_time = 4;
+
+  // Optional, the scheduled order time slot size, default is 10 min.
+  google.protobuf.Int32Value scheduled_time_slot_size_minutes = 5;
+
+  // Optional, the option to bypass cache and calculate store availability on the fly, defaults to false.
+  google.protobuf.BoolValue disable_cache = 6;
+
+  // Optional, advanced aggregate option to include/exclude certain SA related components to use for calculation.
+  AggregationOption aggregation_option = 7;
+
+  // Optional, advanced response option to include/exclude certain SA response component to present or not.
+  ResponseOption response_option = 8;
+
+  // Optional, offset for the first time slots to begin with
+  repeated ScheduledEtaMinutes scheduled_eta_minutes = 9;
+
+  // Optional, experience for which to query temporary_deactivations table
+  common.Experience experience = 10;
+
+  // Optional, allow caller to specify a boundary of a time window to which SAv2 to align the output available windows
+  // with. For example, if the specified boundary is 12:00pm, this guarantess that the available windows returned will
+  // not include 11:50am - 12:10pm or 12:10 - 12:30pm that overlaps with the provided boundary.
+  google.protobuf.Timestamp desired_scheduled_window_boundary = 11;
+}
+
+// The combination of delivery option type and fulfillment type.
+message StoreAvailabilityType {
+  // The delivery option type.
+  common.DeliveryOptionType delivery_option_type = 1;
+
+  // The fulfillment type.
+  common.FulfillmentType fulfillment_type = 2;
+}
+
+// The single response for a store's availability.
+message GetConsumerStoreAvailabilityResponse {
+  // The requested store's Id.
+  int64 store_id = 1;
+
+  // The list of consumer store availability hours by type, matches to the total number of
+  // store_availability_type from the request, e.g. [STANDARD_PICKUP, STANDARD_DELIVERY, SCHEDULE_DELIVERY]
+  repeated StoreAvailabilityHours store_availability_hours = 2;
+}
+
+// The single StoreAvailabilityHours by type.
+message StoreAvailabilityHours {
+  // The requested Cx store availability type.
+  StoreAvailabilityType consumer_store_availability_type = 1;
+
+  // The Cx facing store status.
+  ConsumerStoreStatus consumer_store_status = 2;
+
+  // If store in UNAVAILABLE status, this further discloses the detailed reasons.
+  repeated UnavailableReason unavailable_reasons = 3;
+
+  // Next open or close time.
+  NextTime next_time = 4;
+
+  // List of open hours at store level, epoch time. Detailed calculation spec can be found in this wiki
+  // https://doordash.atlassian.net/wiki/spaces/Eng/pages/1178108114/Deep+Dive+Store+Open+Hours+in+MDS+CDC+Pipeline
+  Hours store_hours = 5;
+
+  // The available hours time slots for scheduled orders.
+  ScheduledTimeSlots schedule_order_slots = 6;
+
+  // Map from menuId to MenuAvailability
+  map<string, MenuAvailability> menu_availabilities = 7;
+
+  // list of consumer store temp deactivation reasons
+  // only need reasons since Feed won't need to calculate store hours
+  // SOT https://github.com/doordash/services-protobuf/blob/7fa01082c118a646618ec743378b5688de70e67b/protos/merchant_data_service_store_service/store.proto#L1185
+  repeated ConsumerStoreTemporaryDeactivationReason temporary_deactivation_reasons = 8;
+}
+
+// time slots for scheduled orders
+message ScheduledTimeSlots {
+  // overall store-level time slots
+  Hours store_time_slots = 1;
+
+  // map of menuId -> time_slots
+  map<string, Hours> menu_time_slots = 2;
+}
+
+// The Cx facing store status.
+enum ConsumerStoreStatus {
+  // Not specified.
+  CONSUMER_STORE_STATUS_UNSPECIFIED = 0;
+
+  // Active store, online accepting orders.
+  CONSUMER_STORE_STATUS_OPEN = 1;
+
+  // Active store, offline not accepting orders.
+  CONSUMER_STORE_STATUS_CLOSED = 2;
+
+  // A status captures all other scenarios that are not able to accept orders.
+  CONSUMER_STORE_STATUS_UNAVAILABLE = 3;
+
+  // A status captures all non-partner store status when it's close or unavailable.
+  CONSUMER_STORE_STATUS_IN_STORE_HOURS_MAY_DIFFER = 4;
+}
+
+// The Cx facing store unavailable reason.
+enum UnavailableReason {
+  // Not specified.
+  UNAVAILABLE_REASON_UNSPECIFIED = 0;
+
+  // Store temporarily deactivated.
+  UNAVAILABLE_REASON_STORE_TEMPORARILY_CLOSED = 1;
+
+  // Store permanently deactivated, or hasn't been activated ever.
+  UNAVAILABLE_REASON_STORE_INACTIVE = 2;
+
+  // Store's business permanently deactivated, or hasn't been activated ever.
+  UNAVAILABLE_REASON_BUSINESS_INACTIVE = 3;
+
+  // Store's starting point has valid killed switch or valid sp status
+  UNAVAILABLE_REASON_STARTING_POINT_KILLED = 4;
+
+  // Store's starting point's sub-market is inactive or order protocol killed
+  UNAVAILABLE_REASON_STARTING_POINT_INACTIVE = 5;
+
+  // Store offer_pickup is false but order is pickup,
+  // store offer_delivery false but order is delivery
+  UNAVAILABLE_REASON_ORDER_TYPE_NOT_SUPPORTED = 6;
+
+  // delivery order but submarket is inactive
+  UNAVAILABLE_REASON_SUBMARKET_INACTIVE = 7;
+
+  // order protocol is killed
+  UNAVAILABLE_REASON_ORDER_PROTOCOL_KILLED = 8;
+
+  // store's starting point has no valid delivery hours
+  UNAVAILABLE_REASON_STARTING_POINT_HAS_NO_DELIVERY_HOURS = 9;
+
+  // store's menus don't have valid hours
+  UNAVAILABLE_REASON_MENU_HAS_NO_HOURS = 10;
+
+  // store blocks scheduled orders
+  UNAVAILABLE_REASON_STORE_BLOCKS_SCHEDULED_ORDERS = 11;
+
+  // store is unavailable due to store POS outage
+  UNAVAILABLE_REASON_STORE_POS_OUTAGE = 12;
+
+  // When a store is available, use not applicable as reason
+  // Current SA returns null
+  UNAVAILABLE_REASON_NOT_APPLICABLE = 9999;
+}
+
+// move the feed temp deactivation reasons to MDS (https://github.com/doordash/services-protobuf/blob/7fa01082c118a646618ec743378b5688de70e67b/protos/merchant_data_service_store_service/store.proto#L1300)
+// assigned numbers are aligned with public.temporary_deactivation_reason table ids
+enum ConsumerStoreTemporaryDeactivationReason {
+  // default value if client does not set or exact reason is unimportant
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_UNSPECIFIED = 0;
+
+  // store is temp-deactivated due to bad weather or power outage; corresponds to code 26 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_BAD_WEATHER_POWER_OUTAGE = 26;
+
+  // store is temp-deactivated because it is understaffed; corresponds to code 29 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_UNDERSTAFFED = 29;
+
+  // store is temp-deactivated because it is a non-partner that is auto-deactivated due to SP undersupply; corresponds to code 232 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_NON_PARTNER_SP_UNDERSUPPLY = 232;
+
+  // store is temp-deactivated because of high wait; corresponds to code 265 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_HIGH_WAIT = 265;
+
+  // store is temp-deactivated due issues with POS system, either an auto-trigger or outage; corresponds to code 100, 133, 298 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_POS_ISSUE = 298;
+
+  // store is temp-deactivated because of kitchen capacity order throttling; corresponds to code 397 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_KITCHEN_CAPACITY_ORDER_THROTTLING = 397;
+
+  // store is temp-deactivated due to tablet being off; corresponds to code 496 for temporary deactivation
+  CONSUMER_STORE_TEMPORARY_DEACTIVATION_REASON_TABLET_OFF = 496;
+}
+
+// Next open or close time.
+message NextTime {
+  // The next store open time if the store is closed now.
+  google.protobuf.Timestamp next_open_time = 1;
+
+  // The next store close time if the store is open now.
+  google.protobuf.Timestamp next_close_time = 2;
+}
+
+// menu open status and hours, hours are epoch time
+message MenuAvailability {
+  // menu's status of the given time
+  // for stores with multiple menus, store's open status can be different with menu's
+  google.protobuf.BoolValue is_open = 1;
+
+  // list of epoch time intervals
+  Hours hours = 2;
+}
+
+// An array of time intervals that indicates the overall available times.
+message Hours {
+  // The array as mentioned above.
+  repeated TimeInterval hours = 1;
+}
+
+// Time interval indicates an available range of time, inclusive.
+message TimeInterval {
+  // The start time.
+  google.protobuf.Timestamp start = 1;
+
+  // The end time.
+  google.protobuf.Timestamp end = 2;
+}
+
+// The advanced request option, to disable certain components for store availability calculation.
+message AggregationOption {
+  // Default is false. This excludes geo in the store availability calculation, e.g. starting point info,
+  // sub_market, market padding etc.
+  google.protobuf.BoolValue exclude_geo = 1;
+}
+
+// The advanced response option, to select what should be returned.
+message ResponseOption {
+  // Return the store level hours info, default to false.
+  google.protobuf.BoolValue include_store_hours = 1;
+
+  // Return the menu level store hours breakdown, default to false.
+  google.protobuf.BoolValue include_menu_hours = 2;
+
+  // Return scheduled order's store hours slots, default to false.
+  google.protobuf.BoolValue include_schedule_order_slots = 3;
+}
+
+// The batch request of GetConsumerStoreAvailabilities.
+message GetConsumerStoreAvailabilitiesRequest {
+  // Required, the store id list requested for.
+  repeated int64 store_ids = 1;
+
+  // Required, the combination of delivery option type and fulfillment type, e.g. [SCHEDULE, PICKUP].
+  // At least one StoreAvailabilityType needs to be provided.
+  repeated StoreAvailabilityType store_availability_types = 2;
+
+  // Optional, the number of days that requested, defaults to 1 day, maximum 14 days supported.
+  google.protobuf.Int32Value num_days = 3;
+
+  // Optional, the scheduled Cx delivery time that if Mx would be able to fulfill, only used for delivery option
+  // is SCHEDULE.
+  // If not passed in, defaults to current time, represents STANDARD(ASAP) orders.
+  google.protobuf.Timestamp scheduled_time = 4;
+
+  // Optional, the option to bypass cache and calculate store availability on the fly, defaults to false.
+  google.protobuf.BoolValue disable_cache = 5;
+
+  // Optional, advanced response option to include/exclude certain SA response component to present or not.
+  ResponseOption response_option = 6;
+
+  // Optional, experience for which to query temporary_deactivations table
+  common.Experience experience = 7;
+
+  // Optional, allow caller to specify a boundary of a time window to which SAv2 to align the output available windows
+  // with. For example, if the specified boundary is 12:00pm, this guarantess that the available windows returned will
+  // not include 11:50am - 12:10pm or 12:10 - 12:30pm that overlaps with the provided boundary.
+  google.protobuf.Timestamp desired_scheduled_window_boundary = 8;
+}
+
+// The batch response of GetConsumerStoreAvailabilities.
+message GetConsumerStoreAvailabilitiesResponse {
+  // The list of single GetConsumerStoreAvailabilityResponse that matches to each store id that requested.
+  repeated GetConsumerStoreAvailabilityResponse consumer_store_availabilities = 1;
+}
+
+// Pairing between StoreAvailabilityType and the request ETA minutes
+message ScheduledEtaMinutes {
+  // StoreAvailability Type: combination of delivery option type and fulfillment type
+  StoreAvailabilityType store_availability_type = 1;
+
+  // Request offset for the first time slots to begin with
+  google.protobuf.Int32Value minutes = 2;
+}
+
+// The batch request to get store hours padding used in Store Availability calculations.
+message GetStoreHoursPaddingByStoreIdsRequest {
+  // Required, the store id list requested for.
+  repeated int64 store_ids = 1;
+}
+
+// The batch response to get store hours padding used in Store Availability calculations.
+message GetStoreHoursPaddingByStoreIdsResponse {
+  // The list of single StoreHoursPadding that matches each store id requested.
+  repeated StoreHoursPadding store_hours_padding = 1;
+}
+
+// The single response for a store's store hours padding.
+message StoreHoursPadding {
+  // The requested store's Id.
+  int64 store_id = 1;
+
+  // ASAP Open hour padding
+  int32 padding_minutes_asap_open = 2;
+
+  // ASAP Close hour padding
+  int32 padding_minutes_asap_close = 3;
+
+  // Scheduled Open hour padding
+  int32 padding_minutes_scheduled_open = 4;
+
+  // Scheduled Close hour padding
+  int32 padding_minutes_scheduled_close = 5;
+}
+
+// The batch request of RevalidateStoreAvailabilitiesCache.
+message RevalidateStoreAvailabilityCachesRequest {
+  // Required, the store id list requested for.
+  repeated int64 store_ids = 1;
+
+  // Optional, flag to revalidate GeoDataEntry
+  google.protobuf.BoolValue revalidate_geo_cache = 2;
+
+  // Optional, flag to revalidate GeoOperatingStatusEntry
+  google.protobuf.BoolValue revalidate_geo_operating_status_cache = 3;
+
+  // Optional, flag to generate CDC event after revalidation
+  google.protobuf.BoolValue generate_cdc_event = 4;
+
+  // Optional, experience for which to revalidate cache. Defaulted to revalidate all experiences.
+  common.Experience experience = 5;
+
+  // Optional, source of the cache revalidation to be marked in the CDC. Refer to https://doordash.atlassian.net/wiki/spaces/Eng/pages/2856026921/MDS+Iguazu+Topics+Guide.
+  google.protobuf.StringValue source = 6;
+
+  // Optional, skip publishing CDC if StoreHoursDataEntry is unchanged
+  google.protobuf.BoolValue skip_cdc_if_unchanged = 7;
+
+  // Optional, time of revalidation trigger for CDC. Defaulted to current time.
+  google.protobuf.Timestamp revalidation_trigger_timestamp = 8;
+}
+
+// The batch response of RevalidateStoreAvailabilitiesCache.
+message RevalidateStoreAvailabilityCachesResponse {
+  // The list of storeIds that were successfully revalidated.
+  repeated int64 successful_revalidation_store_ids = 1;
+
+  // The list of storeIds that failed to be revalidated.
+  repeated int64 failed_revalidation_store_ids = 2;
+}
+
+// The batch request of RevalidateGeoDataEntryCaches.
+message RevalidateGeoDataEntryCachesRequest {
+  // Required, the startingPointIds list requested for.
+  repeated int64 starting_point_ids = 1;
+
+  // Optional, flag to generate CDC event after revalidation.
+  google.protobuf.BoolValue generate_cdc_event = 2;
+
+  // Optional, flag to skip comparison when generating CDC event.
+  google.protobuf.BoolValue skip_comparison_for_cdc = 3;
+}
+
+// The batch response of RevalidateStoreAvailabilitiesCache.
+message RevalidateGeoDataEntryCachesResponse {
+  // The list of startingPointIds that were successfully revalidated.
+  repeated int64 successful_revalidation_starting_point_ids = 1;
+
+  // The list of addressIds that failed to be revalidated.
+  repeated int64 failed_revalidation_starting_point_ids = 2;
+}
+
+// The batch request of RevalidateGeoOperatingStatusEntryCaches.
+message RevalidateGeoOperatingStatusEntryCachesRequest {
+  // Required if starting_point_ids are empty, the addressIds list requested for.
+  repeated int64 address_ids = 1;
+
+  // Required if address_ids are empty, the startingPointIds list requested for.
+  repeated int64 starting_point_ids = 2;
+
+  // Optional, flag to generate CDC event after revalidation.
+  google.protobuf.BoolValue generate_cdc_event = 3;
+
+  // Optional, flag to skip comparison when generating CDC event.
+  google.protobuf.BoolValue skip_comparison_for_cdc = 4;
+}
+
+// The batch response of RevalidateGeoOperatingStatusEntryCaches.
+message RevalidateGeoOperatingStatusEntryCachesResponse {
+  // The list of addressIds that were successfully revalidated.
+  repeated int64 successful_revalidation_address_ids = 1;
+
+  // The list of addressIds that failed to be revalidated.
+  repeated int64 failed_revalidation_address_ids = 2;
+}
+
+// The batch request of PublishUpdateStoreHoursEvents.
+message PublishUpdateStoreHoursEventsRequest {
+  // Required
+  repeated int64 store_ids = 1;
+
+  // Optional, source of the store hours update to be marked in UpdateStoreHoursEvents. Refer to https://doordash.atlassian.net/wiki/spaces/Eng/pages/2856026921/MDS+Iguazu+Topics+Guide.
+  google.protobuf.StringValue source = 2;
+
+  // Optional if known, time of cache.
+  google.protobuf.Timestamp cached_timestamp = 3;
+}
+
+// The batch request of PublishUpdateStoreHoursEvents.
+message PublishUpdateStoreHoursEventsResponse {
+  // Successfully published stores
+  repeated int64 store_ids = 1;
+
+  // Optional, source of the store hours update to be marked in UpdateStoreHoursEvents. Refer to https://doordash.atlassian.net/wiki/spaces/Eng/pages/2856026921/MDS+Iguazu+Topics+Guide.
+  google.protobuf.StringValue source = 2 [deprecated = true];
+
+  // Optional if known, time of cache.
+  google.protobuf.Timestamp cached_timestamp = 3 [deprecated = true];
+}

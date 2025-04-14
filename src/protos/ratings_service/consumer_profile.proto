@@ -1,0 +1,272 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package ratings_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+import "ratings_service/common.proto";
+import "ratings_service/consumer_photo.proto";
+import "ratings_service/consumer_rating.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.ratings";
+
+// consumer profile service
+service ConsumerProfileService {
+  option (doordash.api.service) = {
+    name: "ratings-profile-service-web"
+    url: "ratings-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["contributor"]
+    owner: {
+      id: "social-proof"
+      name: "consumer-ratings-profile-service"
+      slack_channel: "#eng-ratings-service-deploy"
+      email_alias: "eng-social@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).service_name = "ratings-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).response_attempt_timeout_millis = 500;
+
+  // get consumer ratings by target Id
+  rpc GetConsumerRatingsByTargetId(GetConsumerRatingsByTargetIdRequest) returns (GetConsumerRatingsByTargetIdResponse) {
+    option deprecated = true;
+  }
+
+  // get consumer photos by target Id
+  rpc GetConsumerPhotosByTargetId(GetConsumerPhotosByTargetIdRequest) returns (GetConsumerPhotosByTargetIdResponse) {
+    option deprecated = true;
+  }
+
+  // get consumer content by target Id
+  rpc GetConsumerContentByTargetId(GetConsumerContentByTargetIdRequest) returns (GetConsumerContentByTargetIdResponse);
+
+  // update profile status
+  rpc UpdateProfileStatus(UpdateProfileStatusRequest) returns (UpdateProfileStatusResponse) {
+    option (google.api.http) = {
+      post: "/contributor/v1/update_profile_status"
+      body: '*'
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_district_id"}]
+    };
+  }
+
+  // get consumer details
+  rpc GetConsumerDetails(GetConsumerDetailsRequest) returns (GetConsumerDetailsResponse) {
+    option (google.api.http) = {get: "/contributor/v1/consumer_details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+    };
+  }
+
+  // Bulk get consumer profile status
+  rpc BulkGetConsumerDetails(BulkGetConsumerDetailsRequest) returns (BulkGetConsumerDetailsResponse);
+}
+
+// get consumer ratings by target result
+message GetConsumerRatingsByTargetResult {
+  // list of consumer ratings
+  repeated ConsumerOrderRating consumer_ratings = 1; //deprecated do not use
+  // list of consumer reviews
+  repeated ConsumerReview consumer_reviews = 2;
+}
+
+// Get consumer ratings by target request
+message GetConsumerRatingsByTargetIdRequest {
+  // target
+  Target target = 1;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int32Value limit = 2;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int64Value offset = 3;
+}
+
+// get consumer ratings by order response
+message GetConsumerRatingsByTargetIdResponse {
+  // return result or error
+  oneof value {
+    // result
+    GetConsumerRatingsByTargetResult result = 1;
+    // error
+    ConsumerRatingError error = 2;
+  }
+}
+
+// get ConsumerPhotos by Target request
+message GetConsumerPhotosByTargetIdRequest {
+  // target
+  Target target = 1;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int32Value limit = 2;
+  // The limit and offset fields are semantically the same as SQL LIMIT and OFFSET keywords
+  google.protobuf.Int64Value offset = 3;
+}
+
+// get UGC display photos response
+message GetConsumerPhotosByTargetIdResponse {
+  // sorted list of UGC photo details
+  repeated PhotoDetails ugc_photo_details = 2;
+  // photo response status
+  PhotoResponseStatus photo_response_status = 3;
+  // number of UGC photos
+  google.protobuf.Int32Value num_ugc_photos = 4;
+}
+
+// get consumer content by target id request
+message GetConsumerContentByTargetIdRequest {
+  // target
+  Target target = 1;
+  // ugc types
+  repeated UGCType ugc_types = 2;
+  // limit
+  google.protobuf.Int32Value limit = 3;
+  // offset
+  google.protobuf.Int64Value offset = 4;
+  // is fetching pending content
+  google.protobuf.BoolValue is_fetching_pending_content = 5;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 6;
+}
+
+// get consumer content by target id response
+message GetConsumerContentByTargetIdResponse {
+  reserved 3;
+  reserved "consumer_content_post";
+  // consumer content list
+  repeated ConsumerContent consumer_content_list = 1;
+  // consumer profile response status
+  ConsumerProfileResponseStatus consumer_profile_response_status = 2;
+  // consumer content post list
+  repeated ConsumerContentPost consumer_content_post_list = 4;
+  // ratings and reviews
+  repeated ConsumerReview ratings_reviews = 5;
+}
+
+// update profile status request
+message UpdateProfileStatusRequest {
+  // profile status updates
+  repeated ConsumerProfileStatus updates = 1;
+  // requester consumer id
+  google.protobuf.StringValue requester_consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+// update profile status response
+message UpdateProfileStatusResponse {
+  // return success or error
+  oneof value {
+    // success
+    WrappedBoolValue success = 1;
+    // error
+    Error error = 2;
+  }
+}
+
+// consumer content
+message ConsumerContent {
+  // consumer content value
+  oneof value {
+    // review
+    ConsumerReview review = 1;
+    // photo
+    PhotoDetails photo = 2;
+  }
+}
+
+// consumer content post - aggregation of 1 to many pieces of ConsumerContent,
+// grouped via post-processing of raw consumer content
+message ConsumerContentPost {
+  // post id
+  google.protobuf.StringValue post_id = 1;
+  // consumer content list
+  repeated ConsumerContent consumer_content_list = 2;
+  // created at
+  google.protobuf.Timestamp created_at = 3;
+  // store id
+  google.protobuf.StringValue store_id = 4;
+  // items in the order
+  repeated ConsumerReview.Item order_items = 5;
+}
+
+// consumer profile response status
+message ConsumerProfileResponseStatus {
+  // status
+  bool success = 1;
+  // response error
+  ConsumerProfileError error = 2;
+}
+
+// consumer profile error
+message ConsumerProfileError {
+  // error code
+  ConsumerProfileErrorCode error_code = 1;
+  // error message
+  google.protobuf.StringValue error_message = 2;
+}
+
+// consumer profile error code
+enum ConsumerProfileErrorCode {
+  // unspecified error
+  CONSUMER_PROFILE_ERROR_CODE_UNSPECIFIED = 0;
+  // invalid parameter error
+  CONSUMER_PROFILE_ERROR_CODE_INVALID_PARAMETER = 1;
+}
+
+// get consumer details request
+message GetConsumerDetailsRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // request masks
+  google.protobuf.FieldMask request_mask = 2;
+}
+
+// get consumer details response
+message GetConsumerDetailsResponse {
+  // profile status
+  ProfileStatus profile_status = 1;
+  // number of contributions
+  google.protobuf.Int64Value number_of_contributions = 2;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 3;
+  // profile_photo_url
+  google.protobuf.StringValue profile_photo_url = 4;
+}
+
+// Bulk Reqeust for fetching the Profile status based on consumer Id.
+message BulkGetConsumerDetailsRequest {
+  // GetConsumerDetailsRequests
+  repeated GetConsumerDetailsRequest requests = 1;
+}
+
+// Bulk Reqeust for fetching the Profile status based on consumer Id.
+message BulkGetConsumerDetailsResponse {
+  // GetConsumerDetailsResponses
+  repeated GetConsumerDetailsResponse responses = 1;
+}

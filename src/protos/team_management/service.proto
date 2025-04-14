@@ -1,0 +1,2947 @@
+syntax = "proto3";
+
+package team_management;
+
+import "common/code.proto";
+import "common/common.proto";
+import "common/date.proto";
+import "common/dayparts.proto";
+import "common/money.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "team_management/billing.proto";
+import "team_management/budget.proto";
+import "team_management/budget_address_info.proto";
+import "team_management/calendar_entry.proto";
+import "team_management/common.proto";
+import "team_management/office.proto";
+import "team_management/onboarding.proto";
+import "team_management/pagination.proto";
+import "team_management/portal.proto";
+import "team_management/team.proto";
+import "team_management/work_recurring_group_order.proto";
+
+option go_package = "team_management";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.team_management";
+
+service TeamManagementService {
+  option (doordash.api.service) = {
+    name: "team-management-service-web"
+    port: 50051
+    name_spaces: ["team-management"]
+    api_key_name: "TEAM_MANAGEMENT_SERVICE_KEY"
+    owner: {
+      name: "team-management-service"
+      id: "doordash-for-work"
+      slack_channel: "#eng-work"
+      email_alias: "ddfw-eng@doordash.com"
+    },
+    target_products: [CX]
+  };
+  // bffs call this to detect does current consumer belong to a team
+  rpc GetTeam(GetTeamRequest) returns (GetTeamResponse) {
+    option (google.api.http) = {get: "/team-management/v1/teams"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+    };
+  }
+
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // web-bff called this to fetch a list of team accounts for which a consumer can create a new team cart
+  rpc GetTeamAccountsForWhichConsumerCanCreateCart(GetTeamAccountsForWhichConsumerCanCreateCartRequest) returns (GetTeamAccountsForWhichConsumerCanCreateCartResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // web-bff called this to fetch team account data by cart (join cart flow)
+  rpc GetTeamAccountByCart(GetTeamAccountByCartRequest) returns (GetTeamAccountByCartResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // web-bff asked this before creating a group-cart associated with a group account
+  rpc GetPermissionToCreateCart(GetPermissionToCreateCartRequest) returns (GetPermissionToCreateCartResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // web-bff called this to let TMS know that it created a team cart and TMS needs to keep track of it
+  rpc TrackTeamCart(TrackTeamCartRequest) returns (TrackTeamCartResponse);
+
+  // [DEPRECATED] This API is deprecated, but Carnival has code dependency, which needs to be removed. Carnival does not call this API anymore.
+  // Carnival called this to know whether a user should be able to view a corporate cart.
+  rpc GetPermissionToAccessCart(GetPermissionToAccessCartRequest) returns (GetPermissionToAccessCartResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it. Please use GetPermissionToSubmitCartWithBudgetV2 instead
+  rpc GetPermissionToSubmitCartWithBudget(GetPermissionToSubmitCartWithBudgetRequest) returns (GetPermissionToSubmitCartWithBudgetResponse);
+
+  // web-bff and mobile bff call this for fetching the budgets for the consumer
+  rpc GetAllBudgetsForConsumer(GetAllBudgetsForConsumerRequest) returns (GetAllBudgetsForConsumerResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it. Please use GetEligibleBudgetForConsumerV2 instead
+  rpc GetEligibleBudgetForConsumer(GetEligibleBudgetForConsumerRequest) returns (GetEligibleBudgetForConsumerResponse);
+
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // Originally DSJ was calling it so TMS can track new consumer creation for team members management
+  rpc TrackConsumerCreated(TrackConsumerCreatedRequest) returns (TrackConsumerCreatedResponse);
+
+  // Portal API.
+  // Returns portal dataset for client initialization.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetTeamPortalData(GetTeamPortalDataRequest) returns (GetTeamPortalDataResponse);
+
+  // Returns list of pair of team account id and member role for the Cx
+  rpc GetTeamMemberRoles(GetTeamMemberRolesRequest) returns (GetTeamMemberRolesResponse);
+
+  // Portal API.
+  // Returns list of team account members (pending and active)
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetTeamAccountMembers(GetTeamAccountMembersRequest) returns (GetTeamAccountMembersResponse);
+
+  // Portal API.
+  // Add team members using a list of emails into a team account
+  // gRPC error code PERMISSION_DENIED (7) can include metadata
+  // with TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_MEMBERS_PER_TEAM_ACCOUNT_PLAN_LIMIT code
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc AddTeamMembersToTeamAccount(AddTeamMembersToTeamAccountRequest) returns (AddTeamMembersToTeamAccountResponse);
+
+  // Portal API.
+  // Remove team member from team account
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc RemoveTeamMemberFromTeamAccount(RemoveTeamMemberFromTeamAccountRequest) returns (RemoveTeamMemberFromTeamAccountResponse);
+
+  // Portal API.
+  // Request from pending member to join a subset of team accounts within a team, specified by admin.
+  // As a result pending member becomes active member.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc JoinTeamAccounts(JoinTeamAccountsRequest) returns (JoinTeamAccountsResponse);
+
+  // Join team account.
+  // No exception will be thrown. Errors will be wrapped into response
+  rpc JoinTeamAccountsV2(JoinTeamAccountsV2Request) returns (JoinTeamAccountsV2Response);
+
+  // Portal API.
+  // Fetches budgets for team account.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetAllBudgetsForTeamAccount(GetAllBudgetsForTeamAccountRequest) returns (GetAllBudgetsForTeamAccountResponse);
+
+  // Portal API
+  // Fetches all voucher budgets for a team account.
+  rpc GetAllVoucherBudgetsForTeamAccount(GetAllVoucherBudgetsForTeamAccountRequest) returns (GetAllVoucherBudgetsForTeamAccountResponse);
+
+  // Portal API to power voucher details page including redemption stats
+  rpc GetVoucherBudgetWithRedemptionStats(GetVoucherBudgetWithRedemptionStatsRequest) returns (GetVoucherBudgetWithRedemptionStatsResponse);
+
+  // External API, one use case is to show voucher detail when a new user signs up
+  rpc GetBudgetById(GetBudgetByIdRequest) returns (GetBudgetByIdResponse);
+
+  // Internal API called by internal script and bulk service only.
+  rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse);
+
+  // [DEPRECATED] Internal API called by internal script and bulk service only.
+  rpc UpdateTeam(UpdateTeamRequest) returns (UpdateTeamResponse);
+
+  // Internal API called by internal script and bulk service only.
+  rpc UpdateTeamV2(UpdateTeamV2Request) returns (UpdateTeamV2Response);
+
+  // [DEPRECATED] Internal API called by internal script only.
+  rpc CreateTeamAccount(CreateTeamAccountRequest) returns (CreateTeamAccountResponse);
+
+  // [DEPRECATED] Internal API called by internal script only.
+  rpc UpdateTeamAccount(UpdateTeamAccountRequest) returns (UpdateTeamAccountResponse);
+
+  // Portal API.
+  // Web-bff calls this API to determine company payer ID in a context of adding new payment method flow
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetTeamAccountById(GetTeamAccountByIdRequest) returns (GetTeamAccountByIdResponse);
+
+  // Internal API to be called by Bulk Service
+  // gRPC error code PERMISSION_DENIED (7) can include metadata with following error codes:
+  // * TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_INVALID_PAYMENT_METHOD
+  rpc UpdateTeamAccountV2(UpdateTeamAccountV2Request) returns (UpdateTeamAccountV2Response);
+
+  // Internal API called by internal script only.
+  // Eventually should be called by bulk service only.
+  rpc AddActiveTeamMemberToTeamAccounts(AddActiveTeamMemberToTeamAccountsRequest) returns (AddActiveTeamMemberToTeamAccountsResponse);
+
+  // Portal API.
+  // Adds a single role to a team member pending or active.
+  rpc AddTeamAccountRole(AddTeamAccountRoleRequest) returns (AddTeamAccountRoleResponse) {
+    option (google.api.http) = {
+      post: "/team-management/v1/addTeamAccountRole"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Portal API.
+  // Deletes a single role from a team member, pending or active.
+  rpc DeleteTeamAccountRole(DeleteTeamAccountRoleRequest) returns (DeleteTeamAccountRoleResponse) {
+    option (google.api.http) = {delete: "/team-management/v1/deleteTeamAccountRole"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // External API
+  // This to add any logged in user to directly join a virtual team account as member only without confirmation
+  rpc ClaimVoucherBudget(ClaimVoucherBudgetRequest) returns (ClaimVoucherBudgetResponse);
+
+  // Portal API.
+  // Add budget to team account.
+  // gRPC error code PERMISSION_DENIED (7) can include metadata with following error codes:
+  // * TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_BUDGETS_PER_TEAM_ACCOUNT_PLAN_LIMIT
+  // * TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_MAX_BUDGET_AMOUNT_PLAN_LIMIT
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc CreateTeamAccountBudget(CreateTeamAccountBudgetRequest) returns (CreateTeamAccountBudgetResponse) {
+    option (google.api.http) = {
+      post: "/team-management/v1/createTeamAccountBudget"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Portal API to create a voucher budget
+  rpc CreateTeamAccountVoucherBudget(CreateTeamAccountVoucherBudgetRequest) returns (CreateTeamAccountVoucherBudgetResponse);
+
+  // Portal API.
+  // Update team account budget.
+  // gRPC error code PERMISSION_DENIED (7) can include metadata with following error codes:
+  // * TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_MAX_BUDGET_AMOUNT_PLAN_LIMIT
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc UpdateTeamAccountBudget(UpdateTeamAccountBudgetRequest) returns (UpdateTeamAccountBudgetResponse) {
+    option (google.api.http) = {
+      put: "/team-management/v1/updateTeamAccountBudget"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Internal API to be called by Bulk Service
+  // Update team account budget.
+  // gRPC error code PERMISSION_DENIED (7) can include metadata with following error codes:
+  // * TeamManagementErrorCode.TEAM_MANAGEMENT_ERROR_CODE_INVALID_PAYMENT_METHOD
+  rpc UpdateTeamAccountBudgetV2(UpdateTeamAccountBudgetV2Request) returns (UpdateTeamAccountBudgetV2Response);
+
+  // Portal API to update a voucher budget
+  rpc UpdateTeamAccountVoucherBudget(UpdateTeamAccountVoucherBudgetRequest) returns (UpdateTeamAccountVoucherBudgetResponse);
+
+  // Portal API to set a voucher type
+  rpc SetVoucherType(SetVoucherTypeRequest) returns (SetVoucherTypeResponse);
+
+  // Portal API to delete a voucher.
+  rpc DeleteVoucher(DeleteVoucherRequest) returns (DeleteVoucherResponse);
+
+  // Portal API.
+  // Delete budget.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc DeleteBudget(DeleteBudgetRequest) returns (DeleteBudgetResponse);
+
+  // Portal API
+  // Sends budget reminder
+  rpc SendBudgetReminder(SendBudgetReminderRequest) returns (SendBudgetReminderResponse);
+
+  // Expensed Meals order flow API
+  // Timezone and budget redemption-aware API called to generate reminder message for a consumer.
+  rpc GetBudgetReminderForConsumer(GetBudgetReminderForConsumerRequest) returns (GetBudgetReminderForConsumerResponse);
+
+  // Expensed Meals order flow API
+  // Timezone and budget redemption-aware API called by order service for calculating pricing information
+  rpc GetEligibleBudgetForConsumerV2(GetEligibleBudgetForConsumerV2Request) returns (GetEligibleBudgetForConsumerV2Response);
+
+  // Expensed Meals order flow API
+  // Timezone and budget redemption-aware API called by order service to check budget on checkout
+  rpc GetPermissionToSubmitCartWithBudgetV2(GetPermissionToSubmitCartWithBudgetV2Request) returns (GetPermissionToSubmitCartWithBudgetV2Response);
+
+  // Expensed Meals order flow API
+  // Timezone and budget redemption-aware API called by order service to spend budget on checkout
+  rpc SubmitCartWithBudget(SubmitCartWithBudgetRequest) returns (SubmitCartWithBudgetResponse);
+
+  // Expensed Meals order flow API
+  // budget redemption-aware API called by order service to adjust budget redemption amount for order cart adjustment flow
+  rpc AdjustWorkOrderAmount(AdjustWorkOrderAmountRequest) returns (AdjustWorkOrderAmountResponse);
+
+  // Expensed Meals order flow API
+  // Record work team orders to track successful orders for expensed meals and potential future cases
+  rpc UpsertWorkOrder(UpsertWorkOrderRequest) returns (UpsertWorkOrderResponse);
+
+  // Portal API.
+  // Retrieve expensed meals order history for specified team account.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetTeamAccountOrderHistory(GetTeamAccountOrderHistoryRequest) returns (GetTeamAccountOrderHistoryResponse);
+
+  // Portal API.
+  // Retrieve team members for specified team account.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc GetTeamAccountMemberRecords(GetTeamAccountMemberRecordsRequest) returns (GetTeamAccountMemberRecordsResponse) {
+    option (google.api.http) = {
+      post: "/team-management/v1/getTeamAccountMemberRecords"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+    };
+  }
+  // Portal API.
+  // Adds a single role to a team member.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc AddActiveMemberTeamAccountRole(AddActiveMemberTeamAccountRoleRequest) returns (AddActiveMemberTeamAccountRoleResponse);
+
+  // Portal API.
+  // Deletes a single role from team member.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc DeleteActiveMemberTeamAccountRole(DeleteActiveMemberTeamAccountRoleRequest) returns (DeleteActiveMemberTeamAccountRoleResponse) {
+    option (google.api.http) = {
+      post: "/team-management/v1/deleteActiveMemberTeamAccountRole"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+    };
+  }
+
+  // Portal API.
+  // Creates a TeamAccountGroup.
+  // Requires DD-OBO-Consumer-ID in Metadata
+  rpc CreateTeamAccountGroup(CreateTeamAccountGroupRequest) returns (CreateTeamAccountGroupResponse);
+
+  // Portal API.
+  // Deletes a TeamAccountGroup.
+  // Requires DD-OBO-Consumer-ID in Metadata.
+  rpc DeleteTeamAccountGroup(DeleteTeamAccountGroupRequest) returns (DeleteTeamAccountGroupResponse);
+
+  // Portal API.
+  // Fetches all the team account groups for a team account id.
+  // Requires DD-OBO-Consumer-ID in Metadata
+  rpc GetTeamAccountGroups(GetTeamAccountGroupsRequest) returns (GetTeamAccountGroupsResponse);
+
+  // Portal API.
+  // Fetches all group members for a team_account_group id.
+  // Requires DD-OBO-Consumer-ID in Metadata
+  rpc GetTeamAccountGroupMembers(GetTeamAccountGroupMembersRequest) returns (GetTeamAccountGroupMembersResponse);
+
+  // Portal API.
+  // Updates name and description for team account group.
+  // Requires DD-OBO-Consumer-ID in Metadata
+  rpc UpdateTeamAccountGroup(UpdateTeamAccountGroupRequest) returns (UpdateTeamAccountGroupResponse);
+
+  // Portal API.
+  // Associates TeamMembers with a TeamAccountGroup.
+  // Requires DD-OBO-Consumer-ID in Metadata (consumer must be associated to an admin of group's team account)
+  rpc AddTeamMembersToGroup(AddTeamMembersToGroupRequest) returns (AddTeamMembersToGroupResponse);
+
+  // Internal API.
+  // Called by bulk tools only.
+  rpc AddTeamMembersToGroupByEmail(AddTeamMembersToGroupByEmailRequest) returns (AddTeamMembersToGroupByEmailResponse);
+
+  // Portal API.
+  // Returns TeamAccountGroup if it exists, else NOT_FOUND
+  // Requires DD-OBO-Consumer-ID in Metadata to be associated with an admin of the group, else PERMISSION_DENIED.
+  rpc GetTeamAccountGroupById(GetTeamAccountGroupByIdRequest) returns (GetTeamAccountGroupByIdResponse);
+
+  // Portal API.
+  // Requires DD-OBO-Consumer-ID in Metadata, else UNAUTHENTICATED.
+  //  NOT_FOUND and PERMISSION_DENIED errors are surfaced in the Error results on a per-ID basis.
+  //  INVALID_INPUT if budget_ids is empty.
+  rpc GetTeamAccountGroupsForBudgets(GetTeamAccountGroupsForBudgetsRequest) returns (GetTeamAccountGroupsForBudgetsResponse);
+
+  // Portal API.
+  // Requires DD-OBO-Consumer-ID in Metadata, else UNAUTHENTICATED.
+  //  NOT_FOUND and PERMISSION_DENIED errors are surfaced in the Error results on a per-ID basis.
+  //  INVALID_INPUT if group_membership_ids is empty.
+  rpc DeleteGroupMemberships(DeleteGroupMembershipsRequest) returns (DeleteGroupMembershipsResponse);
+
+  // Portal API.
+  // Requires DD-OBO-Consumer-ID in Metadata, else UNAUTHENTICATED.
+  // NOT_FOUND and PERMISSION_DENIED errors are surfaced in the Error results on a per-ID basis.
+  // INVALID_INPUT if team_account_id is empty.
+  rpc GetTeamAccountMembershipInfo(GetTeamAccountMembershipInfoRequest) returns (GetTeamAccountMembershipInfoResponse);
+
+  // Internal API
+  // Generic API for adding opportunity ID to an existing team account
+  rpc UpdateTeamAccountBenefitsInfo(UpdateTeamAccountBenefitsInfoRequest) returns (UpdateTeamAccountBenefitsInfoResponse);
+
+  // Internal API
+  // [DEPRECATED] This API is deprecated and nothing should call it.
+  // Originally was called by bulk service.
+  // Onboards a company for expensed meals service
+  rpc OnboardTeamAccountToExpensedMeals(OnboardTeamAccountToExpensedMealsRequest) returns (OnboardTeamAccountToExpensedMealsResponse);
+
+  // Internal API
+  // Generic API for team account onboarding.
+  // This should eventually replace OnboardTeamAccountToExpensedMeals
+  rpc OnboardTeamAccount(OnboardTeamAccountRequest) returns (OnboardTeamAccountResponse);
+
+  // API to get the status of onboarding team account workflow for self serve
+  rpc GetOnboardTeamAccountStatus(GetOnboardTeamAccountStatusRequest) returns (GetOnboardTeamAccountStatusResponse);
+
+  // Generic Internal API for removing work benefits from team account.
+  rpc RemoveTeamAccountBenefits(RemoveTeamAccountBenefitsRequest) returns (RemoveTeamAccountBenefitsResponse);
+
+  // Called by mobile-bff to offer lightweight expense code validation
+  rpc ValidateBudgetExpenseCode(ValidateBudgetExpenseCodeRequest) returns (ValidateBudgetExpenseCodeResponse);
+
+  // Portal API to get possible budget configurations based on a team account
+  rpc GetBudgetConfigurationOptions(GetBudgetConfigurationOptionsRequest) returns (GetBudgetConfigurationOptionsResponse);
+
+  // Portal API to get a list of completed onboarding steps by admin
+  rpc GetCompletedTeamAccountOnboardingSteps(GetCompletedTeamAccountOnboardingStepsRequest) returns (GetCompletedTeamAccountOnboardingStepsResponse);
+
+  // Portal API to complete onboarding step by admin
+  rpc CompleteTeamAccountOnboardingStep(CompleteTeamAccountOnboardingStepRequest) returns (CompleteTeamAccountOnboardingStepResponse);
+
+  // Portal API to expose plan details
+  rpc GetWorkPlanDetails(GetWorkPlanDetailsRequest) returns (GetWorkPlanDetailsResponse);
+
+  // Called by fraud and used for checking company payers only for now (self-serve vs manual)
+  rpc GetWorkConsumerStatusForFraud(GetWorkConsumerStatusForFraudRequest) returns (GetWorkConsumerStatusForFraudResponse);
+
+  // Called by fraud and used for checking consumer team types (self-serve vs manual)
+  // similar to GetWorkConsumerStatusForFraud
+  rpc GetConsumerTeamType(GetConsumerTeamTypeRequest) returns (GetConsumerTeamTypeResponse);
+
+  // Internal API. Protected to be called only from bulk tools
+  // Creates a team and a team account without any admins,members or benefits for dashpass customers onboarded with the old dynamodb flow.
+  rpc CreateTeamAccountForDDFWCompany(CreateTeamAccountForDDFWCompanyRequest) returns (CreateTeamAccountForDDFWCompanyResponse);
+
+  // Team accounts can be onboarded to benefits before those benefits are activated.  This API allows an account admin
+  //  to activate a benefit after the initial onboarding process.
+  rpc ActivateTeamAccountBenefit(ActivateTeamAccountBenefitRequest) returns (ActivateTeamAccountBenefitResponse);
+
+  // Portal API to record every time a new card payment method is added by an admin
+  rpc RecordCardPaymentMethodAdded(RecordCardPaymentMethodAddedRequest) returns (RecordCardPaymentMethodAddedResponse);
+
+  // API to create a self-serve lead with salesforce/mulesoft
+  rpc CreateSelfServeLead(CreateSelfServeLeadRequest) returns (CreateSelfServeLeadResponse);
+
+  // API to get the status of cadence workflows
+  rpc GetWorkflowStatus(GetWorkflowStatusRequest) returns (GetWorkflowStatusResponse);
+
+  // Portal API.
+  // Retrieve dashpass order history for specified team account.
+  rpc GetTeamAccountDashpassOrderHistory(GetTeamAccountDashpassOrderHistoryRequest) returns (GetTeamAccountDashpassOrderHistoryResponse);
+
+  // API to get team account id by domain name - opt-in links
+  rpc GetTeamAccountByDomainName(GetTeamAccountByDomainNameRequest) returns (GetTeamAccountByDomainNameResponse);
+
+  // API to update some fields of TeamAccountDashpassBillingConfig for a team_account.
+  // Current design instructs to use versioning DB records instead of updating same record
+  rpc UpdateTeamAccountDashpassBillingConfig(UpdateTeamAccountDashpassBillingConfigRequest) returns (UpdateTeamAccountDashpassBillingConfigResponse);
+
+  // API to add TeamAccountDashpassBillingConfig for a team_account.
+  // Used for team_accounts which do not have any active DashpassBillingConfig records
+  rpc AddTeamAccountDashpassBillingConfig(AddTeamAccountDashpassBillingConfigRequest) returns (AddTeamAccountDashpassBillingConfigResponse);
+
+  // API to update TeamAccountDashpassBillingInfo for a team_account.
+  // Used in case admins/oncalls need to update Billing Info record manually.
+  rpc UpdateTeamAccountDashpassBillingInfo(UpdateTeamAccountDashpassBillingInfoRequest) returns (UpdateTeamAccountDashpassBillingInfoResponse);
+
+  // API to send join invitation email to all pending members
+  rpc SendJoinInvitationEmailToAllPendingTeamMembers(SendJoinInvitationEmailToAllPendingTeamMembersRequest) returns (SendJoinInvitationEmailToAllPendingTeamMembersResponse);
+
+  // API to send join invitation email to selected members
+  rpc SendJoinInvitationEmailToSelectedPendingTeamMembers(SendJoinInvitationEmailToSelectedPendingTeamMembersRequest) returns (SendJoinInvitationEmailToSelectedPendingTeamMembersResponse);
+
+  // API to send voucher link to selected emails
+  rpc SendVoucherInvitationEmailToSelectedEmails(SendVoucherInvitationEmailToSelectedEmailsRequest) returns (SendVoucherInvitationEmailToSelectedEmailsResponse);
+
+  // API to create recurring group order office
+  rpc CreateTeamAccountOffice(CreateTeamAccountOfficeRequest) returns (CreateTeamAccountOfficeResponse);
+
+  // API to delete recurring group order office
+  rpc DeleteTeamAccountOffice(DeleteTeamAccountOfficeRequest) returns (DeleteTeamAccountOfficeResponse);
+
+  // API to update recurring group order office
+  rpc UpdateTeamAccountOffice(UpdateTeamAccountOfficeRequest) returns (UpdateTeamAccountOfficeResponse);
+
+  // API to list recurring group order offices by team account id
+  rpc ListTeamAccountOffices(ListTeamAccountOfficesRequest) returns (ListTeamAccountOfficesResponse);
+
+  // API to get recurring group order office by id
+  rpc GetTeamAccountOfficeById(GetTeamAccountOfficeByIdRequest) returns (GetTeamAccountOfficeByIdResponse);
+
+  // API to create recurring group order calendar entry
+  rpc CreateRecurringGOCalendarEntry(CreateRecurringGOCalendarEntryRequest) returns (CreateRecurringGOCalendarEntryResponse);
+
+  // API to create recurring group order calendar entries in bulk
+  rpc CreateBulkRecurringGOCalendarEntries(CreateBulkRecurringGOCalendarEntriesRequest) returns (CreateBulkRecurringGOCalendarEntriesResponse);
+
+  // API to create recurring group order carts
+  rpc CreateRecurringGOCarts(CreateRecurringGOCartsRequest) returns (CreateRecurringGOCartsResponse);
+
+  // API to get recurring group order calendar entry
+  rpc GetRecurringGOCalendarEntry(GetRecurringGOCalendarEntryRequest) returns (GetRecurringGOCalendarEntryResponse);
+
+  // API to get all recurring group order calendar entries between start_date and end_date (inclusive)
+  rpc ListRecurringGOCalendarEntries(ListRecurringGOCalendarEntriesRequest) returns (ListRecurringGOCalendarEntriesResponse);
+
+  // API to update recurring group order calendar entry
+  rpc UpdateRecurringGOCalendarEntry(UpdateRecurringGOCalendarEntryRequest) returns (UpdateRecurringGOCalendarEntryResponse);
+
+  // API to delete recurring group order calendar entry
+  rpc DeleteRecurringGOCalendarEntry(DeleteRecurringGOCalendarEntryRequest) returns (DeleteRecurringGOCalendarEntryResponse);
+
+  //API to get recurring group order metadata
+  rpc GetWorkRecurringGroupOrderMetadata(GetWorkRecurringGroupOrderMetadataRequest) returns (GetWorkRecurringGroupOrderMetadataResponse);
+
+  // API to check if address change within distance
+  // to be deprecated once IsChangedAddressWithinPermittedRadiusV2 is fully rollout
+  rpc IsChangedAddressWithinPermittedRadius(IsChangedAddressWithinPermittedRadiusRequest) returns (IsChangedAddressWithinPermittedRadiusResponse);
+
+  // API to check if address change within distance
+  rpc IsChangedAddressWithinPermittedRadiusV2(IsChangedAddressWithinPermittedRadiusV2Request) returns (IsChangedAddressWithinPermittedRadiusV2Response);
+
+  // Get Join Context API
+  // Requires DD-OBO-Consumer-ID in Metadata
+  rpc GetJoinContext(GetJoinContextRequest) returns (GetJoinContextResponse);
+
+  // API to get current cx's active subscription plan and the target team account's WDP plan if exists
+  rpc GetCurrentDashPassPlan(GetCurrentDashPassPlanRequest) returns (GetCurrentDashPassPlanResponse);
+
+  // API to switch from current cx's active subscription plan to the target team account's WDP plan
+  rpc SwitchToWorkDashPass(SwitchToWorkDashPassRequest) returns (SwitchToWorkDashPassResponse);
+
+  // Portal API.
+  // Returns portal dataset for pending member signin/signup
+  rpc GetTeamPortalDataForSignInUp(GetTeamPortalDataForSignInUpRequest) returns (GetTeamPortalDataForSignInUpResponse);
+
+  // API to get consumer's all team account id to workplan type as a map
+  rpc GetTeamAccountIdPlanTypeMap(GetTeamAccountIdPlanTypeMapRequest) returns (GetTeamAccountIdPlanTypeMapResponse);
+
+  // API to indicate whether the user is allowed to view more order details.
+  // A user is allowed to view a given order if user is the admin of team accounts of which budgets/vouchers are used to pay for the given order.
+  rpc GetPermissionToOrderDetails(GetPermissionToOrderDetailsRequest) returns (GetPermissionToOrderDetailsResponse);
+
+  // API to get top 5 frequently used active addresses from budget_address_info table
+  rpc GetFrequentlyUsedAddressesByTeamAccount(GetFrequentlyUsedAddressesByTeamAccountRequest) returns (GetFrequentlyUsedAddressesByTeamAccountResponse) {
+    option (google.api.http) = {get: "/team-management/v1/getFrequentlyUsedAddressesByTeamAccount"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Portal API to get both active and pending team account membership info
+  // NOT_FOUND and PERMISSION_DENIED errors are surfaced in the Error results on a per-ID basis
+  // INVALID_INPUT if team_account_id is empty
+  rpc GetTeamAccountMembershipInfoV2(GetTeamAccountMembershipInfoV2Request) returns (GetTeamAccountMembershipInfoV2Response) {
+    option (google.api.http) = {get: "/team-management/v1/getTeamAccountMembershipInfoV2"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // API to get filters used on admin portal insights pages
+  rpc GetFilters(GetFiltersRequest) returns (GetFiltersResponse) {
+    option (google.api.http) = {get: "/team-management/v1/getFilters"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // API to get data points used on admin portal insights pages
+  rpc GetDatasets(GetDatasetsRequest) returns (GetDatasetsResponse) {
+    option (google.api.http) = {get: "/team-management/v1/getDatasets"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // API to get data points used on admin portal insights pages through POST to avoid URL length limit
+  rpc GetDatasetsV2(GetDatasetsV2Request) returns (GetDatasetsV2Response) {
+    option (google.api.http) = {
+      post: "/team-management/v1/getDatasets"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // API to get ddfb orders used on admin portal insights pages
+  rpc GetOrderDatasets(GetOrderDatasetsRequest) returns (GetOrderDatasetsResponse) {
+    option (google.api.http) = {get: "/team-management/v1/orderDatasets"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // POST API to get ddfb orders used on admin portal insights pages in a CSV format
+  // This is a POST request even though it only does read operation because the filters including team account UUID and budget UUIDs could cause URL to become too long for GET method.
+  rpc GetOrderDatasetsRecords(GetOrderDatasetsRecordsRequest) returns (GetOrderDatasetsRecordsResponse) {
+    option (google.api.http) = {
+      post: "/team-management/v1/getOrderDatasetsRecords"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  //Request for the GetKeyPerformanceIndicators RPC
+  rpc GetKeyPerformanceIndicators(GetKeyPerformanceIndicatorsRequest) returns (GetKeyPerformanceIndicatorsResponse) {
+    option (google.api.http) = {get: "/team-management/v1/kpis"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // API to get datasets in compressed bytes format for CSV downloading purpose
+  rpc GetDatasetsRecords(GetDatasetsRecordsRequest) returns (GetDatasetsRecordsResponse) {
+    option (google.api.http) = {get: "/team-management/v1/datasetsRecords"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// status of the order
+enum OrderStatus {
+  // unknown
+  ORDER_STATUS_UNSPECIFIED = 0;
+  // delivered
+  ORDER_STATUS_COMPLETED = 1;
+  // cancelled
+  ORDER_STATUS_CANCELLED = 2;
+}
+
+message GetKeyPerformanceIndicatorsRequest {
+  // What type of data we are targeting (e.g. spend insights)
+  AdminPortalProduct product_key = 1;
+  // teamMemberId of an admin that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 4;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 5 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Represents a key performance indicator with a value.
+message KeyPerformanceIndicator {
+  // Top level descriptor (e.g. DashPass Saving, Average Order Cost, Average Out-of-pocker Spend)
+  Descriptors descriptors = 1;
+  // $KPI value
+  DataPoint current_value = 2;
+}
+
+message GetKeyPerformanceIndicatorsResponse {
+  // Array of KPIs
+  repeated KeyPerformanceIndicator kpis = 1;
+  // Last time the data was updated
+  google.protobuf.Timestamp last_updated = 2;
+}
+
+message GetOrderDatasetsRequest {
+  // teamMemberId of the admin we are fetching data for
+  TargetEntities target_entities = 1;
+  // Date range of data
+  DateRange date_range = 2;
+  // Filters for the data if applicable (e.g. team accounts or benefit type)
+  repeated DataFilters data_filters = 3;
+  // order status filter
+  repeated OrderStatus statuses = 4;
+  // response limit
+  google.protobuf.Int64Value limit = 5;
+  // response offset
+  google.protobuf.Int64Value offset = 6;
+  // Filters on the order's creator's name in a "starts with" fashion (case-insenstiive).
+  // No filtering is performed if this field is blank.
+  google.protobuf.StringValue query_string = 7;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id = 8 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetOrderDatasetsRecordsRequest {
+  // teamMemberId of the admin we are fetching data for
+  TargetEntities target_entities = 1;
+  // Date range of data
+  DateRange date_range = 2;
+  // Filters for the data if applicable (e.g. team accounts or benefit type)
+  repeated DataFilters data_filters = 3;
+  // order status filter
+  repeated OrderStatus statuses = 4;
+  // Filters on the order's creator's name in a "starts with" fashion (case-insenstiive).
+  // No filtering is performed if this field is blank.
+  google.protobuf.StringValue query_string = 5;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id = 6 [(doordash.api.inject_id) = CX_ID];
+}
+
+/** Response for the GetOrderDatasetsRecords RPC
+*/
+message GetOrderDatasetsRecordsResponse {
+  // Security team encourages DDW to encode CSV data into a bytes array
+  // and return the file contents on-the-fly on web layer
+  bytes datasets_csv_data = 1;
+}
+
+message DDfBOrder {
+  // Customer details
+  message Consumer {
+    // customer first name
+    google.protobuf.StringValue first_name = 1;
+    // customer last name
+    google.protobuf.StringValue last_name = 2;
+    //
+  }
+
+  // customer details
+  DDfBOrder.Consumer consumer = 1;
+
+  // dd delivery uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+
+  // store name of order.
+  google.protobuf.StringValue store_name = 3;
+
+  // order value
+  money.MonetaryFields order_value = 4;
+
+  // formatted delivery time
+  google.protobuf.StringValue delivery_time_display_string = 5;
+
+  // Order Status
+  OrderStatus order_status = 6;
+
+  // Name of the budget used
+  google.protobuf.StringValue budget_name = 7;
+}
+
+message GetOrderDatasetsResponse {
+  // list of orders
+  repeated DDfBOrder orders = 1;
+  // Last time the data was updated
+  google.protobuf.Timestamp last_updated = 2;
+}
+
+message GetFiltersRequest {
+  // The entities that this filter applies to (e.g. a team member).
+  // If not specified, then the filter applies to all entities resolved from the request context.
+  // e.g. We may return a filer for team accounts containing only a list of team accounts that belong to 1 admin.
+  TargetEntities target_entities = 1;
+  // Date range of availalbe filters (e.g. EM/Voucher active during the selected time      range)
+  DateRange date_range = 2;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 3 [(doordash.api.inject_id) = CX_ID];
+}
+
+message DataFilters {
+  // Item we want to filter on (e.g. team_account, budget)
+  google.protobuf.StringValue data_filter_target = 1;
+  // Exact values we want to filter by (equals) (e.g. "396ec7db-91a8-4cb1-a400-9a5346c488b2")
+  repeated google.protobuf.StringValue data_filter_allowed_values = 2;
+}
+
+// Admin portal product
+message AdminPortalProduct {
+  // Admin portal product key
+  enum AdminPortalProductKey {
+    // Unspecified product
+    ADMIN_PORTAL_PRODUCT_KEY_UNSPECIFIED = 0;
+    // Spends Insights product - general (by day)
+    ADMIN_PORTAL_PRODUCT_KEY_SPENDS_INSIGHTS = 1;
+    // Spends Insights product - bucket by hour to show trend of 1 given day
+    ADMIN_PORTAL_PRODUCT_KEY_SPENDS_INSIGHTS_HOURLY = 2;
+    // Spends Insights product - bucket by month to show trend of multiple months
+    ADMIN_PORTAL_PRODUCT_KEY_SPENDS_INSIGHTS_MONTHLY = 3;
+    // Total Orders Insights product - general (by day)
+    ADMIN_PORTAL_PRODUCT_KEY_TOTAL_ORDERS_INSIGHTS = 4;
+    // Total Orders Insights product - bucket by month to show trend of multiple months
+    ADMIN_PORTAL_PRODUCT_KEY_TOTAL_ORDERS_INSIGHTS_MONTHLY = 5;
+    // Program Usage Insights product - general
+    ADMIN_PORTAL_PRODUCT_KEY_PROGRAM_USAGE_INSIGHTS = 6;
+  }
+  // product of admin portal
+  AdminPortalProductKey admin_portal_product_key = 1;
+}
+
+message GetDatasetsV2Request {
+  // What type of data we are targeting (e.g. spend insights)
+  AdminPortalProduct product_key = 1;
+  // teamMemberId of an admin that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 4;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 5 [(doordash.api.inject_id) = CX_ID];
+}
+
+/** Response for the GetDataSets RPC
+*/
+message GetDatasetsV2Response {
+  // Title/description describing what the data is that we got
+  Descriptors title = 1;
+  // array of datasets
+  repeated DataSet data_sets = 2;
+  // array of labels describing the data sets, used for group bys
+  repeated Descriptors data_sets_labels = 3;
+  // Last time the data was updated
+  google.protobuf.Timestamp last_updated = 4;
+}
+
+message GetDatasetsRequest {
+  // What type of data we are targeting (e.g. spend insights)
+  AdminPortalProduct product_key = 1;
+  // teamMemberId of an admin that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 4;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 5 [(doordash.api.inject_id) = CX_ID];
+}
+
+/** Response for the GetDataSets RPC
+*/
+message GetDatasetsResponse {
+  // Title/description describing what the data is that we got
+  Descriptors title = 1;
+  // array of datasets
+  repeated DataSet data_sets = 2;
+  // array of labels describing the data sets, used for group bys
+  repeated Descriptors data_sets_labels = 3;
+  // Last time the data was updated
+  google.protobuf.Timestamp last_updated = 4;
+}
+
+message GetDatasetsRecordsRequest {
+  // What type of data we are targeting (e.g. spend insights)
+  AdminPortalProduct product_key = 1;
+  // teamMemberId of an admin that we are looking for
+  TargetEntities target_entities = 2;
+  // Date range of data
+  DateRange date_range = 3;
+  // Filters for the data if applicable
+  repeated DataFilters data_filters = 4;
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id = 5 [(doordash.api.inject_id) = CX_ID];
+}
+
+/** Response for the GetDatasetsRecords RPC
+*/
+message GetDatasetsRecordsResponse {
+  // Security team encourages DDW to encode CSV data into a bytes array
+  // and return the file contents on-the-fly on web layer
+  bytes datasets_csv_data = 1;
+}
+
+/**
+ * A single filter item. This is a single item in a dropdown or a single toggle in a multi-select toggle.
+ */
+message FilterItem {
+  // Details about this filter item i.e. label, description, etc.
+  Descriptors descriptors = 1;
+  // Value of the filter item itself e.g. if a user selects this in a dropdown, what values does it correspond to
+  string string_value_filter_item = 2;
+  // Default value for this filter item. This is used to determine if this filter item is the default selection.
+  bool is_default = 3;
+  // List of selectable items for this filter (e.g. budgets/vouchers). Populating this means there is a next-level set of filters that can be expanded from this filter item in order to show more options.
+  repeated FilterItem filter_items = 4;
+}
+
+// Top-level filter object that encapsulates one kind of filter i.e. a Team Account filter dropdown
+message Filter {
+  // Additional options on how a filter may behave.
+  message Options {
+    // Defaults to single select toggles; set to false otherwise
+    bool is_multi_select = 1;
+  }
+
+  // Descriptive details about this filter itself i.e. label, description, etc.
+  Descriptors descriptors = 1;
+  // Additional options to describe this filter e.g. is multi-select or not
+  Options options = 2;
+  // The list of filter items for this filter
+  repeated FilterItem filter_items = 3;
+}
+
+message GetFiltersResponse {
+  // The list of top-level filters that can be used to filter data.
+  repeated Filter filters = 1;
+}
+
+message GetTeamRequest {
+  int64 consumer_id = 1;
+
+  // Optional
+  // String is the DD standard for consumer_id. Eventually, we should
+  // just deprecate the int consumer_id
+  google.protobuf.StringValue consumer_id_string = 2 [(doordash.api.inject_id) = CX_ID];
+}
+message GetTeamResponse {
+  Team team = 1;
+}
+
+message GetTeamMemberRolesRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetTeamMemberRolesResponse {
+  // list of member roles
+  // empty for non member, pending member
+  repeated TeamAccountRole team_member_roles = 1;
+}
+
+message GetTeamAccountsForWhichConsumerCanCreateCartRequest {
+  int64 consumer_id = 1;
+}
+message GetTeamAccountsForWhichConsumerCanCreateCartResponse {
+  // returns null/empty if the consumer is not an admin
+  // and can't create carts on behalf of any team.
+  repeated TeamAccount team_accounts = 1;
+}
+
+message GetTeamAccountByCartRequest {
+  string cart_id = 1;
+}
+message GetTeamAccountByCartResponse {
+  TeamAccount team_account = 1;
+}
+
+message Permission {
+  bool is_permitted = 1;
+}
+message GetPermissionToCreateCartRequest {
+  string team_account_id = 1;
+  int64 consumer_id = 2;
+}
+message GetPermissionToCreateCartResponse {
+  Permission permission = 1;
+}
+
+message TrackTeamCartRequest {
+  string cart_id = 1;
+  int64 consumer_id = 2;
+  string team_account_id = 3;
+}
+
+// we don't return any status back. Successful response indicates that TMS "saved" a cart for tracking
+message TrackTeamCartResponse {}
+
+message GetPermissionToSubmitCartWithBudgetRequest {
+  int64 consumer_id = 1;
+  string team_id = 2;
+  string budget_id = 3;
+  int64 address_id = 4;
+  oneof checkout_time {
+    dayparts.TimeOfDayOfWeek order_placed_time = 5; // Set only if ASAP order
+    dayparts.TimeOfDayOfWeek scheduled_delivery_time = 6; // Set only if scheduled order
+  }
+}
+
+message GetPermissionToSubmitCartWithBudgetResponse {
+  Permission permission = 1;
+  Budget budget = 2;
+}
+
+message GetPermissionToSubmitCartWithBudgetV2Request {
+  int64 consumer_id = 1;
+  string budget_id = 3;
+  int64 address_id = 4;
+  // For ASAP orders delivery_time is equivalent to checkout_time
+  // For Scheduled orders delivery_time is equivalent to scheduled_delivery_time
+  google.protobuf.Timestamp delivery_time = 5; // UTC timestamp
+  string delivery_timezone = 6; // Timezone of merchant
+  // id 7 deprecated since Carnival cart uuid not unique across orders
+  // string cart_id = 7;
+  // Order uuid will be used for correlation purposes
+  string order_uuid = 8;
+
+  // expense code fields
+  string expense_code = 9; // optional, can be blank for some of the expense modes
+  string expense_notes = 10; // optional
+
+  // used for expense meal restrictions
+  int64 store_address_id = 11; // address id of the merchant
+  common.FulfillmentType fulfillment_type = 12; // order fulfillmentType
+
+  reserved 13;
+
+  // order attributes for budget
+  OrderAttributes order_attributes = 14;
+}
+
+message GetPermissionToSubmitCartWithBudgetV2Response {
+  Permission permission = 1;
+  Budget budget = 2;
+}
+
+message SubmitCartWithBudgetRequest {
+  int64 consumer_id = 1;
+  string budget_id = 3;
+  int64 address_id = 4;
+  // For ASAP orders delivery_time is equivalent to checkout_time
+  // For Scheduled orders delivery_time is equivalent to scheduled_delivery_time
+  google.protobuf.Timestamp delivery_time = 5; // UTC timestamp
+  string delivery_timezone = 6; // Timezone of merchant
+  // id 7 deprecated since Carnival cart uuid not unique across orders
+  // string cart_id = 7;
+  // The amount of the budget that will be redeemed
+  money.MonetaryFields amount = 8;
+  // Order uuid used for tracking redemptions against orders
+  string order_uuid = 9;
+
+  // used for expense meal restrictions
+  int64 store_address_id = 10; // address id of the merchant
+  common.FulfillmentType fulfillment_type = 11; // order fulfillmentType
+
+  // order attributes for budget
+  OrderAttributes order_attributes = 12;
+}
+
+message SubmitCartWithBudgetResponse {
+  Permission permission = 1;
+  Budget budget = 2;
+}
+
+// source of work order adjustment
+enum AdjustmentSource {
+  // adjustment source unspecified
+  ADJUSTMENT_SOURCE_UNSPECIFIED = 0;
+  // adjustment source is final update step of create order
+  ADJUSTMENT_SOURCE_CREATE_ORDER_FINAL_UPDATE = 1;
+}
+
+message AdjustWorkOrderAmountRequest {
+  int64 consumer_id = 1;
+  // The amount of the budget that will be redeemed, the new amount of redemption.
+  // It should be the less than original amount
+  money.MonetaryFields amount = 2;
+  // Order uuid used for tracking redemption against orders
+  string order_uuid = 3;
+
+  // the source where adjustment was triggered- used for determining if positive adjustment is allowed
+  AdjustmentSource adjustment_source = 4;
+}
+
+message AdjustWorkOrderAmountResponse {}
+
+message GetAllBudgetsForConsumerRequest {
+  int64 consumer_id = 1;
+  // Optional field: the time zones should zone ids that can be parsed by https://docs.oracle.com/javase/8/docs/api/java/time/ZoneId.html
+  string request_time_zone = 2;
+
+  /**
+   * Optional field used for the printable address in budget
+   * The locale used following the specification defined at
+   * http://www.rfc-editor.org/rfc/bcp/bcp47.txt.
+   * Examples are: "en-US", "fr-CH", "es-MX"
+   */
+  string locale = 3;
+}
+
+message GetAllBudgetsForConsumerResponse {
+  repeated Budget budgets = 1;
+}
+
+message GetEligibleBudgetForConsumerRequest {
+  int64 consumer_id = 1;
+  int64 address_id = 2;
+  oneof checkout_time {
+    dayparts.TimeOfDayOfWeek order_placed_time = 3; // Set only if ASAP order
+    dayparts.TimeOfDayOfWeek scheduled_delivery_time = 4; // Set only if scheduled order
+  }
+}
+
+message GetEligibleBudgetForConsumerResponse {
+  Budget budget = 1;
+}
+
+message GetBudgetReminderForConsumerRequest {
+  int64 consumer_id = 1;
+  int64 address_id = 2;
+
+  google.protobuf.Timestamp request_time = 3;
+  string request_time_zone = 4;
+
+  CountryCode country_code = 5;
+
+  // The locale used following the specification defined at
+  // http://www.rfc-editor.org/rfc/bcp/bcp47.txt.
+  // Examples are: "en-US", "fr-CH", "es-MX"
+  string locale = 6;
+}
+
+message GetBudgetReminderForConsumerResponse {
+  string budget_reminder_message = 1;
+}
+
+message GetBudgetByIdRequest {
+  google.protobuf.StringValue budget_id = 1;
+}
+
+message GetBudgetByIdResponse {
+  Budget budget = 1;
+  google.protobuf.StringValue team_name = 2;
+}
+
+message GetEligibleBudgetForConsumerV2Request {
+  int64 consumer_id = 1;
+  int64 address_id = 2; // consumer_address_id
+  // For ASAP orders delivery_time is equivalent to checkout_time
+  // For Scheduled orders delivery_time is equivalent to scheduled_delivery_time
+  google.protobuf.Timestamp delivery_time = 3; // UTC timestamp
+  string delivery_timezone = 4; // Timezone of merchant
+
+  // used for expense meal restrictions
+  int64 store_address_id = 5; // address id of the merchant
+  common.FulfillmentType fulfillment_type = 6; // order fulfillmentType
+
+  reserved 7;
+
+  // order attributes for budget
+  OrderAttributes order_attributes = 8;
+
+  // creator of a group cart
+  string creator_consumer_id = 9;
+
+  // Used to indicate if the request is for group cart
+  bool is_group = 10;
+
+  // group cart types
+  string group_cart_type = 11;
+
+  // consumer location: use it when consumer address_id is NOT valid
+  common.Location consumer_location = 12;
+}
+
+message GetEligibleBudgetForConsumerV2Response {
+  Budget budget = 1;
+  // Ranked by server's policies; the first element should match `budget = 1`.
+  repeated Budget all_eligible_budgets = 2;
+}
+
+message GetPermissionToAccessCartRequest {
+  string cart_id = 1;
+  string user_id = 2; // deprecate when carnival supports consumer_id; carnival treats this as a string.
+}
+
+message GetPermissionToAccessCartResponse {
+  Permission permission = 1;
+}
+
+message TrackConsumerCreatedRequest {
+  string email = 1;
+  int64 consumer_id = 2;
+  int64 user_id = 3; // DSJ already knows user_id, which saves TMS an additional call to MainDB
+}
+
+// we don't return any status back. Successful response indicates that TMS "converted" invite to consumer
+message TrackConsumerCreatedResponse {}
+
+// DD-OBO-Consumer-Id is a part of Metadata
+message GetTeamPortalDataRequest {
+  // for join team account
+  google.protobuf.StringValue invitation_code = 1;
+}
+
+message GetTeamPortalDataResponse {
+  TeamPortalData portal_data = 1;
+}
+
+// DD-OBO-Consumer-Id is a part of Metadata
+message GetTeamAccountMembersRequest {
+  string team_account_id = 1;
+  OffsetPaginationRequest pagination = 2;
+  // Filters on the TeamMember's email in a "starts with" fashion (case-insenstiive).
+  // No filtering is performed if this field is blank.
+  string query_string = 3;
+  DdfwTeamMemberRole query_role = 4;
+  TeamMemberStatus team_member_status = 5 [deprecated = true];
+  // Filter on certain team member status
+  SelectedTeamMemberStatusInTeamAccount selected_team_member_status = 6;
+}
+
+// selected team member status in team account
+enum SelectedTeamMemberStatusInTeamAccount {
+  // unspecified selected member status
+  SELECTED_TEAM_MEMBER_STATUS_IN_TEAM_ACCOUNT_UNSPECIFIED = 0;
+  // not selected, all member status
+  SELECTED_TEAM_MEMBER_STATUS_IN_TEAM_ACCOUNT_ALL = 1;
+  // selected active member status
+  SELECTED_TEAM_MEMBER_STATUS_IN_TEAM_ACCOUNT_ACTIVE = 2;
+  // selected pending member status
+  SELECTED_TEAM_MEMBER_STATUS_IN_TEAM_ACCOUNT_PENDING = 3;
+  // selected active member who has redeemed any expensed meal
+  SELECTED_TEAM_MEMBER_STATUS_IN_TEAM_ACCOUNT_ORDERED = 4;
+}
+
+//team member role
+enum DdfwTeamMemberRole {
+  // unknown role
+  DDFW_TEAM_MEMBER_ROLE_UNSPECIFIED = 0;
+  //default
+  DDFW_TEAM_MEMBER_ROLE_MEMBER = 1;
+  //admin
+  DDFW_TEAM_MEMBER_ROLE_ADMIN = 2;
+}
+
+message GetTeamAccountMembersResponse {
+  repeated TeamMember team_members = 1;
+  // total_count considers the query_string in request.
+  OffsetPaginationResponse pagination = 2;
+}
+
+// DD-OBO-Consumer-Id is a part of Metadata
+message AddTeamMembersToTeamAccountRequest {
+  repeated string emails = 1;
+  string team_account_id = 2;
+  InvitationSource invitation_source = 3;
+  bool disable_email_notifications = 4;
+}
+
+message AddTeamMembersToTeamAccountErrorDetail {
+  // [DEPRECATED] The status code, which should be an enum value of [google.rpc.Code].
+  int32 code = 1;
+  // error message
+  string message = 2;
+  // problematic email
+  string email = 3;
+  // The status code, which should be an enum value of AddTeamMemberToTeamAccountErrorCode
+  AddTeamMemberToTeamAccountErrorCode error_code = 4;
+}
+
+message AddTeamMembersToTeamAccountResponse {
+  // each message can be displayed to the user and include the problematic email.
+  repeated AddTeamMembersToTeamAccountErrorDetail errors = 2;
+}
+
+message RemoveTeamMemberFromTeamAccountRequest {
+  oneof team_member_identifier {
+    string team_member_id = 1;
+    // this field will be only be processed if called by service admin
+    string email = 3;
+  }
+  string team_account_id = 2;
+}
+
+// successful response indicates that TMS removed team member
+message RemoveTeamMemberFromTeamAccountResponse {}
+
+// consumer_id is a part of gRPC metadata
+message JoinTeamAccountsRequest {
+  string pending_member_id = 1;
+}
+
+message JoinTeamAccountsResponse {
+  // active team member, "converted" from pending team member
+  TeamMember team_member = 1;
+}
+
+message JoinTeamAccountsV2Request {
+  string pending_member_id = 1;
+}
+
+message JoinTeamAccountsV2Response {
+  message Success {
+    TeamMember team_member = 1;
+  }
+
+  message Error {
+    // Used by front end to show different error messages
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // something is wrong
+      ERROR_CODE_INTERNAL_ERROR = 1;
+      // If cx is already active in DDfB
+      ERROR_CODE_ALREADY_ACTIVE = 2;
+      // If cx joins different teams
+      ERROR_CODE_DIFFERENT_TEAM = 3;
+      // If cx uses invalid pending member id
+      ERROR_CODE_INVALID_PENDING_MEMBER_ID = 4;
+      // If cx uses wrong pending member id, i.e. the pending member id is for others
+      ERROR_CODE_WRONG_PENDING_MEMBER_ID = 5;
+      // If cx is using personal account to join team which hasn't enable this feature
+      ERROR_CODE_PERSONAL_LOGIN_IS_DISABLED = 6;
+    }
+
+    message TeamMemberInfo {
+      google.protobuf.StringValue team_name = 1;
+      google.protobuf.StringValue team_member_email = 2;
+    }
+
+    // cx email
+    google.protobuf.StringValue consumer_email = 1;
+
+    // error code
+    ErrorCode error_code = 2;
+
+    // optional, messages for internal error
+    google.protobuf.StringValue error_message = 3;
+    // optional, existing cx information if cx is already an active member
+    TeamMemberInfo existing_info = 4;
+    // optional, cx information for current join attempt
+    TeamMemberInfo current_info = 5;
+  }
+
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message GetAllBudgetsForTeamAccountRequest {
+  string team_account_id = 1;
+}
+
+message GetAllBudgetsForTeamAccountResponse {
+  repeated Budget budgets = 1;
+}
+
+message GetAllVoucherBudgetsForTeamAccountRequest {
+  google.protobuf.StringValue team_account_id = 1;
+  OffsetPaginationRequest pagination = 2;
+}
+
+message GetAllVoucherBudgetsForTeamAccountResponse {
+  repeated VoucherBudget voucher_budgets = 1;
+  OffsetPaginationResponse pagination = 2;
+}
+
+message GetVoucherBudgetWithRedemptionStatsRequest {
+  google.protobuf.StringValue voucher_budget_id = 1;
+}
+
+message GetVoucherBudgetWithRedemptionStatsResponse {
+  VoucherBudgetWithRedemptionStats voucher_budget_with_redemption_stats = 1;
+}
+
+message SetVoucherTypeRequest {
+  string voucher_budget_id = 1;
+  VoucherType voucher_type = 2;
+}
+
+message SetVoucherTypeResponse {
+  VoucherBudget budget = 1;
+}
+
+message CreateTeamRequest {
+  string name = 1;
+  reserved 2;
+  // Types of order contents allowed for the team
+  repeated WorkOrderContents expensed_meal_allowed_order_contents = 3;
+}
+
+message CreateTeamResponse {
+  Team team = 1;
+  TeamConfig team_config = 2;
+}
+
+// update team request
+message UpdateTeamRequest {
+  // team id
+  string team_id = 1;
+  // team name
+  string name = 2;
+}
+
+// update team response
+message UpdateTeamResponse {
+  // response team
+  Team team = 1;
+}
+
+// fields that can be updated with updateTeamV2 API
+message UpdateTeamV2Params {
+  // team name
+  string name = 1;
+  // Types of order contents allowed for the team
+  repeated WorkOrderContents expensed_meal_allowed_order_contents = 2;
+  // organization id
+  google.protobuf.StringValue organization_id = 3;
+}
+
+// update teamV2 request
+message UpdateTeamV2Request {
+  // team id
+  string team_id = 1;
+  // fields that can be updated, update_mask will describe which fields changed
+  UpdateTeamV2Params update_team_params = 2;
+  // can contain values to update like team name, allowed order contents
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// update teamV2 response
+message UpdateTeamV2Response {
+  // response team
+  Team team = 1;
+  TeamConfig team_config = 2;
+}
+
+message CreateTeamAccountRequest {
+  string team_id = 1;
+  string name = 2;
+  // required. 0 will be interpreted as 0 (non-null)
+  int64 payer_consumer_id = 3;
+  string netsuite_id = 4;
+  // we accept optional team_account_id to prevent payer_consumer_id = 0 transient state and offer an ability to the client to pre-generate UUID.
+  string team_account_id = 5;
+}
+message CreateTeamAccountResponse {
+  TeamAccount team_account = 1;
+}
+
+message UpdateTeamAccountRequest {
+  string team_account_id = 1;
+  // we explicitly do not support team ID update
+  // because there is no use-case when a team account should be "moved"
+  // from one team to another
+  string name = 2;
+  // required. 0 will be interpreted as 0 (non-null)
+  int64 payer_consumer_id = 3;
+  // optional payment_method: {invoicing,default_card}
+  // defaults to "default_card" (card) if not passed
+  PaymentMethod payment_method = 4;
+  // invoice_payment_account_id: required if payment_method=invoicing, else it SHOULD NOT be passed
+  // 0 will be interpreted as 0 (non-null)
+  int64 invoice_payment_account_id = 5;
+  // netsuite_id: required if payment_method=invoicing, else it SHOULD NOT be passed
+  string netsuite_id = 6;
+}
+message UpdateTeamAccountResponse {
+  TeamAccount team_account = 1;
+}
+
+message UpdateTeamAccountV2Request {
+  TeamAccount team_account = 1;
+  // can contain values like 'name', 'expensed_meals_info.payment_method' etc.
+  google.protobuf.FieldMask update_mask = 2;
+}
+message UpdateTeamAccountV2Response {
+  TeamAccount team_account = 1;
+}
+
+message GetTeamAccountByIdRequest {
+  string team_account_id = 1;
+}
+
+message GetTeamAccountByIdResponse {
+  TeamAccount team_account = 1;
+}
+
+// Team member status in team account
+enum TeamMemberStatus {
+  // unspecified member status
+  TEAM_MEMBER_STATUS_UNSPECIFIED = 0;
+  // active member status
+  TEAM_MEMBER_STATUS_ACTIVE = 1;
+  // pending member status
+  TEAM_MEMBER_STATUS_PENDING = 2;
+  // deprecated
+  TEAM_MEMBER_STATUS_ORDERED = 3 [deprecated = true];
+}
+
+message AddTeamAccountRoleRequest {
+  string team_member_id = 1;
+  TeamAccountRole team_account_role = 2;
+  google.protobuf.StringValue consumer_id_string = 3 [(doordash.api.inject_id) = CX_ID];
+  TeamMemberStatus team_member_status = 4;
+}
+
+message AddTeamAccountRoleResponse {
+  TeamMember team_member = 1;
+}
+
+message DeleteTeamAccountRoleRequest {
+  string team_member_id = 1;
+  TeamAccountRole team_account_role = 2;
+  google.protobuf.StringValue consumer_id_string = 3 [(doordash.api.inject_id) = CX_ID];
+  TeamMemberStatus team_member_status = 4;
+}
+
+message DeleteTeamAccountRoleResponse {
+  TeamMember team_member = 1;
+}
+
+message AddActiveTeamMemberToTeamAccountsRequest {
+  string email = 1;
+  // optional. If not provided will be fetched from COPS using email matching
+  int64 user_id = 2;
+  // optional. If not provided will be fetched from COPS using email matching
+  repeated int64 consumer_ids = 3;
+  repeated TeamAccountRole roles = 4;
+  // Cx will receive same communication as after regular join flow if enabled
+  bool enable_email_notifications = 5;
+}
+message AddActiveTeamMemberToTeamAccountsResponse {
+  TeamMember team_member = 1;
+}
+
+// This is to add a logged-in DD user to only join a virtual team account as a member only without any verification
+// consumer id is fetched from DD-OBO-Consumer-Id
+// For now, we only allow virtual team account only
+message ClaimVoucherBudgetRequest {
+  google.protobuf.StringValue team_account_id = 1;
+  google.protobuf.BoolValue enable_email_notifications = 2;
+  google.protobuf.StringValue voucher_code = 3;
+}
+
+message ClaimVoucherBudgetResponse {
+  message Success {
+    TeamMember team_member = 1;
+    Budget budget = 2;
+    google.protobuf.StringValue team_name = 3;
+  }
+  message Error {
+    // Used by front end to show different error messages
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If this is not a valid team account
+      ERROR_CODE_INACTIVE_TEAM_ACCOUNT = 1;
+      // If the budget has reached the max redeemed number
+      ERROR_CODE_MAX_REDEEMED_NUMBER_REACHED = 2;
+      // If the user has already belonged to another team
+      ERROR_CODE_ALREADY_IN_ANOTHER_TEAM = 3;
+      // If the voucher is invalid or inactive
+      ERROR_CODE_INVALID_VOUCHER = 4;
+      // If the voucher is expired already
+      ERROR_CODE_EXPIRED_VOUCHER = 5;
+      // If the voucher has been redeemed already.
+      // After the unique link voucher roll out, it will only apply to unique link vouchers
+      // when another user has already redeemed this voucher code
+      ERROR_CODE_ALREADY_REDEEMED = 6;
+      // if 1) the user already redeemed the generic link voucher or this or
+      // 2) the user already redeemed this or another unique voucher code for the same budget
+      // we will let them know that the voucher is already in their account
+      ERROR_CODE_ALREADY_IN_YOUR_ACCOUNT = 7;
+      // if an account with the same work email that is invited to join the team already exists
+      ERROR_CODE_TEAM_MEMBER_EMAIL_ALREADY_EXISTS = 8;
+    }
+    // additional metadata to build rich error messages
+    message ErrorMetadata {
+      // optional
+      google.protobuf.StringValue existing_team_name = 1;
+    }
+    ErrorCode error_code = 1;
+    string message = 2 [deprecated = true];
+    ErrorMetadata error_metadata = 3;
+  }
+  google.protobuf.StringValue team_account_id = 1;
+  oneof result {
+    Success success = 2;
+    Error error = 3;
+  }
+}
+
+message CreateTeamAccountBudgetRequest {
+  string team_account_id = 1;
+  string name = 2;
+  // 0 and "no value" will be interpreted as null
+
+  // single address_id will be deprecated because of multiple address extension
+  int64 address_id = 3 [deprecated = true];
+  repeated dayparts.DayOfWeek days = 4;
+  dayparts.TimeOfDay start_time = 5;
+  dayparts.TimeOfDay end_time = 6;
+  money.MonetaryFields amount = 7;
+
+  // [Deprecated]: active_at should be date instead of timestamp
+  google.protobuf.Timestamp active_at_timestamp = 8 [deprecated = true]; // UTC timestamp
+  // [Deprecated]: inactive_at should be date instead of timestamp
+  google.protobuf.Timestamp inactive_at_timestamp = 9 [deprecated = true]; // UTC timestamp
+
+  BudgetRefreshInterval refresh_interval = 10;
+
+  ExpenseCodeConfig expense_code_config = 11;
+
+  // Response will be INVALID_ARGUMENT if any of the groups do not belong to this budget's team account
+  repeated string team_account_group_ids = 12;
+
+  BudgetConfig budget_config = 13;
+
+  date.Date active_at_date = 14;
+  date.Date inactive_at_date = 15;
+
+  BudgetAddressInputList budget_address_input_list = 16;
+  google.protobuf.StringValue consumer_id = 17 [(doordash.api.inject_id) = CX_ID];
+}
+
+// NB: The groups must be retrieved via GetTeamAccountGroupsForBudgets
+message CreateTeamAccountBudgetResponse {
+  Budget budget = 1;
+}
+
+message CreateTeamAccountVoucherBudgetRequest {
+  google.protobuf.StringValue parent_team_account_id = 1;
+  google.protobuf.StringValue name = 2;
+  repeated dayparts.DayOfWeek days = 3;
+  dayparts.TimeOfDay start_time = 4;
+  dayparts.TimeOfDay end_time = 5;
+  money.MonetaryFields amount = 6;
+  ExpenseCodeConfig expense_code_config = 7;
+  BudgetConfig budget_config = 8;
+  date.Date active_at_date = 9;
+  date.Date inactive_at_date = 10;
+  google.protobuf.Int32Value max_redemption_number = 11;
+}
+
+message CreateTeamAccountVoucherBudgetResponse {
+  VoucherBudget budget = 1;
+}
+
+message UpdateTeamAccountBudgetRequest {
+  string budget_id = 1;
+  string name = 2;
+  // 0 and "no value" will be interpreted as null
+
+  // single address_id will be deprecated because of multiple address extension
+  int64 address_id = 3 [deprecated = true];
+  repeated dayparts.DayOfWeek days = 4;
+  dayparts.TimeOfDay start_time = 5;
+  dayparts.TimeOfDay end_time = 6;
+  money.MonetaryFields amount = 7;
+
+  // [Deprecated]: active_at should be date instead of timestamp
+  google.protobuf.Timestamp active_at_timestamp = 8 [deprecated = true]; // UTC timestamp
+  // [Deprecated]: inactive_at should be date instead of timestamp
+  google.protobuf.Timestamp inactive_at_timestamp = 9 [deprecated = true]; // UTC timestamp
+
+  reserved 10;
+
+  ExpenseCodeConfig expense_code_config = 11;
+
+  // Treated in a "put" manner—the server will remove any existing group associations
+  //  if they are not specified here.
+  //
+  // Response will be INVALID_ARGUMENT if any of the groups do not belong to this budget's team account
+  repeated string team_account_group_ids = 12;
+
+  BudgetConfig budget_config = 13;
+
+  date.Date active_at_date = 14;
+  date.Date inactive_at_date = 15;
+
+  BudgetAddressInputList budget_address_input_list = 16;
+  google.protobuf.StringValue consumer_id = 17 [(doordash.api.inject_id) = CX_ID];
+}
+
+// NB: The groups must be retrieved via GetTeamAccountGroupsForBudgets
+message UpdateTeamAccountBudgetResponse {
+  Budget budget = 1;
+}
+
+message UpdateTeamAccountBudgetV2Request {
+  Budget budget = 1;
+  // can contain values like 'address_id'
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message UpdateTeamAccountBudgetV2Response {
+  Budget budget = 1;
+}
+
+message UpdateTeamAccountVoucherBudgetRequest {
+  google.protobuf.StringValue budget_id = 1;
+  google.protobuf.StringValue name = 2;
+  repeated dayparts.DayOfWeek days = 3;
+  dayparts.TimeOfDay start_time = 4;
+  dayparts.TimeOfDay end_time = 5;
+  money.MonetaryFields amount = 6;
+  ExpenseCodeConfig expense_code_config = 7;
+  BudgetConfig budget_config = 8;
+  date.Date active_at_date = 9;
+  date.Date inactive_at_date = 10;
+  google.protobuf.Int32Value max_redemption_number = 11;
+}
+
+message UpdateTeamAccountVoucherBudgetResponse {
+  VoucherBudget budget = 1;
+}
+
+message DeleteBudgetRequest {
+  string budget_id = 1;
+}
+
+message DeleteBudgetResponse {}
+
+message DeleteVoucherRequest {
+  string voucher_budget_id = 1;
+}
+
+message DeleteVoucherResponse {}
+
+message SendBudgetReminderRequest {
+  // budget notification type based on the operation taken on the budget
+  enum BudgetNotificationType {
+    // default notification type
+    BUDGET_NOTIFICATION_TYPE_UNSPECIFIED = 0;
+    // when notification is manually triggered
+    BUDGET_NOTIFICATION_TYPE_MANUAL_TRIGGER = 1;
+    // when budget is created
+    BUDGET_NOTIFICATION_TYPE_BUDGET_CREATED = 2;
+    // when budget is updated
+    BUDGET_NOTIFICATION_TYPE_BUDGET_UPDATED = 3;
+  }
+  string budget_id = 1;
+  BudgetNotificationType budget_notification_type = 2;
+}
+
+message SendBudgetReminderResponse {
+  message Success {}
+  message Error {
+    // Failure scenarios for send budget reminder
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If budget_id not found
+      ERROR_CODE_ACTIVE_BUDGET_NOT_FOUND = 1;
+      // If budget has expired since we are past the inactive date
+      ERROR_CODE_BUDGET_EXPIRED = 2;
+      // If team member does not have permission to send reminders
+      ERROR_CODE_PERMISSION_DENIED = 3;
+      // Umbrella error code for internal inconsistent states not to be exposed to user
+      // Error message will have details on the actual error
+      ERROR_CODE_INCONSISTENT_STATE = 4;
+    }
+    ErrorCode error_code = 1;
+    string message = 2;
+  }
+  message BudgetNotificationConfiguration {
+    // schedule option type of budget notification that will be sent
+    enum BudgetNotificationScheduleOptionType {
+      // unspecified- default which should not occur
+      BUDGET_NOTIFICATION_SCHEDULE_OPTION_TYPE_UNSPECIFIED = 0;
+      // immediate delivery of budget notifications
+      BUDGET_NOTIFICATION_SCHEDULE_OPTION_TYPE_IMMEDIATE = 1;
+      // scheduled delivery of budget notifications
+      BUDGET_NOTIFICATION_SCHEDULE_OPTION_TYPE_SCHEDULED = 2;
+    }
+
+    // scheduled delivery date of the budget notification
+    LocalDateTime budget_notification_scheduled_delivery_local_date = 1;
+    BudgetNotificationScheduleOptionType budget_notification_schedule_option_type = 2;
+  }
+  string budget_id = 1;
+  oneof result {
+    Success success = 2;
+    Error error = 3;
+  }
+  BudgetNotificationConfiguration budget_notification_configuration = 4;
+}
+
+message UpsertWorkOrderRequest {
+  int64 consumer_id = 1;
+  string budget_id = 2;
+  // Tracking keys below are optional but calls should supply as many as are available at the time
+  // Order service Cassandra UUID
+  string order_uuid = 3;
+  // MainDB order id
+  // DEPRECATED: TMS has no business logic on this field but analytics depends on it and the field needs to be removed once they are not using it
+  // Can not mark the field as deprecated since OrderService fails on deprecation warnings
+  int64 order_id = 4;
+  // id 5 deprecated since Carnival cart uuid not unique across orders
+  // string cart_id = 5;
+  // MainDB order_cart id
+  // DEPRECATED: TMS has no business logic on this field but analytics depends on it and the field needs to be removed once they are not using it
+  // Can not mark the field as deprecated since OrderService fails on deprecation warnings
+  int64 order_cart_id = 6;
+  // MainDB delivery_id
+  // DEPRECATED: TMS has no business logic on this field but analytics depends on it and the field needs to be removed once they are not using it
+  // Can not mark the field as deprecated since OrderService fails on deprecation warnings
+  int64 delivery_id = 7;
+  // Only set if order is canceled
+  bool is_canceled = 8;
+  // Timestamp of the order event from the calling service
+  google.protobuf.Timestamp timestamp = 9; // UTC timestamp
+}
+
+message UpsertWorkOrderResponse {}
+
+// file format
+enum ResponseFormat {
+  // unknown format
+  RESPONSE_FORMAT_UNSPECIFIED = 0;
+  // csv file
+  RESPONSE_FORMAT_CSV = 1;
+  // pdf file
+  RESPONSE_FORMAT_PDF = 2;
+}
+
+message GetTeamAccountOrderHistoryRequest {
+  // If the requesting consumer is not an 'admin' of this team_account, the server will return PERMISSION_DENIED.
+  string team_account_id = 1;
+  /**
+   * The DateRange will match with the local dates of the orders placed, inclusive of the boundaries of the range.
+   *  For example,
+   *  A request for date_range.start_date=(2020, 2, 8) will include:
+   *
+   *      1. an order placed in Tokyo on 2021 February 8 at 07:00 JST, and
+   *      2. an order placed in San Francisco on 2021 February 8 at 22:00 PST
+   *
+   *  Despite those orders' UTC dates being February 7 and February 9, respectively.
+   *
+   * Note, the data source is not real-time so order history for date_range.end_date=(current date) may be incomplete.
+   *
+   * If no date-range is specified, the service will return the last (rolling) month.
+   * If a partial date-range is specified (e.g. one of start_date or end_date is omitted), the service will return INVALID_ARGUMENT.
+   * If date_range.start_date is greater than date_range.end_date, the service will return INVALID_ARGUMENT.
+   */
+  DateRange date_range = 2;
+  ResponseFormat requested_format = 3;
+}
+
+message GetTeamAccountMemberRecordsRequest {
+  // If the requesting consumer is not an 'admin' of this team_account, the server will return PERMISSION_DENIED.
+  string team_account_id = 1;
+
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetTeamAccountMemberRecordsResponse {
+  // Security team encourages DDW to encode order history CSV data into a bytes array
+  // and return the file contents on-the-fly on web layer
+  bytes team_members_csv_data = 1;
+}
+
+message GetTeamAccountDashpassOrderHistoryRequest {
+  // If the requesting consumer is not an 'admin' of this team_account, the server will return PERMISSION_DENIED.
+  string team_account_id = 1;
+  /**
+   * The DateRange will match with the local dates of the orders placed, inclusive of the boundaries of the range.
+   *  For example,
+   *  A request for date_range.start_date=(2020, 2, 8) will include:
+   *
+   *      1. an order placed in Tokyo on 2021 February 8 at 07:00 JST, and
+   *      2. an order placed in San Francisco on 2021 February 8 at 22:00 PST
+   *
+   *  Despite those orders' UTC dates being February 7 and February 9, respectively.
+   *
+   * Note, the data source is not real-time so order history for date_range.end_date=(current date) may be incomplete.
+   *
+   * If no date-range is specified, the service will return the last (rolling) month.
+   * If a partial date-range is specified (e.g. one of start_date or end_date is omitted), the service will return INVALID_ARGUMENT.
+   * If date_range.start_date is greater than date_range.end_date, the service will return INVALID_ARGUMENT.
+   */
+  DateRange date_range = 2;
+}
+
+message GetTeamAccountOrderHistoryResponse {
+  // Security team encourages DDW to encode order history CSV data into a bytes array
+  // and return the file contents on-the-fly on web layer
+  bytes order_history_csv_data = 1;
+  ResponseFormat order_history_response_format = 2;
+  bytes order_history_data = 3;
+}
+
+message GetTeamAccountDashpassOrderHistoryResponse {
+  // Security team encourages DDW to encode order history CSV data into a bytes array
+  // and return the file contents on-the-fly on web layer
+  bytes order_history_csv_data = 1;
+}
+
+message AddActiveMemberTeamAccountRoleRequest {
+  string active_team_member_id = 1;
+  TeamAccountRole team_account_role = 2;
+}
+
+message AddActiveMemberTeamAccountRoleResponse {
+  TeamMember team_member = 1;
+}
+
+message DeleteActiveMemberTeamAccountRoleRequest {
+  string active_team_member_id = 1;
+  TeamAccountRole team_account_role = 2;
+
+  // Optional
+  // String is the DD standard for consumer_id.
+  // Request header injection from client is not recommended for UG.
+  google.protobuf.StringValue consumer_id_string = 3 [(doordash.api.inject_id) = CX_ID];
+}
+
+message DeleteActiveMemberTeamAccountRoleResponse {
+  TeamMember team_member = 1;
+}
+
+// If DD-OBO-Consumer-Id is not an admin for the team_account_id,
+// server will respond with PERMISSION_DENIED.
+message CreateTeamAccountGroupRequest {
+  // Required.
+  // If this field is blank or does not reference a team-account in the database,
+  // The server will repsond with INVALID_ARGUMENT
+  string team_account_id = 1;
+  // Required.
+  // If this field is blank, the server will respond with INVALID_ARGUMENT
+  // If this name is used for an existing group of thethe specified team-account,
+  // The server will respond with ALREADY_EXISTS.
+  string name = 2;
+  // Optional
+  string description = 3;
+}
+
+message CreateTeamAccountGroupResponse {
+  TeamAccountGroup team_account_group = 1;
+}
+
+message GetTeamAccountGroupsRequest {
+  string team_account_id = 1;
+  OffsetPaginationRequest pagination = 2;
+  // return all groups with names that contains the query string
+  string query_string = 3;
+}
+
+message GetTeamAccountGroupsResponse {
+  repeated TeamAccountGroup team_account_groups = 1;
+  OffsetPaginationResponse pagination = 2;
+}
+
+message GetTeamAccountGroupMembersRequest {
+  string team_account_group_id = 1;
+  // pagination.page_size = 0 is valid and is useful
+  //  if only membership count is needed.
+  OffsetPaginationRequest pagination = 2;
+}
+
+message GetTeamAccountGroupMembersResponse {
+  repeated GroupMember group_members = 1;
+  OffsetPaginationResponse pagination = 2;
+}
+
+message DeleteTeamAccountGroupRequest {
+  string team_account_group_id = 1;
+}
+
+message DeleteTeamAccountGroupResponse {}
+
+message UpdateTeamAccountGroupRequest {
+  TeamAccountGroup team_account_group = 1;
+}
+
+message UpdateTeamAccountGroupResponse {
+  TeamAccountGroup team_account_group = 1;
+}
+
+message AddTeamMembersToGroupRequest {
+  string team_account_group_id = 1;
+  // NB: looks like "<active|pending>_<UUID>".
+  // This is reflected in TeamMember message so clients using that API will be safe here.
+  repeated string team_member_ids = 2;
+}
+
+// status=OK if authentication/authorization succeeds.
+//  Individual failures reported in AddTeamMembersToGroupResult messages.
+message AddTeamMembersToGroupResponse {
+  repeated AddTeamMembersToGroupResult results = 1;
+}
+
+message AddTeamMembersToGroupResult {
+  // Note these errors are for individual failures.
+  message Error {
+    // Reasons adding a team member to the group can fail.
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team-member ID not found in DB
+      ERROR_CODE_TEAM_MEMBER_NOT_FOUND = 1;
+      // If team-member found but no membership found for the group's team-account.
+      ERROR_CODE_ACCOUNT_MEMBERSHIP_NOT_FOUND = 2;
+    }
+
+    // [DEPRECATED] Specific error
+    AddTeamMembersToGroupResult.Error.ErrorCode error_code = 1;
+    // Details
+    string message = 2;
+    // Specific error
+    AddTeamMemberToGroupErrorCode add_team_member_to_group_error_code = 3;
+  }
+
+  oneof value {
+    GroupMember group_member = 1;
+    AddTeamMembersToGroupResult.Error error = 2;
+  }
+}
+
+message AddTeamMembersToGroupByEmailRequest {
+  string team_account_group_id = 1;
+  // supports single email only for now for bulk-service use-case.
+  repeated string emails = 2;
+}
+
+message AddTeamMembersToGroupByEmailResult {
+  // results for individual successes or failures
+  message Success {
+    GroupMember group_member = 1;
+  }
+  message Failure {
+    // Specific error
+    AddTeamMemberToGroupErrorCode error_code = 1;
+    // Details
+    string message = 2;
+  }
+  string email = 1;
+  oneof value {
+    AddTeamMembersToGroupByEmailResult.Success success = 2;
+    AddTeamMembersToGroupByEmailResult.Failure failure = 3;
+  }
+}
+
+message SendJoinInvitationEmailToAllPendingTeamMembersRequest {
+  string team_id = 1;
+  string team_name = 2;
+  string team_account_id = 3;
+}
+
+message SendJoinInvitationEmailToAllPendingTeamMembersResponse {
+  SendJoinInvitationEmailToTeamMembersResult result = 1;
+}
+
+message SendJoinInvitationEmailToSelectedPendingTeamMembersRequest {
+  string team_id = 1;
+  string team_name = 2;
+  string team_account_id = 3;
+  repeated string emails = 4;
+  bool is_guest = 5; // skip team_id/team_account_id blank and team_name match checks
+}
+
+message SendJoinInvitationEmailToSelectedPendingTeamMembersResponse {
+  repeated SendJoinInvitationEmailToTeamMembersResult successes = 1;
+  repeated SendJoinInvitationEmailToTeamMembersResult failures = 2;
+}
+
+message SendJoinInvitationEmailToTeamMembersResult {
+  message Success {
+    string message = 1;
+  }
+  message Failure {
+    // Failure scenarios
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team account not found
+      ERROR_CODE_TEAM_ACCOUNT_NOT_FOUND = 1;
+      // If email not found
+      ERROR_CODE_EMAIL_NOT_FOUND = 2;
+      // If team not found
+      ERROR_CODE_TEAM_NOT_FOUND = 3;
+      // invalid email
+      ERROR_CODE_INVALID_EMAIL = 4;
+    }
+    ErrorCode error_code = 1;
+    string message = 2;
+  }
+
+  string email = 1;
+  string team_account_id = 2;
+  oneof value {
+    SendJoinInvitationEmailToTeamMembersResult.Success success = 3;
+    SendJoinInvitationEmailToTeamMembersResult.Failure failure = 4;
+  }
+}
+
+message SendVoucherInvitationEmailToSelectedEmailsRequest {
+  repeated google.protobuf.StringValue emails = 1;
+  google.protobuf.StringValue budget_id = 2;
+}
+
+message SendVoucherInvitationEmailToSelectedEmailsResponse {}
+
+// For bulk service, it throws an error or returns nothing.
+message AddTeamMembersToGroupByEmailResponse {
+  repeated AddTeamMembersToGroupByEmailResult results = 1;
+}
+
+message GetTeamAccountGroupByIdRequest {
+  // UUID
+  string id = 1;
+}
+
+message GetTeamAccountGroupByIdResponse {
+  TeamAccountGroup team_account_group = 1;
+}
+
+message GetTeamAccountGroupsForBudgetsRequest {
+  repeated string budget_ids = 1;
+}
+
+message GetTeamAccountGroupsForBudgetsResponse {
+  repeated GetTeamAccountGroupsForBudgetsResult results = 1;
+}
+
+message GetTeamAccountGroupsForBudgetsResult {
+  message Error {
+    // Specific error code
+    code.Code code = 1;
+    // Budget related to the error
+    string budget_id = 2;
+    // Displayable message
+    string message = 3;
+  }
+
+  oneof value {
+    BudgetGroups budget_groups = 1;
+    GetTeamAccountGroupsForBudgetsResult.Error error = 2;
+  }
+}
+
+message DeleteGroupMembershipsRequest {
+  // Referencing team_management.portal.GroupMember
+  //  Looks like: "<active|pending>_<UUID>"
+  repeated string group_member_ids = 1;
+}
+
+message DeleteGroupMembershipsResponse {
+  repeated DeleteGroupMembershipsResult results = 1;
+}
+
+message DeleteGroupMembershipsResult {
+  message Error {
+    // Specific error code
+    //  - PERMISSION_DENIED if requester is not admin of group's account
+    //  - NOT_FOUND if membership does not exist
+    code.Code code = 1;
+    // Readable message.
+    string message = 2;
+  }
+  // Present for success and error.
+  string group_member_id = 1;
+  // Only present if something went wrong.
+  DeleteGroupMembershipsResult.Error error = 2;
+}
+
+message GetTeamAccountMembershipInfoRequest {
+  string team_account_id = 1;
+  repeated string team_member_ids = 2;
+}
+
+message GetTeamAccountMembershipInfoResponse {
+  repeated GetTeamAccountMembershipInfoResult results = 1;
+}
+
+message GetTeamAccountMembershipInfoResult {
+  message Error {
+    // Specific error code
+    code.Code code = 1;
+    // Displayable message
+    string message = 2;
+  }
+
+  string team_member_id = 1;
+  oneof value {
+    TeamAccountMembershipInfo membership_info = 2;
+    GetTeamAccountMembershipInfoResult.Error error = 3;
+  }
+}
+
+message TeamAccountMembershipInfo {
+  repeated TeamAccountRole team_member_roles = 1;
+}
+
+message OnboardTeamAccountToExpensedMealsRequest {
+  string team_id = 1;
+  string team_account_name = 2;
+  PaymentMethod payment_method = 3;
+  // netsuite id may be empty if payment type is default_card
+  string netsuite_id = 4;
+  repeated string admin_emails = 5;
+  string opportunity_id = 6;
+  string onboarding_id = 7;
+}
+
+message OnboardTeamAccountToExpensedMealsResponse {}
+
+message OnboardTeamAccountRequest {
+  oneof value {
+    string team_account_id = 1;
+    NewTeamAccountInfo new_team_account_info = 2;
+    NewTeamAndTeamAccountInfo new_team_and_account_info = 5;
+  }
+  ExpensedMealOnboardingInfo expensed_meal_info = 3;
+  DashpassOnboardingInfo dashpass_info = 4;
+  OnboardingSource onboarding_source = 6;
+  string lead_id = 7;
+  // list of benefits getting onboarded
+  repeated WorkBenefit benefits_to_onboard = 8;
+}
+
+message OnboardTeamAccountResponse {
+  string team_account_id = 1;
+  // idempotency key, which should be used to check on-boarding status
+  string onboarding_workflow_id = 2;
+}
+
+message UpdateTeamAccountBenefitsInfoRequest {
+  string team_account_id = 1;
+  ExpensedMealOnboardingInfo expensed_meal_info = 2;
+}
+
+message UpdateTeamAccountBenefitsInfoResponse {
+  UpdateTeamAccountBenefitsInfoStatus status = 1;
+  message Error {
+    string message = 2;
+  }
+  oneof value {
+    string team_account_id = 3;
+    UpdateTeamAccountBenefitsInfoResponse.Error error = 4;
+  }
+}
+
+message GetOnboardTeamAccountStatusRequest {
+  // idempotency key
+  string onboarding_workflow_id = 1;
+}
+
+message GetOnboardTeamAccountStatusResponse {
+  OnboardTeamAccountStatus status = 1;
+  message Error {
+    string message = 2;
+  }
+  oneof value {
+    string team_account_id = 3;
+    GetOnboardTeamAccountStatusResponse.Error error = 4;
+  }
+}
+
+message GetWorkflowStatusRequest {
+  string workflow_id = 1;
+  WorkflowName workflow_name = 2;
+}
+
+message GetWorkflowStatusResponse {
+  WorkflowStatus workflow_status = 1;
+  message Error {
+    string message = 2;
+  }
+  oneof value {
+    GetWorkflowStatusResponse.Error error = 4;
+  }
+}
+
+message RemoveTeamAccountBenefitsRequest {
+  string team_account_id = 1;
+  repeated WorkBenefit benefits_to_be_removed = 2;
+}
+
+message RemoveTeamAccountBenefitsResponse {
+  // id for polling the workflow triggered by the request.
+  string workflow_id = 1;
+}
+
+message ValidateBudgetExpenseCodeRequest {
+  string budget_id = 1;
+  string expense_code = 2;
+}
+
+message ValidateBudgetExpenseCodeResponse {
+  bool is_valid = 1;
+}
+
+message GetBudgetConfigurationOptionsRequest {
+  string team_account_id = 1;
+}
+
+message GetBudgetConfigurationOptionsResponse {
+  string team_account_id = 1;
+  // Types of order contents allowed to be configured for the budget
+  repeated WorkOrderContents allowed_order_contents = 2;
+}
+
+message GetCompletedTeamAccountOnboardingStepsRequest {
+  string team_account_id = 1;
+}
+
+message GetCompletedTeamAccountOnboardingStepsResponse {
+  repeated OnboardingStep steps = 1;
+}
+
+message CompleteTeamAccountOnboardingStepRequest {
+  string team_account_id = 1;
+  OnboardingStep step = 2;
+}
+
+message CompleteTeamAccountOnboardingStepResponse {
+  repeated OnboardingStep steps = 1;
+}
+
+message GetWorkPlanDetailsRequest {
+  string team_account_id = 1;
+}
+
+message GetWorkPlanDetailsResponse {
+  WorkPlan plan = 1;
+  repeated TeamAccountWorkPlanLimitation limitations = 2;
+}
+
+message GetWorkConsumerStatusForFraudRequest {
+  int64 consumer_id = 1; // this should really be company_payer_consumer_id
+}
+
+message GetWorkConsumerStatusForFraudResponse {
+  WorkConsumerStatusForFraud status = 1;
+}
+
+message GetConsumerTeamTypeRequest {
+  string consumer_id = 1; // in contrast to the above, this is actually an end-user consumer_id
+}
+
+message GetConsumerTeamTypeResponse {
+  WorkConsumerStatusForFraud status = 1;
+}
+
+message CreateTeamAccountForDDFWCompanyRequest {
+  string team_account_name = 1;
+  OnboardingSource onboarding_source = 2;
+  CountryCode country_code = 3;
+}
+
+message CreateTeamAccountForDDFWCompanyResponse {
+  string team_account_id = 1;
+}
+
+message ActivateTeamAccountBenefitRequest {
+  // Which team account?
+  string team_account_id = 1;
+  // Which work benefit?
+  WorkBenefit work_benefit = 2;
+  // Billing config, needed only for manual management dashpass activation
+  DashpassBillingConfig billing_config = 3;
+}
+
+message ActivateTeamAccountBenefitResponse {
+  // this ID can be used to poll for status if we implement an API for polling the workflow triggered by the request.
+  string workflow_id = 1;
+}
+
+message RecordCardPaymentMethodAddedRequest {
+  string team_account_id = 1;
+  google.protobuf.Timestamp added_at_timestamp = 2; // UTC timestamp
+}
+
+message RecordCardPaymentMethodAddedResponse {}
+
+message CreateSelfServeLeadRequest {
+  SelfServeLead lead = 1;
+}
+
+message CreateSelfServeLeadResponse {
+  string lead_id = 1;
+}
+
+message GetTeamAccountByDomainNameRequest {
+  string domain_name = 1;
+}
+
+message GetTeamAccountByDomainNameResponse {
+  message Success {}
+  message Failure {
+    // Failure scenarios
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team account not found
+      ERROR_CODE_TEAM_ACCOUNT_NOT_FOUND = 1;
+    }
+    ErrorCode error_code = 1;
+    string message = 2;
+  }
+  string team_account_id = 1;
+  oneof value {
+    GetTeamAccountByDomainNameResponse.Success success = 2;
+    GetTeamAccountByDomainNameResponse.Failure failure = 3;
+  }
+}
+
+message UpdateTeamAccountDashpassBillingConfigRequest {
+  // team whose active billing_config will be updated
+  string team_account_id = 1;
+
+  DashpassBillingConfig billing_config = 2;
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+message UpdateTeamAccountDashpassBillingConfigResponse {
+  // team whose active billing_config was updated
+  string team_account_id = 1;
+
+  DashpassBillingConfig billing_config = 2;
+}
+
+message AddTeamAccountDashpassBillingConfigRequest {
+  // team whose active billing_config will be updated
+  string team_account_id = 1;
+
+  DashpassBillingConfig billing_config = 2;
+}
+
+message AddTeamAccountDashpassBillingConfigResponse {
+  // team whose active billing_config was updated
+  string team_account_id = 1;
+
+  DashpassBillingConfig billing_config = 2;
+}
+
+message UpdateTeamAccountDashpassBillingInfoRequest {
+  TeamAccountDashpassBillingInfo billing_info = 2;
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+message UpdateTeamAccountDashpassBillingInfoResponse {
+  TeamAccountDashpassBillingInfo billing_info = 2;
+}
+
+message CreateTeamAccountOfficeRequest {
+  // required
+  google.protobuf.StringValue team_account_id = 1;
+  // will be ignored if google map id is used
+  google.protobuf.StringValue name = 2;
+  // not be used if source place id or google map id is provided
+  google.protobuf.Int64Value address_id = 3;
+
+  // optional
+  google.protobuf.Int64Value max_participant_subtotal = 4;
+  google.protobuf.FloatValue tip_percentage = 5;
+  google.protobuf.Int64Value max_tip_amount = 6;
+  google.protobuf.StringValue phone_number = 7;
+  google.protobuf.StringValue dasher_instruction = 8;
+
+  // if provided, address_id will be ignored
+  google.protobuf.StringValue google_place_id = 9;
+
+  // if provided, google_place_id or address_id will be ignored
+  google.protobuf.StringValue source_place_id = 10;
+}
+
+message CreateTeamAccountOfficeResponse {
+  message Success {
+    google.protobuf.StringValue id = 1;
+  }
+  message Error {
+    // Failure scenarios for create office
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team_account_id, name, address_id already exists
+      ERROR_CODE_OFFICE_ALREADY_EXISTS = 1;
+      // If caller does not have permission to add office
+      ERROR_CODE_PERMISSION_DENIED = 2;
+      // If team account not found
+      ERROR_CODE_TEAM_ACCOUNT_NOT_FOUND = 3;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message DeleteTeamAccountOfficeRequest {
+  // required fields
+  google.protobuf.StringValue id = 1;
+}
+
+message DeleteTeamAccountOfficeResponse {
+  message Success {
+    google.protobuf.StringValue id = 1;
+  }
+  message Error {
+    // Failure scenarios for delete office
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If the office does not exist
+      ERROR_CODE_OFFICE_NOT_FOUND = 1;
+      // If caller does not have permission to delete office
+      ERROR_CODE_PERMISSION_DENIED = 2;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message UpdateTeamAccountOfficeRequest {
+  // required fields
+  google.protobuf.StringValue id = 1;
+
+  // optional fields
+  google.protobuf.StringValue name = 2;
+  google.protobuf.Int64Value address_id = 3;
+  google.protobuf.Int64Value max_participant_subtotal = 4;
+  google.protobuf.FloatValue tip_percentage = 5;
+  google.protobuf.Int64Value max_tip_amount = 6;
+  google.protobuf.StringValue phone_number = 7;
+  google.protobuf.StringValue dasher_instruction = 8;
+  google.protobuf.BoolValue show_weekends = 9;
+}
+
+message UpdateTeamAccountOfficeResponse {
+  message Success {
+    google.protobuf.StringValue id = 1;
+  }
+  message Error {
+    // Failure scenarios for update office
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team_account_id, name, address_id already exists
+      ERROR_CODE_OFFICE_ALREADY_EXISTS = 1;
+      // If caller does not have permission to update office
+      ERROR_CODE_PERMISSION_DENIED = 2;
+      // If the office does not exist
+      ERROR_CODE_OFFICE_NOT_FOUND = 3;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message ListTeamAccountOfficesRequest {
+  // required fields
+  google.protobuf.StringValue team_account_id = 1;
+}
+
+message ListTeamAccountOfficesResponse {
+  message Success {
+    repeated TeamAccountOffice team_account_offices = 1;
+  }
+  message Error {
+    // Failure scenarios for ListTeamAccountOffices
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If team account not found
+      ERROR_CODE_TEAM_ACCOUNT_NOT_FOUND = 1;
+      // If caller does not have permission to list team account offices
+      ERROR_CODE_PERMISSION_DENIED = 2;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message GetTeamAccountOfficeByIdRequest {
+  // required fields
+  google.protobuf.StringValue id = 1;
+}
+
+message GetTeamAccountOfficeByIdResponse {
+  message Success {
+    TeamAccountOffice team_account_office = 1;
+  }
+  message Error {
+    // Failure scenarios for GetTeamAccountOfficeById
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // If the office does not exist
+      ERROR_CODE_OFFICE_NOT_FOUND = 1;
+      // If caller does not have permission to delete office
+      ERROR_CODE_PERMISSION_DENIED = 2;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  oneof result {
+    Success success = 1;
+    Error error = 2;
+  }
+}
+
+message RecurringGOCalendarEntryError {
+  // Failure scenarios for creating, updating and deleting calendar entry
+  enum ErrorCode {
+    //This should not occur.
+    ERROR_CODE_UNSPECIFIED = 0;
+    //store closed
+    ERROR_CODE_STORE_CLOSED = 1;
+    //invalid store
+    ERROR_CODE_INVALID_STORE = 2;
+    //invalid menu in store
+    ERROR_CODE_INVALID_MENU = 3;
+    //update not supported
+    ERROR_CODE_UPDATE_NOT_SUPPORTED = 4;
+    //delete not supported
+    ERROR_CODE_DELETE_NOT_SUPPORTED = 5;
+    //entry no existed
+    ERROR_CODE_ENTRY_NOT_EXISTED = 6;
+    //cannot create the cart list
+    ERROR_CODE_CARTS_CREATION_FAILED = 7;
+    //permission denied
+    ERROR_CODE_PERMISSION_DENIED = 8;
+    //unknown error
+    ERROR_CODE_UNKNOWN = 100;
+  }
+  ErrorCode error_code = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+message CreateRecurringGOCalendarEntryRequest {
+  google.protobuf.Int64Value store_id = 1;
+  google.protobuf.FloatValue tip_percentage = 2;
+  google.protobuf.Int64Value max_tip_amount = 3;
+  google.protobuf.Int64Value max_participant_subtotal = 4;
+  // This is local date time that does not have timezone
+  LocalDateTime checkout_time = 5;
+  google.protobuf.StringValue timezone = 6;
+  google.protobuf.StringValue office_id = 7;
+  google.protobuf.StringValue team_account_id = 8;
+  google.protobuf.StringValue store_name = 9;
+  google.protobuf.StringValue store_image_url = 10;
+  // This is local date time that does not have timezone
+  LocalDateTime target_delivery_time = 11;
+  google.protobuf.BoolValue is_splitting_bill_enabled = 12;
+}
+
+message CreateRecurringGOCalendarEntryResponse {
+  message Success {
+    RecurringGroupOrderCalendarEntry recurring_group_order_calendar_entry = 1;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message CreateBulkRecurringGOCalendarEntriesRequest {
+  repeated CreateRecurringGOCalendarEntryRequest bulk_calendar_entries_creation_request = 1;
+}
+
+message CreateBulkRecurringGOCalendarEntriesResponse {
+  repeated CreateRecurringGOCalendarEntryResponse bulk_calendar_entries_creation_response = 1;
+}
+
+message CreateRecurringGOCartsRequest {
+  repeated google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue team_account_id = 2;
+}
+
+message CreateRecurringGOCartsResponse {
+  message Success {
+    repeated RecurringGroupOrderCalendarEntry recurring_group_order_calendar_entry = 1;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message GetRecurringGOCalendarEntryRequest {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue team_account_id = 2;
+}
+
+message GetRecurringGOCalendarEntryResponse {
+  message Success {
+    RecurringGroupOrderCalendarEntry recurring_group_order_calendar_entry = 1;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message DailyRecurringGroupOrderCalendarEntries {
+  date.Date date = 1;
+  repeated RecurringGroupOrderCalendarEntry recurring_group_order_calendar_entry = 2;
+}
+
+message ListRecurringGOCalendarEntriesRequest {
+  google.protobuf.StringValue office_id = 1;
+  date.Date start_date = 2;
+  date.Date end_date = 3;
+  google.protobuf.StringValue team_account_id = 4;
+}
+
+message ListRecurringGOCalendarEntriesResponse {
+  message Success {
+    repeated DailyRecurringGroupOrderCalendarEntries daily_recurring_group_order_calendar_entries = 1;
+    bool show_weekends = 2;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message UpdateRecurringGOCalendarEntryRequest {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Int64Value store_id = 2;
+  google.protobuf.FloatValue tip_percentage = 3;
+  google.protobuf.Int64Value max_tip_amount = 4;
+  google.protobuf.Int64Value max_participant_subtotal = 5;
+  // This is local date time that does not have timezone
+  LocalDateTime checkout_time = 6;
+  google.protobuf.StringValue timezone = 7;
+  google.protobuf.StringValue team_account_id = 8;
+  // This is local date time that does not have timezone
+  LocalDateTime target_delivery_time = 9;
+}
+
+message UpdateRecurringGOCalendarEntryResponse {
+  message Success {
+    RecurringGroupOrderCalendarEntry recurring_group_order_calendar_entry = 1;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message DeleteRecurringGOCalendarEntryRequest {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue team_account_id = 2;
+}
+
+message DeleteRecurringGOCalendarEntryResponse {
+  message Success {
+    google.protobuf.StringValue id = 1;
+  }
+  oneof result {
+    Success success = 1;
+    RecurringGOCalendarEntryError error = 2;
+  }
+}
+
+message GetWorkRecurringGroupOrderMetadataRequest {
+  google.protobuf.StringValue cart_id = 1;
+}
+
+message GetWorkRecurringGroupOrderMetadataResponse {
+  WorkRecurringGroupOrderAddress office_address = 1;
+}
+
+// to be deprecated
+message IsChangedAddressWithinPermittedRadiusRequest {
+  int64 consumer_id = 1;
+  //deprecate the single budget_address_id because of multiple address extension
+  int64 budget_address_id = 2 [deprecated = true];
+  string budget_team_account_id = 3;
+  int64 target_address_id = 4;
+  common.FulfillmentType fulfillment_type = 5;
+  // This is consumer delivery location
+  common.Location consumer_location = 6;
+  repeated int64 budget_address_id_list = 7;
+}
+
+// to be deprecated
+message IsChangedAddressWithinPermittedRadiusResponse {
+  bool is_permitted = 1;
+}
+
+message IsChangedAddressWithinPermittedRadiusV2Request {
+  string consumer_id = 1;
+  string budget_id = 2;
+  int64 target_address_id = 3;
+  common.FulfillmentType fulfillment_type = 4;
+  // This is consumer delivery location
+  common.Location consumer_location = 5;
+}
+
+message IsChangedAddressWithinPermittedRadiusV2Response {
+  bool is_permitted = 1;
+}
+
+message GetJoinContextRequest {
+  // pending member id
+  google.protobuf.StringValue invitation_code = 1;
+}
+
+message GetJoinContextResponse {
+  // use personal account to join ddfb
+  bool is_personal_account_login_allowed = 1;
+  // determine if the login email matches the invite email
+  bool is_consumer_email_match = 2;
+}
+
+message GetCurrentDashPassPlanRequest {
+  int64 consumer_id = 1;
+  string team_account_id = 2;
+}
+
+message GetCurrentDashPassPlanResponse {
+  DashPassPlan current_consumer_plan = 1;
+  DashPassPlan current_team_account_plan = 2;
+}
+
+message DashPassPlan {
+  bool is_active = 1;
+  bool unsubscribe_allowed = 2;
+  int64 plan_id = 3;
+  bool is_corporate_plan_type = 4;
+}
+
+message SwitchToWorkDashPassRequest {
+  int64 consumer_id = 1;
+  string team_account_id = 2;
+}
+
+message SwitchToWorkDashPassResponse {
+  message Success {
+    string workflow_id = 1;
+  }
+  message Failure {
+    // Failure scenarios for switching cx's current plan to WDP
+    enum ErrorCode {
+      // This should not occur.
+      ERROR_CODE_UNSPECIFIED = 0;
+      // error when calling COPS to unsubscribe cx’s active plan
+      ERROR_CODE_UNSUBSCRIBE_ERROR = 1;
+      // error when calling COPS to subscribe to WDP
+      ERROR_CODE_SUBSCRIBE_ERROR = 2;
+    }
+    ErrorCode error_code = 1;
+    string message = 2;
+  }
+  oneof value {
+    SwitchToWorkDashPassResponse.Success success = 1;
+    SwitchToWorkDashPassResponse.Failure failure = 2;
+  }
+}
+
+message GetTeamAccountIdPlanTypeMapRequest {
+  int64 consumer_id = 1;
+}
+
+message GetTeamAccountIdPlanTypeMapResponse {
+  map<string, WorkPlan> team_account_id_plan_type = 1;
+}
+
+message GetTeamPortalDataForSignInUpRequest {
+  string pending_member_id = 1;
+}
+
+message GetTeamPortalDataForSignInUpResponse {
+  string company_name = 1;
+}
+
+message GetFrequentlyUsedAddressesByTeamAccountRequest {
+  google.protobuf.StringValue team_account_id = 1;
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetFrequentlyUsedAddressesByTeamAccountResponse {
+  BudgetAddressInfoList budget_address_info_list = 1 [deprecated = true];
+  repeated AddressData address_data_list = 2;
+}
+
+message AddressData {
+  google.protobuf.Int64Value address_id = 1;
+  google.protobuf.StringValue printable_address = 2;
+}
+
+message GetTeamAccountMembershipInfoV2Request {
+  string team_account_id = 1;
+  repeated string active_team_member_ids = 2;
+  repeated string pending_team_member_ids = 3;
+  google.protobuf.StringValue consumer_id = 4 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetTeamAccountMembershipInfoV2Response {
+  repeated GetTeamAccountMembershipInfoV2Result results = 1 [deprecated = true];
+  repeated GetTeamAccountMembershipInfoResult result_list = 2;
+}
+
+message GetTeamAccountMembershipInfoV2Result {
+  message Error {
+    // Specific error code
+    code.Code code = 1;
+    // Displayable message
+    string message = 2;
+  }
+
+  // both active and pending team_member_id
+  string team_member_id = 1;
+  oneof value {
+    // active admin can have both admin and member role in list
+    // pending admin only has admin role in list
+    TeamAccountMembershipInfo membership_info = 2;
+    GetTeamAccountMembershipInfoV2Result.Error error = 3;
+  }
+}
+
+message GetPermissionToOrderDetailsRequest {
+  google.protobuf.StringValue team_member_id = 1 [deprecated = true];
+  google.protobuf.StringValue order_uuid = 2;
+  google.protobuf.StringValue consumer_id_string = 3 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetPermissionToOrderDetailsResponse {
+  Permission permission = 1;
+}

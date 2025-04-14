@@ -1,0 +1,469 @@
+syntax = "proto3";
+package consumer_habituation.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.consumer_habituation";
+
+// Service used to habituate users on the doordash
+service ConsumerHabituationService {
+  option (doordash.api.service) = {
+    url: "consumer-habituation-service-web.service.prod.ddsd"
+    name: "consumer-habituation-service"
+    port: 50051
+    name_spaces: ["consumer_habituation"]
+    owner: {
+      id: "palo-alto-delivery-pad"
+      name: "consumer-habituation"
+      slack_channel: "#eng-pad"
+      email_alias: "eng-pad@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+
+  // Used by Feed-Service to retrieve which stores have discounts and the corresponding carousels and badges
+  rpc GetDiscountCandidates(GetDiscountCandidatesRequest) returns (GetDiscountCandidatesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by growth-service to retrieve the store candidates for notifications
+  rpc GetPadNotificationCandidates(GetPadNotificationCandidatesRequest) returns (GetPadNotificationCandidatesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by clients to claim the discount for a given Cx and business id pair
+  rpc ClaimDiscount(ClaimDiscountRequest) returns (ClaimDiscountResponse) {
+    option (google.api.http) = {
+      post: "/consumer_habituation/v1/claim"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by Order service to delete the discount claim status when order is created
+  rpc DeleteClaimDiscount(DeleteClaimDiscountRequest) returns (DeleteClaimDiscountResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by Order service to redeem the discount claim status when order is created
+  rpc RedeemClaimDiscount(RedeemClaimDiscountRequest) returns (RedeemClaimDiscountResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by Growth to retrieve chs placements
+  rpc GetPricingIncentivePlacements(GetPricingIncentivePlacementsRequest) returns (GetPricingIncentivePlacementsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+
+  // Used by ad-exchange or promo service to retrive smart targeting
+  rpc IsCxSmartTargetedForStores(IsCxSmartTargetedForStoresRequest) returns (IsCxSmartTargetedForStoresResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 300;
+  }
+}
+
+// input request for GetDiscountCandidates
+message GetDiscountCandidatesRequest {
+  // consumer_id of consumer that loaded homepage
+  string consumer_id = 1;
+  // location information where the homepage was loaded from
+  common.ConsumerLocation consumer_location = 2;
+  // consumer tags of consumer
+  repeated string consumer_tags = 3;
+}
+
+// represents a single candidate which is a store_id, the carousel_ids that it belongs to and any badges
+message DiscountCandidate {
+  // store_id of candidate
+  string store_id = 1;
+  // any carousel_ids that are associated with store
+  repeated string carousel_ids = 2;
+  // any badges that should show on store cards
+  repeated string badge_types = 3;
+  // entity type of candidate
+  EntityType entity = 4;
+  // entity_id of candidate
+  string entity_id = 5;
+  // rotation status
+  RotationStatus rotation_status = 6;
+}
+
+// enum values of entity type
+enum EntityType {
+  // entity type for default
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  // entity type for business
+  ENTITY_TYPE_BUSINESS = 1;
+  // entity type for store
+  ENTITY_TYPE_STORE = 2;
+  // entity type for campaign
+  ENTITY_TYPE_CAMPAIGN = 3;
+}
+
+// request params for GetNotificationCandidates
+message GetPadNotificationCandidatesRequest {
+  reserved 2;
+  reserved "delivery_geohash";
+
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // store limit
+  google.protobuf.Int32Value store_limit = 3;
+  // delivery location
+  common.ConsumerLocation delivery_location = 4;
+}
+
+// candidates that are eligible for notifications
+message GetPadNotificationCandidatesResponse {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // notification store candidates comma separated list
+  repeated google.protobuf.StringValue store_ids = 2;
+  // last update
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// response for GetDiscountCandidatesRequest
+message GetDiscountCandidatesResponse {
+  // candidates that are eligible for discounts
+  repeated DiscountCandidate candidates = 1;
+}
+
+// request for ClaimDiscount
+message ClaimDiscountRequest {
+  // consumer id of the consumer that claim the discount
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // business id of the store that has the discount
+  string business_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // discount type to claim
+  money.DiscountType discount_type = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // pad discount type, used to differentiate different pad discount
+  PadDiscountType pad_discount_type = 4 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// response for ClaimDiscount
+message ClaimDiscountResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// used in GetQuoteAdjustments response to pass Claimable banner data through to pricing -> order service
+message ClaimableBanners {
+  // list of claim promo banners
+  repeated ClaimableBanner claimable_banners = 1;
+  // claim promo banner info
+  message ClaimableBanner {
+    // main bolded banner text
+    string title = 1;
+    // smaller banner text
+    string subtitle = 2;
+    // banner tooltip
+    Tooltip tooltip = 3;
+    // used for claim button(s)
+    repeated Button buttons = 4;
+    // tooltip info
+    message Tooltip {
+      // main tooltip text
+      string title = 1;
+      // promo info contained in tooltip
+      string description = 2;
+    }
+    // button info
+    message Button {
+      // text displayed on button
+      string text = 1;
+      // contains info on whether button should be clickable or grayed out
+      ButtonMetadata metadata = 2;
+    }
+    // contains info on whether button should be clickable or grayed out
+    message ButtonMetadata {
+      // has cx claimed the promo
+      ClaimStatus status = 1;
+      // discount type the cx could claim
+      money.DiscountType discount_type = 2;
+      // info about icon that follows the text on button
+      TrailingIcon trailing_icon = 3;
+    }
+    // info about icon that follows the text on button
+    message TrailingIcon {
+      // name of icon e.g. checkmark
+      string name = 1;
+      // size of icon
+      google.protobuf.Int32Value size = 2;
+    }
+  }
+}
+
+// used in BatchGetQuoteAdjustments response to pass Claimable banner data through to pricing -> feed service
+message BatchClaimInfo {
+  // claim info
+  repeated ClaimInfo claimable_benefits = 1;
+
+  // claim info object
+  message ClaimInfo {
+    // has cx claimed the promo
+    ClaimStatus status = 1;
+    // discount type the cx could claim
+    money.DiscountType discount_type = 2;
+  }
+}
+
+// per store level pad incentive info, contains pad discount type, localized texts for batch flow usages
+message PadIncentiveInfo {
+  // pad discount type, use to control layout elements on feed
+  PadDiscountType pad_discount_type = 1;
+
+  // badge type, use to control the pad badge on feed
+  string badge_type = 2;
+
+  // distance based pricing info object, use in feed store page
+  DBPInfo dbp_info = 3;
+
+  // use in pad collection per store up sell. e.g. $0 delivery fee or $0 delivery fee + 10%, etc
+  string store_cell_discount_text = 4;
+
+  // pad rotation attributes
+  RotationAttributes rotation_attributes = 5;
+
+  // badge text for feed non backend driven pages usage
+  google.protobuf.StringValue badge_text = 6;
+
+  // use in store page distance based pricing layout
+  message DBPInfo {
+    // title of the layout
+    string title = 1;
+    // subtitle of the layout if there are any
+    string subtitle = 2;
+    // tooltip information
+    ToolTip tooltip = 3;
+  }
+}
+
+// used in getPricingIncentivePlacements as request to retrieve Pad placements, growth -> chs
+message GetPricingIncentivePlacementsRequest {
+  // store id which will show placements
+  string store_id = 1;
+
+  // chs consumer info stores all cx contexts needed
+  ConsumerInfo consumer_info = 2;
+}
+
+// used in getPricingIncentivePlacements as response to retrieve Pad placements, growth -> chs
+message GetPricingIncentivePlacementsResponse {
+  // list of pad placements retrieved
+  repeated PricingIncentivePlacement pricing_incentive_placement = 1;
+
+  // chs placements definition
+  message PricingIncentivePlacement {
+    // cx id associated with current placement
+    string consumer_id = 1;
+    // store id associated with current placement
+    string store_id = 2;
+    // pad_discount_type indicates pad discount type
+    PadDiscountType pad_discount_type = 3;
+    // claim promo banner for current placement
+    ClaimableBanners.ClaimableBanner claimable_banner = 4;
+    // rotation attributes for current placement
+    RotationAttributes rotation_attributes = 5;
+  }
+}
+
+// enum for placement discount type, matches PadDiscountType
+enum PadDiscountType {
+  // unspecified placement discount type
+  PAD_DISCOUNT_TYPE_UNSPECIFIED = 0;
+  // zero delivery fee
+  PAD_DISCOUNT_TYPE_ZERO_DF = 1;
+  // zero delivery fee and ten percent off
+  PAD_DISCOUNT_TYPE_ZERO_DF_10_PERCENT_OFF = 2;
+}
+
+// enum for if cx claimed the promo
+enum ClaimStatus {
+  // default
+  CLAIM_STATUS_UNSPECIFIED = 0;
+  // show the banner, but not claimed
+  CLAIM_STATUS_TO_BE_CLAIMED = 1;
+  // show the banner, and claimed
+  CLAIM_STATUS_CLAIMED = 2;
+}
+
+// request for DeleteClaimDiscount
+message DeleteClaimDiscountRequest {
+  // consumer id of the consumer that delete claim the discount
+  string consumer_id = 1;
+  // business id of the store that has the discount
+  string business_id = 2;
+  // discount type to claim
+  money.DiscountType discount_type = 3;
+}
+
+// response for DeleteClaimDiscount
+message DeleteClaimDiscountResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// request for RedeemClaimDiscount
+message RedeemClaimDiscountRequest {
+  // consumer id of the consumer that redeem claim the discount
+  string consumer_id = 1;
+  // business id of the store that has the discount
+  string business_id = 2;
+  // discount type to redeem
+  money.DiscountType discount_type = 3;
+}
+
+// response for RedeemClaimDiscount
+message RedeemClaimDiscountResponse {
+  // success or failure message
+  string message = 1;
+}
+
+// request for IsCxSmartTargetedForStores
+message IsCxSmartTargetedForStoresRequest {
+  // consumer id for smart targeting retrieval
+  string consumer_id = 1;
+  // store ids for smart targeting retrieval
+  repeated string store_ids = 2;
+  // flow type of IsCxSmartTargetedForStores request from adex
+  SmartTargetFlowType flow_type = 3;
+  // session id for the incoming request
+  string dd_session_id = 4;
+  // cart id for the incoming request if cart existed
+  string cart_id = 5;
+  // campaign targeting type
+  CampaignTargetingType campaign_targeting_type = 6;
+}
+
+// response for IsCxSmartTargetedForStoresResponse
+message IsCxSmartTargetedForStoresResponse {
+  // old name, please use store_smart_campaign_ifno
+  reserved 2;
+  reserved "store_smart_incentives";
+
+  // store targeted result map in store id to bool targeted result
+  map<string, bool> is_smart_targeted = 1;
+
+  // store id to smart campaign
+  map<string, SmartCampaignInfo> store_smart_campaign_info = 3;
+}
+
+// contains info for smart campaigns
+message SmartCampaignInfo {
+  // targeting info for the cx, store
+  // may be optional in the future
+  SmartTargetingInfo targeting_info = 1;
+  // list of smart incentives for cx, store. e.g. sxgy, bogo, etc
+  repeated SmartIncentiveInfo smart_incentive_infos = 2;
+}
+
+// info for smart targeting
+message SmartTargetingInfo {
+  // true if the cx is eligible for campaigns from the store
+  bool is_smart_targeted = 1;
+}
+
+// wrapper for any smart incentive type, currently just sxgy
+message SmartIncentiveInfo {
+  // can use in the future if we need incentive level eligibility checks
+  reserved 1;
+  reserved "is_smart_targeted";
+
+  // smart min subtotal for sxgy incentives
+  // may be optional if incentive type doesn't need subtotal
+  money.MonetaryFields subtotal = 2;
+
+  // discount values, could extend in the future
+  oneof discount_value {
+    // percent off discount, e.g. 20% off would be 20.0
+    google.protobuf.DoubleValue percent_off = 3;
+    // flat off discount, e.g. $3 off
+    money.MonetaryFields flat_off = 4;
+  }
+}
+
+// used in BatchGetQuoteAdjustments response to pass rotation data through to pricing -> feed service
+message RotationAttributes {
+  // rotation status
+  RotationStatus rotation_status = 1;
+  // rotation start time
+  google.protobuf.Timestamp start_time = 2;
+  // rotation end time
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// chs consumer info stores all cx contexts needed
+message ConsumerInfo {
+  // cx id to retrieve pad placements
+  string consumer_id = 1;
+  // consumer location, which contains submarket_id, district_id, lat and lng
+  common.ConsumerLocation consumer_location = 2;
+  // is cx a guest
+  google.protobuf.BoolValue is_guest = 3;
+  // consumer experience
+  common.Experience experience = 4;
+}
+
+// enum for rotation status
+enum RotationStatus {
+  // default
+  ROTATION_STATUS_UNSPECIFIED = 0;
+  // rotation status for new this week
+  ROTATION_STATUS_NEW_THIS_WEEK = 1;
+  // rotation status for two days left
+  ROTATION_STATUS_TWO_DAYS_LEFT = 2;
+  // rotation status for ends today
+  ROTATION_STATUS_ENDS_TODAY = 3;
+  // rotation status for current
+  ROTATION_STATUS_CURRENT = 4;
+  // rotation status for excluded
+  ROTATION_STATUS_EXCLUDED = 5;
+}
+
+// tooltip for any required object
+message ToolTip {
+  // tooltip title
+  google.protobuf.StringValue title = 1;
+  // tooltip description
+  google.protobuf.StringValue description = 2;
+}
+
+// flow type for IsCxSmartTargetedForStores
+enum SmartTargetFlowType {
+  // default
+  SMART_TARGET_FLOW_TYPE_UNSPECIFIED = 0;
+  // GetCampaignsForOrderCartPricing flow type
+  SMART_TARGET_FLOW_TYPE_GET_CAMPAIGNS_FOR_ORDER_CART_PRICING = 1;
+  // GetIncentivesForStores
+  SMART_TARGET_FLOW_TYPE_GET_INCENTIVES_FOR_STORES = 2;
+  // GetPromos
+  SMART_TARGET_FLOW_TYPE_GET_PROMOS = 3;
+  // ValidatePromotion
+  SMART_TARGET_FLOW_TYPE_VALIDATE_PROMOTION = 4;
+}
+
+// campaign targeting type
+enum CampaignTargetingType {
+  // default
+  CAMPAIGN_TARGETING_TYPE_UNSPECIFIED = 0;
+  // smart targeting
+  CAMPAIGN_TARGETING_TYPE_SMART_TARGETING = 1;
+}

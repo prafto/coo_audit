@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+package doordash.payin.payer.v1;
+
+import "common/service_client_config.proto";
+import "data_classification.v1/data_classification.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+import "payin/payer_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/payer/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payin.payer.v1";
+
+// Payer Service
+service PayerV1Service {
+  option (doordash.api.service) = {
+    name: "payin-platform-payer.service"
+    url: "payin-platform-payer.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["payin-platform"]
+    // api_key_name should follow a format similar to
+    api_key_name: "PAYIN_PLATFORM_API_KEY"
+    owner: {
+      name: "payment"
+      id: "payment-platform"
+      slack_channel: "#ask-eng-payin"
+      email_alias: "eng-payment@doordash.com"
+    }
+    target_products: [CX]
+  };
+  // Service info
+  option (service_client.client_config).service_name = "payin-platform";
+  option (service_client.client_config).service_app = "payer";
+  // Retry config
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 20;
+  // Circuit Breaker config
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 30;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 15000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 2000;
+
+  // CreatePayerV1
+  rpc CreatePayerV1(CreatePayerV1Request) returns (CreatePayerV1Response);
+
+  // GetPayerByIdV1
+  rpc GetPayerByIdV1(GetPayerByIdV1Request) returns (GetPayerByIdV1Response);
+
+  // GetPayerByReferenceIdV1
+  rpc GetPayerByReferenceIdV1(GetPayerByReferenceIdV1Request) returns (GetPayerByReferenceIdV1Response);
+
+  // UpdatePayerDefaultPaymentMethodByIdV1
+  rpc UpdatePayerDefaultPaymentMethodByIdV1(UpdatePayerDefaultPaymentMethodByIdV1Request) returns (UpdatePayerDefaultPaymentMethodByIdV1Response);
+
+  // UpdatePayerDefaultPaymentMethodByReferenceIdV1
+  rpc UpdatePayerDefaultPaymentMethodByReferenceIdV1(UpdatePayerDefaultPaymentMethodByReferenceIdV1Request) returns (UpdatePayerDefaultPaymentMethodByReferenceIdV1Response);
+
+  // OnboardPgpProfileByPayerReferenceIdV1
+  rpc OnboardPgpProfileByPayerReferenceIdV1(OnboardPgpProfileByPayerReferenceIdV1Request) returns (OnboardPgpProfileByPayerReferenceIdV1Response);
+
+  // UpdatePaymentFrequency
+  rpc UpdatePaymentFrequencyV1(UpdatePaymentFrequencyV1Request) returns (UpdatePaymentFrequencyV1Response) {
+    option (google.api.http) = {
+      post: "/payin-platform/v2/update-payment-frequency"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// Create Payer Request V1
+message CreatePayerV1Request {
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // email for client used when we create external account on payment provider
+  google.protobuf.StringValue email = 2 [(data_classification.v1.data_classification).pii = true];
+
+  // country where payer is located
+  doordash.payin.common.v1.Country country = 3 [(data_classification.v1.data_classification).pii = true];
+
+  // description of payer
+  google.protobuf.StringValue description = 4 [(data_classification.v1.data_classification).pii = true];
+
+  // payment_provider
+  doordash.payin.common.v1.PgpCode payment_provider = 5;
+
+  // experience
+  doordash.payin.common.v1.Experience experience = 6;
+}
+
+// CreatePayerV1Response
+message CreatePayerV1Response {
+  // payer response
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// GetPayerByIdV1Request
+message GetPayerByIdV1Request {
+  // payer id
+  google.protobuf.StringValue id = 1;
+}
+
+// GetPayerByIdV1Response
+message GetPayerByIdV1Response {
+  // payer found by id
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// GetPayerByReferenceIdV1Request
+message GetPayerByReferenceIdV1Request {
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+}
+
+// GetPayerByReferenceIdV1Response
+message GetPayerByReferenceIdV1Response {
+  // payer found by reference id
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// UpdatePayerDefaultPaymentMethodByIdV1Request
+message UpdatePayerDefaultPaymentMethodByIdV1Request {
+  // payer id
+  google.protobuf.StringValue payer_id = 1;
+
+  // pair of payer's default payment method id
+  oneof default_payment_method {
+    // id of the payment method
+    google.protobuf.StringValue payment_method_id = 2;
+
+    // legacy identity of StripeCard object
+    google.protobuf.StringValue dd_stripe_card_id = 3;
+  }
+}
+
+// UpdatePayerDefaultPaymentMethodByIdV1Response
+message UpdatePayerDefaultPaymentMethodByIdV1Response {
+  // payer with updated default payment method set
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// UpdatePayerDefaultPaymentMethodByReferenceIdV1Request
+message UpdatePayerDefaultPaymentMethodByReferenceIdV1Request {
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // country
+  doordash.payin.common.v1.Country country = 2;
+
+  // pair of payer's default payment method id
+  oneof default_payment_method {
+    // id of the payment method
+    google.protobuf.StringValue payment_method_id = 3;
+
+    // legacy identity of StripeCard object
+    google.protobuf.StringValue dd_stripe_card_id = 4;
+  }
+}
+
+// UpdatePayerDefaultPaymentMethodByReferenceIdV1Response
+message UpdatePayerDefaultPaymentMethodByReferenceIdV1Response {
+  // payer with updated default payment method set
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// OnboardPgpProfileByPayerReferenceIdV1Request
+message OnboardPgpProfileByPayerReferenceIdV1Request {
+  // payer correlation ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+
+  // email for client used when we create external account on payment provider
+  google.protobuf.StringValue email = 2 [(data_classification.v1.data_classification).pii = true];
+
+  // country where payer is located
+  doordash.payin.common.v1.Country country = 3 [(data_classification.v1.data_classification).pii = true];
+
+  // description of payer
+  google.protobuf.StringValue description = 4 [(data_classification.v1.data_classification).pii = true];
+
+  // payment_provider
+  doordash.payin.common.v1.PgpCode payment_provider = 5;
+
+  // experience
+  doordash.payin.common.v1.Experience experience = 6;
+}
+
+// OnboardPgpProfileByPayerReferenceIdV1Response
+message OnboardPgpProfileByPayerReferenceIdV1Response {
+  // payer with onboarded pgp profile
+  doordash.payin.payer.v1.Payer payer = 1;
+}
+
+// UpdatePaymentFrequencyV1Request
+message UpdatePaymentFrequencyV1Request {
+  // consumer id - this will be injected by unified gateway
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // payment frequency
+  doordash.payin.common.v1.PaymentFrequency payment_frequency = 2;
+}
+
+// UpdatePaymentFrequencyV1Response
+message UpdatePaymentFrequencyV1Response {
+  // payer with updated payment frequency
+  doordash.payin.payer.v1.Payer payer = 1;
+
+  // whether payment frequency was updated successfully
+  google.protobuf.BoolValue is_success = 2;
+}

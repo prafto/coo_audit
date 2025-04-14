@@ -1,0 +1,1005 @@
+syntax = "proto3";
+package doordash.retail.consumer.v1alpha1;
+
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/order.proto";
+import "doordash.api/annotations.proto";
+import "doordash.retail.common.v1/common.proto";
+import "doordash.retail.common.v1/item_instructions.proto";
+import "doordash.retail.consumer.v1alpha1/common.proto";
+import "doordash.retail.consumer.v1alpha1/constants.proto";
+import "feed_service/common.proto";
+import "feed_service/retail_common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/consumer_order_gateway.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option java_generic_services = true;
+
+// consumer-facing APIs
+service RetailConsumerSubService {
+  option (doordash.api.service) = {
+    name: "retail-fulfillment-service-consumer"
+    url: "retail-fulfillment-service-consumer.service.prod.ddsd"
+    port: 50051
+    api_key_name: "RETAIL_FULFILLMENT_SERVICE_CONSUMER_API_KEY"
+    name_spaces: ["preferences"]
+    owner: {
+      name: "nve_eng_fqp"
+      id: "eng-fulfillment-quality-and-platform"
+      slack_channel: "#eng_nvf_platform_pod"
+      email_alias: "new-verticals-fulfillment-quality-platform@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "user-agent"}]
+    // To deprecate user-agent and add platform header when UG support is ready
+    // {field: "platform"},
+  };
+
+  // example URL: GET /v1/items/substitute_preferences
+  rpc GetItemsSubstitutePreferences(GetItemsSubstitutePreferencesRequest) returns (GetItemsSubstitutePreferencesResponse);
+  // Return retail substitutions rating form metadata to power FE rendering
+  rpc GetItemsSubstituteRatingsForm(GetItemsSubstituteRatingsFormRequest) returns (GetItemsSubstituteRatingsFormResponse);
+  // example URL: POST /v1/items/substitute_preferences
+  rpc PostItemsSubstitutePreferences(PostItemsSubstitutePreferencesRequest) returns (PostItemsSubstitutePreferencesResponse);
+  // decide whether current order is a retail order or not
+  rpc RetailOrderRatingCopyOverride(RetailOrderRatingCopyOverrideRequest) returns (RetailOrderRatingCopyOverrideResponse);
+  // GET recommendations for post-checkout subs
+  rpc GetRetailSubstitutionRecommendations(GetRetailSubstitutionRecommendationsRequest) returns (GetRetailSubstitutionRecommendationsResponse);
+  // UPDATE preferences for post-checkout subs
+  rpc UpdateRetailSubstitutionPreferences(UpdateRetailSubstitutionPreferencesRequest) returns (UpdateRetailSubstitutionPreferencesResponse);
+  // GET retail order details for post-checkout shopping progress (frictionless comms)
+  rpc GetRetailOrderByDeliveryUuid(GetRetailOrderByDeliveryUuidRequest) returns (GetRetailOrderByDeliveryUuidResponse) {
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "retail-fulfillment-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "consumer";
+  }
+  // Update retail order item preference (frictionless comms)
+  rpc UpdateRetailOrderItemPreference(UpdateRetailOrderItemPreferenceRequest) returns (UpdateRetailOrderItemPreferenceResponse);
+  // GET order substitution type for post-checkout subs
+  rpc GetOrderSubstitutionTypeInfo(GetOrderSubstitutionTypeInfoRequest) returns (GetOrderSubstitutionTypeInfoResponse);
+  // GET /v3/subs_preferences - get stored substitution preferences for all items in cart
+  rpc GetCxSubsPreferences(GetCxSubsPreferencesRequest) returns (GetCxSubsPreferencesResponse) {
+    option (google.api.http) = {get: "/cx/preferences/v3/subs_preferences"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 1000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  // GET /v3/item_subs_preferences - get stored substitution preferences for a single items in cart
+  rpc GetItemSubsPreferences(GetItemSubsPreferencesRequest) returns (GetItemSubsPreferencesResponse) {
+    option (google.api.http) = {get: "/cx/preferences/v3/item_subs_preferences"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  // PUT /v3/item_subs_preferences - Update single items substitution preferences
+  rpc UpdateItemSubsPreferences(UpdateItemSubsPreferencesRequest) returns (UpdateItemSubsPreferencesResponse) {
+    option (google.api.http) = {
+      put: "/cx/preferences/v3/item_subs_preferences"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 1000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  // GET item substitution preferences in batch for debugging tool
+  rpc GetBatchItemSubsPreferencesForDebugging(GetBatchItemSubsPreferencesForDebuggingRequest) returns (GetBatchItemSubsPreferencesForDebuggingResponse);
+  // POST save substitution ratings and request for credits
+  rpc SaveSubstitutionRatings(SaveSubstitutionRatingsRequest) returns (SaveSubstitutionRatingsResponse);
+  // POST save item instructions
+  rpc UpdateItemInstructions(UpdateItemInstructionsRequest) returns (UpdateItemInstructionsResponse) {
+    option (google.api.http) = {
+      post: "/cx/preferences/v3/item_instructions"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+  // GET item instructions
+  rpc GetItemInstructions(GetItemInstructionsRequest) returns (GetItemInstructionsResponse);
+}
+
+message GetCxSubsPreferencesRequest {
+  // cart_uuid
+  common.v1.Identifier cart_identifier = 1;
+  // delivery_uuid
+  common.v1.Identifier delivery_identifier = 2;
+  // consumer_id
+  common.v1.Identifier consumer_identifier = 3;
+  // consumer_id for injection
+  google.protobuf.StringValue consumer_id = 4 [(doordash.api.inject_id) = CX_ID];
+  // request source
+  RequestSource request_source = 5;
+}
+
+message GetCxSubsPreferencesResponse {
+  // substitution preferences
+  repeated ItemSubstitutionPreference item_substitution_preferences = 1;
+
+  // if the preferences are editable or not
+  AllowEditPreferences allow_edit_preferences = 2;
+
+  // is subs enabled for this store
+  google.protobuf.BoolValue is_substitution_enabled = 3;
+}
+
+// change it to generic snack text error message if we decide to do that
+// or if we decide to do error modal then change it accordingly
+message AllowEditPreferences {
+  bool is_editable = 1;
+
+  // if preference is not editable then error type why it's not editable eg: DX_CHECKED_OUT, ORDER_CANCELLED etc.
+  string edit_error_type = 2;
+
+  // if it's not editable, then translated error message to show based on Cx's locale
+  string edit_error_message = 3;
+}
+
+message GetItemSubsPreferencesRequest {
+  // cart_uuid
+  common.v1.Identifier cart_identifier = 1;
+  // delivery_uuid
+  common.v1.Identifier delivery_identifier = 2;
+  // store_id
+  common.v1.Identifier store_identifier = 3;
+  // original_item_msId
+  common.v1.Identifier original_item_identifier = 4;
+  // consumer_id
+  common.v1.Identifier consumer_identifier = 5;
+  // subs generation config, only used for subs debugging tools APIs
+  SubsGenerationConfig subs_generation_config = 6;
+  // request source
+  RequestSource request_source = 7;
+}
+
+message SubsPreference {
+  // out-of-stock preference of item (substitute, contact me, or refund)
+  OutOfStockPreference oos_preference = 1;
+  // list of recommended substitution items
+  repeated RecommendationItem recommendation_items = 2;
+  // last updated date
+  google.protobuf.Timestamp last_updated = 3;
+}
+
+message GetItemSubsPreferencesResponse {
+  // subs preference
+  ItemSubstitutionPreference item_sub_preference = 1;
+}
+
+message ItemSubstitutionPreference {
+  // original item with all its properties
+  StoreItem original_item = 1;
+
+  SubsPreferenceV2 subs_preference = 2;
+  // item instructions
+  common.v1.ItemInstructions item_instructions = 3;
+  // if substitution is enabled for this item
+  google.protobuf.BoolValue is_subs_enabled = 4;
+  // item instructions
+  ItemInstructionsMetadata item_instructions_metadata = 5;
+  // data that supports the display of the cx subs hub page
+  SubsPreferenceDisplayData preference_display_data = 6;
+}
+
+message SubsPreferenceV2 {
+  // oos preference
+  OutOfStockPreference oos_preference = 1;
+
+  // substitution choices
+  repeated SubstitutionChoice substitution_choices = 2;
+
+  // if Cx has already reviewed this subs. Use this for saved subs
+  bool cx_reviewed = 3;
+
+  // maximum number of substitutions for that item that Cx can add
+  int32 max_sub_choices_allowed = 4;
+
+  // stores metadata about generic category oos preference
+  GenericCategoryOosPreferenceDisplayData generic_category_oos_pref_data = 5;
+}
+
+message SubsPreferenceDisplayData {
+  // showing "Instructions for your shopper" in Cx subs hub page and Cx can leave item-level notes for Dx
+  google.protobuf.StringValue instructions_title = 1;
+  // showing "Substitute with specific items" as a oos preference option in Cx subs hub page
+  google.protobuf.StringValue substitute_title = 2;
+  // showing "Contact" as a oos preference option in Cx subs hub page
+  google.protobuf.StringValue contact_title = 3;
+  // showing "Refund" as a oos preference option in Cx subs hub page
+  google.protobuf.StringValue refund_title = 4;
+}
+
+// Generic category OOS preference metadata for displaying to Cx flows
+message GenericCategoryOosPreferenceDisplayData {
+  // is available for this item or not. We will use this boolean to verify if it is generated for this item or not.
+  google.protobuf.BoolValue is_available = 1;
+  // display title for generic OOS preference. Eg: "Any similar whole milk" or "Any similar eggs"
+  google.protobuf.StringValue display_title = 2;
+  // display sub title for generic OOS preference. "Dasher will let you know what they picked"
+  google.protobuf.StringValue display_sub_title = 3;
+}
+
+message SubstitutionChoice {
+  // substitution choice store item with all its properties
+  StoreItem recommendation_item = 1;
+
+  // Whether the choice is selected
+  bool is_selected = 2;
+
+  // source of item
+  enum Origin {
+    // unspecified
+    ORIGIN_UNSPECIFIED = 0;
+    // selected from search
+    ORIGIN_CX_SEARCH = 1;
+    // selected from recommendations
+    ORIGIN_RECOMMENDATIONS = 2;
+  }
+
+  Origin origin = 3;
+
+  // substitution quantity, including max Cx can update
+  QuantityInfoV3 recommendation_item_quantity = 4;
+}
+
+// Custom config that would be used by debugging tools APIs through admin tools
+message SubsGenerationConfig {
+  string query_version = 1;
+  string sibyl_model_id = 2;
+  bool enable_past_subs_records = 3;
+  bool enable_past_order_subs_pref = 4;
+  bool enable_subs_overrides = 5;
+  int32 subs_result_limit = 6;
+  int32 subs_es_search_limit = 7;
+}
+
+message UpdateItemSubsPreferencesRequest {
+  // cart_uuid
+  common.v1.Identifier cart_identifier = 1;
+  // delivery_uuid
+  common.v1.Identifier delivery_identifier = 2;
+  // consumer_id
+  common.v1.Identifier consumer_identifier = 3;
+  // store_id
+  common.v1.Identifier store_identifier = 4;
+  // msid of original item
+  common.v1.Identifier original_item_identifier = 5;
+  // substitution preference input
+  SubsPreferenceInput subs_preference_input = 6;
+  // consumer_id for injection
+  google.protobuf.StringValue consumer_id = 7 [(doordash.api.inject_id) = CX_ID];
+}
+
+message SubsPreferenceInput {
+  // out-of-stock preference of item (substitute or refund)
+  OutOfStockPreference oos_preference = 1;
+
+  // list of selected substitution items
+  repeated SubstitutionChoiceInput sub_choices = 2;
+}
+
+message SubstitutionChoiceInput {
+  // source of item
+  enum Origin {
+    // unspecified
+    ORIGIN_UNSPECIFIED = 0;
+    // selected from search
+    ORIGIN_CX_SEARCH = 1;
+    // selected from recommendations
+    ORIGIN_RECOMMENDATIONS = 2;
+  }
+
+  Origin origin = 1;
+
+  // Whether the choice is selected
+  bool is_selected = 2;
+
+  // item msid of substitution item
+  common.v1.Identifier sub_item_identifier = 3;
+
+  // quantity of substitution item
+  google.protobuf.DoubleValue sub_item_quantity = 4;
+}
+
+message UpdateItemSubsPreferencesResponse {
+  // subs preference
+  ItemSubstitutionPreference item_sub_preference = 1;
+}
+
+message RetailOrderRatingCopyOverrideRequest {
+  // PostgresOrder's delivery uuid
+  string delivery_uuid = 1;
+}
+
+message RetailOrderRatingCopyOverrideResponse {
+  // whether we should override the existing copy to the retail one
+  bool should_be_overridden = 1;
+  // the size of StarToTags array should be 5 because dd order adopts 5-star rating mechanism
+  repeated StarToTags star_to_tags = 2;
+}
+
+// get items preferences for debugging tool
+message GetBatchItemSubsPreferencesForDebuggingRequest {
+  // requests - only need consumer_id, store_id and msid
+  repeated GetItemSubsPreferencesRequest get_item_subs_preferences = 1;
+}
+
+message GetBatchItemSubsPreferencesForDebuggingResponse {
+  // response for debugging tool
+  repeated SubsPreferencesForDebugging subs_preferences = 1;
+}
+
+message SubsPreferencesForDebugging {
+  // business_id of the item
+  google.protobuf.StringValue business_id = 1;
+  // store_id of the item
+  google.protobuf.StringValue store_id = 2;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 3;
+  // original item
+  StoreItem original_item = 4;
+  // original item additional properties
+  repeated AdditionalPropertyForDebugging original_item_properties = 5;
+  // substitution recommendations
+  repeated ItemMetadataForDebugging sub_recommendations = 6;
+}
+
+message ItemMetadataForDebugging {
+  // corresponding store item
+  StoreItem item = 1;
+  // substitution source
+  SubsSource sub_source = 3;
+  // additional property for substitution recommendation
+  // sibyl prediction feature set, including taxonomy and other info
+  repeated AdditionalPropertyForDebugging additional_properties = 2;
+}
+
+// additional property
+message AdditionalPropertyForDebugging {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue value = 2;
+}
+
+// star to tags association
+message StarToTags {
+  // star rating, should be between 1 and 5
+  int32 star_rating = 1;
+  // subs rating tag
+  enum Tag {
+    // unknown
+    TAG_UNSPECIFIED = 0;
+    // took too long
+    TAG_TOOK_TOO_LONG = 1;
+    // bad quality of items
+    TAG_BAD_QUALITY_OF_ITEMS = 2;
+    // too many out of stock items
+    TAG_TOO_MANY_OUT_OF_STOCK_ITEMS = 3;
+    // good value
+    TAG_GOOD_VALUE = 4;
+    // wide selection
+    TAG_WIDE_SELECTION = 5;
+    // good quality
+    TAG_GOOD_QUALITY = 6;
+  }
+  // rating category
+  message Category {
+    // category id
+    int32 id = 1;
+    // category tag
+    Tag tag = 2;
+  }
+  // array of categories to display for that particular star rating
+  repeated Category category = 2;
+}
+
+message GetItemsSubstitutePreferencesRequest {
+  string consumer_id = 1;
+  string order_cart_id = 2;
+  string store_id = 3;
+  string menu_id = 4;
+  repeated string items = 5;
+  string user_id = 6;
+}
+
+message GetItemsSubstitutePreferencesResponse {
+  repeated ItemDetail items = 1;
+}
+
+message GetItemsSubstituteRatingsFormRequest {
+  // consumer_id is required
+  string consumer_id = 1;
+  order.ConsumerOrderIdentifier order_identifier = 2;
+}
+
+message GetItemsSubstituteRatingsFormResponse {
+  // substitution metadata
+  repeated SubsRatingMetadata subs_rating_metadata = 1;
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 2;
+}
+
+message SaveSubstitutionRatingsRequest {
+  // delivery uuid
+  string delivery_uuid = 1;
+  // ratings for pair of original item and substituted item
+  repeated SaveSubsRatingMetadata substitution_ratings = 2;
+  // user id
+  string user_id = 3;
+}
+
+message SaveSubstitutionRatingsResponse {}
+
+// subs rating tag
+enum SubsRatingTag {
+  // unknown
+  SUBS_RATING_TAG_UNSPECIFIED = 0;
+  // price too high
+  SUBS_RATING_TAG_PRICE_TOO_HIGH = 1;
+  // brand mismatch
+  SUBS_RATING_TAG_BRAND_MISMATCH = 2;
+  // wrong size
+  SUBS_RATING_TAG_WRONG_SIZE = 3;
+  // wrong flavor
+  SUBS_RATING_TAG_WRONG_FLAVOR = 4;
+  // other reason
+  SUBS_RATING_TAG_OTHER = 5;
+  // Negative rating submitted through post checkout cx feedback
+  SUBS_RATING_TAG_POST_CHECKOUT_CX_FEEDBACK = 6;
+}
+
+// credit eligibility type
+enum CreditEligibilityType {
+  // unknown
+  CREDIT_ELIGIBILITY_TYPE_UNSPECIFIED = 0;
+  // not eligible for credit
+  CREDIT_ELIGIBILITY_TYPE_NONE = 1;
+  // doordash choice substitution
+  CREDIT_ELIGIBILITY_TYPE_DOORDASH_CHOICE = 2;
+}
+
+// rating provided
+enum SubstitutionRating {
+  // unknown or not provided
+  SUBSTITUTION_RATING_UNSPECIFIED = 0;
+  // rated positive
+  SUBSTITUTION_RATING_POSITIVE = 1;
+  // rated negative
+  SUBSTITUTION_RATING_NEGATIVE = 2;
+}
+
+message RatingItem {
+  int64 menu_item_id = 1;
+  google.protobuf.StringValue menu_item_name = 2;
+  google.protobuf.StringValue merchant_supplied_id = 3;
+  google.protobuf.Int64Value dd_order_item_id = 4;
+}
+
+message SubsRatingMetadata {
+  // original grocery item
+  RatingItem original_rating_item = 1;
+  // substituted grocery item
+  RatingItem substituted_rating_item = 2;
+  repeated SubsRatingTag tags = 3;
+  // if original item eligible for credit
+  CreditEligibilityType credit_eligibility_type = 4;
+}
+
+message SaveSubsRatingMetadata {
+  // original grocery item
+  RatingItem original_rating_item = 1;
+  // substituted grocery item
+  RatingItem substituted_rating_item = 2;
+  // rating that cx provided
+  repeated SubsRatingTag saved_rating = 3;
+  // credit eligibility type
+  CreditEligibilityType credit_eligibility_type = 4;
+  //did cx select to ask for credit
+  bool is_redeem_credit_selected = 5;
+  //positive, negative or no rating
+  SubstitutionRating rating_provided = 6;
+  //reason provided if 'other' chosen
+  google.protobuf.StringValue other_reason = 7;
+}
+
+message ItemDetail {
+  string item_id = 1;
+  string name = 2;
+  int32 quantity = 3;
+  string photo_url = 4;
+  string substitute_method = 5;
+  // The substitute preferences
+  repeated Preference preferences = 6;
+  // weighted item unit
+  ItemUnit unit = 7;
+  // increment unit for weighted item
+  Decimal increment = 8;
+  RetailItemEstimateInfo estimate_info = 9;
+  RetailItemSoldAsInfo sold_as_info = 10;
+}
+
+message Preference {
+  string item_id = 1;
+  string photo_url = 2;
+  Price price = 3;
+  string name = 4;
+  bool selected = 5;
+  // weighted item unit
+  ItemUnit unit = 6;
+  // increment unit for weighted item
+  Decimal increment = 7;
+  RetailItemEstimateInfo estimate_info = 8;
+  RetailItemSoldAsInfo sold_as_info = 9;
+}
+
+message Price {
+  int64 unit_amount = 1;
+  string currency = 2;
+  string display_string = 3;
+  int32 decimal_places = 4;
+}
+
+message PostItemsSubstitutePreferencesRequest {
+  string consumer_id = 1;
+  string order_cart_id = 2;
+  string store_id = 3;
+  string menu_id = 4;
+  repeated ItemDetail items = 5;
+  string user_id = 6;
+}
+
+message PostItemsSubstitutePreferencesResponse {
+  string status = 1;
+  string message = 2;
+}
+
+/*
+ * Cx Post-checkout Subs (will replace pre-checkout subs)
+ */
+// model for cx client to display new/saved substitution recommendation item
+message RecommendationItem {
+  // dd menu item id of recommended subs item
+  int64 menu_item_id = 1;
+  // photo url of item
+  string photo_url = 2;
+  // price of item
+  Price price = 3;
+  // name of item
+  string name = 4;
+  // whether to show item as selected (default true for fresh recommendations)
+  bool is_selected = 5;
+  // storeItem
+  StoreItem store_item = 6;
+  // price list information to support loyalty pricing
+  repeated feed_service.RetailItemPriceInfo price_list = 7;
+}
+
+// item out-of-stock preference types
+enum OutOfStockPreference {
+  // unspecified
+  OUT_OF_STOCK_PREFERENCE_UNSPECIFIED = 0;
+  // substitute
+  OUT_OF_STOCK_PREFERENCE_SUBSTITUTE = 1;
+  // contact me
+  OUT_OF_STOCK_PREFERENCE_CONTACT_ME = 2;
+  // refund
+  OUT_OF_STOCK_PREFERENCE_REFUND = 3;
+  // generic category eg: "Any similar whole milk" or "Any similar eggs" etc.
+  OUT_OF_STOCK_PREFERENCE_GENERIC_CATEGORY = 4;
+}
+
+// model for cx client to display substitution recommendations per item
+message SubstitutionRecommendation {
+  // dd menu item id of original item
+  int64 original_menu_item_id = 1;
+  // name of original item
+  string name = 2;
+  // price of original item
+  Price price = 3;
+  // photo url of original item
+  string photo_url = 4;
+  // out-of-stock preference of item (substitute, contact me, or refund)
+  OutOfStockPreference oos_preference = 5;
+  // list of recommended substitution items
+  repeated RecommendationItem recommendation_items = 6;
+  // does item support subs, e.g. false if weighted item
+  bool is_enabled = 7;
+  // weighted item switch
+  bool is_weighted_item_enabled = 8;
+  // store item of origin item
+  StoreItem store_item = 9;
+  // price list information to support loyalty pricing
+  repeated feed_service.RetailItemPriceInfo price_list = 10;
+}
+
+// get personalized post-checkout substitution recommendations request
+message GetRetailSubstitutionRecommendationsRequest {
+  // dd consumer id of user
+  string consumer_id = 1;
+  // delivery uuid associated with order
+  string delivery_uuid = 2;
+  // order cart id associated with the order
+  common.v1.Identifier order_cart_identifier = 3;
+}
+
+// get personalized post-checkout substitution recommendations response
+message GetRetailSubstitutionRecommendationsResponse {
+  // list of substitution recommendations for items in order
+  repeated SubstitutionRecommendation recommendations = 1;
+  // dd store id of order
+  int64 dd_store_id = 2;
+}
+
+// model for selected substitution item
+message SubstitutionItem {
+  // source of item
+  enum Origin {
+    // unspecified
+    ORIGIN_UNSPECIFIED = 0;
+    // selected from search
+    ORIGIN_CX_SEARCH = 1;
+    // selected from recommendations
+    ORIGIN_RECOMMENDATIONS = 2;
+  }
+  // dd menu item id of selected substitution item
+  int64 menu_item_id = 1;
+  // origin of item
+  Origin origin = 2;
+  // whether this substitution item is selected
+  bool is_selected = 3;
+  // item msid of substitution
+  common.v1.Identifier merchant_supplied_identifier = 4;
+  // quantity of the selected substitution item
+  google.protobuf.DoubleValue quantity = 5;
+}
+
+// model for cx client to update item substitution preferences
+message SubstitutionPreference {
+  // dd menu item id of original item
+  int64 original_menu_item_id = 1;
+  // list of selected substitution items
+  repeated SubstitutionItem substitution_items = 2;
+  // out-of-stock preference of item (substitute, contact me, or refund)
+  OutOfStockPreference oos_preference = 3;
+}
+
+// update post-checkout substitution preferences request
+message UpdateRetailSubstitutionPreferencesRequest {
+  // delivery uuid associated with order
+  string delivery_uuid = 1;
+  // list of substitution preferences for items in order
+  repeated SubstitutionPreference preferences = 2;
+}
+
+// update post-checkout substitution preferences response
+message UpdateRetailSubstitutionPreferencesResponse {
+  // types of update result
+  enum UpdateResult {
+    // unspecified
+    UPDATE_RESULT_UNSPECIFIED = 0;
+    // success
+    UPDATE_RESULT_SUCCESS = 1;
+    // failure - shopping already started
+    UPDATE_RESULT_FAILED_SHOPPING_STARTED = 2;
+    // failure - shopping ended
+    UPDATE_RESULT_FAILED_SHOPPING_ENDED = 3;
+  }
+  // result of update
+  UpdateResult result = 1;
+}
+
+/**
+ *  Cx Frictionless comms
+ */
+// GetRetailOrderByDeliveryUuid request
+message GetRetailOrderByDeliveryUuidRequest {
+  // delivery uuid associated with order
+  string delivery_uuid = 1;
+}
+
+// model for store items v2
+message StoreItemV2 {
+  // item metadata
+  common.v1.ItemMetadata item_metadata = 1;
+  // item fulfilled metadata
+  common.v1.ItemFxMetadata item_fx_metadata = 2;
+  // item quantity display string
+  string display_quantity = 3;
+}
+
+// model for store items
+message StoreItem {
+  // dd menu item id
+  int64 menu_item_id = 1;
+  // item name
+  string name = 2;
+  // item quantity display string
+  google.protobuf.StringValue quantity = 3;
+  // item price
+  Price price = 4;
+  // item photo url
+  string photo_url = 5;
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 6;
+  // price unit of item
+  ItemUnit unit = 7;
+  // fulfill unit of item
+  ItemUnit unit_fulfilled = 8;
+  // fulfill price of item
+  Price price_fulfilled = 9;
+  // approximate weight for each unit
+  double approximate_unit_weight = 10;
+  // business merchant supplied id
+  google.protobuf.StringValue merchant_supplied_id = 11;
+  // item badges
+  repeated feed_service.Badge badges = 12;
+  // original item unique id. It will be same as msid
+  google.protobuf.StringValue unique_id = 13;
+  // price list information to support loyalty pricing
+  repeated feed_service.RetailItemPriceInfo price_list = 14;
+  // total price of the item = quantity * price
+  Price total_price = 15;
+  // for original non-weighted items and quantity = 1, price per string is null because it's not displayed
+  // for original non-weighted items and quantity > 1, price per string is price/each, e.g. $1.99/each
+  // for original weighted items, price per string is price is price_fulfilled/unit_fulfilled, e.g. $1.99/lb
+  // for sub item, price per string is always non-null
+  google.protobuf.StringValue price_per_string = 16;
+}
+
+// model for order item with embedded store item
+message OrderItem {
+  // order item uuid in retail order_items table
+  string order_item_uuid = 1;
+  // store item associated with order item
+  StoreItem store_item = 2;
+  // quantity requested
+  double quantity_requested = 3;
+  // discrete quantity fulfilled
+  double discrete_quantity_fulfilled = 4;
+  // continuous quantity fulfilled
+  double continuous_quantity_fulfilled = 5;
+  // out-of-stock preference of item (substitute or refund)
+  OutOfStockPreference oos_preference = 6;
+}
+
+// model for items in the 'needs review' group
+message ReviewItem {
+  // possible states of a review item
+  enum ReviewState {
+    // unsupported
+    REVIEW_STATE_UNSPECIFIED = 0;
+    // cx should select substitutions for oos item
+    REVIEW_STATE_SELECT_SUBS = 1;
+    // cx pre-selected subs are not available in store
+    REVIEW_STATE_SUBS_UNAVAILABLE = 2;
+    // no available subs recommendations found for oos item
+    REVIEW_STATE_SUBS_NOT_FOUND = 3;
+    // submitted subs
+    REVIEW_STATE_SUBS_SUBMITTED = 4;
+  }
+  // the out-of-stock item
+  OrderItem oos_item = 1;
+  // list of recommended subs (empty if
+  repeated StoreItem recommended_subs = 2;
+  // review state of this oos item
+  ReviewState review_state = 3;
+  // list of recommended sub quantity, one to one mapping to recommended_subs
+  repeated QuantityInfoV3 recommended_subs_quantities = 4;
+}
+
+// model for items in the 'substituted' group
+message SubstitutedItem {
+  // out of stock order item
+  OrderItem oos_item = 1;
+  // substituted store item
+  StoreItem substitution_item = 2;
+}
+
+// model for items in the 'items found' group
+message FoundItem {
+  // found order item
+  OrderItem found_item = 1;
+  // display string for adjusted quantity
+  // only set if there's been an adjustment (picked less/more) from requested quantity
+  google.protobuf.StringValue quantity_adjusted = 2;
+}
+
+// enum to represent item state groups
+enum ItemState {
+  // unsupported
+  ITEM_STATE_UNSPECIFIED = 0;
+  // needs review
+  ITEM_STATE_NEEDS_REVIEW = 1;
+  // substituted
+  ITEM_STATE_SUBSTITUTED = 2;
+  // refunded
+  ITEM_STATE_REFUNDED = 3;
+  // found
+  ITEM_STATE_FOUND = 4;
+  // pending
+  ITEM_STATE_PENDING = 5;
+}
+
+// GetRetailOrderByDeliveryUuid response
+message GetRetailOrderByDeliveryUuidResponse {
+  // items in the 'needs review' group
+  repeated ReviewItem items_need_review = 1;
+  // items in the 'substituted' group
+  repeated SubstitutedItem items_substituted = 2;
+  // items in the 'refunded' group
+  repeated OrderItem items_refunded = 3;
+  // items in the 'items found' group
+  repeated FoundItem items_found = 4;
+  // items in the 'pending items' group
+  repeated OrderItem items_pending = 5;
+  // map of <ItemState, item count> to be displayed on the tabs
+  map<string, int32> item_state_groups = 6;
+  // items in the 'picked items' group
+  repeated OrderItem items_picked = 7;
+}
+
+// UpdateRetailOrderItemPreference request
+message UpdateRetailOrderItemPreferenceRequest {
+  // delivery uuid associated with order
+  string delivery_uuid = 1;
+  // retail uuid of original item
+  string order_item_uuid = 2;
+  // list of selected substitution items
+  repeated SubstitutionItem substitution_items = 3;
+  // out-of-stock preference of item (substitute or refund)
+  OutOfStockPreference oos_preference = 4;
+}
+
+// UpdateRetailOrderItemPreference response
+message UpdateRetailOrderItemPreferenceResponse {
+  // types of update result
+  enum UpdateResult {
+    // unspecified
+    UPDATE_RESULT_UNSPECIFIED = 0;
+    // success
+    UPDATE_RESULT_SUCCESS = 1;
+    // failure - shopping ended (frictionless comms)
+    UPDATE_RESULT_FAILED_SHOPPING_ENDED = 2;
+  }
+  // result of the update
+  UpdateResult update_result = 1;
+}
+
+// get order substitution type info request
+message GetOrderSubstitutionTypeInfoRequest {
+  // order cart id associated with order
+  string order_cart_id = 1;
+  // consumer id associated with order
+  string consumer_id = 2;
+  // store id associated with order
+  string store_id = 3;
+  // item ids associated with order
+  repeated int64 menu_item_ids = 4;
+  // client version associated with order
+  .common.ClientVersion client_version = 5;
+  // locale associated with order
+  string locale = 6;
+}
+
+// get order substitution type info response
+message GetOrderSubstitutionTypeInfoResponse {
+  // result of get order substitution type
+  .order.OrderSubstitutionType order_substitution_type = 1;
+  // likely out of stock items
+  .order_service.GetConsumerOrdersWithDetailsResponse.LikelyOosItems likely_oos_items = 2;
+}
+
+// substitution recommendation source
+enum SubsSource {
+  // unspecified
+  SUBS_SOURCE_UNSPECIFIED = 0;
+  // subs history
+  SUBS_SOURCE_HISTORY = 1;
+  // subs from past orders
+  SUBS_SOURCE_PAST_ORDERS = 2;
+  // subs overrides
+  SUBS_SOURCE_OVERRRIDE = 3;
+  // subs from sibyl model
+  SUBS_SOURCE_DSML_RANKER = 4;
+}
+
+// update item instructions request
+message UpdateItemInstructionsRequest {
+  // store_id
+  common.v1.Identifier store_identifier = 1;
+  // item_msId
+  common.v1.Identifier merchant_supplied_identifier = 2;
+  // consumer_id
+  common.v1.Identifier consumer_identifier = 3;
+  // item instructions
+  common.v1.ItemInstructions item_instructions = 4;
+}
+
+// update item instructions response
+message UpdateItemInstructionsResponse {}
+
+// Request to get item instructions
+message GetItemInstructionsRequest {
+  // store_id
+  common.v1.Identifier store_identifier = 1;
+  // item_msId
+  common.v1.Identifier merchant_supplied_identifier = 2;
+  // consumer_id
+  common.v1.Identifier consumer_identifier = 3;
+}
+
+// Response of get item instructions
+message GetItemInstructionsResponse {
+  // item instructions
+  common.v1.ItemInstructions item_instructions = 1;
+}
+
+// interface for item instructions info
+message ItemInstructionsMetadata {
+  // is item instructions enabled
+  google.protobuf.BoolValue is_enabled = 1;
+  // item instructions
+  common.v1.ItemInstructions item_instructions = 2;
+}
+
+// request source for substitutions, item_notes
+enum RequestSource {
+  // unspecified
+  REQUEST_SOURCE_UNSPECIFIED = 0;
+  // For GetItemSubPreference API, from product details page - feed-service
+  REQUEST_SOURCE_PRODUCT_DETAILS_PAGE = 1;
+  // For GetCxSubPrefs API, from cart preview page via offer-service
+  REQUEST_SOURCE_CART_PAGE = 2;
+  // For GetItemSubPrefs API, from debugging tool - retail tooling
+  REQUEST_SOURCE_DEBUGGING_TOOL = 3;
+  // For GetItemSubPrefs API, from FE -> bff/UG -> RFS on showing item level sub prefs card from any surface
+  REQUEST_SOURCE_ITEM_SUB_CARD = 4;
+  // For GetCxSubPrefs API, from FE -> bff/UG -> RFS on subs hub from any flow
+  REQUEST_SOURCE_SUBS_HUB = 5;
+}

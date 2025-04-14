@@ -1,0 +1,164 @@
+syntax = "proto3";
+package merchant_data_service_consumergateway;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_data_service_store_service/store.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.merchant_data_service_consumergateway";
+
+/*
+   * Consumer Store Service fetches store data for consumer applications. Design doc: https://drd.sh/KGRRY8/
+*/
+service ConsumerStoreService {
+  // Batch endpoint to get store data
+  rpc GetStoresByStoreIds(GetStoresByStoreIdsRequest) returns (GetStoresByStoreIdsResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.1;
+  }
+
+  // Batch endpoint to get store provider type information by store id list
+  rpc GetStoreProviderTypesByStoreids(GetStoreProviderTypesByStoreidsRequest) returns (GetStoreProviderTypesByStoreidsResponse) {
+    option deprecated = true;
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.1;
+  }
+
+  // Get store extension with alcohol eligibility by geo location and stripe account info by store id
+  rpc GetStoreAlcoholEligibilityByStoreIds(GetStoreAlcoholEligibilityByStoreIdsRequest) returns (GetStoreAlcoholEligibilityByStoreIdsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.1;
+  }
+
+  // Get Consumer Store by Store Id
+  rpc GetConsumerStoreByStoreId(GetConsumerStoreByStoreIdRequest) returns (GetConsumerStoreByStoreIdResponse);
+}
+
+// Batch request to get store data
+message GetStoresByStoreIdsRequest {
+  // unique ids for store object
+  repeated google.protobuf.StringValue store_ids = 1;
+}
+
+// Batch response to get store data
+message GetStoresByStoreIdsResponse {
+  // store objects
+  repeated Store stores = 1;
+}
+
+// Store response
+message Store {
+  // unique id for store
+  google.protobuf.StringValue id = 1;
+
+  // business name
+  google.protobuf.StringValue business_name = 2;
+
+  // unique id for business
+  google.protobuf.Int32Value business_id = 3;
+
+  // indicates whether the store is a partner vs non-partner
+  google.protobuf.BoolValue is_partner = 4;
+
+  // indicates whether the store is active
+  google.protobuf.BoolValue is_active = 5;
+
+  // indicates whether the store is Dashpass eligible
+  google.protobuf.BoolValue is_consumer_subscription_eligible = 6;
+
+  // store address lat
+  google.protobuf.DoubleValue lat = 7;
+
+  // store address lng
+  google.protobuf.DoubleValue lng = 8;
+
+  // price range
+  google.protobuf.UInt32Value price_range = 9;
+}
+
+// store with provider type and store id
+message StoreWitProviderType {
+  // unique id for store
+  google.protobuf.StringValue id = 1;
+
+  // store provider type
+  google.protobuf.StringValue provider_type = 2;
+}
+
+// Batch request to get store provider type information
+message GetStoreProviderTypesByStoreidsRequest {
+  // unique ids for store object
+  repeated google.protobuf.StringValue store_ids = 1;
+}
+
+// Store with provider type response
+message GetStoreProviderTypesByStoreidsResponse {
+  // StoreWitProviderType contains store_id and provider_type information
+  repeated StoreWitProviderType store_wit_provider_type = 1;
+}
+
+message GetStoreAlcoholEligibilityByStoreIdsRequest {
+  // Required field.
+  repeated string store_ids = 1;
+
+  reserved 2;
+  reserved "query_mask";
+}
+
+message RestrictionRuleWithValue {
+  google.protobuf.BoolValue is_applicable = 1;
+  // Dynamic rule value with primitive types. Add more as we need them
+  oneof dynamic_value {
+    // Indicates a rule with boolean value
+    google.protobuf.BoolValue boolean_value = 2;
+  }
+}
+
+message StoreAlcoholEligibility {
+  // Use is_region_allowed_alcohol_sale instead of is_allowed_county
+  google.protobuf.BoolValue is_allowed_county = 1 [deprecated = true];
+  google.protobuf.BoolValue is_store_signed = 2;
+  google.protobuf.BoolValue is_stripe_info_complete = 3;
+  // Use is_store_alcohol_sale_enabled instead of is_alcohol_eligible
+  google.protobuf.BoolValue is_alcohol_eligible = 4 [deprecated = true];
+  string store_id = 5;
+  google.protobuf.BoolValue is_region_allowed_alcohol_sale = 6;
+  google.protobuf.BoolValue is_store_alcohol_sale_enabled = 7;
+  RestrictionRuleWithValue has_provided_liquor_license = 8;
+}
+
+// Response for getting store extension with Alcohol eligibility by geo location and stripe info by storeIDs
+message GetStoreAlcoholEligibilityByStoreIdsResponse {
+  repeated StoreAlcoholEligibility store_alcohol_eligibilities = 1;
+}
+
+// Request for getting consumer store by store id
+message GetConsumerStoreByStoreIdRequest {
+  // Store Id
+  int64 store_id = 1;
+  /*
+     *  Only query and return properties included in the FieldMask.
+     *  If the field mask is null/empty, the service will return the
+     *  whole object.
+  */
+  google.protobuf.FieldMask query_mask = 2;
+  /*
+     *  Optional experience context used to fetch experience specific override values.
+     *  Design doc: https://docs.google.com/document/d/1K5E2duayEuV6Akt4rx0r3nOQgmJNrYkUxaFneCRLhac/edit
+  */
+  common.ConsumerExperienceContext experience_context = 1001;
+}
+
+// Response for getting consumer store by store id
+message GetConsumerStoreByStoreIdResponse {
+  // ConsumerStore
+  store_service.ConsumerStore store = 1;
+}

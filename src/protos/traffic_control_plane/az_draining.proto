@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package traffic_control_plane.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/wrappers.proto";
+import "traffic_control_plane/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/traffic_control_plane/api/v1";
+
+// Error message for AZ drain failures, categorized by failure domain
+message AZDrainError {
+  // Oneof to represent the type of error: either ClusterError or ServiceError
+  oneof error_type {
+    // Error that occurred at the cluster level
+    ClusterError cluster_error = 1;
+
+    // Error that occurred at the service level
+    ServiceError service_error = 2;
+  }
+}
+
+// Represents an error occurring at the cluster level
+message ClusterError {
+  // Name of the cluster where the error occurred
+  string cluster_name = 1;
+
+  // Description of the error that occurred at the cluster level
+  string error_message = 2;
+}
+
+// Represents an error occurring at the service level
+message ServiceError {
+  // Name of the service where the error occurred
+  string service_name = 1;
+
+  // Name of the cluster where the service error occurred
+  string cluster_name = 2;
+
+  // Description of the error that occurred at the service level
+  string error_message = 3;
+}
+
+// Request for AZ draining update
+//
+// This message is used to request an update to the AZ draining weight in service/configmap annotation.
+// It allows specifying the target cell or cluster, the services to drain, and the desired weight distribution for each AZ.
+//
+// Fields:
+// - `cell`: If provided, drain services in all clusters within that cell.
+// - `cluster`: If provided, drain services in that specific cluster.
+// - `services`: If provided, drain the specified services within the cell/cluster.
+//   If not provided, drain all services.
+// - `desired_az_weights`: A map containing AZs and their respective weight split numbers.
+//   Each value must be a uint32 less than or equal to 100.
+message UpdateAzDrainingWeightRequest {
+  // If cell is provided, drain services in all clusters in that cell
+  string cell = 10;
+
+  // If cluster is provided, drain services in that cluster
+  string cluster = 20;
+
+  // If services is provided, drain the specified service within the cell / cluster, if not provided, drain every services
+  repeated string services = 30;
+
+  // Map containing AZs and their respective weight split numbers
+  map<string, uint32> desired_az_weights = 40 [(buf.validate.field).map = {
+    values: {
+      uint32: {lte: 100}
+    }
+  }];
+}
+
+// response for supercell migration update request
+message UpdateAzDrainingWeightResponse {
+  // did the update succeed
+  bool is_success = 10;
+
+  // success or failure reason
+  string details = 20;
+
+  // Count of succeeded services
+  int32 num_of_succeeded_services = 30;
+
+  // List of errors that occurred during the AZ drain process (ClusterError or ServiceError)
+  repeated AZDrainError errors = 50;
+}
+
+// Request for get az draining weight
+message GetAzDrainingWeightRequest {
+  // each az draining request comes with information needed to perform
+  // cell is the cluster in which this change will be performed
+  string cell = 10;
+
+  // the cluster in which this change will be performed
+  string cluster = 20;
+
+  // services which az drain will be performed
+  repeated string services = 30;
+}
+
+// Response for get az draining weight
+message GetAzDrainingWeightResponse {
+  // map containing AZs and their respective weight split numbers
+  map<string, uint32> az_weights = 10;
+
+  // Map containing outlier information per AZ weight distribution
+  // Note that protobuf don't support map as key, so storing a number to represent x most frequent
+  map<uint32, OutlierInfo> outliers = 20;
+
+  // List of errors that occurred during the AZ drain process (ClusterError or ServiceError)
+  repeated AZDrainError errors = 50;
+}
+
+// Struct for outlier information
+message OutlierInfo {
+  // Number of services detected as outliers
+  uint32 num_services = 1;
+  // List of outlier service names
+  repeated string service_names = 2;
+  // AZ weight mapping inside the outlier info
+  map<string, uint32> az_weights = 3;
+}

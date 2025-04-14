@@ -1,0 +1,196 @@
+syntax = "proto3";
+
+package mx_recon_service.v1;
+
+import "common/code.proto";
+import "common/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "merchant_financial_service/mx_recon_transaction.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "MxReconConfigProtos";
+option java_package = "com.doordash.service.mx_recon_config_service";
+
+// Service for managing Recon Configurations.
+service ReconConfigService {
+  // Manages recon configurations (Create, Append, Soft Delete).
+  rpc ManageReconConfigs(ManageReconConfigsRequest) returns (ManageReconConfigsResponse);
+}
+
+// Response message for each payout component processed.
+message PayoutComponentResponse {
+  // The entry type associated with this payout component.
+  // entry type should be in snake case.
+  string entry_type = 1;
+  // The target type associated with this payout component.
+  TargetType target_type = 2;
+  // Status code for the operation.
+  code.Code code = 3;
+  // Status message for the operation.
+  google.protobuf.StringValue status_message = 4;
+}
+
+// Response message for each fee group processed.
+message FeeGroupResponse {
+  // The fee group name processed.
+  string fee_group_name = 1;
+  // Status code for the operation.
+  code.Code code = 2;
+  // Status message for the operation.
+  google.protobuf.StringValue status_message = 3;
+}
+
+// Response message for managing recon configurations.
+// Request will be executed in the given order.
+// All payout components will be created first
+// All fee groups will be created next and each fee group will be created in given order
+message ManageReconConfigsResponse {
+  // List of results for payout component operations.
+  repeated PayoutComponentResponse payout_component_results = 1;
+  // List of results for fee group operations.
+  repeated FeeGroupResponse fee_group_results = 2;
+}
+
+// Request message for managing recon configurations.
+message ManageReconConfigsRequest {
+  // Common configuration details applicable to both payout components and fee groups.
+  // All payout components and fee groups in this request must share the same configuration context.
+  ConfigDetails config_details = 1;
+  // List of payout component operations.
+  // The server will enforce a maximum of 5 entries per request.
+  repeated PayoutComponentConfigRequest payout_component_configs = 2;
+  // List of fee group operations.
+  // The server will enforce a maximum of 5 entries per request.
+  repeated FeeGroupConfigRequest fee_group_configs = 3;
+  // user id who is requesting this operation
+  google.protobuf.StringValue user_id = 4;
+}
+
+// Enum representing different operation types.
+enum OperationType {
+  // Default unspecified operation type. This should not be explicitly used.
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  // Create a new configuration or replace an existing one.
+  CREATE = 1;
+  // Append new fee components to an existing fee group without removing the current ones.
+  APPEND = 2;
+  // Soft delete a payout component or fee group.
+  SOFT_DELETE = 3;
+}
+
+// Enum representing different target types.
+enum TargetType {
+  // Default unspecified target type. Indicates an invalid or missing value.
+  TARGET_TYPE_UNSPECIFIED = 0;
+  // Payouts related to regular delivery transactions.
+  DELIVERY = 1;
+  // Payouts related to DoorDash Drive transactions (third-party deliveries).
+  DRIVE = 2;
+  // Payouts related to store-level financial transactions (e.g., fees, reimbursements).
+  STORE_PAYMENT = 3;
+  // Payouts related to delivery error adjustments and disputes.
+  DELIVERY_ERROR = 4;
+}
+
+// Enum representing different transaction amount types.
+enum TransactionAmountType {
+  // Default unspecified transaction amount type. Indicates an invalid or missing value.
+  TRANSACTION_AMOUNT_TYPE_UNSPECIFIED = 0;
+  // Credit transaction (positive values, e.g., earnings for merchants).
+  CREDIT = 1;
+  // Debit transaction (negative values, e.g., merchant fees).
+  DEBIT = 2;
+  // Signed transaction (both positive and negative values allowed).
+  SIGNED = 3;
+}
+
+// Enum representing different payout methods.
+enum PayoutMethodType {
+  // Default unspecified payout method type. Indicates an invalid or missing value.
+  PAYOUT_METHOD_TYPE_UNSPECIFIED = 0;
+  // Direct deposit (ACH) payments made to merchants.
+  DIRECT_DEPOSIT = 1;
+  // Cash payouts (only applicable for specific markets or services).
+  CASH = 2;
+  // External payout method (e.g., payments processed through third-party services).
+  EXTERNAL = 3;
+}
+
+// Enum representing different transaction types.
+enum TransactionType {
+  // Default unspecified transaction type. Indicates an invalid or missing value.
+  TRANSACTION_TYPE_UNSPECIFIED = 0;
+  // Transaction related to adjustments (e.g., merchant adjustments, refunds).
+  ADJUSTMENT = 1;
+  // Transaction related to an order (e.g., subtotal, delivery fees).
+  ORDER = 2;
+  // Transaction related to merchant fees (e.g., ad fees, processing fees).
+  FEE = 3;
+  // Transaction related to error charges (e.g., dispute fees, error adjustments).
+  ERROR_CHARGE = 4;
+}
+
+// Enum representing different fee group types.
+enum FeeGroupType {
+  // Default unspecified fee group type. Indicates an invalid or missing value.
+  FEE_GROUP_TYPE_UNSPECIFIED = 0;
+  // Maps to `payout_component_metadata` as the reference table.
+  ENTRY_LIST = 1;
+  // Maps to `fee_group_config` as the reference table.
+  FEE_GROUP = 2;
+}
+
+// Common configuration details applicable to both Payout Component & Fee Group Config.
+// This ensures that all payout components and fee groups in a request share the same settings.
+message ConfigDetails {
+  // The target type associated with this configuration (e.g., delivery, store payment).
+  TargetType target_type = 1;
+  // The payout method associated with this configuration.
+  PayoutMethodType payout_method_type = 2;
+  // Optional: The start time of this configuration.
+  // Must be greater than the current time, or else the server will default to the current timestamp.
+  google.protobuf.Timestamp start_time = 3;
+  // transaction amount type , is this a required field
+  TransactionAmountType transaction_amount_type = 4;
+}
+
+// Message representing a payout component configuration.
+message PayoutComponentConfigRequest {
+  // A friendly name for this payout component.
+  google.protobuf.StringValue friendly_name = 1;
+  // The entry type name of the payout component (e.g., ad_fee, dd_capital_net_settlement).
+  string entry_type = 2;
+  // The transaction type associated with this payout component.
+  TransactionType transaction_type = 3;
+  // Indicates if the payout component is order-related.
+  bool is_order_related = 4;
+  // Indicates if the payout component is pass-through.
+  google.protobuf.BoolValue is_pass_through = 5;
+  // Indicates if the payout component is included in the payout.
+  bool is_included_in_payout = 6;
+  // only used for target type store payment reason code
+  // mentions the internal ledger for accounting team
+  google.protobuf.StringValue category = 7;
+  // only used for target type store payment reason code,
+  // explanation of the store payment reason code
+  google.protobuf.StringValue explanation = 8;
+  // The operation to be performed (CREATE, APPEND, SOFT_DELETE).
+  OperationType operation = 9;
+}
+
+// Message representing a fee group configuration.
+message FeeGroupConfigRequest {
+  // A friendly name for this fee group.
+  // This is **optional** for `APPEND` operations because the system will fetch the existing friendly name from the database.
+  google.protobuf.StringValue friendly_name = 1;
+  // The fee group name (must be classified under a fee group).
+  mx_recon_transaction.v1.FeeGroup fee_group_name = 2;
+  // Determines the fee group type level.
+  FeeGroupType fee_group_type = 3;
+  // List of included components within this fee group.
+  repeated string included_components = 4;
+  // The operation to be performed (CREATE, APPEND, SOFT_DELETE).
+  OperationType operation = 5;
+}

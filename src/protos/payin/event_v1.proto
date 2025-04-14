@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package doordash.payin.event.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+import "payin/dash_card_v1.proto";
+import "payin/payment_method_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/event/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.payin.event.v1";
+
+/*
+   Type enums of possible included entity on a PaymentEvent.
+*/
+enum EntityType {
+  _UNKNOWN_ENTITY_TYPE = 0;
+  CART_PAYMENT_V1 = 1;
+  PAYMENT_INTENT = 3; // No explicit versioning for payment intent, as it is an internal entity.
+  PAYMENT_METHOD_V1 = 4;
+  DISPUTE_V1 = 8;
+  SUBSCRIPTION_PLAN_V1 = 10;
+  SUBSCRIPTION_V1 = 11;
+  SUBSCRIPTION_INVOICE_V1 = 12;
+  CREDIT_UNIT_V1 = 15;
+  PAYMENT_METHOD_CREATION_FAILED_V1 = 18;
+  PGP_PAYMENT_METHOD = 19;
+}
+
+/*
+   Type enums of possible event types of a PaymentEvent.
+*/
+enum EventType {
+  // group event type enum indices at bucket size of 50 per each entity
+  _UNKNOWN_EVENT_TYPE = 0;
+
+  // CartPayment
+  CART_PAYMENT_CREATED = 1;
+  CART_PAYMENT_CAPTURED = 2;
+  CART_PAYMENT_AMOUNT_UPDATED = 3;
+  CART_PAYMENT_FAILED = 4;
+  CART_PAYMENT_REFUND_SUCCEEDED = 5;
+  CART_PAYMENT_CONFIRMED = 6;
+  CART_PAYMENT_CAPTURE_PENDING_RETRY = 7;
+  CART_PAYMENT_CAPTURE_FAILED = 8;
+  CART_PAYMENT_UPDATE_FAILED = 9;
+
+  // PaymentIntent
+  PAYMENT_INTENT_CAPTURED = 101;
+  PAYMENT_INTENT_CAPTURE_PENDING_RETRY = 102;
+  PAYMENT_INTENT_CAPTURE_FAILED = 103;
+
+  // PaymentMethod
+  PAYMENT_METHOD_CREATED = 150;
+  PAYMENT_METHOD_DELETED = 151;
+  PAYMENT_METHOD_FAILED = 152;
+  PAYMENT_METHOD_UPDATED = 153;
+  PGP_PAYMENT_METHOD_CREATED = 154;
+
+  // Dispute
+  DISPUTE_CREATED = 350;
+  DISPUTE_RESOLVED = 351;
+  DISPUTE_UPDATED = 352;
+
+  // SubscriptionPlan
+  SUBSCRIPTION_PLAN_DELETED = 400;
+
+  // SubscriptionInvoice
+  SUBSCRIPTION_INVOICE_CREATED = 450;
+  SUBSCRIPTION_INVOICE_PAYMENT_SUCCEEDED = 451;
+  SUBSCRIPTION_INVOICE_PAYMENT_FAILED = 452;
+  SUBSCRIPTION_INVOICE_UPCOMING = 453;
+
+  // Subscription
+  SUBSCRIPTION_DELETED = 500;
+  SUBSCRIPTION_TRIAL_WILL_END = 501;
+
+  // Credits
+  CREDIT_DEPOSITED = 700;
+  CREDIT_DEDUCTED = 701;
+  DEPOSIT_CREDIT_REVERTED = 702;
+  DEDUCT_CREDIT_REVERTED = 703;
+}
+
+// dashcard enrollment information event (to deprecate)
+message DashCardEnrollmentEvent {
+  // vgs tokenized card number
+  doordash.payin.common.v1.TokenizedCardData tokenized_card_data = 1;
+  // payer reference id
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 2;
+  // payment method id
+  google.protobuf.StringValue payment_method_id = 3;
+  // stripe card id
+  google.protobuf.Int64Value stripe_card_id = 4;
+}
+
+// Events that are published by payin
+message PayinEvent {
+  // Unique id as well as idempotence key of this event.
+  google.protobuf.StringValue id = 1;
+
+  // Entity type of included entity in this event.
+  PayinEventType event_type = 2;
+
+  // Timestamp of when the originated action of this event was applied
+  // is created with "created_At = 2023-01-01T15:00:00Z"
+  google.protobuf.Timestamp created_at = 3;
+
+  // Entity of the event
+  oneof entity {
+    // Create payment method entity
+    CreatePaymentMethodEventEntity create_payment_method_event_entity = 4;
+    // Create payment method reference entity
+    CreatePaymentMethodMerchantReferenceEventEntity create_payment_method_merchant_refererence_event_entity = 5;
+  }
+}
+
+// Payin event type
+enum PayinEventType {
+  // Unspecified
+  PAYIN_EVENT_TYPE_UNSPECIFIED = 0;
+  // Payment method created
+  PAYIN_EVENT_TYPE_PAYMENT_METHOD_CREATED = 1;
+  // Payment method merchant reference created
+  PAYIN_EVENT_TYPE_PAYMENT_METHOD_MERCHANT_REFERENCE_CREATED = 2;
+}
+
+// Entity that is published after payment method is created
+message CreatePaymentMethodEventEntity {
+  // Payment method that was created
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+  // Tokenized card number of the payment method that was created
+  doordash.payin.common.v1.TokenizedCardData tokenized_card_data = 2;
+}
+
+// Entity that is published after merchant reference lookup is done
+message CreatePaymentMethodMerchantReferenceEventEntity {
+  // Payment method
+  doordash.payin.payment_method.v1.PaymentMethod payment_method = 1;
+  // Merchant reference identifier (i.e CRI for Chase)
+  google.protobuf.StringValue payment_merchant_reference_identifier = 2;
+  // Product code that the merchant returns back
+  google.protobuf.StringValue payment_merchant_product_code = 3;
+  // Merchant reference type (i.e CHASE_BENEFITS / CHASE_REWARDS)
+  PaymentMerchantReferenceType payment_merchant_reference_type = 4;
+  // Consumer card holder current status
+  doordash.payin.dash_card.v1.CardHolderStatus consumer_current_card_holder_status = 5;
+  // Consumer card holder eligibility status
+  doordash.payin.dash_card.v1.CardHolderStatus consumer_eligibility_card_holder_status = 6;
+}
+
+// Payment Merchant Reference Types
+enum PaymentMerchantReferenceType {
+  // Unspecified
+  PAYMENT_MERCHANT_REFERENCE_TYPE_UNSPECIFIED = 0;
+  // DashPass benefits enrollment
+  PAYMENT_MERCHANT_REFERENCE_TYPE_CHASE_BENEFITS = 1;
+  // Pay with Points
+  PAYMENT_MERCHANT_REFERENCE_TYPE_CHASE_REWARDS = 2;
+}

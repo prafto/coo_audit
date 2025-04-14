@@ -1,0 +1,431 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package loyalty_serivce;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/store_loyalty.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "loyalty_service/common.proto";
+import "loyalty_service/merchant_loyalty.proto";
+import "loyalty_service/third_party_order.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.loyalty.third_party_pos";
+
+// service for handling loyalty for third party orders
+service ThirdPartyLoyaltyService {
+  option (doordash.api.service) = {
+    url: "loyalty-service-third-party-integration.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["loyalty"]
+    owner: {
+      id: "teams-working-with-loyalty-service-"
+      name: "loyalty-service"
+      slack_channel: "#ask-mx-loyalty-eng"
+      email_alias: "ocl-engineering@doordash.com"
+    }
+    vertical_domains: [MX]
+    target_products: [MX]
+  };
+
+  // accrue store rewards for third party order
+  rpc AccrueStoreRewards(AccrueStoreRewardsRequest) returns (AccrueStoreRewardsResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/accrue-store-rewards"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // fetch all applicable store rewards for given third party order
+  rpc FetchStoreRewards(FetchStoreRewardsRequest) returns (FetchStoreRewardsResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/fetch-store-rewards"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // redeem store rewards for given third party order
+  rpc RedeemStoreRewards(RedeemStoreRewardsRequest) returns (RedeemStoreRewardsResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/redeem-store-rewards"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // refund redeemed store rewards for given third party order
+  rpc RefundStoreRewards(RefundStoreRewardsRequest) returns (RefundStoreRewardsResponse);
+
+  // create store rewards account for Cx
+  rpc CompleteLoyaltyRegistration(CompleteLoyaltyRegistrationRequest) returns (CompleteLoyaltyRegistrationResponse);
+
+  // find Cx store rewards account info with stripe or account details
+  rpc GetLoyaltyConsumerId(GetLoyaltyConsumerIdRequest) returns (GetLoyaltyConsumerIdResponse);
+
+  // update loyalty consumer info (reachable through UG)
+  rpc UpdateLoyaltyConsumerInfo(UpdateLoyaltyConsumerInfoRequest) returns (UpdateLoyaltyConsumerInfoResponse) {
+    option (google.api.http) = {
+      post: "/loyalty/v1/update_consumer_info"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [MX_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // configure tablet credentials for a store
+  rpc ConfigureTabletCredentials(ConfigureTabletCredentialsRequest) returns (ConfigureTabletCredentialsResponse);
+
+  // get in-store check-in details
+  rpc GetInStoreCheckInDetails(GetInStoreCheckInDetailsRequest) returns (GetInStoreCheckInDetailsResponse) {
+    option (google.api.http) = {get: "/loyalty/v1/get-in-store-check-in-details"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // get in-store order details
+  rpc GetInStoreOrderDetails(GetInStoreOrderDetailsRequest) returns (GetInStoreOrderDetailsResponse);
+  // get all program memberships for consumer
+  rpc GetOCLProgramMemberships(GetOCLProgramMembershipsRequest) returns (GetOCLProgramMembershipsResponse);
+}
+
+// third party store rewards loyalty accrual request
+message AccrueStoreRewardsRequest {
+  // cart from third party pos
+  StoreRewardsCart cart = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // pos transaction id
+  google.protobuf.StringValue transaction_id = 4;
+  // loyalty code to look up consumer
+  google.protobuf.StringValue loyalty_code = 5;
+  // loyalty code type
+  LoyaltyCodeType loyalty_code_type = 6;
+  // check in token
+  google.protobuf.StringValue check_in_token = 7;
+}
+
+// third party store rewards loyalty accrual response
+message AccrueStoreRewardsResponse {
+  // points earned on the order
+  google.protobuf.StringValue current_points_earned = 1;
+  // pos transaction id
+  google.protobuf.StringValue transaction_id = 2;
+}
+
+// third party fetch applicable store rewards request
+message FetchStoreRewardsRequest {
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // cart
+  StoreRewardsCart cart = 3;
+  // loyalty code to look up consumer
+  google.protobuf.StringValue loyalty_code = 4;
+  // loyalty code type
+  LoyaltyCodeType loyalty_code_type = 5;
+}
+
+// third party fetch applicable store rewards response
+message FetchStoreRewardsResponse {
+  // store reward details
+  message StoreReward {
+    // reward id
+    google.protobuf.StringValue reward_id = 1;
+    // reward name
+    google.protobuf.StringValue name = 2;
+    // amount available to redeem for this reward
+    money.MonetaryFields amount = 3;
+    // reward type
+    LoyaltyRewardSystemType reward_type = 4;
+    // whether the reward must be redeemed now
+    google.protobuf.BoolValue must_redeem_now = 5;
+  }
+  // all applicable rewards for Cx order
+  repeated StoreReward reward = 1;
+  // loyalty program primary reward name
+  google.protobuf.StringValue program_reward_name = 2;
+  // current Cx loyalty points balance
+  google.protobuf.Int32Value program_points_balance = 3;
+  // points required to unlock the reward
+  google.protobuf.Int32Value program_incentive_criteria_points = 4;
+  // cx loyalty opt in status
+  common.loyalty.v1.LoyaltyOptInStatus opt_in_status = 5;
+}
+
+// third party store rewards loyalty redeem request
+message RedeemStoreRewardsRequest {
+  // cart from third party pos
+  StoreRewardsCart cart = 1;
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+  // pos transaction id
+  google.protobuf.StringValue transaction_id = 4;
+  // loyalty code to look up consumer
+  google.protobuf.StringValue loyalty_code = 5;
+  // loyalty code type
+  LoyaltyCodeType loyalty_code_type = 6;
+}
+
+// third party store rewards loyalty redeem response
+message RedeemStoreRewardsResponse {
+  // redemption info
+  message Redemption {
+    // reward id of redeemed reward
+    google.protobuf.StringValue reward_id = 1;
+    // amount redeemed on this reward
+    money.MonetaryFields amount = 2;
+    // optional message
+    google.protobuf.StringValue message = 3;
+  }
+  // valid redemptions
+  repeated Redemption applied_redemption = 1;
+  // invalid redemptions
+  repeated Redemption rejected_redemption = 2;
+}
+
+// third party reverse store rewards loyalty accrual/redemption request
+message RefundStoreRewardsRequest {
+  // redemption for refund
+  message RedeemedReward {
+    // reward id of redeemed reward that needs to be refunded
+    google.protobuf.StringValue reward_id = 1;
+    // quantity of this type of reward to refund
+    google.protobuf.Int32Value quantity = 2;
+    // total amount available for refund on this reward
+    money.MonetaryFields amount = 3;
+  }
+  // original transaction to reverse
+  google.protobuf.StringValue original_transaction_id = 1;
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // pos transaction id
+  google.protobuf.StringValue transaction_id = 3;
+  // redeemed rewards to refund
+  repeated RedeemedReward rewards = 4;
+  // loyalty code to look up consumer
+  google.protobuf.StringValue loyalty_code = 5;
+  // loyalty code type
+  LoyaltyCodeType loyalty_code_type = 6;
+  // store id
+  google.protobuf.StringValue store_id = 7;
+}
+
+// third party reverse store rewards loyalty accrual/redemption response
+message RefundStoreRewardsResponse {}
+
+// third party Cx loyalty registration request
+message CompleteLoyaltyRegistrationRequest {
+  // Cx loyalty consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // Cx email
+  google.protobuf.StringValue email = 3;
+  // Cx first name
+  google.protobuf.StringValue first_name = 4;
+  // Cx last name
+  google.protobuf.StringValue last_name = 5;
+  // security key
+  google.protobuf.StringValue registration_key = 6;
+}
+
+// third party Cx loyalty registration response
+message CompleteLoyaltyRegistrationResponse {}
+
+// Cx loyalty account lookup using stripe/Cx details request
+message GetLoyaltyConsumerIdRequest {
+  // value of Cx info with stripe fingerprint
+  google.protobuf.StringValue stripe_fingerprint = 1;
+  // value of Cx info with phone number
+  google.protobuf.StringValue phone_number = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+  // Consumer experience
+  common.Experience experience = 4;
+}
+
+// Cx loyalty account lookup using stripe/Cx details response
+message GetLoyaltyConsumerIdResponse {
+  // Cx loyalty account consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // Cx phone number
+  google.protobuf.StringValue phone_number = 2;
+  // Cx Opt-in status
+  common.loyalty.v1.LoyaltyOptInStatus opt_in_status = 3;
+  // Cx first name
+  google.protobuf.StringValue first_name = 4;
+  // Cx last name
+  google.protobuf.StringValue last_name = 5;
+  // Cx email
+  google.protobuf.StringValue email = 6;
+}
+
+// update loyalty consumer info request
+message UpdateLoyaltyConsumerInfoRequest {
+  // value of Cx info with stripe fingerprint
+  google.protobuf.StringValue stripe_fingerprint = 1;
+  // value of Cx info with phone number
+  google.protobuf.StringValue phone_number = 2;
+  // Cx Opt-in status
+  common.loyalty.v1.LoyaltyOptInStatus opt_in_status = 3;
+  // store id
+  google.protobuf.StringValue store_id = 4;
+  // Consumer experience
+  common.Experience experience = 5;
+}
+
+// update loyalty consumer info response
+message UpdateLoyaltyConsumerInfoResponse {
+  // Cx loyalty account consumer id
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+// Used to track OCL SMS sent through Iguazu
+message SMSSentEvent {
+  // internal event id, generated to represent the incoming SMS event
+  string dd_event_id = 1;
+
+  // sms timestamp
+  google.protobuf.Timestamp timestamp = 2;
+
+  // store id
+  google.protobuf.StringValue store_id = 3;
+
+  // business id
+  google.protobuf.StringValue business_id = 4;
+}
+
+// request to configure tablet credentials for a store
+message ConfigureTabletCredentialsRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // password
+  google.protobuf.StringValue password = 2;
+}
+
+// response to configure tablet credentials for a store
+message ConfigureTabletCredentialsResponse {
+  // username
+  google.protobuf.StringValue username = 1;
+}
+
+// request to get in-store check-in details
+message GetInStoreCheckInDetailsRequest {}
+
+// response to get in-store check-in details
+message GetInStoreCheckInDetailsResponse {
+  // qr code link
+  google.protobuf.StringValue qr_code_link = 1;
+  // expiration time
+  google.protobuf.Timestamp expiration = 2;
+  // store id
+  google.protobuf.StringValue store_id = 3;
+  // check in type
+  CheckInType check_in_type = 4;
+  // business id
+  google.protobuf.StringValue business_id = 5;
+}
+
+// request to get in-store order details
+message GetInStoreOrderDetailsRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // order id
+  google.protobuf.StringValue order_id = 2;
+}
+
+// response to get in-store order details
+message GetInStoreOrderDetailsResponse {
+  // order status
+  OrderStatus order_status = 1;
+}
+
+// request for getting all program memberships for consumer
+message GetOCLProgramMembershipsRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // consumer experience
+  common.Experience experience = 3;
+}
+
+// response for getting all program memberships for consumer
+message GetOCLProgramMembershipsResponse {
+  // program memberships
+  repeated OCLProgramMembership ocl_program_memberships = 1;
+}
+
+// check in type used by the tablet
+enum CheckInType {
+  // Unspecified
+  CHECK_IN_TYPE_UNSPECIFIED = 0;
+  // QR code
+  CHECK_IN_TYPE_QR_CODE = 1;
+  // Phone number
+  CHECK_IN_TYPE_PHONE_NUMBER = 2;
+}

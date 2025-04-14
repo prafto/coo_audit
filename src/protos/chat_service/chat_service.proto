@@ -1,0 +1,515 @@
+syntax = "proto3";
+
+package delivery.experience.chat;
+
+import "chat_service/chat_common.proto";
+import "chat_service/support_chat_service.proto";
+import "common/money.proto";
+import "delivery_intelligence_platform/delivery_event_service.proto";
+import "doordash.api/field_validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "message_routing_platform/message_routing.proto";
+import "state_change_events/delivery_state_change.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "chat_service";
+option java_package = "com.doordash.rpc.chat.service";
+
+// NOTE: These API definition is not used in chat grpc service any more!
+service ChatService {
+  rpc getConsumerChatUser(ConsumerChatUserRequest) returns (ChatUserResponse);
+
+  rpc getDasherChatUser(DasherChatUserRequest) returns (ChatUserResponse);
+
+  rpc checkDasherChatStatus(DasherChatStatusRequest) returns (DasherChatStatusResponse);
+
+  rpc checkConsumerChatStatus(ConsumerChatStatusRequest) returns (ConsumerChatStatusResponse);
+
+  // Create a new chat channel.
+  rpc CreateChatChannel(CreateChatChannelRequest) returns (CreateChatChannelResponse);
+
+  // Conduct safety moderation strategies
+  rpc ExecuteSafetyModeration(ExecuteSafetyModerationRequest) returns (ExecuteSafetyModerationResponse);
+  // Send chatbot message to the channel
+  rpc SendChatBotMessage(SendChatBotMessageRequest) returns (SendChatBotMessageResponse);
+}
+
+message DasherChatUserRequest {
+  string dasherId = 1;
+  string nickName = 2;
+  string submarketId = 3;
+  string provider = 4;
+  string platform = 5;
+  string appVersion = 6;
+  int32 apiVersion = 7;
+  string locale = 8;
+}
+
+message ConsumerChatUserRequest {
+  string consumerId = 1;
+  string nickName = 2;
+  string submarketId = 3;
+  string provider = 4;
+  string platform = 5;
+  string appVersion = 6;
+  int32 apiVersion = 7;
+  string locale = 8;
+}
+
+message ChatUserRequest {
+  string roleId = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  Role role = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string nickname = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string submarketId = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string platform = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string appVersion = 6 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string locale = 7 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string provider = 8 [deprecated = true]; // deprecated; to specify the provider for this user, use the chat provider enum
+  chat_common.ChatProvider chatProvider = 9;
+}
+
+message ChatUserResponse {
+  string chatUserId = 1;
+  string chatUserAccessToken = 2;
+  string applicationId = 3;
+}
+
+message DasherChatStatusRequest {
+  string dasherId = 1;
+  string deliveryUuid = 2;
+  int32 apiVersion = 3;
+  string locale = 4;
+}
+
+message DasherChatStatusResponse {
+  string channelUrl = 1;
+  bool dasherChatActive = 2;
+  bool servedByDashChat = 3;
+}
+
+message ConsumerChatStatusRequest {
+  string consumerId = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string deliveryUuid = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string orderCartUuid = 3;
+  int32 apiVersion = 4;
+  string orderUuid = 5;
+  string locale = 6;
+}
+
+message ConsumerChatStatusResponse {
+  string channelUrl = 1;
+  bool dasherChatActive = 2;
+  bool servedByDashChat = 3;
+}
+
+message CxMxChatChannelRequest {
+  string roleId = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  Role role = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  string order_uuid = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message CxMxChatChannelResponse {
+  string channelUrl = 1;
+}
+
+message ChatMetadata {
+  string orderStatus = 1;
+  google.protobuf.Timestamp orderDeliveryTime = 2;
+  google.protobuf.Timestamp orderCancelledTime = 3;
+  bool dasherUnassigned = 4;
+  string orderCartId = 5;
+  string deliveryUuid = 6;
+  string deliveryId = 7;
+  int32 retry = 8;
+  int64 channelHideMilliSecondTime = 9;
+  bool dasherConfirmed = 10;
+  bool dasherAssigned = 11;
+  // The (optional) source event that triggered this normalized event.
+  state_change_events.DeliveryEvent sourceEvent = 12;
+  bool dasherConfirmedAtStore = 13;
+  // (Optional) delivery intelligence platform source event that triggered this normalized event, should be deprecated
+  doordash.delivery_intelligence_platform.v1.DeliveryIntelEvent dipSourceEvent = 14;
+  // (Optional) flag used for chat platform migration
+  bool should_consume_by_chat_platform = 15;
+  google.protobuf.Timestamp order_picked_up_time = 16;
+  bool cx_texted = 17;
+  bool dx_texted = 18;
+  // (Optional) delivery intelligence platform source event message that triggered this normalized event
+  doordash.delivery_intelligence_platform.v1.DeliveryIntelEventMessage dipSourceEventMessage = 19;
+  bool mx_texted = 20;
+  string order_uuid = 21;
+  string channel_url = 22;
+  ChatMetadataEventType event_type = 23;
+  // event types.
+  enum ChatMetadataEventType {
+    // not specified
+    CHAT_METADATA_EVENT_TYPE_UNSPECIFIED = 0;
+    // mx has texted event in cx_mx chat
+    CHAT_METADATA_EVENT_TYPE_CX_MX_CHAT_MX_TEXTED = 1;
+    // cx has texted event in cx_dx chat
+    CHAT_METADATA_EVENT_TYPE_CX_DX_CHAT_CX_TEXTED = 2;
+    // dx has texted event in cx_dx chat
+    CHAT_METADATA_EVENT_TYPE_CX_DX_CHAT_DX_TEXTED = 3;
+    // DIP retry event
+    CHAT_METADATA_EVENT_TYPE_DIP_EVENT_RETRY = 4;
+  }
+}
+
+message ChatTextSegmentMessage {
+  /* the type of this message */
+  string type = 1;
+  /* the status*/
+  string status = 2;
+  /* the timestamp when the message event happens.*/
+  string timestamp = 3;
+  /* message id from sendbird */
+  string message_id = 4;
+  /* dd delivery uuid */
+  string delivery_uuid = 5;
+  /* the chat message body */
+  string sms_body = 6;
+}
+
+message ChatChannelLifecycleSegmentEvent {
+  // Use enum ChannelStatus in common.proto
+  chat_common.ChannelStatus channel_status = 1;
+  // Time when event happens
+  string timestamp = 2;
+  string delivery_uuid = 3;
+  string consumer_id = 4;
+  string dasher_id = 5;
+  string channel_url = 6;
+}
+
+/**
+ * Segment Event payload representing a marketing subscription status for user.
+ * This only includes the metadata on the subscription status and the user id will be passed seperately when building the Segment event.
+ * We will leverage this to communicate with marketing team that a particular user has opted out of marketing comms.
+ */
+message UserMarketingSubscriptionStatusSegmentEvent {
+  // The subscription status of the user
+  string subscription_status = 1;
+  // The timestamp when change in subscription status event occurred
+  string timestamp = 2;
+}
+
+// Request for CreateChatChannel RPC
+message CreateChatChannelRequest {
+  // Optional unique ID for the channel. If none is specified, a random UUID will be used.
+  google.protobuf.StringValue channel_id = 1;
+  // Optional custom channel type.
+  chat_common.ChannelType channel_type = 2;
+  // Information about the user making the request.
+  ChatRequestUserInfo chat_user_info = 3;
+}
+
+// Response for CreateChatChannel RPC
+message CreateChatChannelResponse {
+  // ID for the new channel.
+  google.protobuf.StringValue channel_id = 1;
+}
+
+// SafeChat entrypoint for handling post-delivery moderation actions
+message ExecuteSafetyModerationRequest {
+  // Type of safety moderation we want to conduct
+  SafetyModerationType safety_moderation_strategy = 1;
+  // safety moderation types
+  enum SafetyModerationType {
+    // no safety moderation, unused.
+    SAFETY_MODERATION_TYPE_UNSPECIFIED = 0;
+    // post delivery end chat because abusive text
+    SAFETY_MODERATION_TYPE_POST_DELIVERY_ABUSIVE_END = 1;
+    // send deep link for Dx safechat cancellation
+    SAFETY_MODERATION_TYPE_OFFER_ACTIVE_DELIVERY_CANCELLATION = 2;
+    // active delivery abusive messages response
+    SAFETY_MODERATION_TYPE_ACTIVE_DELIVERY_ABUSIVE_END = 3;
+    // Warning(s) for first safety offence
+    SAFETY_MODERATION_TYPE_ADMIN_MESSAGE_WARNING = 4;
+  }
+  // offender type
+  enum OffenderType {
+    // no offender type, unused.
+    OFFENDER_TYPE_UNSPECIFIED = 0;
+    // consumer
+    OFFENDER_TYPE_CONSUMER = 1;
+    // dasher
+    OFFENDER_TYPE_DASHER = 2;
+  }
+  // Required. URL of the chat channel.
+  string channel_url = 2;
+  // Admin Message info
+  repeated AdminMessage admin_messages = 3;
+  // offender
+  OffenderType offender_type = 4;
+}
+
+// Safety Moderation Response
+message ExecuteSafetyModerationResponse {}
+
+// Admin Message object
+message AdminMessage {
+  // Required. Contents of the message.
+  string message = 1;
+  // Specifies a unique ID for the message generated by the sender. If specified, the chat server performs a
+  // duplicate check using the property value.
+  string dedupe_id = 2;
+  // Whether to send a push notification of the message to the channel members. This property only applies to
+  // group channels. (Default: true)
+  bool send_push = 3;
+  // Custom message types.
+  enum MessageType {
+    // Default, invalid type. Should never be passed on to another system.
+    MESSAGE_TYPE_UNSPECIFIED = 0;
+    // Consumer.
+    MESSAGE_TYPE_CX = 1;
+    // Dasher.
+    MESSAGE_TYPE_DX = 2;
+    // Dasher and Consumer.
+    MESSAGE_TYPE_CX_DX = 3;
+    // Merchant
+    MESSAGE_TYPE_MX = 4;
+  }
+  // Used for message grouping, to filter for type of message in the chat system's analytics.
+  MessageType custom_message_type = 4;
+}
+
+// Payload for sending chatbot message to a chat channel
+message SendChatBotMessageRequest {
+  // Channel URL.
+  google.protobuf.StringValue channel_url = 1;
+
+  // Recipient of the chatbot message - Cx or Dx
+  enum ChatBotMessageRecipient {
+    // Default
+    CHAT_BOT_MESSAGE_RECIPIENT_TYPE_UNSPECIFIED = 0;
+    // Consumer
+    CHAT_BOT_MESSAGE_RECIPIENT_TYPE_CX = 1;
+    // Dasher
+    CHAT_BOT_MESSAGE_RECIPIENT_TYPE_DX = 2;
+  }
+
+  // What type of user should receive the chatbot message
+  ChatBotMessageRecipient message_recipient_type = 2;
+
+  // Payload for the chatbot message
+  oneof payload {
+    // Name of deep link type from DeepLinkType enum(from chat_data/input.proto:DeepLinkType)
+    google.protobuf.StringValue deepLinkType = 3;
+    // JSON string for complex payload
+    google.protobuf.StringValue data = 4;
+  }
+}
+
+// Response for SendChatBotMessageToChannel RPC.
+message SendChatBotMessageResponse {
+  // Boolean indicating if the request was successful
+  google.protobuf.BoolValue success = 1;
+  // Optional string response from the server
+  google.protobuf.StringValue response = 2;
+}
+
+// request for receiving MxCx chat recommendation
+message StartCxMxChatRequest {
+  // channel url
+  google.protobuf.StringValue channel_url = 1;
+  // mx recommendation
+  MxRecommendation mx_recommendation = 2;
+}
+
+message MxRecommendation {
+  // recommendation uuid
+  google.protobuf.StringValue recommendation_uuid = 1;
+  // recommendation type
+  RecommendationType recommendation_type = 2;
+  // old item details
+  ItemDetails old_item_details = 3;
+  // new item details
+  ItemDetails new_item_details = 4;
+  // item price difference. The calculation considers modifiers, quantity but excludes taxes or other factors
+  money.MonetaryFields price_difference = 5;
+  // new total
+  money.MonetaryFields new_total = 6;
+}
+
+// response for receiving MxCx chat recommendation
+message StartCxMxChatResponse {}
+
+// item details
+message ItemDetails {
+  // name of the item
+  google.protobuf.StringValue name = 1;
+  // top level option names separated by comma
+  google.protobuf.StringValue modifiers = 2;
+  // quantity
+  google.protobuf.Int32Value quantity = 3;
+  // image url
+  google.protobuf.StringValue image_url = 4;
+}
+
+// recommendation type
+enum RecommendationType {
+  // adjust order item type unspecified
+  RECOMMENDATION_TYPE_UNSPECIFIED = 0;
+  // item removal
+  RECOMMENDATION_TYPE_ITEM_REMOVE = 1;
+  // substitute item with another item
+  RECOMMENDATION_TYPE_ITEM_SUBSTITUTE = 2;
+}
+
+// request for executing chat action
+message ExecuteChatActionRequest {
+  // channel url
+  google.protobuf.StringValue channel_url = 1;
+  // chat action
+  ChatAction chat_action = 2;
+}
+
+// chat action
+message ChatAction {
+  // action uuid
+  google.protobuf.StringValue action_id = 1;
+  // action name
+  google.protobuf.StringValue action_name = 2;
+  // action type
+  ActionType action_type = 3;
+  // action execution details
+  repeated ChatActionStep action_steps = 4;
+  // id for deduplication
+  google.protobuf.StringValue dedup_id = 5;
+}
+
+// supported chat action types
+enum ActionType {
+  // non specified action type
+  ACTION_TYPE_UNSPECIFIED = 0;
+  // cx-dx chat action
+  ACTION_TYPE_CX_DX = 1;
+}
+
+// chat action step
+message ChatActionStep {
+  // type of the action step
+  ActionStepType type = 1;
+  // body of the action step
+  oneof body {
+    QuickReplyBody quick_reply_body = 2;
+    BotMessageBody bot_message_body = 3;
+  }
+  // target of the action step
+  repeated ActionTargetType targets = 4;
+}
+
+// supported action step types
+enum ActionStepType {
+  // non specified action step type
+  ACTION_STEP_TYPE_UNSPECIFIED = 0;
+  // one time quick reply
+  ACTION_STEP_TYPE_ONE_TIME_QUICK_REPLY = 1;
+  // send bot message
+  ACTION_STEP_TYPE_SEND_BOT_MESSAGE = 2;
+}
+
+// supported action target types
+enum ActionTargetType {
+  // non specified action step type
+  ACTION_TARGET_TYPE_UNSPECIFIED = 0;
+  // Cx
+  ACTION_TARGET_TYPE_CX = 1;
+  // Dx
+  ACTION_TARGET_TYPE_DX = 2;
+  // Channel
+  ACTION_TARGET_TYPE_CHANNEL = 3;
+}
+
+// chat action quick reply body
+message QuickReplyBody {
+  // quick reply options
+  repeated OneTimeQuickReply quick_replies = 1;
+  // quick reply body payload
+  map<string, string> payload = 2;
+  // notifications
+  ChatActionNotification notification = 3;
+}
+
+// one time quick reply in chat action
+message OneTimeQuickReply {
+  // quick reply option id
+  google.protobuf.StringValue id = 1;
+  // localized quick reply option value
+  google.protobuf.StringValue text = 2;
+  // quick reply payload
+  map<string, string> payload = 3;
+  // translations
+  map<string, string> translations = 4;
+  // notifications
+  ChatActionNotification notification = 5 [deprecated = true];
+}
+
+// chat action bot message body
+message BotMessageBody {
+  // bot messages
+  repeated ActionBotMessage messages = 1;
+}
+
+// chat action bot message
+message ActionBotMessage {
+  // localized bot message value
+  google.protobuf.StringValue text = 1;
+  // bot message payload
+  map<string, string> payload = 2;
+  // translations
+  map<string, string> translations = 3;
+  // notifications
+  ChatActionNotification notification = 4;
+}
+
+// notification for chat action
+message ChatActionNotification {
+  // if notification is enabled
+  bool enabled = 1;
+  // notification title
+  google.protobuf.StringValue title = 2;
+  // notification body
+  google.protobuf.StringValue body = 3;
+}
+
+// response for executing chat action
+message ExecuteChatActionResponse {}
+
+// request for creating a new Dashbuddy session
+message CreateDashbuddySessionRequest {
+  // dasher id for whom to create the session
+  string dasher_id = 1;
+  // initial bot message to be sent on the channel
+  string initial_message = 2;
+  // user locale for the session
+  google.protobuf.StringValue locale = 3;
+  // idempotency key for the request
+  google.protobuf.StringValue campaign = 4;
+}
+
+// response for creating a new Dashbuddy session
+message CreateDashbuddySessionResponse {
+  // Session ID
+  string session_id = 1;
+}
+
+// request for forwarding chat message to channel
+message ForwardChatMessageRequest {
+  // Conversation ID to determine appropriate chat channel
+  message_routing_platform.v1.ConversationIdentifier conversation_identifier = 1;
+  // Source participant (sender) of the message
+  message_routing_platform.v1.MessageParticipant source_participant = 2;
+  // id for deduplication of messsage
+  google.protobuf.StringValue dedup_id = 3;
+  // The text of the message that will be forwarded to the chat channel
+  google.protobuf.StringValue message_body = 4;
+  // Media URLs to be forwarded to the chat channel
+  repeated google.protobuf.StringValue media_urls = 5;
+}
+
+// response for forwarding chat message to channel
+message ForwardChatMessageResponse {}

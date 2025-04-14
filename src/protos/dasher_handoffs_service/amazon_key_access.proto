@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package dasher_handoffs_service.gate_access.v1;
+
+import "common/common.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/dasher_handoffs_service/gate_access/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_handoffs_service.gate_access";
+
+// AmazonKeyAccessService using Asgard server library in a Guice environment.
+service AmazonKeyAccessService {
+  option (doordash.api.service) = {
+    name: "dasher-handoffs-service-ug-web"
+    url: "dasher-handoffs-service-ug-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["gate_access"]
+    api_key_name: "DASHER_HANDOFFS_SERVICE_API_KEY"
+    owner: {
+      id: "dx-handoffs-alerts"
+      name: "dx-handoffs"
+      slack_channel: "#team-dx-handoff-oncall"
+      email_alias: "dx-handoffs@doordash.com"
+    }
+    target_products: [DX]
+  };
+  // Create a key access object  for the requested Dasher and dropoff location on Amazon
+  rpc CreateKeyAccess(CreateKeyAccessRequest) returns (CreateKeyAccessResponse) {}
+  // Get the access point details (image_url, description, location) for all the access points for a delivery
+  rpc GetAccessPointDetails(GetAccessPointDetailsRequest) returns (GetAccessPointDetailsResponse) {}
+  // Activate the access points associated with a delivery or as requested
+  rpc ActivateAccessPoints(ActivateAccessPointsRequest) returns (ActivateAccessPointsResponse) {}
+  // Submits an unlock request for the request access point
+  rpc UnlockKeyAccess(UnlockKeyAccessRequest) returns (UnlockKeyAccessResponse) {
+    option (google.api.http) = {
+      post: "/dx/gate_access/v1/amazon_key_access/unlock/{access_id}"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 2000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+      authorization: [DX_USER]
+    };
+  }
+  // Fetch the status of the unlock request submitted previously
+  rpc UnlockStatusForKeyAccess(UnlockStatusForKeyAccessRequest) returns (UnlockStatusForKeyAccessResponse) {
+    option (google.api.http) = {
+      post: "/dx/gate_access/v1/amazon_key_access/unlock_status/{access_id}"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 2000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+      authorization: [DX_USER]
+    };
+  }
+}
+
+// Request object for CreateAmazonKeyAccess
+message CreateKeyAccessRequest {
+  // the uuid of the delivery for which key access object creation is requested
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 1;
+  // the id of the dasher fulfilling the delivery
+  // REQUIRED
+  google.protobuf.Int32Value dasher_id = 2;
+  // DEPRECATED
+  google.protobuf.Int32Value shift_id = 3 [deprecated = true];
+  // address of the drop off location tht needs to be accessed
+  oneof address {
+    // Option to pass formatted address
+    // "1234 Main Street, Sacramento CA"
+    google.protobuf.StringValue formatted_dropoff_address = 4 [deprecated = true];
+    // Option to pass in a the address_id as known by the geo intelligence platform
+    google.protobuf.StringValue address_id = 5;
+  }
+  // the id of the shift dasher is on
+  // REQUIRED
+  google.protobuf.Int64Value shift_id_v2 = 6;
+}
+
+// Response object for CreateAmazonKeyAccess
+message CreateKeyAccessResponse {
+  // the id of the key access object created on Amazon
+  google.protobuf.StringValue access_id = 1 [deprecated = true];
+  // the id of the key access group object created on Amazon
+  google.protobuf.StringValue access_group_id = 2;
+}
+
+// Request object for GetAccessPointDetailsRequest
+message GetAccessPointDetailsRequest {
+  // the uuid of the delivery for which access point details are requested
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+// Response object for GetAccessPointDetailsRequest
+message GetAccessPointDetailsResponse {
+  // list of all the access point details for a dropoff location
+  repeated AccessPointDetails access_points_details = 1;
+}
+
+// Details of an access point as retrieved from Amazon
+message AccessPointDetails {
+  // id of the access points
+  google.protobuf.StringValue access_id = 1;
+  // url of the image of the access point
+  // Valid within the access window. Includes the key required for auth
+  google.protobuf.StringValue access_point_image_url = 2;
+  // description of the access point
+  // "Main Gate", "Front door" etc ..
+  google.protobuf.StringValue access_point_description = 3;
+  // geo location of the access point
+  AccessPointGeolocation access_point_geo_location = 4;
+}
+
+// Geo location of an access point as retrieved from Amazon
+message AccessPointGeolocation {
+  // latitude of the access point
+  google.protobuf.DoubleValue lat = 1;
+  //longitude of the access point
+  google.protobuf.DoubleValue lng = 2;
+}
+
+// Request object for ActivateAccessPointsRequest
+message ActivateAccessPointsRequest {
+  // the uuid of the delivery for which access points are to be unlocked
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 1;
+  // the uuid of the access point that should be activated
+  // OPTIONAL - when this is not present, all the access points for the delivery are activated
+  google.protobuf.StringValue access_id = 2;
+  // the id of the dasher fulfilling the delivery
+  // REQUIRED
+  google.protobuf.Int32Value dasher_id = 3;
+}
+
+// Response object for ActivateAccessPointsRequest
+message ActivateAccessPointsResponse {}
+
+// Request object for UnlockKeyAccessRequest
+message UnlockKeyAccessRequest {
+  // the uuid of the access point that needs to be activated
+  // REQUIRED
+  google.protobuf.StringValue access_id = 1;
+}
+
+// Response object for UnlockKeyAccessRequest
+message UnlockKeyAccessResponse {}
+
+// Request object for UnlockStatusForKeyAccessRequest
+message UnlockStatusForKeyAccessRequest {
+  // the uuid of the access point whose unlock status needs to be fetched
+  // REQUIRED
+  google.protobuf.StringValue access_id = 1;
+}
+
+// Response object for UnlockStatusForKeyAccessRequest
+message UnlockStatusForKeyAccessResponse {
+  // unlock status of the access point
+  AccessPointUnlockStatus status = 1;
+}
+
+// The unlock status values for an access point
+enum AccessPointUnlockStatus {
+  // Unspecified
+  ACCESS_POINT_UNLOCK_STATUS_UNSPECIFIED = 0;
+  // No unlock request is made
+  ACCESS_POINT_UNLOCK_STATUS_NOT_INITIATED = 1;
+  // Unlock request is submitted successfully
+  ACCESS_POINT_UNLOCK_STATUS_IN_PROGRESS = 2;
+  // Unlock request wen through successfully and the lock is opened
+  ACCESS_POINT_UNLOCK_STATUS_SUCCEEDED = 3;
+  // Unlock request failed and lock could not be opened
+  ACCESS_POINT_UNLOCK_STATUS_FAILED = 4;
+}

@@ -1,0 +1,405 @@
+syntax = "proto3";
+
+package doordash_gifting_service.v1;
+
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "gifting_service/common.proto";
+import "gifting_service/native_gift_card.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "gifting_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.gifting.service";
+
+// gift card store
+service NativeGiftCardStoreService {
+  option (doordash.api.service) = {
+    name: "native-giftcard-store-grpc-service"
+    url: "gifting-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["giftcard"]
+    api_key_name: "CONSUMER_FINANCIALS_SERVICE_API_KEY"
+    owner: {
+      name: "gifting-service-team"
+      id: "gifting-service-team"
+      slack_channel: "#ask-cx-financials-platform"
+      email_alias: "eng-giftcard@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  // GetGiftCardStore
+  rpc GetGiftCardStore(GetGiftCardStoreRequest) returns (GetGiftCardStoreResponse);
+
+  // Get Virtual order tracker
+  rpc GetVirtualOrderTracker(GetVirtualOrderTrackerRequest) returns (GetVirtualOrderTrackerResponse) {
+    // TODO need to change to /v1/virtual_order_tracker later
+  }
+
+  // get gift card items to display on the gift card store carousel
+  rpc GetGiftCardCarouselItem(GetGiftCardCarouselItemRequest) returns (GetGiftCardCarouselItemResponse);
+
+  // GetGiftCardItem - Fetches gift card retail item for item page
+  rpc GetGiftCardItem(GetGiftCardItemRequest) returns (GetGiftCardItemResponse) {
+    option (google.api.http) = {get: "/giftcard/v1/item_page"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST,
+        CX_LITE_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_guest"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"}]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "dd_device_id"},
+        {field: "DD-GEO-INFO"}]
+    };
+  }
+}
+
+// GetGiftCardStoreRequest
+message GetGiftCardStoreRequest {
+  // filters
+  repeated string filters = 1;
+  // is category page
+  google.protobuf.BoolValue is_category_page = 2;
+  // platform
+  google.protobuf.StringValue platform = 3;
+  // consumer_id, it could be empty if user isn't logged in
+  google.protobuf.StringValue consumer_id = 4;
+}
+
+// GetGiftCardStoreResponse
+message GetGiftCardStoreResponse {
+  // LegoResponse
+  google.protobuf.StringValue lego_response = 1;
+  // storeId
+  google.protobuf.StringValue gift_card_store_id = 2;
+  // promotion
+  Promotion promotion = 3;
+}
+
+// Request of get the giftcards' status from order's view
+message GetVirtualOrderTrackerRequest {
+  // id for query the order
+  oneof identifier {
+    // order uuid
+    google.protobuf.StringValue order_uuid = 1;
+    // payer_reference_id , should be order_cart_id now
+    google.protobuf.StringValue payer_reference_id = 2;
+    // delivery ID
+    google.protobuf.Int64Value delivery_id = 3;
+  }
+  // show the verbose status of the order related gift cards, list all the activity of the gift card, such like resend/query activity
+  bool show_verbose = 4;
+  // requester cx id
+  string requester_cx_id = 5 [(doordash.api.inject_id) = CX_ID];
+  // timezone
+  google.protobuf.StringValue timezone = 6;
+  // country_short_name
+  google.protobuf.StringValue country_short_name = 7;
+  // requester language
+  google.protobuf.StringValue user_lang = 8;
+}
+
+// Response of get the giftcards' status from order's view
+message GetVirtualOrderTrackerResponse {
+  // uuid reference to order service order
+  string order_uuid = 1;
+  // delivery uuid reference to delivery service delivery
+  string delivery_uuid = 2;
+  // store id reference to MDS store
+  google.protobuf.Int64Value store_id = 3;
+  // consumerId who bought the card
+  string cx_sender_id = 4;
+  // the price consumer bought for the cards
+  int64 price = 5;
+  // the order's whole amount
+  int64 amount = 6;
+  // the discount amount while cx bought the card (Price + Discount = Amount)
+  int64 discount = 7;
+  // the amount/price/discount’s currency
+  string currency = 8;
+  // quoted delivery time for sending the gift card
+  google.protobuf.Timestamp quoted_delivery_time = 9;
+  // the name of the consumer who bought the card
+  google.protobuf.StringValue sender_name = 10;
+  // delivery ID
+  google.protobuf.Int64Value delivery_id = 11;
+  // delivery ID
+  google.protobuf.StringValue user_id = 12;
+  // payer reference ID, link to the payment, should be order_cart_id now
+  google.protobuf.StringValue payer_reference_id = 13;
+  // status' title translated
+  string status_title = 14;
+  // subtitle translated like `scheduled for Aug 30,2023 9:00 AM` `sent at Aug 30,2023 9:00 AM`
+  string status_subtitle = 15;
+  // status value for show steps
+  VirtualOrderStatus status = 16;
+  // status description translated
+  string description = 17;
+  // gift card
+  repeated ItemWithStatus items = 18;
+}
+
+// gift card entity with status translated
+message ItemWithStatus {
+  // gift card
+  GiftCardEntity entity = 1;
+  // status' title translated
+  string status_title = 2;
+  // last happen event translated
+  string status_subtitle = 3;
+  // status description translated
+  string description = 4;
+}
+
+// request for fetching gift card item metadata for our gift card store carousel
+message GetGiftCardCarouselItemRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // param to filter by search input to return filtered gift cards, if unset defaults to most popular gift cards
+  google.protobuf.StringValue search_filter = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // submarket id
+  google.protobuf.StringValue submarket_id = 4;
+  // country code
+  google.protobuf.StringValue country_code = 5;
+}
+
+// response for fetching gift card item metadata for our gift card store carousel
+message GiftCardCarouselItemResponse {
+  // each individual gift card item metadata
+  repeated GiftCard gift_cards = 1;
+  // promotion
+  Promotion promotion = 2;
+}
+
+// response for fetching gift card item metadata for our gift card store carousel
+message GetGiftCardCarouselItemResponse {
+  // each individual gift card item metadata
+  repeated GiftCardItem gift_cards = 1;
+  // gift card store id
+  google.protobuf.StringValue store_id = 2;
+  // promotion
+  Promotion promotion = 3;
+}
+
+// gift card metadata
+message GiftCard {
+  // item id
+  google.protobuf.StringValue item_id = 1;
+  // name of the gift card
+  google.protobuf.StringValue name = 2;
+  // image url of the card
+  google.protobuf.StringValue image_url = 3;
+  // menu id
+  google.protobuf.StringValue menu_id = 4;
+  // type of card
+  CategoryType category_type = 5;
+  // minimum price of the card
+  Price base_price = 6;
+  // price_step_option_id
+  google.protobuf.StringValue price_step_option_id = 7;
+  // price_step_option_value
+  Price price_step_option_value = 8;
+  // used for lego component
+  google.protobuf.StringValue section_title = 9;
+  // accessibility message
+  google.protobuf.StringValue accessibility_description = 10;
+}
+
+// gift card metadata
+message GiftCardItem {
+  // item id
+  google.protobuf.StringValue item_id = 1;
+  // name of the gift card
+  google.protobuf.StringValue name = 2;
+  // image url of the card
+  google.protobuf.StringValue image_url = 3;
+  // menu id
+  google.protobuf.StringValue menu_id = 4;
+  // type of card
+  CategoryType category_type = 5;
+  // minimum price of the card
+  money.MonetaryFields base_price = 6;
+  // price_step_option_id
+  google.protobuf.StringValue price_step_option_id = 7;
+  // price_step_option_value
+  money.MonetaryFields price_step_option_value = 8;
+  // used for lego component
+  google.protobuf.StringValue section_title = 9;
+  // accessibility message
+  google.protobuf.StringValue accessibility_description = 10;
+  // gift card id
+  google.protobuf.StringValue id = 11;
+  // indicates whether is topps
+  google.protobuf.BoolValue is_topps = 12;
+  // [deprecated] please use the banner at the carousel level
+  repeated GiftCardBanner gift_card_banner = 13 [deprecated = true];
+}
+
+// type of gift card
+enum CategoryType {
+  // unspecified
+  CATEGORY_TYPE_UNSPECIFIED = 0;
+  // birthday
+  CATEGORY_TYPE_BIRTHDAY = 1;
+  // holiday
+  CATEGORY_TYPE_HOLIDAY = 2;
+  // appreciation
+  CATEGORY_TYPE_APPRECIATION = 3;
+  // life event
+  CATEGORY_TYPE_LIFE_EVENT = 4;
+  // physical card
+  CATEGORY_TYPE_PHYSICAL_CARD = 5;
+}
+
+// price information
+message Price {
+  // amount
+  google.protobuf.Int32Value unit_amount = 1;
+  // currency
+  google.protobuf.Int32Value currency = 2;
+  // display string
+  google.protobuf.StringValue display_string = 3;
+  // decimal places
+  google.protobuf.Int32Value decimal_places = 4;
+  // sign
+  google.protobuf.StringValue sign = 5;
+  // symbol
+  google.protobuf.StringValue symbol = 6;
+}
+
+// gift card banner for running promotions
+message GiftCardBanner {
+  // banner type
+  google.protobuf.StringValue banner_type = 1;
+  // content identifier
+  google.protobuf.StringValue content_identifier = 2;
+  // campaign id
+  google.protobuf.StringValue campaign_id = 3;
+  // cms content
+  google.protobuf.StringValue cms_content = 4;
+}
+
+// gift card carousel promotion information
+message Promotion {
+  // promotion id
+  google.protobuf.StringValue id = 1;
+  // title of the promotion (ex: "10% off, up to $50")
+  google.protobuf.StringValue title = 2;
+  // override set in campaign manager (ex: "10% off, up to $50")
+  google.protobuf.StringValue title_override = 3;
+  // description of the promo (ex: "10% off orders over $50, up to $50. Virtual delivery orders only")
+  google.protobuf.StringValue description = 4;
+}
+
+// Request for GetGiftCardItem endpoint
+message GetGiftCardItemRequest {
+  // item id of the item
+  google.protobuf.StringValue item_id = 1;
+  // Store id of the item in the request
+  google.protobuf.StringValue store_id = 2;
+  // consumer id from injected cx id through headers
+  google.protobuf.Int64Value consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+}
+
+// Response for GetGiftCardItem response
+message GetGiftCardItemResponse {
+  // GiftCardItemPage
+  GiftCardItemPage gift_card_item_page = 1;
+}
+
+// GiftCardItemPage metadata
+message GiftCardItemPage {
+  // item id
+  string item_id = 1;
+  // store id
+  string store_id = 2;
+  // menu id
+  string menu_id = 3;
+  // image Url
+  google.protobuf.StringValue image_url = 4;
+  // item name
+  google.protobuf.StringValue item_name = 5;
+  // variants - basically similar items with diff attributes
+  repeated GiftCardItemPage variants = 6;
+  // Pricing information of the Gift Card
+  GiftCardItemPricing gift_card_item_pricing = 7;
+  // list of extra details
+  repeated GiftCardItemDetails details = 8;
+  // Purchase cap info
+  GiftCardItemPurchaseCapInfo purchase_cap_info = 9;
+  // Disclaimer
+  GiftCardItemDisclaimer disclaimer = 10;
+  // item description
+  google.protobuf.StringValue item_description = 11;
+  // Promotion
+  GiftCardPromotion promotion = 12;
+}
+
+// Gift Card Pricing information metadata
+message GiftCardItemPricing {
+  // reserved fields
+  reserved 1, 2, 4, 5, 6;
+  reserved "min_purchase_price", "max_purchase_price", "purchase_price_selection", "min_step", "allow_custom_pricing";
+  // default value of the price of gift card
+  money.MonetaryFields default_purchase_price = 3;
+  // dynamic price purchase
+  common.marketplace_purchase.v1.DynamicPricePurchase dynamic_price_purchase = 7;
+}
+
+// Gift Card Purchase Cap metadata
+message GiftCardItemPurchaseCapInfo {
+  // Description of error when Cx hits purchase cap
+  google.protobuf.StringValue error_description = 1;
+  // (nullable) Url that the Cx can redirect to when they hit purchase cap
+  google.protobuf.StringValue redirect_url = 2;
+}
+
+// Gift Card Terms and Conditions
+message GiftCardItemDisclaimer {
+  // Title of the T&C
+  google.protobuf.StringValue title = 1;
+  // Description text of the T&C. This will be markdown text.
+  google.protobuf.StringValue description = 2;
+}
+
+// Extra details on how to redeem the GC and other FAQs
+message GiftCardItemDetails {
+  // isDrawer is basically whether we can expand and collapse the section
+  google.protobuf.BoolValue is_drawer = 1;
+  // isOpen is whether the section which is a drawer is open by default
+  google.protobuf.BoolValue is_open = 2;
+  // Title of the Details
+  google.protobuf.StringValue title = 3;
+  // (nullable) Description of the particular detail. This will be markdown text.
+  google.protobuf.StringValue description = 4;
+}
+
+// Gift Card Promotion
+message GiftCardPromotion {
+  // promo / campaign id
+  string promo_id = 1;
+  // promo display string
+  string promo_display_string = 2;
+}

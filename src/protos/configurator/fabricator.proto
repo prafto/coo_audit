@@ -1,0 +1,876 @@
+syntax = "proto3";
+package configurator;
+
+import "configurator/common.proto";
+import "google/protobuf/struct.proto";
+
+option java_multiple_files = true;
+option java_package = "com.doordash.configurator.api.fabricator";
+
+// Common
+enum DataType {
+  FLOAT = 0;
+  INT = 1;
+  STRING = 2;
+  INT_LIST = 3;
+  FLOAT_LIST = 4;
+  EMBEDDING = 5;
+  DEPENDENT = 6;
+}
+
+enum SourceType {
+  BATCH_DAILY = 0;
+  REALTIME = 1;
+  BATCH_WEEKLY = 2; // only supporting monday as weekly option as of 11/17/2022
+  BATCH_HOURLY = 3;
+}
+
+// Definitions for a Source. A source defines the persistence layer for features.
+
+enum StorageType {
+  DATALAKE = 0;
+  SNOWFLAKE = 1;
+  KAFKA = 2;
+  PINOT = 3;
+  CRDB_SIGNAL = 4;
+}
+
+enum StorageEntityType {
+  FLATTENED = 0;
+  VARIANT = 1;
+  NORMALIZED = 2;
+}
+
+enum GovernanceMetadataTagType {
+  // Zip Code, Address, Latitude/Longitude
+  LOCATION_DATA = 0;
+  // Selfied, Photograph
+  BIOMETRIC_DATA = 1;
+  // SSN, Goverment ID, DL
+  GOVERNMENT_ID_DATA = 2;
+  // Gender, Race/Ethnicity, Income, Age, DOB
+  DEMOGRAPHIC_DATA = 3;
+  // Item level order data
+  HEALTH_DATA = 4;
+  // Quality/Performance Metrics (Acceptance rate, safety metrics, ratings, top Dx status, type/volume of complaints)
+  PERFORMANCE_METRICS = 5;
+  // Phone number, email
+  CONTACT_INFORMATION = 6;
+  // Information scraped from content of Cx reviews, emails, or messages
+  SCRAPED_CONTENT_DATA = 7;
+  // Financial Data
+  FINANCIAL_DATA = 8;
+  // Not Required
+  NOT_REQUIRED = 9;
+}
+
+message User {
+  // Unique name for a user or group
+  string name = 1;
+  // Email address for user or group
+  string email = 2;
+  // Slack handle for user or group
+  string slack_user = 3;
+}
+
+message Group {
+  // Unique name for group
+  string name = 1;
+  // Email address for group
+  string email = 2;
+  // Slack handle for group
+  string slack_user = 3;
+  // Snowflake warehouse name
+  string snowflake_warehouse = 4;
+  // Group vertical name
+  string vertical = 5;
+  // Group member names
+  repeated string members = 6;
+}
+
+message MetadataSpec {
+  // Reference to user who owns this metadata.
+  string user = 1;
+  string description = 2;
+  // Reference for other users related to the features
+  repeated string watchers = 3;
+  // Reference for search
+  repeated string tags = 4;
+  // Add governance tags to metadata
+  repeated GovernanceMetadataTagType governance_tags = 5;
+}
+
+// Defines the specification for where the features are stored.
+message StorageSpec {
+  // Type of storage where the feature is persisted
+  // Note: Kafka storage layers are also eventually piped into S3 buckets and Snowflake.
+  // Note: Pinot storage layers are initially written to datalake in S3
+  StorageType type = 1;
+
+  // Schema for storing entities within the table.
+  // FLATTENED schemas store entities as constructed feature keys. Eg "st_1234"
+  // VARIANT schemas store entities as key value pairs {"st": "1234"}
+  // NORMALIZED schemas have a column for the entities.
+  StorageEntityType entity_type = 2;
+
+  // Partition where the corresponding feature is stored
+  // For Datalake, this is the prefix path to the table. Default is "prod/ml/"
+  // For Snowflake, this is the prefix to the table. Default is "PRODDB.PUBLIC"
+  // For Kafka, this is the cluster where the topic is located. Default is "prod-01"
+  // For Pinot, this is the datalake prefix path
+  string partition = 3;
+
+  // Table where the feature is stored.
+  // For Datalake, this is the path to table's parquet files. Eg: "fact_fraud_ml"
+  // For Snowflake, this is the name of the table. Eg : "FACT_FRAUD_ML"
+  // For Kafka, this is the name of the topic. Eg : "riviera_features"
+  // For Pinot, this is the name of the table
+  string table_name = 4;
+
+  // Column in the table schema mapping to a time field, which is the primary index for the table.
+  // For Datalake and Snowflake tables, this defaults to "ACTIVE_DATE"
+  // For Kafka, this is usually "event_timestamp"
+  string timestamp_column = 5;
+
+  // Indexes in addition to timestamp_column
+  repeated string other_index_columns = 6;
+
+  // Sort columns in addition to indexes
+  repeated string sort_cols = 7;
+}
+
+enum ComputeType {
+  DATABRICKS = 0;
+  SNOWFLAKE_SQL = 1;
+  RIVIERA = 2;
+  MODEL_MONITOR = 3;
+  TRAINING_DATA = 4;
+  SIGNAL = 5;
+  SIGNAL_BACKFILL = 6;
+  CX360 = 7;
+  USF = 8;
+}
+
+message DatabricksSpec {
+  string filepath = 1;
+  repeated string pypi_libraries = 2;
+  string node_type_override = 3;
+  string max_workers = 4; // if no min worker is specified, this turns off auto scale
+  string notebook_path = 5;
+  map<string, string> task_params = 6;
+  string min_workers = 7;
+  map<string, string> spark_conf_params = 8;
+  string worker_node_type_override = 9;
+  bool use_on_demand = 10;
+  string dbr_runtime = 11;
+  bool enable_elastic_disk = 12; // allows RAM to Disk spillover
+  // Other non-pypi libraries. Example {"jar": "s3://bucket/lib", "jar": "s3://bucket/lib2"}
+  // See https://docs.databricks.com/api/workspace/libraries/install
+  repeated google.protobuf.Struct other_libraries = 13;
+  map<string, string> aws_attributes = 14;
+}
+
+message SnowflakeSpec {
+  repeated string sqls = 1;
+}
+
+// Defines when a compute job should be triggered.
+message TriggerSpec {
+  // Specify only one of the three fields below
+  string schedule = 1;
+  repeated StorageSpec upstreams = 2;
+  string pipeline = 3;
+  // map of a table name specified in upstreams and number of datetime intervals to subtract, should be positive
+  map<string, int32> upstream_offsets = 4;
+}
+
+message KafkaSource {
+  string cluster = 1;
+  string topic = 2;
+  string proto_class = 3;
+  int64 schema_id = 4;
+  string schema_subject = 5;
+  string timestamp_column = 6;
+  // allowed lateness for out-of-order events in seconds
+  int64 allowed_lateness = 7;
+  string timestamp_timezone = 8;
+}
+
+message KafkaSinkParams {
+  string topic = 1;
+  KafkaSchema schema = 2;
+  bool pinot_enabled = 3;
+  string cluster = 4;
+  string feature_schema_enforced = 5; // sent to customized feature kafka topic
+  string signal_schema_enforced = 6; // for signal topic
+}
+
+message KafkaSchema {
+  string subject = 1;
+  int32 id = 2;
+}
+
+message RivieraResourceConfig {
+  int64 number_task_manager = 1;
+  string memory = 2;
+  string cpu = 3;
+}
+
+// Defines a Riviera compute spec
+message RivieraSpec {
+  // reserved fields for backwards compatibility
+  reserved 5;
+  repeated KafkaSource kafka_sources = 1;
+  string sql = 2;
+  RivieraResourceConfig resource_config = 3;
+  repeated SignalParams signal_params = 4;
+  TimeStrategy time_strategy = 6;
+  string group_key_index = 7;
+}
+
+// Define real time backfill compute spec
+message RivieraBackfillSpec {
+  string sql = 1;
+  string timestamp_col = 2;
+  string riviera_source = 3;
+  SignalParams signal_params = 4;
+  string timestamp_timezone = 5;
+}
+
+// Define real time backfill compute spec
+message Cx360Spec {
+  map<string, string> attributes_mapping = 1;
+}
+
+enum TimeCharacteristic {
+  // processing time
+  PROCESSING_TIME = 0;
+  // event time
+  EVENT_TIME = 1;
+  // ingestion time
+  INGESTION_TIME = 2;
+}
+
+// define environment setting
+message TimeStrategy {
+  // The time characteristic defines how the system determines time for time-dependent order and operations that depend on time
+  TimeCharacteristic time_characteristic = 1;
+}
+
+// Defines the specification for model details
+message ModelSpec {
+  string predictor_name = 1;
+  repeated string model_ids = 2;
+}
+
+// Defines the metrics specification for model evaluation
+message MetricSpec {
+  string true_col = 1;
+  string pred_col = 2;
+  repeated string groupby_cols = 3;
+  repeated string metrics = 4;
+  bool compute_all = 5;
+  float sample_ratio = 6;
+  float acc_threshold = 7;
+}
+
+// Defines the alert specification for model monitoring
+message AlertSpec {
+  repeated User user_ids = 1;
+  string col_name = 2;
+  string threshold_operator = 3;
+  float threshold = 4;
+  float drifting_percentile = 5;
+  string alert_channel = 6;
+}
+
+// Defines the specification for model monitoring
+message MonitorSpec {
+  int64 time_delta = 1;
+  SnowflakeSpec snowflake_sqls = 2;
+  ModelSpec model_spec = 3;
+  MetricSpec metric_spec = 4;
+  repeated AlertSpec alert_specs = 5;
+}
+
+// Defines the specification for feature creation.
+message ComputeSpec {
+  ComputeType type = 1;
+  DatabricksSpec databricks_spec = 2;
+  TriggerSpec trigger_spec = 3;
+  SnowflakeSpec snowflake_spec = 4;
+  RivieraSpec riviera_spec = 5;
+  MonitorSpec monitor_spec = 6;
+  RivieraBackfillSpec riviera_backfill_spec = 7;
+  Cx360Spec cx360_spec = 8;
+  // define non-trivial dependencies, for example, aggregation, non-trigger upstreams
+  repeated DependencySpec dependency_spec = 9;
+}
+
+// Define the specification for fabricator source dependency
+message DependencySpec {
+  // dependency identifier
+  oneof dependency_def {
+    string source_name = 1;
+    StorageSpec storage_spec = 2;
+  }
+  // lookback window (in number of partitions)
+  int32 lookback_window = 3;
+  // offset for end of lookback window
+  int32 offset = 4;
+  // mininum partitions required out of lookback window
+  int32 min_partitions_required = 5;
+  // whether use this dependency as trigger condition
+  // TODO: not supported yet
+  bool wait_for_trigger = 6;
+}
+
+message Source {
+  string name = 1;
+  SourceType type = 2;
+  StorageSpec storage_spec = 3;
+  ComputeSpec compute_spec = 4;
+  MetadataSpec metadata_spec = 5;
+  string upload_group = 6; // Defaults to name if not specified
+  string definition_file_path = 7; // file path to yaml file where this Source is defined
+  bool upload_diff = 8; // whether this source should have diff uploaded as well, only Datalake supported
+}
+
+// Definitions for a Sink. A sink defines a feature store layer for serving.
+
+// Format for uploading features
+enum UploadFormat {
+  V2 = 0;
+  V1 = 1;
+  V3 = 2;
+  GROUPED_FEATURES = 3; // Stores a JSON Map of {feature_name: value}
+}
+
+// Different Types of INSERT behavior
+enum CrdbUploadMethod {
+  OVERWRITE = 0;
+  MERGE = 1;
+}
+
+// Defines a Redis based Feature Store spec
+message RedisSinkSpec {
+  string cluster_node = 1;
+  UploadFormat format = 2;
+  int64 ttl = 3;
+  string secondary_cluster_node = 4;
+}
+
+// Boulder Sink Spec
+message BoulderSinkSpec {
+  string prefix = 1;
+  string version = 2;
+}
+
+// Defines a Cockroach DB based Feature Store spec
+message CrdbSinkSpec {
+  string host = 1;
+  string port = 2; // default to 26257
+  string database = 3; // default to feature_store_prod
+  string schema = 4; // default to public
+  string table = 5;
+  repeated string allowed_roles = 6; // default to all roles
+  UploadFormat format = 7;
+  repeated string primary_key = 8; // name of columns that are primary keys
+}
+
+// Parameters related to uploads to CRDB
+message CrdbUploadParams {
+  CrdbUploadMethod upload_method = 1;
+}
+
+// Defines a kafka topic real time features can stream to
+message KafkaSinkSpec {
+  string kafka_config = 1; // Use to load Kafka Config in Riviera app
+  string topic = 2; // Defines which Kafka topic data goes to
+}
+
+// Defines Prometheus metric sink
+message PrometheusSinkSpec {
+  string prom_gateway = 1; // Optional: allow user to define gateway to forward metrics to
+}
+
+enum PrometheusMetricType {
+  COUNTER = 0;
+  HISTOGRAM = 1;
+  GAUGE = 2;
+}
+
+message HistogramBucket {
+  // Define bucket parameter format
+  repeated string bucket_value = 1;
+}
+
+message PrometheusMetricParams {
+  PrometheusMetricType metric_type = 1;
+  oneof metric_params {
+    // Define parameters for each different metric type
+    HistogramBucket histogram_bucket = 2;
+  }
+}
+
+message BellwetherCrdbParams {
+  // crdb write batch size
+  int32 batch_size = 1;
+  // crdb write batch interval ms
+  int32 batch_interval_ms = 2;
+  // crdb write max retries
+  int32 max_retries = 3;
+  // crdb write table name
+  string table_name = 4;
+}
+
+message ServingParams {
+  // Defines how this signal should be served
+  SignalType signal_type = 1;
+  int32 window_size = 2;
+  SignalWindowType window_type = 3;
+}
+
+message SignalParams {
+  string signal_name = 1;
+  SignalAggregationType op = 2;
+  DataType datatype = 3;
+  repeated string entities = 4;
+  ServingParams serving_params = 5;
+}
+
+enum SignalType {
+  AGGREGATED_SIGNAL = 0;
+  TIME_SERIES = 1;
+}
+
+enum SignalWindowType {
+  MINUTE = 0;
+  HOUR = 1;
+  DAY = 2;
+}
+
+enum SignalAggregationType {
+  SUM = 0;
+  MAX = 1;
+  MIN = 2;
+  AVG = 3;
+  DISTINCT = 4;
+}
+
+message QdrantSinkSpec {
+  string host = 1;
+  int32 port = 2;
+}
+
+enum VectorDistance {
+  DOT = 0;
+  COSINE = 1;
+  EUCLIDEAN = 2;
+}
+
+enum WriteMode {
+  WRITEMODE_APPEND = 0; // create if not exists, else append
+  WRITEMODE_OVERWRITE = 1; // overwrite each time we see new data
+}
+
+message WriteParam {
+  WriteMode write_mode = 1;
+  string create_date = 2; // if create date is current, create/overwrite
+}
+
+message QdrantSinkParams {
+  string collection_name = 1; // feature group logic needs to be tweaked
+  WriteParam write_param = 2;
+
+  int32 vector_dim = 3;
+  VectorDistance vector_distance = 4;
+
+  int32 shard_num = 5;
+  bool on_disk_payload = 6;
+  // performance
+  int32 max_search_threads = 7;
+
+  // optimizers
+  int32 default_segment_num = 8;
+  int32 max_segment_size_kb = 9;
+  int32 indexing_threshold_kb = 10;
+
+  // hnsw index
+  int32 m = 11;
+  int32 ef_construct = 12;
+  int32 full_scan_threshold_kb = 13;
+}
+
+// Defines a Feature Store, can only specify 1 spec per Sink
+message Sink {
+  string name = 1;
+  RedisSinkSpec redis_spec = 2;
+  CrdbSinkSpec crdb_spec = 3;
+  KafkaSinkSpec kafka_spec = 4;
+  PrometheusSinkSpec prometheus_sink_spec = 5;
+  QdrantSinkSpec qdrant_sink_spec = 6;
+  BoulderSinkSpec boulder_spec = 7;
+}
+
+// This proto describes an Entity for Feature Store access
+message Entity {
+  // Full name for the entity. Eg : store_id
+  string name = 1;
+  // Short name for generating entity keys for feature store. Eg : st
+  string short_name = 2;
+  // Indicates whether to hash the key values in the feature store.
+  bool should_hash = 3;
+}
+
+message SinkParameters {
+  // sink name to which the parameters will be applied
+  string sink_name = 1;
+  // Define parameters for each sink type
+  oneof sink_params {
+    PrometheusMetricParams prometheus_metric_params = 2;
+    CrdbUploadParams crdb_upload_params = 3;
+    KafkaSinkParams kafka_sink_params = 4;
+    QdrantSinkParams qdrant_sink_params = 5;
+    BellwetherCrdbParams crdb_sink_params = 6;
+  }
+}
+
+// Definitions for features.
+
+message MaterializeSpec {
+  repeated string sink = 1;
+  float sample = 2;
+  // This field should be specified if the feature is differently named in the source schema.
+  string override_feature_name = 3;
+  // Makes the feature exempt from forced down sampling. Use with extreme discretion.
+  bool override_safe_mode = 4;
+  // Indicates that feature materialization is not handled by fabricator. Definition is only for reference.
+  bool symbolic = 5;
+  // TTL for this feature, applies only to real time features.
+  int64 feature_ttl = 6;
+  repeated SinkParameters sink_parameters = 7; // Parameters that defines sink property
+}
+
+message Feature {
+  string name = 1;
+  string source = 2;
+  repeated string entities = 3;
+  DataType feature_type = 4;
+  MaterializeSpec materialize_spec = 5;
+  MetadataSpec metadata_spec = 6;
+  string upload_group = 7; // Defaults to upload group inherited from source
+  string definition_file_path = 8; // file path to yaml file where this Feature is defined
+}
+
+// Views
+message FeatureView {
+  string name = 1;
+  repeated string features = 2;
+}
+
+// Alerts
+enum MetricType {
+  MEAN = 0;
+  STD = 1;
+  PERCENTILE = 2;
+}
+
+message MetricParameter {
+  map<string, string> parameters = 1;
+}
+
+// Deprecated
+message ThresholdParameter {
+  string name = 1;
+  map<string, string> threshold_geq = 2;
+  map<string, string> threshold_lt = 3;
+  repeated string features = 4;
+}
+
+message Threshold {
+  string name = 1;
+  string threshold_gt = 2;
+  string threshold_lte = 3;
+  repeated string features = 4;
+}
+
+// Metrics with the option to add arguments i.e. what percentile measured, and alerting thresholds
+message Metric {
+  MetricType metric_type = 1;
+
+  // Deprecated
+  map<string, string> parameters = 2;
+
+  MetricParameter metric_parameter = 3;
+
+  // Deprecated. Replaced with threshold
+  ThresholdParameter threshold_parameter = 4;
+
+  repeated Threshold thresholds = 5;
+}
+
+// Inputs will be evaluated with SQL- > WHERE predictor in [predictors] AND model_id in [model_ids] and feature in [features]
+message IguazuSpec {
+  string table = 1;
+  repeated string predictors = 2;
+  repeated string model_ids = 3;
+  repeated string features = 4;
+}
+
+// Pair a metric with an iguazu spec. Extensible to different input formats in future releases
+message InputSpec {
+  repeated Metric metrics = 1;
+  IguazuSpec iguazu_spec = 2;
+  string schedule = 3;
+}
+
+message Alert {
+  string name = 1;
+  string user = 2;
+  InputSpec input_spec = 3;
+}
+
+message GitCommit {
+  string sha = 1;
+}
+
+message Repo {
+  string name = 1;
+  GitCommit commit = 2;
+  string version = 3;
+}
+
+// Get Requests
+message SinksGetRequest {
+  repeated string names = 1;
+}
+
+message SourcesGetRequest {
+  repeated string names = 1;
+}
+
+message SourcesDeleteRequest {
+  repeated string names = 1;
+}
+
+message SourcesDeleteResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message AllFeaturesGetRequest {}
+
+message AllSourcesGetRequest {}
+
+message FeaturesGetRequest {
+  // Pass one of view_name, feature_names.
+  string view_name = 1;
+  repeated string feature_names = 2;
+}
+
+message FeaturesDeleteRequest {
+  repeated string feature_names = 1;
+}
+
+message FeaturesDeleteResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message SignalGetRequest {
+  repeated string signal_names = 1;
+}
+
+message FeatureViewsGetRequest {
+  repeated string view_names = 1;
+}
+
+message EntitiesGetRequest {
+  // Optional, returns all entities if not specified
+  repeated string names = 1;
+}
+
+message UsersGetRequest {
+  // Optional, returns all users if not specified
+  repeated string names = 1;
+}
+
+message GroupsGetRequest {
+  // Optional, returns all groups if not specified
+  repeated string names = 1;
+}
+
+message AlertsGetRequest {
+  // Optional, returns all alerts not specified
+  repeated string names = 1;
+}
+
+// Gets the repo status
+message RepoGetRequest {
+  string name = 1;
+}
+
+// Get Responses
+message SinksGetResponse {
+  repeated Sink sinks = 1;
+  StatusCode code = 2;
+}
+
+message SourcesGetResponse {
+  repeated Source sources = 1;
+  StatusCode code = 2;
+}
+
+message AllFeaturesGetResponse {
+  repeated string names = 1;
+  StatusCode code = 2;
+}
+
+message AllSourcesGetResponse {
+  repeated string names = 1;
+  StatusCode code = 2;
+}
+
+message FeaturesGetResponse {
+  repeated Feature features = 1;
+  StatusCode code = 2;
+}
+
+message SignalGetResponse {
+  repeated SignalParams signal = 1;
+  StatusCode code = 2;
+}
+
+message FeatureViewsGetResponse {
+  repeated FeatureView views = 1;
+  StatusCode code = 2;
+}
+
+message EntitiesGetResponse {
+  repeated Entity entities = 1;
+  StatusCode code = 2;
+}
+
+message UsersGetResponse {
+  repeated User users = 1;
+  StatusCode code = 2;
+}
+
+message GroupsGetResponse {
+  repeated Group groups = 1;
+  StatusCode code = 2;
+}
+
+message AlertsGetResponse {
+  repeated Alert alerts = 1;
+  StatusCode code = 2;
+}
+
+message RepoGetResponse {
+  Repo repo = 1;
+  StatusCode code = 2;
+}
+
+// Upsert Requests. Set dry = True when just checking without committing
+message EntityUpsertRequest {
+  Entity entity = 1;
+  bool dry = 2;
+}
+
+message SinkUpsertRequest {
+  Sink sink = 1;
+  bool dry = 2;
+}
+
+message SourceUpsertRequest {
+  Source source = 1;
+  bool dry = 2;
+}
+
+message FeatureUpsertRequest {
+  Feature feature = 1;
+  bool dry = 2;
+}
+
+message SignalUpsertRequest {
+  SignalParams signal = 1;
+  ServingParams serving = 2;
+  bool dry = 3;
+}
+
+message FeatureViewUpsertRequest {
+  FeatureView view = 1;
+  bool dry = 2;
+}
+
+message UserUpsertRequest {
+  User user = 1;
+  bool dry = 2;
+}
+
+message GroupUpsertRequest {
+  Group group = 1;
+  bool dry = 2;
+}
+
+message AlertUpsertRequest {
+  Alert alert = 1;
+  bool dry = 2;
+}
+
+message RepoUpsertRequest {
+  Repo repo = 1;
+  bool dry = 2;
+}
+
+// Upsert Response
+message EntityUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message SinkUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message SourceUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message FeatureUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message FeatureViewUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message SignalUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message UserUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message GroupUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message AlertUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}
+
+message RepoUpsertResponse {
+  string status = 1;
+  StatusCode code = 2;
+}

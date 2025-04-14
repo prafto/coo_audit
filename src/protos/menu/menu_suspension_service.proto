@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package menususpensionservice;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/menususpensionservice/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menususpensionservice.grpc";
+
+service SuspensionService {
+  option (service_client.client_config).service_name = "menu-data-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  option (service_client.client_config).retry_config.initial_wait_millis = 10;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  rpc UpsertSuspensions(UpsertSuspensionsRequest) returns (UpsertSuspensionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  rpc DeleteSuspensions(DeleteSuspensionsRequest) returns (DeleteSuspensionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  rpc DeleteSuspensionsByStore(DeleteSuspensionsByStoreRequest) returns (DeleteSuspensionsByStoreResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1500;
+  }
+
+  rpc GetActiveSuspensions(GetActiveSuspensionsRequest) returns (GetActiveSuspensionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+
+  rpc GetSuspension(GetSuspensionRequest) returns (GetSuspensionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+}
+
+// A menu entity (identified by store_menu_id, entity_id, entity_type) could have a permanent suspension, or
+// a temporary suspension, or both.
+message SuspensionEntity {
+  string id = 1; // Always set to "singleton" at the moment.
+  string store_menu_id = 2;
+  string entity_id = 3;
+  menu.EntityType entity_type = 4;
+  menu.Suspension suspension = 5;
+  // determines whether the suspension is soft deleted; null value also signifies active suspension
+  google.protobuf.BoolValue is_active = 6;
+}
+
+// Assumes all the given entities share the same store_menu_id.
+// If override_suspensions=true, removes old suspensions with matching store_menu_id and entity_ids from entities
+// before upserting.
+message UpsertSuspensionsRequest {
+  repeated SuspensionEntity entities = 1;
+  bool override_suspensions = 2;
+}
+
+message UpsertSuspensionsResponse {}
+
+// Assumes all the given entities share the same store_menu_id.
+message DeleteSuspensionsRequest {
+  repeated SuspensionEntity entities = 1;
+}
+
+message DeleteSuspensionsResponse {}
+
+// Deletes all suspensions in a store.
+message DeleteSuspensionsByStoreRequest {
+  string store_menu_id = 1;
+}
+
+message DeleteSuspensionsByStoreResponse {}
+
+// Gets active suspensions on at_time, with matching store_menu_id and entity_ids.
+message GetActiveSuspensionsRequest {
+  string store_menu_id = 1;
+  int64 at_time = 2; // In epoch milliseconds.
+  repeated string entity_ids = 3;
+}
+
+message GetActiveSuspensionsResponse {
+  repeated SuspensionEntity entities = 1;
+}
+
+// Gets a suspension entity with matching store_menu_id, entity_id and id.
+message GetSuspensionRequest {
+  string store_menu_id = 1;
+  string entity_id = 2;
+  string id = 3;
+}
+
+message GetSuspensionResponse {
+  SuspensionEntity entity = 1;
+}

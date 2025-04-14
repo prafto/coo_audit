@@ -1,0 +1,752 @@
+syntax = "proto3";
+package hub_service.hub;
+
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.hub";
+option java_outer_classname = "Service";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "common/service_client_config.proto";
+import "common/common.proto";
+import "dasher_service/dasher_common.proto";
+
+// Service
+// NOTE: Method names should follow VerbNoun convention
+// Naming Guide: https://cloud.google.com/apis/design/naming_convention#method_name
+
+service HubService {
+
+  option (service_client.client_config).service_name = "hub-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.7;
+
+  rpc GetHub(GetHubRequest) returns (Hub);
+  rpc ListHubs(ListHubsRequest) returns (ListHubsResponse);
+  rpc ListHubStores(ListHubStoresRequest) returns (ListHubStoresResponse);
+  rpc CreateFifoQueueEntry(CreateFifoQueueEntryRequest) returns (FifoQueueEntry);
+  rpc GetFifoToolAccess(GetFifoToolAccessRequest) returns (FifoToolAccess);
+  rpc CreateHub(CreateNewHubRequests) returns (CreateNewHubRequestsResponse);
+  rpc ListHoldingSlotStates(ListHoldingSlotStatesRequest) returns (ListHoldingSlotStatesResponse);
+  rpc ListUnplacedDeliveries(ListUnplacedDeliveriesRequest) returns (ListUnplacedDeliveriesResponse);
+  rpc CheckInFifoQueueEntry(CheckInFifoQueueEntryRequest) returns (FifoQueueEntry);
+  rpc ListDeliveriesPendingCancellation(google.protobuf.Empty) returns (ListDeliveriesPendingCancellationResponse);
+  rpc GetDasherHandOffInfo(GetDasherHandOffInfoRequest) returns (DasherHandOffInfo);
+  rpc GetFifoShadowDeliveryAssignmentInfo(GetFifoShadowDeliveryAssignmentInfoRequest) returns (FifoShadowDeliveryAssignmentInfo);
+  rpc GetFifoHubAssignmentInfo(GetFifoHubAssignmentInfoRequest) returns (GetFifoHubAssignmentInfoResponse);
+  rpc GetFifoShadowDeliveryCheckinInfo(GetFifoShadowDeliveryCheckinInfoRequest) returns (FifoShadowDeliveryCheckinInfo);
+  rpc GetFifoCheckinInfo(GetFifoCheckinInfoRequest) returns (GetFifoCheckinInfoResponse);
+  rpc ListHubStopsForDelivery(ListHubStopsForDeliveryRequest) returns (ListHubStopsForDeliveryResponse);
+  rpc GetHubDeliveryPayInfo(GetHubDeliveryPayInfoRequest) returns (HubDeliveryPayInfo);
+  rpc GetFifoShadowDeliveryPayInfo(GetFifoShadowDeliveryPayInfoRequest) returns (FifoShadowDeliveryPayInfo);
+  rpc UpdateAutoSelectDeliveriesSetting(UpdateAutoSelectDeliveriesSettingRequest) returns (Hub);
+  rpc GetHubDeliveries(GetHubDeliveriesRequest) returns (GetHubDeliveriesResponse);
+  rpc RemoveAllDeliveriesFromHubs(RemoveAllDeliveriesFromHubsRequest) returns (RemoveAllDeliveriesFromHubsResponse);
+  rpc AddDeliveryToHubs(AddDeliveryToHubsRequest) returns (AddDeliveryToHubsResponse);
+  rpc RemoveDeliveryFromHubs(RemoveDeliveryFromHubsRequest) returns (RemoveDeliveryFromHubsResponse);
+  rpc GetModalSettings(GetModalSettingsRequest) returns (GetModalSettingsResponse);
+  rpc GetHubModalSettings(GetHubModalSettingsRequest) returns (GetHubModalSettingsResponse);
+  rpc GetShadowDeliveryId(GetShadowDeliveryIdRequest) returns (GetShadowDeliveryIdResponse);
+  rpc UpdateAndGetPaySummary(UpdateAndGetPaySummaryRequest) returns (UpdateAndGetPaySummaryResponse);
+  rpc UpdateBaseShadowDeliveryForHub(UpdateBaseShadowDeliveryForHubRequest) returns (UpdateBaseShadowDeliveryForHubResponse);
+  rpc UpdateAndGetHubDeliveryPaySummary(UpdateAndGetPaySummaryRequest) returns (UpdateAndGetPaySummaryResponse);
+  rpc GetHubDeliveryPayInfoWithTask(GetHubDeliveryPayInfoRequest) returns (GetHubDeliveryPayInfoResponse);
+  rpc GetIsDeliveryServicedByFF2Hub(GetDeliveryServicedByFF2HubRequest) returns (GetDeliveryServicedByFF2HubResponse);
+  rpc LoadDeliveryToHub(LoadDeliveryToHubRequest) returns (LoadDeliveryToHubResponse);
+  rpc GetDasherAssignmentInfoForDeliveries(GetDasherAssignmentInfoForDeliveriesRequest) returns (GetDasherAssignmentInfoForDeliveriesResponse);
+  rpc ReserveSpotInFIFOQueue(ReserveSpotInFIFOQueueRequest) returns (ReserveSpotInFIFOQueueResponse);
+}
+
+// Resources
+// NOTE: For resources, the suffix Response should not be included
+enum HubType {
+  Merchant = 0;
+  Consumer = 1;
+  Intermediate = 2;
+}
+
+enum AssignerType {
+  UNIVERSAL = 0;
+  FIFO = 1;
+}
+
+enum ActorType {
+  Actor_Merchant = 0;
+  Actor_Consumer = 1;
+  Actor_Dasher = 2;
+  Actor_Runner = 3;
+  Actor_Robot = 4;
+  Actor_InterHubAgent = 5;
+}
+
+enum NewHubStateChange {
+    UNKNOWN_STATUS = 0;
+    ADD_SUCCEEDED = 1;
+    ADD_FAILED = 2;
+}
+
+enum ReserveStatus
+{
+  UNKNOWN = 0;
+  QUEUE_FULL = 1;
+  TOO_FAR = 2;
+  RESERVED = 3;
+}
+
+
+message Error {
+    int32 code = 1;
+    string reason = 2;
+}
+
+message Hub {
+  string id = 1;
+  string name = 2;
+  HubType type = 3;
+  bool is_active = 4;
+  google.protobuf.Timestamp created_at = 5;
+  bool auto_select_deliveries = 6;
+}
+
+message HubStore {
+  int64 store_id = 1;
+  bool is_active = 2;
+}
+
+message FifoQueueEntry {
+  string id = 1;
+  string hub_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  int64 shadow_delivery_id = 4;
+  google.protobuf.Int64Value shift_id = 5;
+  google.protobuf.Timestamp checked_in_at = 6;
+  google.protobuf.Timestamp concluded_at = 7;
+}
+
+message HoldingSlotState {
+  string id = 1;
+  string name = 2;
+  repeated int64 delivery_ids = 3;
+}
+
+message DasherPickupInfo {
+  string address_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue establishment_name = 3;
+  google.protobuf.StringValue parking_tips = 4;
+}
+
+message DasherDropOffInfo {
+  string address_id = 1;
+  google.protobuf.StringValue dasher_instructions = 2;
+  google.protobuf.StringValue entry_code = 3;
+  google.protobuf.StringValue parking_instructions = 4;
+}
+
+message DasherHandOffInfo {
+  DasherPickupInfo pickup_info = 1;
+  DasherDropOffInfo dropoff_info = 2;
+}
+
+message FifoToolAccess {
+  bool has_access = 1;
+}
+
+message GetFifoHubAssignmentInfoResponse {
+  int32 avg_delivery_distance_meters = 1;
+  int32 max_delivery_distance_meters = 2;
+}
+
+message FifoShadowDeliveryAssignmentInfo {
+  int32 avg_delivery_distance_meters = 1;
+  int32 max_delivery_distance_meters = 2;
+}
+
+//Will deprecate for GetFifoCheckinInfoResponse
+message FifoShadowDeliveryCheckinInfo {
+  int32 queue_time_seconds = 1;
+  int32 queue_position = 2;
+  google.protobuf.StringValue check_in_code = 3;
+  google.protobuf.Timestamp checked_in_at = 4;
+}
+
+message GetFifoCheckinInfoResponse {
+  int32 queue_time_seconds = 1;
+  int32 queue_position = 2;
+}
+
+message HubStop {
+  string hub_id = 1;
+  HubType hub_type = 2;
+  ActorType load_actor_type = 3;
+  ActorType unload_actor_type = 4;
+  bool has_holding_slots = 5;
+}
+
+message HubDeliveryPayInfo {
+  int32 minimum_pay_amount = 1;
+  int32 boost_pay_amount = 2;
+}
+
+message GetHubDeliveryPayInfoResponse {
+  int32 minimum_pay_amount = 1;
+  int32 boost_pay_amount = 2;
+}
+
+message FifoShadowDeliveryPayInfo {
+  int32 boost_pay_amount = 1;
+}
+// Requests & Responses
+// NOTE: Should be named after the method names with the suffix Request and Response
+// https://cloud.google.com/apis/design/naming_convention#request_and_response_messages
+
+message GetHubRequest {
+  string hub_id = 1;
+}
+
+message ListHubStoresRequest {
+  string hub_id = 1;
+}
+
+message ListHubStoresResponse {
+  repeated HubStore hub_stores = 1;
+}
+
+message CreateFifoQueueEntryRequest {
+  string hub_id = 1;
+}
+
+message NewHub {
+  string store_name = 1;
+  repeated int64 store_ids = 2;
+  string base_shadow_delivery_id = 3;
+  int64 market_id = 4;
+  int32 max_batch_size = 5;
+  bool is_true_fifo = 6;
+  bool is_deep_red = 7;
+  string batch_bearing_constraints = 8;
+  string batch_ready_time_difference_by_store = 9;
+  int64 shadow_store_id = 10;
+  int64 address_id = 11;
+  repeated int64 aor_ids = 12;
+  int32 pay_per_active_hour = 13;
+}
+
+message CreateNewHubRequests {
+  repeated NewHub new_hub = 1;
+}
+
+message CreateNewHubRequestsResponse {
+  repeated CreateNewHubPair hub_data = 1;
+  repeated Error errors = 2;
+  repeated NewHubStateChange status = 3;
+}
+
+message CreateNewHubPair {
+  string hub_id = 1;
+  string store_name = 2;
+}
+
+message GetFifoToolAccessRequest {
+  string hub_id = 1;
+  int64 store_id = 2;
+}
+
+message ListHoldingSlotStatesRequest {
+  string hub_id = 1;
+}
+
+message ListHoldingSlotStatesResponse {
+  repeated HoldingSlotState holding_slot_states = 1;
+}
+
+message ListUnplacedDeliveriesRequest {
+  string hub_id = 1;
+}
+
+message ListUnplacedDeliveriesResponse {
+  repeated int64 delivery_ids = 1;
+}
+
+message CheckInFifoQueueEntryRequest {
+  string hub_id = 1;
+  string check_in_code = 2;
+}
+
+message ListDeliveriesPendingCancellationResponse {
+  repeated int64 delivery_ids = 1;
+}
+
+message GetDasherHandOffInfoRequest {
+  int64 delivery_id = 1;
+}
+
+message GetFifoShadowDeliveryAssignmentInfoRequest {
+  int64 shadow_delivery_id = 1;
+}
+
+message GetFifoHubAssignmentInfoRequest {
+  google.protobuf.StringValue task_id = 1;
+  google.protobuf.StringValue task_group_id = 2;
+}
+
+message GetFifoCheckinInfoRequest {
+  int64 shift_id = 1;
+}
+
+//Will deprecate this method for GetFifoCheckinInfoRequest
+message GetFifoShadowDeliveryCheckinInfoRequest {
+  int64 shadow_delivery_id = 1;
+}
+
+message ListHubStopsForDeliveryRequest {
+  int64 delivery_id = 1;
+}
+
+message ListHubStopsForDeliveryResponse {
+  repeated HubStop hub_stops = 1;
+}
+
+message DasherDeliveryPay {
+
+  google.protobuf.Int64Value shift_id = 1;
+
+  google.protobuf.Int64Value delivery_id = 2;
+
+  string currency = 3;
+
+  google.protobuf.BoolValue is_on_dynamic_pay_model = 4;
+
+  int32 fair_value_amount = 5;
+
+  int32 doordash_contribution_amount = 6;
+
+  int32 tip_amount = 7;
+
+  int32 pre_tip_amount = 8;
+
+  int32 post_tip_amount = 9;
+
+  int32 sos_amount = 10;
+
+  int32 sof_pay_boost = 11;
+
+  int32 store_boost = 12;
+
+  int32 reassignment_boost = 13;
+
+  int32 setup_pay = 14;
+
+  int32 on_time_bonus = 15;
+
+  int32 order_volume_extra_pay = 16;
+
+  google.protobuf.Int64Value dasher_pay_target_id = 17;
+
+  int32 dasher_min_pay = 18;
+
+  int32 base_pay = 19;
+
+  int32 doordash_additional_pay = 20;
+
+  int32 dynamic_pay_duration_seconds = 21;
+
+  google.protobuf.Int64Value shift_delivery_assignment_id = 22;
+
+  string pay_model_type = 23;
+
+  string pay_model_version = 24;
+
+  int32 dasher_offered_guaranteed_pay = 25;
+
+  int32 actual_pay = 26;
+
+  int32 cancellation_pay = 27;
+
+  int32 preferred_pay = 28;
+
+  float percentage_multiplier = 29;
+
+  int32 cash_advance = 30;
+
+  int32 adjustment_amount = 31;
+
+  google.protobuf.Timestamp tip_pending_until = 32;
+
+  int32 num_unassigns_for_delivery = 33;
+
+  int32 route_distance_meters = 34;
+
+  int32 acceptance_bonus = 35;
+
+  int32 peak_pay = 36;
+
+  int32 num_assign = 37;
+
+  float predicted_conflat_hot_potato = 38;
+
+  float predicted_decline_probability = 39;
+
+  float consumer_zero_tip_percent = 40;
+
+  int32 dasher_offered_pay = 41;
+
+  int32 capped_tip_amount = 42;
+
+  float pay_tip_cap_distance_factor = 43;
+
+  int32 capped_tip_amount_without_distance = 44;
+
+  int32 dasher_wait_in_store_pay = 45;
+
+  int32 redelivery_boost = 46;
+
+  int32 rule_based_pay_adjustment = 47;
+
+  int32 dasher_wait_in_store_seconds = 48;
+
+  google.protobuf.Int64Value id = 49;
+
+  google.protobuf.Timestamp created_at = 50;
+
+  google.protobuf.Int32Value local_mandate_pay = 51;
+
+  google.protobuf.StringValue local_mandate_pay_reason = 52;
+
+  google.protobuf.Int64Value dropoff_starting_point_dasher_pay_target_id = 53;
+
+  google.protobuf.Int64Value dasher_delivery_pay_experiment_info_id = 54;
+}
+
+message GetHubDeliveryPayInfoRequest {
+  int64 delivery_id = 1;
+  int64 assignment_id = 2;
+  DasherDeliveryPay dasher_delivery_pay = 3;
+}
+
+message GetFifoShadowDeliveryPayInfoRequest {
+  int64 shadow_delivery_id = 1;
+}
+
+message UpdateAutoSelectDeliveriesSettingRequest {
+  string hub_id = 1;
+  bool auto_select_deliveries = 2;
+}
+
+message GetHubDeliveriesRequest {
+  repeated string hub_ids = 1;
+}
+
+message HubHoldingSlotResponse {
+  string holding_slot_id = 1;
+  string holding_slot_name = 2;
+  google.protobuf.Timestamp placed_at = 3;
+  google.protobuf.Timestamp removed_at = 4;
+}
+
+message HubDeliveryStopResponse {
+  string hub_id = 1;
+  HubType hub_type = 2;
+  HubHoldingSlotResponse holding_slot = 3;
+  google.protobuf.Timestamp loaded_at = 4;
+  google.protobuf.Timestamp unloaded_at = 5;
+  ActorType load_actor_type = 6;
+  ActorType unload_actor_type = 7;
+  string hub_name = 8;
+}
+
+message HubDeliveryResponse {
+  int64 delivery_id = 1;
+  repeated HubDeliveryStopResponse hub_delivery_stops = 2;
+  bool is_candidate = 3;
+  google.protobuf.Timestamp concluded_at = 4;
+  InterHubAgentAssignmentResponse inter_hub_agent_assignment = 5;
+}
+
+message InterHubAgentAssignmentResponse {
+  string agent_name = 1;
+  google.protobuf.Timestamp assigned_at = 2;
+  google.protobuf.Timestamp loaded_at = 3;
+  google.protobuf.Timestamp departed_at = 4;
+  google.protobuf.Timestamp unloaded_at = 5;
+  string agent_id = 6;
+}
+
+message GetHubDeliveriesResponse {
+  repeated HubDeliveryResponse deliveries = 1;
+}
+
+message RemoveAllDeliveriesFromHubsRequest {
+  repeated string hub_ids = 1;
+}
+
+message RemoveAllDeliveriesFromHubsResponse {
+  bool success = 1;
+}
+
+message ListHubsRequest {
+  bool active_only = 1;
+  AssignerType assigner_type = 2;
+}
+
+message ListHubsResponse {
+  repeated Hub hubs = 1;
+}
+
+message AddDeliveryToHubsRequest {
+  int64 delivery_id = 1;
+  repeated string hub_ids = 2;
+}
+
+message AddDeliveryToHubsResponse {
+  bool success = 1;
+}
+
+message RemoveDeliveryFromHubsRequest {
+  int64 delivery_id = 1;
+  repeated string hub_ids = 2;
+}
+
+message RemoveDeliveryFromHubsResponse {
+  bool success = 1;
+}
+
+message HubServiceEstimateSegmentRequest {
+  // delivery id
+  int64 real_delivery_id = 1;
+  // estimated time stamp
+  google.protobuf.Timestamp max_ready_at = 2;
+  // number of batches predicted
+  int64 num_batches = 3;
+  // current timestamp
+  google.protobuf.Timestamp current_timestamp = 4;
+  // id of hub
+  string hub_id = 5;
+}
+
+message HubServiceRemoveDeliveriesSegmentRequest {
+  // delivery id
+  int64 real_delivery_id = 1;
+  // estimated time stamp
+  google.protobuf.Timestamp current_timestamp = 2;
+
+  string hub_id = 3;
+}
+
+message HubServiceShadowDeliveriesSegmentRequest {
+
+  int64 existing_shadow_count = 1;
+
+  int64 required_shadow_count = 2;
+
+  int64 number_created = 3;
+
+  repeated int64 shadow_delivery_ids = 4;
+
+  string hub_id = 5;
+}
+
+message HubServiceShadowDeliverySegmentRequest {
+
+  int64 existing_shadow_count = 1;
+
+  int64 required_shadow_count = 2;
+
+  int64 number_created = 3;
+
+  int64 shadow_delivery_id = 4;
+
+  string hub_id = 5;
+}
+
+message DasherRemoveAllowlistSegmentRequest{
+
+    int64 dasher_id = 1;
+
+    google.protobuf.Timestamp release_time = 2;
+
+    google.protobuf.Timestamp checkin_time = 3;
+
+    int64 release_time_epoch = 4;
+
+    int64 checkin_time_epoch = 5;
+
+    string hub_id = 6;
+
+    string reason = 7;
+
+    int64 shift_id = 8;
+}
+
+message DasherWaitingForExpectedAssignmentSegmentRequest {
+  int64 dasher_id = 1;
+  int64 shift_id = 2;
+  google.protobuf.BoolValue is_waiting_for_expected_assignment = 3;
+  int64 response_dasher_id = 4;
+  int64 response_shift_id = 5;
+  google.protobuf.BoolValue response_is_waiting_for_expected_assignment = 6;
+  google.protobuf.Timestamp toggle_time = 7;
+  int64 toggle_time_epoch = 8;
+
+}
+
+message GetModalSettingsRequest {
+  int64 store_id = 1;
+  int64 delivery_id = 2;
+  google.protobuf.Int64Value shift_id = 3;
+}
+
+message DeliveryEffort {
+  int64 route_distance_meters = 1;
+  google.protobuf.StringValue route_duration = 2;
+}
+
+message DasherPaySummary {
+  int64 delivery_id = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+  google.protobuf.StringValue delivery_pay_header = 3;
+  int64 tip_amount = 4;
+  int64 doordash_contribution_amount = 5;
+  google.protobuf.BoolValue is_post_tippable = 6;
+  google.protobuf.BoolValue is_post_tipping_ever_eligible = 7;
+  google.protobuf.BoolValue is_pre_tippable = 8;
+  int64 cash_on_delivery = 9;
+}
+
+message DasherPayDetails {
+  int64 quoted_pay_per_hour = 1;
+  google.protobuf.StringValue pay_description_text = 2;
+  google.protobuf.StringValue min_tip_display_text = 3;
+  google.protobuf.StringValue additional_compensation_title = 4;
+  google.protobuf.StringValue additional_compensation_description = 5;
+  google.protobuf.BoolValue show_pay_summary = 6;
+  google.protobuf.StringValue pay_summary_description = 7;
+  int64 total_amount = 8;
+  repeated DasherPaySummary dasher_pay_summaries = 9;
+}
+
+message GetModalSettingsResponse {
+  // deprecated
+  google.protobuf.BoolValue hide_shadow_pay_info = 1;
+  google.protobuf.BoolValue show_dropoff_details_on_pickup = 2;
+  //deprecated
+  google.protobuf.BoolValue hide_shadow_pay_info_v1 = 3;
+  google.protobuf.StringValue shadow_pay_info_title = 4;
+  google.protobuf.StringValue shadow_pay_info_description = 5;
+  google.protobuf.StringValue shadow_pay_info_title_v2 = 6;
+  google.protobuf.StringValue shadow_pay_info_description_v2 = 7;
+  google.protobuf.BoolValue hide_shadow_pay_info_v2 = 8;
+  google.protobuf.BoolValue show_order_offered_at_arrival = 9;
+  google.protobuf.BoolValue show_waiting_for_order_view = 10;
+  DeliveryEffort delivery_effort = 11;
+  DasherPayDetails dasher_pay_details = 12;
+}
+
+message GetShadowDeliveryIdRequest {
+  int64 shift_id = 1;
+  int64 real_delivery_id = 2;
+}
+
+message GetShadowDeliveryIdResponse {
+  int64 shadow_delivery_id = 1;
+}
+
+message UpdateAndGetPaySummaryRequest {
+  int64 delivery_id = 1;
+  int64 store_id = 2;
+}
+
+message UpdateAndGetPaySummaryResponse {
+  DeliveryEffort delivery_effort = 1;
+  DasherPayDetails dasher_pay_details = 2;
+}
+
+message UpdateBaseShadowDeliveryForHubRequest {
+  string hub_id = 1;
+  int64 base_shadow_delivery_id = 2;
+}
+
+message UpdateBaseShadowDeliveryForHubResponse {
+  bool success = 1;
+}
+
+message GetHubModalSettingsRequest {
+  int64 store_id = 1;
+  int64 delivery_id = 2;
+  google.protobuf.StringValue task_id = 3;
+  google.protobuf.StringValue task_group_id = 4;
+  int64 shift_id = 5;
+}
+
+message GetHubModalSettingsResponse {
+  google.protobuf.BoolValue show_dropoff_details_on_pickup = 1;
+  google.protobuf.StringValue pay_info_title = 2;
+  google.protobuf.StringValue pay_info_description = 3;
+  google.protobuf.BoolValue   hide_pay_info = 6;
+  google.protobuf.BoolValue   show_order_offered_at_arrival = 7;
+  google.protobuf.BoolValue   show_waiting_for_order_view = 8;
+  DeliveryEffort delivery_effort = 9;
+  DasherPayDetails dasher_pay_details = 10;
+  google.protobuf.StringValue modal_title = 11;
+}
+
+message GetDeliveryServicedByFF2HubRequest {
+  int64 delivery_id = 1;
+}
+
+message GetDeliveryServicedByFF2HubResponse {
+  google.protobuf.BoolValue is_hub_on_ff2 = 1;
+}
+
+// Request to load a Delivery into Hub
+message LoadDeliveryToHubRequest {
+  // Integer ID of the Delivery
+  int64 delivery_id = 1;
+  // Unique ID (UUID) of the Hub
+  google.protobuf.StringValue hub_id = 2;
+}
+
+// Response from attempt to load a Delivery into Hub
+message LoadDeliveryToHubResponse {
+  // Success/failure indicator for the load attempt
+  bool success = 1;
+  // Error description, only populated if success = false
+  string error = 2;
+}
+
+// Request to get Dx assignment information for a list of deliveries
+message GetDasherAssignmentInfoForDeliveriesRequest {
+  // Integer IDs of the Delivery
+  repeated int64 delivery_ids = 1;
+}
+
+// Response to get Dx assignment information for a list of deliveries
+message GetDasherAssignmentInfoForDeliveriesResponse {
+  repeated DasherAssignmentInfo dasher_assignment_info = 1;
+}
+
+// Response object containing Dx assignment information
+message DasherAssignmentInfo {
+  // Integer ID of the Delivery
+  int64 delivery_id = 1;
+  // Dasher pick up location which has been overridden
+  common.Location pickup_location = 2;
+  // Estimated delivery pickup time
+  google.protobuf.Timestamp estimated_pickup_time = 3;
+}
+
+message ReserveSpotInFIFOQueueRequest
+{
+  int64 dasher_id = 1;
+  int64 shift_id = 2;
+  string hub_id = 3;
+  dasher_service.dasher_common.LatLng dasher_location = 4;
+}
+
+message ReserveSpotInFIFOQueueResponse
+{
+  ReserveStatus status = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Int64Value shadow_delivery_id = 3;
+}

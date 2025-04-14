@@ -1,0 +1,4074 @@
+syntax = "proto3";
+package order_service;
+
+import "cart/cart_service.proto";
+import "common/bundle_order_info.proto";
+import "common/cart.proto";
+import "common/common.proto";
+import "common/consumer_domain_order.proto";
+import "common/date.proto";
+import "common/eta_features.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/order_config.proto";
+import "common/restriction_rules.proto";
+import "common/service_client_config.proto";
+import "common/shop_anywhere.proto";
+import "common/store_loyalty.proto";
+import "delivery_service/delivery_core.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_injection.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order/consumer_order.proto";
+import "order/event.proto";
+import "order/merchant_order.proto";
+import "order/receipt.proto";
+import "payment/payin_payment_method.proto";
+import "store_availability.v2/store_availability.proto";
+
+option go_package = "consume_order_gateway";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer.order.gateway";
+
+service ConsumerOrderGateway {
+  option (doordash.api.service) = {
+    name: "order-service-order-gateway-grpc"
+    port: 50051
+    name_spaces: [
+      "ddpos",
+      "order",
+      "schedule",
+      "shop_anywhere",
+      "cart",
+      "autocheckout"
+    ]
+    owner: {
+      id: "order-platform-default-bucket"
+      name: "order-service-order-gateway"
+      slack_channel: "#eng-order-platform"
+      email_alias: "order-platform@doordash.com"
+    }
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+
+  // Timeout after 2000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+
+  // Add DEADLINE_EXCEEDED (4) to retry code
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 4;
+
+  rpc GetConsumerOrderReceipt(GetConsumerOrderReceiptRequest) returns (GetConsumerOrderReceiptResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+  }
+  rpc GetFifoOrderCartIds(GetFifoOrderCartIdsRequest) returns (GetFifoOrderCartIdsResponse);
+  rpc GetGiftOrderInfo(GetGiftOrderInfoRequest) returns (GetGiftOrderInfoResponse);
+  rpc GetStoreAvailabilityForGift(GetStoreAvailabilityForGiftRequest) returns (GetStoreAvailabilityForGiftResponse);
+  rpc GetGiftTrackingData(GetGiftTrackingDataRequest) returns (GetGiftTrackingDataResponse);
+  rpc GetGiftOrderContactInfo(GetGiftOrderContactInfoRequest) returns (GetGiftOrderContactInfoResponse);
+  rpc GetGiftTrackingDasherLocation(GetGiftTrackingDasherLocationRequest) returns (GetGiftTrackingDasherLocationResponse);
+  rpc SendConsumerTrackingLink(SendConsumerTrackingLinkRequest) returns (SendConsumerTrackingLinkResponse);
+  rpc GetAvailableCards(GetAvailableCardsRequest) returns (GetAvailableCardsResponse);
+  rpc GetVirtualCard(GetVirtualCardRequest) returns (GetVirtualCardResponse);
+  rpc UpsertVirtualCard(UpsertVirtualCardRequest) returns (UpsertVirtualCardResponse);
+  rpc GetConsumerOrdersWithDetailsByIds(GetConsumerOrdersWithDetailsByIdsRequest) returns (GetConsumerOrdersWithDetailsResponse);
+  rpc GetRecurringOrdersWithDetailsByIds(GetRecurringOrdersWithDetailsByIdsRequest) returns (GetRecurringOrdersWithDetailsResponse);
+  rpc GetStoreOrderCartWithConsumerId(GetStoreOrderCartsByConsumerIdRequest) returns (GetStoreOrderCartsByConsumerIdResponse);
+  rpc GetOrderCartWithOrderUUID(GetOrderCartWithOrderUUIDRequest) returns (GetOrderCartWithOrderUUIDResponse);
+  rpc GetOrderCartIdWithOrderUUID(GetOrderCartIdWithOrderUUIDRequest) returns (GetOrderCartIdWithOrderUUIDResponse);
+  rpc GetOrderCartsWithConsumerId(GetOrderCartsWithConsumerIdRequest) returns (GetOrderCartsWithConsumerIdResponse);
+  rpc ScheduleGiftDelivery(ScheduleGiftDeliveryRequest) returns (ScheduleGiftDeliveryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  //will see if GetPopulatedConsumerOrdersByConsumerId can be combined with GetPopulatedConsumerOrder
+  rpc GetConsumerOrdersWithDetailsByConsumerId(GetConsumerOrdersWithDetailsByConsumerIdRequest) returns (GetConsumerOrdersWithDetailsResponse);
+  // TODO (DDAND-100): migrate to GetBundleOpportunities() to consolidate pre/post checkout bundle workflows
+  rpc GetBundleOpportunitiesForOrderCart(GetBundleOpportunitiesForOrderCartRequest) returns (GetBundleOpportunitiesForOrderCartResponse);
+  rpc GetBundleOpportunities(GetBundleOpportunitiesRequest) returns (GetBundleOpportunitiesResponse);
+  rpc ValidateBundleOpportunities(ValidateBundleOpportunitiesRequest) returns (ValidateBundleOpportunitiesResponse);
+  rpc DelayBundleAssignment(DelayBundleAssignmentRequest) returns (DelayBundleAssignmentResponse);
+  rpc GetCartTopperOrderIntent(GetCartTopperOrderIntentRequest) returns (GetCartTopperOrderIntentResponse);
+  rpc CreateCartTopperOrderIntent(CreateCartTopperOrderIntentRequest) returns (CreateCartTopperOrderIntentResponse);
+  rpc GetOrderCreditsback(GetOrderCreditsbackRequest) returns (GetOrderCreditsbackResponse);
+  rpc GetDeliveryInstructionOptions(GetDeliveryInstructionOptionsRequest) returns (GetDeliveryInstructionOptionsResponse);
+  rpc PurgeMealGiftData(PurgeMealGiftDataRequest) returns (PurgeMealGiftDataResponse);
+  rpc ApplyWebReferral(ApplyWebReferralRequest) returns (ApplyWebReferralResponse);
+  rpc IsReducedCommissionApplicable(IsReducedCommissionApplicableRequest) returns (IsReducedCommissionApplicableResponse);
+  rpc UpdateWebReferralConsumer(UpdateWebReferralConsumerRequest) returns (UpdateWebReferralConsumerResponse);
+  rpc GetOrderedItemsForConsumerByStores(GetOrderedItemsForConsumerByStoresRequest) returns (GetOrderedItemsForConsumerByStoresResponse);
+  rpc InsertToConsumerIdToOrderStoreItemsIndex(InsertToConsumerIdToOrderStoreItemsIndexRequest) returns (InsertToConsumerIdToOrderStoreItemsIndexResponse);
+  rpc InsertToConsumerIdStoreIdToOrderUuidIndex(InsertToConsumerIdStoreIdToOrderUuidIndexRequest) returns (InsertToConsumerIdStoreIdToOrderUuidIndexResponse);
+  rpc PickupGeoFenceCheckIn(PickupGeoFenceRequest) returns (PickupGeoFenceResponse);
+  rpc PickupGeoFenceCheckOut(PickupGeoFenceRequest) returns (PickupGeoFenceResponse);
+  rpc PickupGetGeoFenceCheckedInTime(GetPickupGeoFenceCheckedInTimeRequest) returns (GetPickupGeoFenceCheckedInTimeResponse);
+  rpc PickupOrderCheckIn(PickupOrderCheckInRequest) returns (PickupOrderCheckInResponse);
+  rpc PersistOrderCancellationReason(PersistOrderCancellationReasonRequest) returns (PersistOrderCancellationReasonResponse) {
+    option (google.api.http) = {
+      post: "/order/v1/persist_order_cancellation_reason"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_dispatcher_customer_support"]
+      }
+    };
+  }
+  rpc GetOrderCancellationReason(GetOrderCancellationReasonRequest) returns (GetOrderCancellationReasonResponse);
+  rpc GetPickupOrderReleaseStatus(GetPickupOrderReleaseStatusRequest) returns (GetPickupOrderReleaseStatusResponse);
+  rpc OrderUpdateCurrencyAndRechargeCx(OrderUpdateCurrencyAndRechargeCxRequest) returns (OrderUpdateCurrencyAndRechargeCxResponse);
+  rpc GetResolutionForCancelledOrder(GetResolutionForCancelledOrderRequest) returns (GetResolutionForCancelledOrderResponse);
+  rpc GenericOrderCorrectionEndpoint(GenericOrderCorrectionRequest) returns (GenericOrderCorrectionResponse);
+  rpc ClosePickupOrder(ClosePickupOrderRequest) returns (ClosePickupOrderResponse);
+  rpc CreateOrderSessionFromExternalCart(CreateOrderSessionFromExternalCartRequest) returns (CreateOrderSessionFromExternalCartResponse);
+  rpc GetOrderSessionById(GetOrderSessionByIdRequest) returns (GetOrderSessionByIdResponse);
+  rpc GetOrdersForConsumerByStore(GetOrdersForConsumerByStoreRequest) returns (GetOrdersForConsumerByStoreResponse);
+  rpc GetMerchantOrderDetails(GetMerchantOrderDetailsRequest) returns (GetMerchantOrderDetailsResponse);
+  rpc GetConsumerOrderShipmentInfo(GetConsumerOrderShipmentInfoRequest) returns (GetConsumerOrderShipmentInfoResponse);
+  rpc UpdateConsumerOrderShipmentInfo(UpdateConsumerOrderShipmentInfoRequest) returns (UpdateConsumerOrderShipmentInfoResponse);
+  rpc UpdateConsumerOrdersShipmentInfoByLogisticsProvider(UpdateConsumerOrdersShipmentInfoByLogisticsProviderRequest) returns (UpdateConsumerOrdersShipmentInfoByLogisticsProviderResponse);
+  rpc GetOrderedStoresForConsumer(GetOrderedStoresForConsumerRequest) returns (GetOrderedStoresForConsumerResponse);
+  rpc GetStorefrontOrderData(GetStorefrontOrderDataRequest) returns (GetStorefrontOrderDataResponse);
+  rpc GetOrderItemsForDasher(GetOrderItemsForDasherRequest) returns (GetOrderItemsForDasherResponse);
+  rpc UpdateCxAgeVerification(UpdateCxAgeVerificationRequest) returns (UpdateCxAgeVerificationResponse);
+  rpc GetCxAgeVerificationByOrder(GetCxAgeVerificationByOrderRequest) returns (GetCxAgeVerificationByOrderResponse);
+  rpc UpdateCngOrderInfo(UpdateCngOrderInfoRequest) returns (UpdateCngOrderInfoResponse);
+  rpc ProcessGoogleFoodOrderingFulfillmentAction(ProcessGoogleFoodOrderingFulfillmentActionRequest) returns (ProcessGoogleFoodOrderingFulfillmentActionResponse);
+  rpc SendBundlePostCheckoutNotification(SendBundlePostCheckoutNotificationRequest) returns (SendBundlePostCheckoutNotificationResponse);
+  rpc SendOcaEmail(SendOcaEmailRequest) returns (SendOcaEmailResponse);
+  rpc SendRetailFulfillmentEmail(SendRetailFulfillmentEmailRequest) returns (SendRetailFulfillmentEmailResponse);
+  rpc GetFeaturesForETAReprediction(GetFeaturesForETARepredictionRequest) returns (GetFeaturesForETARepredictionResponse);
+  rpc GetOrCreateInvoice(GetOrCreateInvoiceRequest) returns (GetOrCreateInvoiceResponse);
+  rpc ReorderOrder(ReorderOrderRequest) returns (ReorderOrderResponse);
+  rpc ReorderOrderV2(ReorderOrderV2Request) returns (ReorderOrderV2Response);
+  rpc DeleteInvalidItems(DeleteInvalidItemsRequest) returns (DeleteInvalidItemsResponse);
+  rpc CancelExpiredGiftOrder(CancelExpiredGiftRequest) returns (CancelExpiredGiftResponse);
+  rpc GetOrderDeliveryTimes(OrderDeliveryTimesRequest) returns (OrderDeliveryTimesResponse);
+  rpc GetOrderDeliveryAvailability(OrderDeliveryAvailabilityRequest) returns (OrderDeliveryAvailabilityResponse);
+  rpc CreateShipmentOrderInThirdPartyLogistics(CreateShipmentOrderInThirdPartyLogisticsRequest) returns (CreateShipmentOrderInThirdPartyLogisticsResponse);
+  rpc UpdateOrderItemMissingAndIncorrectInfo(UpdateOrderItemMissingAndIncorrectInfoRequest) returns (UpdateOrderItemMissingAndIncorrectInfoResponse);
+  rpc OrderTablesShadowRead(OrderTablesShadowReadRequest) returns (OrderTablesShadowReadResponse);
+  rpc GetInvoiceIfExists(GetInvoiceIfExistsRequest) returns (GetInvoiceIfExistsResponse);
+  rpc VoidAndRecreateInvoice(VoidAndRecreateInvoiceRequest) returns (VoidAndRecreateInvoiceResponse);
+  rpc InsertMerchantSuppliedId(InsertMerchantSuppliedIdRequest) returns (InsertMerchantSuppliedIdResponse);
+  rpc CreateCancellationForRecurringOrder(CreateCancellationForRecurringOrderRequest) returns (CreateCancellationForRecurringOrderResponse);
+  rpc GetRecurringOrdersForTimeBucket(GetRecurringOrdersForTimeBucketRequest) returns (GetRecurringOrdersForTimeBucketResponse);
+  rpc CreateOrderFromRecurringOrder(CreateOrderFromRecurringOrderRequest) returns (CreateOrderFromRecurringOrderResponse);
+  rpc SendRecurringOrderNotification(SendRecurringOrderNotificationRequest) returns (SendRecurringOrderNotificationResponse);
+  rpc UpdateRecurringOrderBucketState(UpdateRecurringOrderBucketStateRequest) returns (UpdateRecurringOrderBucketStateResponse);
+  rpc ProcessFailedRecurringOrder(ProcessFailedRecurringOrderRequest) returns (ProcessFailedRecurringOrderResponse);
+  rpc UpdateFailedRecurringOrdersCheckpoint(UpdateFailedRecurringOrdersCheckpointRequest) returns (UpdateFailedRecurringOrdersCheckpointResponse);
+  rpc GetFailedRecurringOrdersCheckpoint(GetFailedRecurringOrdersCheckpointRequest) returns (GetFailedRecurringOrdersCheckpointResponse);
+  rpc SendMxOrderReminderEmail(SendMxOrderReminderEmailRequest) returns (SendMxOrderReminderEmailResponse);
+  rpc UpdateRecurringOrder(UpdateRecurringOrderRequest) returns (UpdateRecurringOrderResponse);
+  rpc ReprocessBackfillMainDBToConsumerOrder(ReprocessBackfillMainDBToConsumerOrderRequest) returns (ReprocessBackfillMainDBToConsumerOrderResponse);
+  rpc PaySupplyChainOrder(PaySupplyChainOrderRequest) returns (PaySupplyChainOrderResponse);
+  rpc CompleteSupplyChainOrder(CompleteSupplyChainOrderRequest) returns (CompleteSupplyChainOrderResponse);
+  rpc GetSupplyChainScheduledPaymentOrders(GetSupplyChainScheduledPaymentOrdersRequest) returns (GetSupplyChainScheduledPaymentOrdersResponse);
+  rpc GetSupplyChainStoreUnpaidOrders(GetSupplyChainStoreUnpaidOrdersRequest) returns (GetSupplyChainStoreUnpaidOrdersResponse);
+  rpc SendGroupOrderSplitBillNotification(SendGroupOrderSplitBillNotificationRequest) returns (SendGroupOrderSplitBillNotificationResponse);
+  rpc RemoveGroupOrderParticipantAndSendNotification(RemoveGroupOrderParticipantAndSendNotificationRequest) returns (RemoveGroupOrderParticipantAndSendNotificationResponse);
+  rpc SendGroupOrderParticipantReminderNotification(SendGroupOrderParticipantReminderNotificationRequest) returns (SendGroupOrderParticipantReminderNotificationResponse);
+  rpc RemoveGroupOrderFailedPaymentParticipantAndSendNotification(RemoveGroupOrderFailedPaymentParticipantAndSendNotificationRequest) returns (RemoveGroupOrderFailedPaymentParticipantAndSendNotificationResponse);
+  rpc SendGroupOrderParticipantFailedPaymentNotification(SendGroupOrderParticipantFailedPaymentNotificationRequest) returns (SendGroupOrderParticipantFailedPaymentNotificationResponse);
+  rpc ListGroupCartPaymentIntents(ListGroupCartPaymentIntentsRequest) returns (ListGroupCartPaymentIntentsResponse);
+  rpc CreateGroupCartPaymentIntent(CreateGroupCartPaymentIntentRequest) returns (CreateGroupCartPaymentIntentResponse);
+  rpc IsDeliveryAddressReplaceable(IsDeliveryAddressReplaceableRequest) returns (IsDeliveryAddressReplaceableResponse);
+  rpc CreateOrderForReturn(CreateOrderForReturnRequest) returns (CreateOrderForReturnResponse);
+  rpc ListDetailedCarts(ListDetailedCartsRequest) returns (ListDetailedCartsResponse);
+  rpc GetTopSupplyChainDelinquentOrder(GetTopSupplyChainConsumerDelinquentOrderRequest) returns (GetTopSupplyChainConsumerDelinquentOrderResponse);
+  rpc GetSupplyChainConsumerUnpaidOrdersBeforeTimeWithDetails(GetSupplyChainConsumerUnpaidOrdersBeforeTimeWithDetailsRequest) returns (GetConsumerOrdersWithDetailsResponse);
+  rpc ListLightweightOrdersByConsumerId(ListLightweightOrdersByConsumerIdRequest) returns (ListLightweightOrdersByConsumerIdResponse);
+  rpc GetCnGCartStickyFooter(GetCnGCartStickyFooterRequest) returns (GetCnGCartStickyFooterResponse);
+  rpc CreateCartFromOrderSession(CreateCartFromOrderSessionRequest) returns (CreateCartFromOrderSessionResponse);
+  rpc GetPreloadedCartForConsumer(GetPreloadedCartForConsumerRequest) returns (GetPreloadedCartForConsumerResponse);
+  rpc DDPOSPreviewOrderEndpoint(DDPOSPreviewOrderRequest) returns (DDPOSPreviewOrderResponse);
+  rpc DDPOSSubmitOrderEndpoint(DDPOSSubmitOrderRequest) returns (DDPOSSubmitOrderResponse);
+  rpc SendLifecycleEventsForOrders(SendLifecycleEventsForOrdersRequest) returns (SendLifecycleEventsForOrdersResponse);
+  rpc DepositOrderCreditsBackForConsumer(DepositOrderCreditsBackForConsumerRequest) returns (DepositOrderCreditsBackForConsumerResponse);
+  rpc DepositDashpartyCreditsBackForConsumer(DepositDashpartyCreditsBackForConsumerRequest) returns (DepositDashpartyCreditsBackForConsumerResponse);
+  // Preview auto-checkout configurations
+  rpc PreviewAutoCheckoutDetails(PreviewAutoCheckoutDetailsRequest) returns (PreviewAutoCheckoutDetailsResponse) {
+    option (google.api.http) = {get: "/cart/v1/preview_autocheckout_details"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      owner: {
+        name: "team-management-service"
+        id: "doordash-for-work"
+        slack_channel: "#eng-work"
+        email_alias: "ddfw-eng@doordash.com"
+      }
+    };
+  }
+  // Retrieves scheduled time windows for a store
+  rpc GetScheduleAvailabilityForStore(GetScheduleAvailabilityForStoreRequest) returns (GetScheduleAvailabilityForStoreResponse) {
+    option (google.api.http) = {get: "/schedule/v1/schedule_availability"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+  }
+
+  // Create order session from Cx input Shopping list for shop anywhere
+  rpc CreateOrderSessionFromShoppingList(CreateOrderSessionFromShoppingListRequest) returns (CreateOrderSessionFromShoppingListResponse) {
+    option (google.api.http) = {
+      post: "/shop_anywhere/v1/order_session"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+
+  // Shop Anywhere/Grocery Errands orders cart/checkout preview endpoint
+  rpc CreatePreviewFromOrderSession(CreatePreviewFromOrderSessionRequest) returns (CreatePreviewFromOrderSessionResponse);
+
+  // Shop Anywhere/Grocery Errands order submission/creation endpoint
+  rpc CreateOrderFromOrderSession(CreateOrderFromOrderSessionRequest) returns (CreateOrderFromOrderSessionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {
+      post: "/shop_anywhere/v1/order"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+  }
+
+  rpc CompleteSelfDeliveryOrderEndpoint(CompleteSelfDeliveryOrderRequest) returns (CompleteSelfDeliveryOrderResponse) {
+    option (google.api.http) = {
+      post: "/order/v1/mx_fulfillment_close"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"}]
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Add/update marketplace prescription item to cart for project pharma
+  rpc UpsertPrescriptionItemToCart(UpsertPrescriptionItemToCartRequest) returns (UpsertPrescriptionItemToCartResponse) {
+    option (google.api.http) = {
+      post: "/order/v1/prescription_item"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      owner: {
+        // do not update "name" as it will change the client artifacts generation
+        id: "swat-team"
+        name: "prescription-delivery"
+        slack_channel: "#ask-swat-eng"
+        email_alias: "swat-eng-team@doordash.com"
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Get marketplace prescription item details
+  rpc GetPrescriptionItemInCart(GetPrescriptionItemInCartRequest) returns (GetPrescriptionItemInCartResponse) {
+    option (google.api.http) = {get: "/order/v1/prescription_item"};
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      owner: {
+        // do not update "name" as it will change the client artifacts generation
+        id: "swat-team"
+        name: "prescription-delivery"
+        slack_channel: "#ask-swat-eng"
+        email_alias: "swat-eng-team@doordash.com"
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Enable gift recipients to modify their secondary delivery address fields (e.g. subpremise, entrycode, recipient delivery instructions)
+  rpc UpdateGiftRecipientEditableAddressFields(UpdateGiftRecipientEditableAddressFieldsRequest) returns (UpdateGiftRecipientEditableAddressFieldsResponse) {
+    option (google.api.http) = {
+      patch: "/order/v1/gift_recipient_editable_address_fields"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [CX]
+      owner: {
+        name: "eng-pickup"
+        id: "pick-up-service"
+        slack_channel: "#new-modes-eng"
+        email_alias: "new-modes-engineering@doordash.com"
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        p99_latency: 3
+      }
+    };
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+
+  // Get order deadline options for a store/menu
+  rpc GetOrderDeadlineOptionsForStore(GetOrderDeadlineOptionsForStoreRequest) returns (GetOrderDeadlineOptionsForStoreResponse) {
+    option (google.api.http) = {get: "/autocheckout/v1/order_deadline_options"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      owner: {
+        name: "team-management-service"
+        id: "doordash-for-work"
+        slack_channel: "#eng-work"
+        email_alias: "ddfw-eng@doordash.com"
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"}]
+    };
+  }
+
+  rpc ListDetailedConsumerDomainOrdersByConsumerId(ListConsumerDomainOrdersWithDetailsByConsumerIdRequest) returns (ListConsumerDomainOrdersWithDetailsResponse) {
+    option (google.api.http) = {get: "/order/v2/orders/consumer"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+      }
+    };
+  }
+
+  rpc ListDetailedConsumerDomainOrdersByOrderIds(ListConsumerDomainOrdersWithDetailsByOrderIdsRequest) returns (ListConsumerDomainOrdersWithDetailsResponse) {
+    option (google.api.http) = {get: "/order/v2/orders"};
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+      }
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "cx_id"}]
+    };
+  }
+}
+
+message CreateCancellationForRecurringOrderRequest {
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message CreateCancellationForRecurringOrderResponse {
+  google.protobuf.BoolValue success = 1;
+  RecurringOrderState state = 2;
+  CreateCancellationForRecurringOrderError error = 3;
+}
+
+enum RecurringOrderState {
+  RECURRING_ORDER_STATE_ORDER_NOT_PLACED = 0;
+  RECURRING_ORDER_STATE_CANCELLED = 1;
+  RECURRING_ORDER_STATE_ORDER_PLACED = 2;
+  RECURRING_ORDER_STATE_FAILED_DUE_TO_PAYMENT_FAILURE = 3;
+  RECURRING_ORDER_STATE_FAILED_GENERIC_FAILURE = 4;
+  RECURRING_ORDER_STATE_FAILED_DUE_TO_OUT_OF_STOCK = 5;
+  RECURRING_ORDER_STATE_FAILED_DUE_TO_ADDRESS_MISMATCH = 6;
+  RECURRING_ORDER_STATE_RESCHEDULED = 7;
+}
+
+message CreateCancellationForRecurringOrderError {
+  CreateCancellationForRecurringOrderErrorType error_type = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+enum CreateCancellationForRecurringOrderErrorType {
+  RECURRING_ORDER_CANCELLATION_ERROR_UNKNOWN = 0;
+  RECURRING_ORDER_CANCELLATION_ERROR_NONE = 1;
+  RECURRING_ORDER_CANCELLATION_ERROR_GENERIC_FAILURE = 2;
+  RECURRING_ORDER_CANCELLATION_ERROR_DB_ERROR = 3;
+  RECURRING_ORDER_CANCELLATION_ERROR_ORDER_NOT_FOUND = 4;
+}
+
+message GetRecurringOrdersForTimeBucketRequest {
+  google.protobuf.StringValue order_day = 1;
+  google.protobuf.StringValue order_time_window = 2;
+}
+
+message RecurringOrder {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 2;
+  google.protobuf.StringValue recurring_order_template_uuid = 3;
+  google.protobuf.StringValue order_day = 4;
+  google.protobuf.StringValue order_time_window = 5;
+  RecurringOrderState state = 6;
+}
+
+message GetRecurringOrdersForTimeBucketResponse {
+  repeated RecurringOrder recurring_order = 1;
+}
+
+message CreateOrderFromRecurringOrderRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 2;
+  google.protobuf.StringValue recurring_order_template_uuid = 3;
+  google.protobuf.StringValue order_day = 4;
+  google.protobuf.StringValue order_time_window = 5;
+  google.protobuf.StringValue cart_uuid = 6;
+}
+
+message CreateOrderFromRecurringOrderResponse {
+  google.protobuf.BoolValue success = 1;
+  CreateOrderFromRecurringOrderError error = 2;
+}
+
+message SendRecurringOrderNotificationRequest {
+  // For different types of notifications (email, push, etc)
+  oneof request {
+    SendRecurringOrderUpcomingDeliveryEmailNotificationRequest send_upcoming_delivery_email_notification_request = 1;
+  }
+}
+
+message SendRecurringOrderUpcomingDeliveryEmailNotificationRequest {
+  RecurringOrder recurring_order = 1;
+  // how many hours ahead of actual delivery time to send the email
+  google.protobuf.Int32Value hours_ahead = 2;
+}
+
+message SendRecurringOrderNotificationResponse {
+  google.protobuf.BoolValue success = 1;
+  SendRecurringOrderNotificationError error = 2;
+}
+
+message CreateOrderFromRecurringOrderError {
+  CreateOrderFromRecurringOrderErrorType error_type = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+enum CreateOrderFromRecurringOrderErrorType {
+  RECURRING_ORDER_CREATE_ORDER_ERROR_UNKNOWN = 0;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_NONE = 1;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_GENERIC_FAILURE = 2;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_FAILED_DUE_TO_PAYMENT = 3;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_FAILED_DUE_TO_OUT_OF_STOCK = 4;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_INVALID_REQUEST = 5;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_DB_ERROR = 6;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_CREATE_CART_ERROR = 7;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_VALIDATE_CART_ERROR = 8;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_GENERIC_CHECKOUT_FAILURE = 9;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_ORDER_SESSION_ERROR = 10;
+  RECURRING_ORDER_CREATE_ORDER_ERROR_RESCHEDULED_ORDER_ERROR = 11;
+}
+
+message SendRecurringOrderNotificationError {
+  SendRecurringOrderNotificationErrorType error_type = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+enum SendRecurringOrderNotificationErrorType {
+  SEND_RECURRING_ORDER_NOTIFICATION_ERROR_UNKNOWN = 0;
+  SEND_RECURRING_ORDER_NOTIFICATION_ERROR_NONE = 1;
+  SEND_RECURRING_ORDER_NOTIFICATION_ERROR_FAILURE = 2;
+  SEND_RECURRING_ORDER_NOTIFICATION_ERROR_UPCOMING_ORDER_NOT_FOUND = 3;
+  SEND_RECURRING_ORDER_NOTIFICATION_ERROR_BAD_REQUEST = 4;
+}
+
+message UpdateRecurringOrderBucketStateRequest {
+  google.protobuf.StringValue order_day = 1;
+  google.protobuf.StringValue order_time_window = 2;
+  RecurringOrderBucketState recurring_order_bucket_state = 3;
+}
+
+message UpdateRecurringOrderBucketStateResponse {
+  google.protobuf.BoolValue success = 1;
+  UpdateRecurringOrderBucketStateError error = 2;
+}
+
+message UpdateRecurringOrderBucketStateError {
+  UpdateRecurringOrderBucketStateErrorType error_type = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+enum RecurringOrderBucketState {
+  RECURRING_DELIVERY_BUCKET_STATE_NOT_PROCESSED = 0;
+  RECURRING_DELIVERY_BUCKET_STATE_PROCESSED = 1;
+}
+
+enum UpdateRecurringOrderBucketStateErrorType {
+  UPDATE_RECURRING_DELIVERY_BUCKET_STATE_ERROR_UNKNOWN = 0;
+  UPDATE_RECURRING_DELIVERY_BUCKET_STATE_ERROR_NONE = 1;
+  UPDATE_RECURRING_DELIVERY_BUCKET_STATE_ERROR_GENERIC_FAILURE = 2;
+  UPDATE_RECURRING_DELIVERY_BUCKET_STATE_ERROR_DB_ERROR = 3;
+}
+
+message ProcessFailedRecurringOrderRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue recurring_delivery_upcoming_order_uuid = 2;
+  google.protobuf.StringValue recurring_delivery_template_uuid = 3;
+  google.protobuf.StringValue order_day = 4;
+  google.protobuf.StringValue order_time_window = 5;
+  RecurringOrderState state = 6;
+}
+
+message ProcessFailedRecurringOrderResponse {
+  google.protobuf.BoolValue success = 1;
+  ProcessFailedRecurringOrderError error_reason = 2;
+}
+
+message UpdateFailedRecurringOrdersCheckpointRequest {
+  google.protobuf.StringValue order_day = 1;
+  google.protobuf.StringValue order_time_window = 2;
+  google.protobuf.StringValue workflow_name = 3;
+}
+
+message UpdateFailedRecurringOrdersCheckpointResponse {
+  google.protobuf.BoolValue success = 1;
+  UpdateFailedRecurringOrdersCheckpointError error_reason = 2;
+}
+
+message GetFailedRecurringOrdersCheckpointRequest {
+  google.protobuf.StringValue workflow_name = 1;
+}
+
+message GetFailedRecurringOrdersCheckpointResponse {
+  google.protobuf.StringValue order_day = 1;
+  google.protobuf.StringValue order_time_window = 2;
+}
+
+enum ProcessFailedRecurringOrderError {
+  PROCESS_FAILED_RECURRING_ORDER_ERROR_UNKNOWN = 0;
+  PROCESS_FAILED_RECURRING_ORDER_ERROR_NONE = 1;
+  PROCESS_FAILED_RECURRING_ORDER_ERROR_GENERIC_FAILURE = 2;
+  PROCESS_FAILED_RECURRING_ORDER_ERROR_DB_ERROR = 3;
+}
+
+enum UpdateFailedRecurringOrdersCheckpointError {
+  UPDATE_FAILED_RECURRING_ORDER_ERROR_UNKNOWN = 0;
+  UPDATE_FAILED_RECURRING_ORDER_ERROR_NONE = 1;
+  UPDATE_FAILED_RECURRING_ORDER_ERROR_GENERIC_FAILURE = 2;
+  UPDATE_FAILED_RECURRING_ORDER_ERROR_DB_ERROR = 3;
+}
+
+message UpdateRecurringOrderRequest {
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  google.protobuf.StringValue dasher_tip = 3;
+  google.protobuf.Int64Value interval_in_weeks = 4;
+  google.protobuf.StringValue order_day = 5;
+  order_service.RoutineReorderTimeSlot time_slot = 6;
+}
+
+message UpdateRecurringOrderResponse {
+  google.protobuf.BoolValue success = 1;
+  UpdateRecurringOrderError error = 2;
+  RecurringOrderWithDetails recurring_order_with_details = 3;
+}
+
+message UpdateRecurringOrderError {
+  UpdateRecurringOrderErrorType error_type = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+enum UpdateRecurringOrderErrorType {
+  UPDATE_RECURRING_ORDER_ERROR_UNKNOWN = 0;
+  UPDATE_RECURRING_ORDER_ERROR_NONE = 1;
+  UPDATE_RECURRING_ORDER_ERROR_GENERIC_FAILURE = 2;
+  UPDATE_RECURRING_ORDER_ERROR_DB_ERROR = 3;
+  UPDATE_RECURRING_ORDER_ERROR_ORDER_NOT_FOUND = 4;
+  UPDATE_RECURRING_ORDER_ERROR_BAD_REQUEST = 5;
+}
+
+message GenericOrderCorrectionRequest {
+  message OrderCorrection {
+    order.ConsumerOrderIdentifier order_identifiers = 1;
+    google.protobuf.StringValue metadata = 2;
+  }
+  repeated OrderCorrection order_corrections = 1;
+  string secret_key = 2;
+  string use_case_name = 3;
+}
+
+message GenericOrderCorrectionResponse {
+  message OrderCorrectionStatus {
+    order.ConsumerOrderIdentifier order_identifier = 1;
+    bool status = 2;
+    google.protobuf.StringValue error_reason = 3;
+  }
+  repeated OrderCorrectionStatus order_correction_status = 1;
+}
+
+message OrderTablesShadowReadRequest {
+  int64 order_cart_id = 1;
+}
+
+message OrderTablesShadowReadResponse {
+  enum TableName {
+    ORDER = 0;
+    ORDER_CART = 1;
+    ORDER_CART_DISCOUNT = 2;
+    ORDER_CART_DISCOUNT_COMPONENT = 3;
+    ORDER_ITEM = 4;
+    ORDER_ITEM_EXTRA_OPTION = 5;
+    ORDER_MENU_OPTION = 6;
+    ORDER_PRICING_DETAIL = 7;
+    STORE_ORDER_CART = 8;
+  }
+  message DisparityInformation {
+    TableName table_name = 1;
+    int64 id = 2;
+  }
+  bool is_same = 1;
+  repeated DisparityInformation disparity_information = 2;
+}
+
+message GetFifoOrderCartIdsRequest {
+  int64 consumer_id = 1;
+}
+
+message GetFifoOrderCartIdsResponse {
+  int64 order_cart_id = 1;
+  int64 store_order_cart_id = 2;
+}
+
+message OrderUpdateCurrencyAndRechargeCxRequest {
+  repeated order.ConsumerOrderIdentifier order_identifiers = 1;
+  string secret_key = 2;
+}
+
+message OrderUpdateCurrencyAndRechargeCxResponse {
+  message OrderRechargeStatus {
+    order.ConsumerOrderIdentifier order_identifier = 1;
+    bool status = 2;
+  }
+  repeated OrderRechargeStatus order_recharge_status = 1;
+}
+
+message GetPickupOrderReleaseStatusRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message GetPickupOrderReleaseStatusResponse {
+  google.protobuf.Timestamp attempted_time = 1;
+  google.protobuf.Timestamp succeeded_time = 2;
+  google.protobuf.Timestamp failed_time = 3;
+}
+
+message GetOrderCreditsbackRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetOrderCreditsbackResponse {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  repeated money.CreditsbackDetails creditsback_details = 2;
+}
+
+message DepositOrderCreditsBackForConsumerRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message DepositOrderCreditsBackForConsumerResponse {
+  bool success = 1;
+}
+
+message DepositDashpartyCreditsBackForConsumerRequest {
+  string order_uuid = 1;
+  string dashparty_id = 2;
+}
+
+message DepositDashpartyCreditsBackForConsumerResponse {}
+
+message UpdateCngOrderInfoRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message UpdateCngOrderInfoResponse {
+  bool success = 1;
+}
+
+message GetConsumerOrderReceiptRequest {
+  // optional field
+  enum RequesterType {
+    CONSUMER = 0;
+    DISPATCH = 1;
+  }
+
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+  google.protobuf.BoolValue is_grocery_order = 3;
+  RequesterType requester_type = 4;
+  google.protobuf.StringValue locale = 5;
+}
+
+message LineItems {
+  repeated money.LineItem line_items = 1;
+}
+
+message RewardBalanceEarnedDetails {
+  money.MonetaryFields amount = 1;
+  google.protobuf.StringValue title = 2;
+  google.protobuf.StringValue description = 3;
+}
+
+message GetConsumerOrderReceiptResponse {
+  reserved 9;
+
+  // following used for post order receipt
+  repeated money.LineItem line_items = 1;
+  repeated cart.Order orders = 2;
+  google.protobuf.StringValue commission_message = 3;
+  google.protobuf.StringValue store_name = 4;
+  repeated ReceiptOrder receipt_orders = 5;
+  money.MonetaryFields credited_amount = 6;
+  money.CreditsbackDetails creditsback_details = 7;
+  DoorDashEntityInfo doordash_entity_info = 8;
+  google.protobuf.StringValue disclaimer = 10;
+  google.protobuf.StringValue store_formatted_address = 11;
+  common.CommonAddress store_address = 12;
+  google.protobuf.StringValue liquor_license_url = 13 [deprecated = true];
+  google.protobuf.StringValue store_id = 14;
+  LiquorLicense liquor_license = 15;
+  // split billing line items map (consumer id -> line items)
+  map<string, LineItems> split_billing_line_items = 16;
+  money.MonetaryFields overauth_total = 17;
+  RewardBalanceEarnedDetails reward_balance_earned_details = 18;
+  // Unbundled tax/fees and other line items are categorized into groups
+  // This field will take over the field line_items in the future
+  repeated money.LineItemGroup line_item_groups = 19;
+  reserved 20; // removed payment_details 20 since it didn't follow money format convention
+  reserved "payment_details";
+  // Charge level payment details for cart payments (1 cart payment -> 1 payment_details_list -> multiple payment_details)
+  repeated PaymentDetailsList payment_charge_details = 21;
+  string hsa_fsa_eligible_explanation = 22;
+}
+
+message GetStoreAvailabilityForGiftRequest {
+  reserved 1;
+  google.protobuf.StringValue order_uuid = 2;
+}
+
+message GetStoreAvailabilityForGiftResponse {
+  message TimeInterval {
+    google.protobuf.Timestamp start = 1;
+    google.protobuf.Timestamp end = 2;
+  }
+
+  message Hours {
+    repeated TimeInterval hours = 1;
+  }
+
+  reserved 1;
+  Hours storeHours = 2;
+  google.protobuf.BoolValue has_error = 3;
+}
+
+message GetGiftOrderInfoRequest {
+  // The source of the client calling this endpoint. Doordash auto-texting from DSJ (autotext) or clients (manual)
+  enum RequestSource {
+    MANUAL = 0;
+    AUTO_TEXT = 1;
+  }
+
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+  RequestSource source = 3;
+  DeliveryIdentifier delivery_identifier = 4;
+}
+
+message GetGiftOrderContactInfoRequest {
+  enum ContactDirection {
+    DASHER_TO_RECIPIENT = 0;
+    RECIPIENT_TO_DASHER = 1;
+  }
+
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  ContactDirection contact_direction = 2;
+}
+
+message PurgeMealGiftDataRequest {
+  repeated order.MealGiftOrderIdentifier order_identifiers = 1;
+  string secret_key = 2;
+}
+
+message PurgeMealGiftDataResponse {
+  repeated order.MealGiftOrderIdentifier purged_order_identifiers = 1;
+}
+
+message GetGiftOrderContactInfoResponse {
+  message Error {
+    enum ErrorCode {
+      DASHER_NOT_ASSIGNED = 0;
+      ORDER_NOT_FOUND = 1;
+      ORDER_ALREADY_DELIVERED = 2;
+      MASKED_NUMBER_UNAVAILABLE = 3;
+      RECIPIENT_PHONE_NUMBER_NOT_SPECIFIED = 4;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  google.protobuf.StringValue phone_number = 1;
+  Error error = 2;
+}
+
+message GetGiftOrderInfoResponse {
+  order.GiftInfo gift_info = 1;
+  google.protobuf.StringValue tracking_url = 2;
+  GiftError error = 3;
+  google.protobuf.StringValue recipient_tracking_url = 4;
+  google.protobuf.StringValue sender_tracking_url = 5;
+  order.OrderConsumerInfo consumer_info = 6;
+  google.protobuf.Timestamp expire_at = 7;
+}
+
+message GetGiftTrackingDataRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+  google.protobuf.StringValue request_signature = 3;
+  // store the ddtm information which is base64 encoded JSON to contains the target of the request from
+  RecipientAuthenticationParams recipient_authentication_params = 4;
+}
+
+message RecipientAuthenticationParams {
+  enum AuthenticationType {
+    UNKNOWN = 0;
+    RECIPIENT_PHONE_NUMBER = 1;
+    SENDER_PHONE_NUMBER = 2;
+    RECIPIENT_POSTAL_CODE = 3;
+  }
+  AuthenticationType authentication_type = 1;
+  google.protobuf.StringValue authentication_input = 2;
+}
+
+message GetStorefrontOrderDataRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  google.protobuf.Int64Value delivery_id = 2;
+}
+
+message VirtualCardAsset {
+  // This is the lottie used for the smallest message length
+  google.protobuf.StringValue animation_asset_url = 1;
+  google.protobuf.StringValue static_asset_url = 2;
+  google.protobuf.StringValue lang_locale = 3;
+  google.protobuf.StringValue animation_asset_medium = 4;
+  google.protobuf.StringValue animation_asset_large = 5;
+}
+
+enum VirtualCardErrorCode {
+  CARD_NOT_FOUND = 0;
+  DB_ERROR = 1;
+}
+
+message VirtualCardError {
+  // the Status code
+  int32 code = 1;
+  VirtualCardErrorCode errorCode = 2;
+  google.protobuf.StringValue message = 3;
+}
+
+message VirtualCard {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Timestamp active_date = 3;
+  google.protobuf.Timestamp inactive_date = 4;
+  map<string, VirtualCardAsset> assets = 5;
+  google.protobuf.StringValue experience = 6;
+  repeated google.protobuf.StringValue available_countries = 7;
+}
+
+message UpsertVirtualCardRequest {
+  google.protobuf.Int64Value id = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Timestamp active_date = 3;
+  google.protobuf.Timestamp inactive_date = 4;
+  map<string, VirtualCardAsset> assets = 5;
+  google.protobuf.StringValue experience = 6;
+  repeated google.protobuf.StringValue available_countries = 7;
+}
+
+message UpsertVirtualCardResponse {
+  VirtualCardError error = 1;
+  google.protobuf.StringValue card_uuid = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.Timestamp active_date = 4;
+  google.protobuf.Timestamp inactive_date = 5;
+  map<string, VirtualCardAsset> assets = 6;
+}
+
+message GetVirtualCardRequest {
+  google.protobuf.StringValue card_uuid = 1;
+}
+
+message GetVirtualCardResponse {
+  google.protobuf.StringValue card_uuid = 1;
+  google.protobuf.StringValue description = 2;
+  google.protobuf.Timestamp active_date = 3;
+  google.protobuf.Timestamp inactive_date = 4;
+  map<string, VirtualCardAsset> assets = 5;
+}
+
+enum GiftErrorCode {
+  ORDER_NOT_FOUND = 0;
+  ORDER_NOT_GIFT = 1;
+  ORDER_TOO_OLD = 2;
+}
+
+message GiftError {
+  // the status code
+  int32 code = 1;
+  GiftErrorCode errorCode = 2;
+  google.protobuf.StringValue message = 3;
+}
+
+message GetGiftTrackingDataResponse {
+  repeated order.ConsumerOrder orders = 1;
+  cart.Store store = 2;
+  Delivery delivery = 3;
+  AssignedDasher dasher = 4;
+  GiftError error = 5;
+  GiftShippingOrderStatus shipping_order_status = 6;
+  /* Due to limitations on the client-side in terms of bucketing keys available for non-logged in users, we need to
+     provide the bucketing result to the client so they can render whatever UI components properly. Keeping this as a JSON
+     string allows us the flexibility of adding more bucketing keys in the future without needing to update a proto object
+     and redeploying the client.
+     Example:
+     {
+        "dv_name_1": "value_returned_by_backend_dv_1",
+        "dv_name_2": "value_returned_by_backend_dv_2",
+     }
+  */
+  google.protobuf.StringValue experimentation_config = 7;
+}
+
+message GiftShippingOrderStatus {
+  ShippingOrderStatusTranslatedStrings translated_strings = 1;
+  ShippingOrderStatusEtaDetails eta_details = 2;
+  ShippingOrderStatusShippingDetails shipping_details = 3;
+}
+
+message ShippingOrderStatusTranslatedStrings {
+  // Translated strings title.
+  google.protobuf.StringValue title = 1;
+  // Translated strings subtitle.
+  google.protobuf.StringValue subtitle = 2;
+  // Translated strings substatus.
+  google.protobuf.StringValue substatus = 3;
+}
+
+message ShippingOrderStatusEtaDetails {
+  // ETA estimated delivery time.
+  google.protobuf.StringValue estimated_delivery_time = 1;
+  // ETA max estimated delivery time.
+  google.protobuf.StringValue max_estimated_delivery_time = 2;
+  // ETA min estimated delivery time.
+  google.protobuf.StringValue min_estimated_delivery_time = 3;
+  // ETA type
+  google.protobuf.StringValue type = 4;
+  // ETA actual delivery time type
+  google.protobuf.StringValue actual_delivery_time = 5;
+}
+
+message ShippingOrderStatusShippingDetails {
+  // The status of the shipping order
+  order.OrderShipmentInfo.ShipmentStatus shipping_status = 1;
+  // The tracking data of the shipping order
+  ShippingTracking tracking = 2;
+}
+
+/** Contains all of the tracking data for shipping orders. */
+message ShippingTracking {
+  // Post checkout page tracking section header (translated)
+  google.protobuf.StringValue translated_label = 1;
+  // The carrier name for the shipment
+  google.protobuf.StringValue carrier_name = 2;
+  // The tracking number for the shipment
+  google.protobuf.StringValue tracking_number = 3;
+  // The tracking url for the shipment
+  google.protobuf.StringValue tracking_url = 4;
+}
+
+message GetStorefrontOrderDataResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      ORDER_IDENTIFIER_NOT_FOUND = 1;
+      ORDER_NOT_STOREFRONT = 2;
+    }
+
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  repeated order.ConsumerOrder orders = 1;
+  cart.Store store = 2;
+  Delivery delivery = 3;
+  Error error = 4;
+  google.protobuf.StringValue tracking_url = 5;
+  AssignedDasher dasher = 6;
+  OrderProtocol order_protocol = 7;
+}
+
+message AssignedDasher {
+  string id = 1;
+  google.protobuf.StringValue first_name = 2;
+  google.protobuf.StringValue last_name = 3;
+  google.protobuf.StringValue phone_number = 4;
+}
+
+message Delivery {
+  message ETA {
+    google.protobuf.Timestamp estimate = 1;
+    google.protobuf.Timestamp range_min = 2;
+    google.protobuf.Timestamp range_max = 3;
+  }
+
+  int64 delivery_id = 1;
+  string public_id = 2;
+  google.protobuf.Timestamp abandoned_at = 3;
+  google.protobuf.Timestamp actual_delivery_time = 4;
+  google.protobuf.Timestamp actual_pickup_time = 5;
+  google.protobuf.Timestamp dasher_at_store_time = 6;
+  google.protobuf.Timestamp dasher_confirmed_time = 7;
+  google.protobuf.Timestamp quoted_delivery_time = 8;
+  google.protobuf.StringValue fulfillment_type = 9;
+  google.protobuf.StringValue source = 10;
+  google.protobuf.StringValue status = 11;
+  bool is_asap = 12;
+  common.CommonAddress pickup_address = 13;
+  common.CommonAddress delivery_address = 14;
+  google.protobuf.StringValue delivery_uuid = 15;
+  ETA dynamic_eta = 16;
+  google.protobuf.Timestamp store_confirmed_time = 17;
+  google.protobuf.Timestamp estimated_pickup_time = 18;
+  google.protobuf.Timestamp store_order_ready_time = 19;
+}
+
+message GetGiftTrackingDasherLocationRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetGiftTrackingDasherLocationResponse {
+  message Error {
+    enum ErrorCode {
+      DASHER_NOT_ASSIGNED = 0;
+      ORDER_NOT_FOUND = 1;
+      ORDER_ALREADY_DELIVERED = 2;
+    }
+
+    ErrorCode error_code = 1;
+  }
+  common.Location location = 1;
+  Error error = 2;
+}
+
+message SendConsumerTrackingLinkRequest {
+  int64 consumer_id = 1;
+  order.ConsumerOrderIdentifier order_identifier = 2;
+}
+
+message SendConsumerTrackingLinkResponse {
+  message Error {
+    enum ErrorCode {
+      NO_CONSUMER_FOUND = 0;
+      ORDER_NOT_CONSUMERS = 1;
+      INVALID_ORDER_IDENTIFIER = 2;
+      NOTIFICATION_CLIENT_ERROR = 3;
+      ORDER_NOT_GIFT = 4;
+    }
+
+    ErrorCode error_code = 1;
+  }
+  Error error = 1;
+  google.protobuf.StringValue message_id = 2;
+  google.protobuf.StringValue request_id = 3;
+}
+
+message GetAvailableCardsRequest {
+  string consumer_id = 1;
+  google.protobuf.Int64Value submarket_id = 2;
+  string user_id = 3;
+}
+
+message GetAvailableCardsResponse {
+  repeated VirtualCard cards = 1;
+}
+
+message ScheduleGiftDeliveryRequest {
+  google.protobuf.Timestamp scheduled_delivery_time = 1;
+  google.protobuf.StringValue order_uuid = 2;
+}
+
+message ScheduleGiftDeliveryResponse {
+  message Error {
+    enum ErrorCode {
+      OTHER = 0;
+      MISSING_DELIVERY_ID = 1;
+      ORDER_IS_NOT_GIFT = 2;
+      GIFT_DELIVERY_ALREADY_SCHEDULED = 3;
+      GIFT_EXPIRED = 4;
+      BAD_INPUT = 5;
+      DSJ_RESCHEDULE_DELIVERY_FAILURE = 6;
+      NOT_IN_EXPERIMENT_ALLOWLIST = 7;
+      GIFT_DELIVERY_STATUS_UNSCHEDULABLE = 8;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  bool success = 1;
+  Error error = 2;
+}
+
+enum RecurringOrdersWithDetailsErrorType {
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_UNKNOWN = 0;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_NONE = 1;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_GENERIC = 2;
+  // For GetRecurringOrdersWithDetailsResponse when nested recurringOrderWithDetails have error(s)
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_NESTED_ERRORS = 3;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_FAILED_DUE_TO_BAD_REQUEST = 4;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_FAILED_DUE_TO_TEMPLATE_NOT_FOUND = 5;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_GET_STORE_NAME_ERROR = 6;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_GET_MENU_ITEM_NAME_ERROR = 7;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_GET_STORE_AND_MENU_ITEM_NAME_ERROR = 8;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_PREVIEW_ORDER_V2_ERROR = 9;
+  RECURRING_ORDERS_WITH_DETAILS_ERROR_TYPE_ORDER_SESSION_ERROR = 10;
+}
+
+message RecurringOrdersWithDetailsError {
+  RecurringOrdersWithDetailsErrorType error_type = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+message GetRecurringOrdersWithDetailsByIdsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  repeated google.protobuf.StringValue recurring_order_upcoming_order_uuid = 2;
+}
+
+message GetRecurringOrdersWithDetailsResponse {
+  repeated RecurringOrderWithDetails recurringOrderWithDetails = 1;
+  RecurringOrdersWithDetailsError error = 2;
+}
+
+message RecurringOrderWithDetails {
+  google.protobuf.Int64Value interval_in_weeks = 1;
+  // Example(subject to change): "Next Delivery"
+  google.protobuf.StringValue upcoming_order_label = 2;
+  google.protobuf.Timestamp upcoming_order_day = 3;
+  // Example(subject to change): "Between 1:00 PM - 2:00 PM"
+  google.protobuf.StringValue arrival_display_string = 4;
+  google.protobuf.StringValue estimated_total_display_string = 5;
+  // Example(subject to change): "$1.80 (10%)"
+  google.protobuf.StringValue tip_amount_display_string = 6;
+  repeated PreviewOrderItem items = 7;
+  google.protobuf.StringValue help_url = 8;
+  RecurringOrdersWithDetailsError error = 9;
+  google.protobuf.StringValue recurring_order_upcoming_order_uuid = 10;
+  common.CommonAddress delivery_address = 11;
+  common.Creator creator = 12;
+  google.protobuf.StringValue store_timezone = 13;
+  map<int64, money.MonetaryFields> item_id_to_discounted_prices = 14;
+  google.protobuf.StringValue cancellation_survey_link = 15;
+  order_service.RoutineReorderOptions routine_reorder_options = 16;
+  google.protobuf.StringValue store_name = 17;
+  order_service.RoutineReorderTimeSlot selected_time_slot = 18;
+}
+
+message GetConsumerOrdersWithDetailsByIdsRequest {
+  repeated order.ConsumerOrderIdentifier identifier = 1;
+  bool include_delivery_address = 2;
+  reserved 3;
+  reserved "include_delivery_uuid_info";
+  google.protobuf.BoolValue include_delivery_uuid = 4;
+  google.protobuf.StringValue consumer_id = 5;
+}
+
+message GetConsumerOrdersWithDetailsByConsumerIdRequest {
+  string consumer_id = 1;
+  // Limit and offset are used for consumer id based lookup.
+  // Consumer based lookup will provide you the lastest consumer orders, sorted by created_at timestamp.
+  // The limit and offset fields are the same as SQL LIMIT and OFFSET keyworks semantically.
+  // You can not set the limit higher than 20 and it has a default value of 20.
+  // If you request more orders, please reach out to #reach-cx-order and ask us.
+  google.protobuf.Int32Value limit = 2;
+  google.protobuf.Int64Value offset = 3;
+  bool include_delivery_address = 4;
+  bool include_cancelled = 5;
+  reserved 6;
+  reserved "include_delivery_uuid_info";
+  google.protobuf.BoolValue include_delivery_uuid = 7;
+  google.protobuf.BoolValue include_paticipant_group_order = 8;
+  order.OrderFilterOption order_filter_option = 9;
+}
+
+message GetConsumerOrdersWithDetailsResponse {
+  message PaymentCard {
+    google.protobuf.StringValue id = 1;
+    bool active = 2;
+    google.protobuf.StringValue tokenization_method = 3;
+    google.protobuf.StringValue dynamic_last4 = 4;
+    google.protobuf.StringValue last4 = 5;
+    google.protobuf.StringValue type = 6;
+  }
+
+  message Consumer {
+    google.protobuf.StringValue consumer_id = 1;
+    google.protobuf.StringValue user_id = 2;
+    google.protobuf.StringValue first_name = 3;
+    google.protobuf.StringValue last_name = 4;
+  }
+
+  message StoreBusiness {
+    google.protobuf.StringValue id = 1;
+  }
+
+  message Store {
+    google.protobuf.StringValue store_id = 1;
+    google.protobuf.StringValue name = 2;
+    google.protobuf.StringValue business_name = 3;
+    bool is_consumer_subscription_eligible = 4;
+    StoreBusiness business = 5;
+    google.protobuf.StringValue phone_number = 6;
+    bool fulfills_own_deliveries = 7;
+    google.protobuf.StringValue customerArrivedPickupInstructions = 8;
+
+    google.protobuf.BoolValue is_price_matching_enabled = 9;
+    PriceMatchGuaranteeInfo price_match_guarantee_info = 10;
+    StoreExtensions store_extensions = 11;
+    google.protobuf.BoolValue is_nv_dyf_eligible = 12;
+  }
+
+  message StoreExtensions {
+    google.protobuf.StringValue customer_support_provider = 1;
+  }
+
+  message ConsumerAddress {
+    google.protobuf.StringValue address_id = 1;
+    google.protobuf.StringValue formatted_address = 2;
+    google.protobuf.StringValue timezone = 3;
+    google.protobuf.StringValue country_code = 4;
+  }
+
+  message ConsumerOrdersWithDetailsError {
+    ConsumerOrdersWithDetailsErrorType errorType = 1;
+    google.protobuf.StringValue message = 2;
+  }
+
+  message PriceMatchGuaranteeInfo {
+    google.protobuf.StringValue header_display_string = 1;
+    google.protobuf.StringValue body_display_string = 2;
+    google.protobuf.StringValue button_display_string = 3;
+  }
+
+  // model for likely out of stock items, this is strictly for retail orders
+  message LikelyOosItems {
+    message LikelyOosItem {
+      // menu item id
+      int64 menu_item_id = 1;
+      // item name
+      google.protobuf.StringValue name = 2;
+      // item photo url
+      google.protobuf.StringValue photo_url = 3;
+      // item badges
+      repeated feed_service.Badge badges = 4;
+    }
+    repeated LikelyOosItem items = 1;
+  }
+
+  message RecurringOrder {
+    google.protobuf.StringValue consumer_id = 1;
+    google.protobuf.StringValue recurring_order_upcoming_order_uuid = 2;
+    google.protobuf.Timestamp date = 3;
+    // Example(subject to change): "Arriving 1:00 PM - 2:00 PM"
+    google.protobuf.StringValue arrival_display_string = 4;
+    google.protobuf.StringValue store_name = 5;
+    repeated google.protobuf.StringValue item_names = 6;
+    RecurringOrderState state = 7;
+    RecurringOrdersWithDetailsError error = 8;
+  }
+
+  repeated order.ConsumerOrder consumer_orders = 1;
+  map<string, Consumer> consumers = 2;
+  map<string, Store> stores = 3;
+  map<string, ConsumerAddress> delivery_addresses = 4;
+  map<string, PaymentCard> payment_cards = 5;
+  ConsumerOrdersWithDetailsError error = 6;
+  map<string, LikelyOosItems> likely_oos_items = 7;
+  map<string, string> delivery_id_to_delivery_uuids = 8;
+  repeated RecurringOrder recurring_orders = 9;
+}
+
+message GetStoreOrderCartsByConsumerIdRequest {
+  string consumer_id = 1;
+  bool include_delivery = 2;
+  bool include_store = 3;
+  bool include_order = 4;
+  bool include_menu = 5;
+  google.protobuf.Int32Value limit = 6;
+  google.protobuf.Int64Value offset = 7;
+}
+
+message GetStoreOrderCartsByConsumerIdResponse {
+  string json_payload = 1;
+}
+
+message GetOrderCartWithOrderUUIDRequest {
+  string order_uuid = 1;
+  // soc = store order cart
+  bool include_soc = 2;
+  bool include_soc_delivery = 3;
+  bool include_soc_orders = 4;
+  bool is_consumer_id_call_path = 5;
+}
+
+message GetOrderCartWithOrderUUIDResponse {
+  string json_payload = 1;
+}
+
+message GetOrderCartIdWithOrderUUIDRequest {
+  string order_uuid = 1;
+}
+
+message GetOrderCartIdWithOrderUUIDResponse {
+  google.protobuf.Int64Value order_cart_id = 1;
+}
+
+message GetOrderCartsWithConsumerIdRequest {
+  string consumer_id = 1;
+  google.protobuf.Int32Value limit = 2;
+  google.protobuf.Int64Value offset = 3;
+}
+
+message GetOrderCartsWithConsumerIdResponse {
+  string json_payload = 1;
+}
+
+message GetBundleOpportunitiesForOrderCartRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  google.protobuf.Int32Value max_num_of_stores = 2;
+}
+
+message GetBundleOpportunitiesForOrderCartResponse {
+  google.protobuf.Timestamp expires_at = 1;
+  repeated BundleStoreOpportunity stores = 2;
+}
+
+message GetBundleOpportunitiesRequest {
+  // correlation id used to retrieve bundle store opportunities
+  order.BundleOpportunitiesCorrelationIdentifier correlation_id = 1;
+  // user identifier to look up default address
+  google.protobuf.StringValue user_id = 2;
+}
+
+message GetBundleOpportunitiesResponse {
+  // valid bundle store details
+  repeated BundleStoreOpportunity stores = 1;
+}
+
+message BundleStoreOpportunity {
+  string id = 1;
+  google.protobuf.DoubleValue latitude = 2;
+  google.protobuf.DoubleValue longitude = 3;
+  google.protobuf.StringValue name = 4;
+  google.protobuf.StringValue cover_image_url = 5;
+  google.protobuf.StringValue business_name = 6;
+
+  // used to retrieve retail store collection details for carousel display
+  google.protobuf.StringValue retail_store_default_bundle_collection_id = 7;
+  google.protobuf.BoolValue is_retail = 8;
+}
+
+message ValidateBundleOpportunitiesRequest {
+  // user id to retrieve delivery address
+  google.protobuf.StringValue user_id = 1;
+
+  // primary store id in order cart
+  google.protobuf.StringValue primary_store_id = 2;
+
+  // candidate bundle store ids
+  repeated google.protobuf.StringValue bundle_store_ids = 3;
+}
+
+message ValidateBundleOpportunitiesResponse {
+  // validation result per bundle store
+  map<string, BundleValidationResult> validation_results = 1;
+}
+
+message BundleValidationResult {
+  enum ValidationResult {
+    UNKNOWN = 0;
+    VALID = 1;
+    INVALID = 2;
+  }
+
+  message Error {
+    enum ErrorCode {
+      UNKNOWN_ERROR = 0;
+      MISSING_DELIVERY_LOCATION = 1;
+      MISSING_PRIMARY_STORE_LOCATION = 2;
+      MISSING_BUNDLE_STORE_LOCATION = 3;
+      STORES_WITH_THE_SAME_BUSINESS_ID = 4;
+      STORE_OUTSIDE_RADIUS = 5;
+      UNSUPPORTED_DEMANDGEN_PRIMARY_STORE = 6;
+      UNSUPPORTED_DEMANDGEN_BUNDLE_STORE = 7;
+      UNAUTHORIZED_BUNDLE_STORE = 8;
+    }
+
+    // error code
+    ErrorCode error_code = 1;
+
+    // error message for reference
+    google.protobuf.StringValue error_message = 3;
+  }
+
+  // validation result
+  ValidationResult result = 1;
+
+  // error details
+  Error error = 2;
+}
+
+message DelayBundleAssignmentRequest {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.Int64Value delivery_id = 2;
+  repeated delivery_service.core.DelayAssignmentSignal delay_assignment_signals = 3;
+}
+
+message DelayBundleAssignmentResponse {
+  enum ResponseStatus {
+    SUCCESS = 0;
+    FAILURE = 1;
+  }
+  ResponseStatus response_status = 1;
+  google.protobuf.StringValue force_batch_uuid = 2;
+  google.protobuf.StringValue delivery_id = 3;
+  repeated delivery_service.core.DelayAssignmentSignal delay_assignment_signals = 4;
+}
+
+enum ConsumerOrdersWithDetailsErrorType {
+  CONSUMER_ORDER_ERROR = 0;
+  CONSUMER_INFO_ERROR = 1;
+  STORE_INFO_ERROR = 2;
+  ADDRESS_INFO_ERROR = 3;
+  OTHERS = 4;
+}
+
+message CartTopperParticipantOrderIntent {
+  string cart_uuid = 1;
+  string consumer_identifier = 2;
+  string payment_card_id = 3;
+}
+
+message GetCartTopperOrderIntentRequest {
+  string cart_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message GetCartTopperOrderIntentResponse {
+  repeated CartTopperParticipantOrderIntent all_order_intents_for_cart = 1;
+}
+
+message CreateCartTopperOrderIntentRequest {
+  CartTopperParticipantOrderIntent order_intent = 1;
+}
+
+message CreateCartTopperOrderIntentResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      PAYMENT_CARD_ID_NOT_FOUND = 1;
+      INVALID_CONSUMER_ID = 2;
+      INVALID_CART_UUID = 3;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue error_message = 2;
+  }
+  bool success = 1;
+  Error error = 2;
+}
+
+message GroupCartPaymentIntent {
+  enum PaymentStatus {
+    UNKNOWN = 0;
+    PENDING = 1;
+    SUCCESS = 2;
+    FAILURE = 3;
+  }
+  google.protobuf.StringValue cart_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  google.protobuf.StringValue payment_card_id = 3;
+  google.protobuf.StringValue budget_id = 4;
+  google.protobuf.StringValue budget_code = 5;
+  google.protobuf.StringValue budget_note = 6;
+  google.protobuf.Int32Value tip_amount = 7;
+  PaymentStatus status = 8;
+}
+
+message ListGroupCartPaymentIntentsRequest {
+  google.protobuf.StringValue cart_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message ListGroupCartPaymentIntentsResponse {
+  repeated GroupCartPaymentIntent payment_intents = 1;
+}
+
+message CreateGroupCartPaymentIntentRequest {
+  GroupCartPaymentIntent payment_intent = 1;
+  google.protobuf.Int32Value charge_amount = 2;
+}
+
+message CreateGroupCartPaymentIntentResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      PAYMENT_CARD_ID_NOT_FOUND = 1;
+      INVALID_CONSUMER_ID = 2;
+      INVALID_CART_UUID = 3;
+      INVALID_BUDGET_CODE = 4;
+    }
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue error_message = 2;
+  }
+  google.protobuf.BoolValue success = 1;
+  Error error = 2;
+}
+
+message GetDeliveryInstructionOptionsRequest {
+  string submarket_id = 1;
+  string cart_id = 2;
+  string user_id = 3;
+  google.protobuf.StringValue locale = 4;
+  string consumer_id = 5;
+  google.protobuf.StringValue address_id = 6;
+  common.ClientDeviceCtx request_ctx = 7;
+}
+
+message GetDeliveryInstructionOptionsResponse {
+  repeated DeliveryInstructionOption delivery_instruction_options = 1;
+}
+
+message DeliveryInstructionOption {
+  string id = 1;
+  google.protobuf.StringValue display_string = 2;
+  google.protobuf.StringValue placeholder_text = 3;
+  bool is_default = 4;
+  bool is_enabled = 5;
+  google.protobuf.StringValue disabled_message = 6;
+  order.ProofOfDeliveryType proof_of_delivery_type = 7;
+  google.protobuf.StringValue sub_description = 8;
+  BannerInfo banner_info = 9;
+}
+
+message BannerInfo {
+  enum BannerType {
+    BANNER_TYPE_UNSPECIFIED = 0; // placeholder, required by GRPC enums
+    BANNER_TYPE_WARNING = 1; // non-blocking
+    BANNER_TYPE_ERROR = 2; // blocking
+    BANNER_TYPE_INFO = 3; // informational
+  }
+
+  // severity - error, warning, info
+  BannerType banner_type = 1;
+
+  // banner message
+  google.protobuf.StringValue message = 2;
+
+  // banner description
+  google.protobuf.StringValue description = 3;
+
+  // banner label title
+  google.protobuf.StringValue label_title = 4;
+
+  // default opt-in
+  google.protobuf.BoolValue default_opt_in = 5;
+}
+
+enum WebReferrerType {
+  STORE = 0;
+  BUSINESS = 1;
+}
+
+message ApplyWebReferralRequest {
+  WebReferrerType referrer_type = 1;
+  google.protobuf.StringValue referrer_id = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  repeated google.protobuf.StringValue sources = 4;
+  repeated google.protobuf.StringValue media = 5;
+}
+
+message ApplyWebReferralResponse {
+  google.protobuf.BoolValue applied = 1;
+  repeated common.Channel channels = 2;
+}
+
+message IsReducedCommissionApplicableRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  WebReferrerType referrer_type = 2;
+  google.protobuf.StringValue referrer_id = 3;
+}
+
+message IsReducedCommissionApplicableResponse {
+  google.protobuf.BoolValue applicable = 1;
+  common.Channel applicable_channel = 2;
+}
+
+message UpdateWebReferralConsumerRequest {
+  google.protobuf.StringValue old_consumer_id = 1;
+  google.protobuf.StringValue new_consumer_id = 2;
+}
+
+message UpdateWebReferralConsumerResponse {}
+
+message GetOrderedItemsForConsumerByStoresRequest {
+  google.protobuf.Int64Value consumer_id = 1;
+  // Can be used on store page, in which case only store id is passed. Can also be used on home page, in which multiple store ids are passed
+  repeated google.protobuf.Int64Value store_ids = 2;
+  google.protobuf.Timestamp offset = 3;
+  google.protobuf.Int32Value limit = 4;
+  google.protobuf.BoolValue isRetail = 5;
+}
+
+message GetOrderedItemsForConsumerByStoresResponse {
+  repeated OrderedItem ordered_items = 1;
+}
+
+message InsertMerchantSuppliedIdRequest {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.Int64Value store_id = 2;
+  google.protobuf.StringValue order_uuid = 3;
+  repeated ItemIdValues itemIdValues = 4;
+}
+
+message ItemIdValues {
+  google.protobuf.StringValue itemId = 1;
+  google.protobuf.StringValue merchantSuppliedId = 2;
+  google.protobuf.StringValue itemName = 3;
+  google.protobuf.StringValue orderItemId = 4;
+}
+
+message InsertMerchantSuppliedIdResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message InsertToConsumerIdToOrderStoreItemsIndexRequest {
+  repeated PreviousOrderData orders = 1;
+  google.protobuf.StringValue secret_key = 2;
+}
+
+message InsertToConsumerIdToOrderStoreItemsIndexResponse {
+  message ResponseStatus {
+    enum Status {
+      SUCCESS = 0;
+      ERROR = 1;
+    }
+    Status status = 1;
+    google.protobuf.StringValue error_message = 2;
+    google.protobuf.StringValue order_uuid = 3;
+  }
+  repeated ResponseStatus response_statuses = 1;
+}
+
+message InsertToConsumerIdStoreIdToOrderUuidIndexRequest {
+  repeated ConsumerStoreOrderData orders = 1;
+  google.protobuf.StringValue secret_key = 2;
+}
+
+message InsertToConsumerIdStoreIdToOrderUuidIndexResponse {
+  message ResponseStatus {
+    enum Status {
+      SUCCESS = 0;
+      ERROR = 1;
+    }
+    Status status = 1;
+    google.protobuf.StringValue error_message = 2;
+    google.protobuf.StringValue order_uuid = 3;
+  }
+  repeated ResponseStatus response_statuses = 1;
+}
+
+message ConsumerStoreOrderData {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue store_id = 2;
+  google.protobuf.StringValue order_created_at = 4;
+  google.protobuf.StringValue order_uuid = 5;
+  google.protobuf.StringValue order_cart_id = 6;
+}
+
+message PreviousOrderData {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue store_id = 2;
+  google.protobuf.StringValue menu_id = 3;
+  google.protobuf.StringValue order_created_at = 4;
+  google.protobuf.StringValue order_uuid = 5;
+  google.protobuf.StringValue order_cart_id = 6;
+  google.protobuf.BoolValue order_cart_is_group = 8;
+  repeated OrderedItem ordered_items = 7;
+}
+
+message OrderedItem {
+  google.protobuf.StringValue order_item_id = 1;
+  google.protobuf.StringValue item_id = 2;
+  google.protobuf.StringValue store_id = 3;
+  google.protobuf.StringValue menu_id = 4;
+  google.protobuf.StringValue order_uuid = 5;
+  google.protobuf.StringValue order_cart_id = 6;
+  google.protobuf.Timestamp order_created_at = 7;
+  google.protobuf.BoolValue order_cart_is_group = 12;
+  google.protobuf.StringValue item_name = 8;
+  google.protobuf.UInt32Value item_quantity = 9;
+  google.protobuf.StringValue item_special_instructions = 10;
+  repeated OrderedItemExtra item_extras = 11;
+  google.protobuf.StringValue item_merchant_supplied_id = 13;
+  common.bundle_order_info.v1.BundleType order_bundle_type = 14;
+  repeated common.restriction_rules.v1.RestrictedTypeWLevel applied_restrictions = 15;
+}
+
+message OrderedItemExtra {
+  google.protobuf.StringValue item_extra_id = 1;
+  repeated OrderedItemExtraOption extra_options = 2;
+}
+
+message OrderedItemExtraOption {
+  google.protobuf.StringValue option_id = 1;
+  google.protobuf.UInt32Value quantity = 2;
+  repeated OrderedItemExtra extras = 3;
+}
+
+message PickupGeoFenceRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.Timestamp updated_at = 2;
+  google.protobuf.StringValue user_id = 3;
+  // Optional; if true, we will check Cx into store, which releases their order to POS for preparation.
+  google.protobuf.BoolValue should_checkin = 4;
+}
+
+message PickupGeoFenceResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message GetPickupGeoFenceCheckedInTimeRequest {
+  repeated google.protobuf.StringValue delivery_uuids = 1;
+}
+
+message GetPickupGeoFenceCheckedInTimeResponse {
+  repeated PickupGeoFenceCheckedInTimeStatus checked_in_time_statuses = 1;
+}
+
+message PickupGeoFenceCheckedInTimeStatus {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.Timestamp earliest_checkin_at = 2;
+}
+
+message PickupOrderCheckInRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message PickupOrderCheckInResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message PersistOrderCancellationReasonRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  order.CancellationReason cancellation_reason = 2;
+}
+
+message PersistOrderCancellationReasonResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      INVALID_ORDER_IDENTIFIER = 1;
+      ORDER_IDENTIFIER_NOT_FOUND = 2;
+      DB_ERROR = 3;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  google.protobuf.BoolValue success = 1;
+  Error error = 2;
+}
+
+message GetOrderCancellationReasonRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetOrderCancellationReasonResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      INVALID_ORDER_IDENTIFIER = 1;
+      ORDER_IDENTIFIER_NOT_FOUND = 2;
+      DB_ERROR = 3;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  order.CancellationReason cancellation_reason = 1;
+  Error error = 2;
+}
+
+message GetResolutionForCancelledOrderRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  google.protobuf.StringValue store_id = 2;
+}
+
+message GetResolutionForCancelledOrderResponse {
+  message MerchantRecommendations {
+    message CuisineFilter {
+      google.protobuf.StringValue filter_id = 1;
+      google.protobuf.StringValue filter_type = 2;
+      repeated google.protobuf.StringValue values = 3;
+    }
+
+    CuisineFilter cuisine_filter = 1;
+  }
+
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      CUISINE_TAG_NOT_FOUND = 1;
+      ORDER_NOT_FOUND = 2;
+      STORE_NOT_FOUND = 3;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  MerchantRecommendations merchant_recommendations = 1;
+  Error error = 2;
+  reserved 3;
+  common.FulfillmentType fulfillment_type = 4;
+}
+
+message ClosePickupOrderRequest {
+  enum CloseSource {
+    UNSPECIFIED = 0;
+    AUTO = 1;
+    MERCHANT = 2;
+    CONSUMER = 3;
+    SWEEP = 4;
+    BULK_SERVICE = 5;
+    DISPATCH = 6;
+  }
+
+  google.protobuf.StringValue user_id = 1;
+  google.protobuf.StringValue delivery_uuid = 2;
+  google.protobuf.BoolValue is_auto_close = 3;
+  // this is just used for logging / metrics right now
+  CloseSource close_source = 4;
+}
+
+message ClosePickupOrderResponseCalloutInfo {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue description = 2;
+}
+
+message ClosePickupOrderResponse {
+  bool success = 1;
+  ClosePickupOrderResponseCalloutInfo callout_info = 2;
+}
+
+message ExternalConsumer {
+  google.protobuf.StringValue external_consumer_id = 1;
+  google.protobuf.StringValue email = 2;
+  google.protobuf.StringValue phone_number = 3;
+  google.protobuf.StringValue address = 4;
+  google.protobuf.StringValue first_name = 5;
+  google.protobuf.StringValue last_name = 6;
+  google.protobuf.BoolValue email_verified = 7;
+}
+
+// todo
+
+message ExternalCart {
+  google.protobuf.StringValue category_name = 1;
+  repeated ExternalCartItem items = 2;
+}
+
+message ExternalCartItem {
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value price = 3;
+  repeated ExternalCartItemExtra extras = 4;
+  google.protobuf.StringValue special_instructions = 5;
+}
+
+message ExternalCartItemExtra {
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value price = 3;
+  repeated ExternalCartItemExtraOption options = 4;
+}
+
+message ExternalCartItemExtraOption {
+  google.protobuf.StringValue merchant_supplied_id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value price = 3;
+  repeated ExternalCartItemExtra extras = 4;
+}
+
+message CreateOrderSessionFromExternalCartRequest {
+  message DropoffPreference {
+    enum Option {
+      LEAVE_AT_DOOR = 0;
+      HAND_TO_CONSUMER = 1;
+    }
+
+    Option option = 1;
+    google.protobuf.StringValue dasher_instructions = 2;
+  }
+
+  // this message encapsulates address_id and subpremise, it will be used for use cases where clients already
+  // have address_id
+  message AddressDetail {
+    // this is the same address_id which geo service understands and can be directly linked with a consumer
+    google.protobuf.StringValue address_id = 1;
+    // subpremise is where apartment number, floor number or other details like that goes
+    google.protobuf.StringValue subpremise = 2;
+    // this is where dropoff preference should go when passing address_id.
+    DropoffPreference dropoff_preference = 3;
+  }
+
+  ExternalConsumer consumer = 1;
+  google.protobuf.StringValue external_store_id = 2;
+  google.protobuf.StringValue external_order_id = 3;
+  ExternalCart cart = 4;
+  google.protobuf.StringValue provider_type = 5;
+  google.protobuf.StringValue currency = 6;
+  common.CommonAddress delivery_address = 7;
+  DropoffPreference dropoff_preference = 8;
+  google.protobuf.Timestamp scheduled_delivery_time = 9;
+  // if this is true, api will not do the mapping of any external ids and will assume that all the ids passed are
+  // DD internal ids. For example, should be true when creating order session with storefront apis which don't
+  // support external id mappings.
+  google.protobuf.BoolValue skip_external_id_mapping = 10;
+  // for storefront apis when we create order session we will need this.
+  common.FulfillmentType fulfillment_type = 11;
+  // dd internal menu id for which this session is being created
+  google.protobuf.StringValue menu_id = 12;
+  // this should be used when address_id is available
+  AddressDetail address_detail = 13;
+}
+
+message CreateOrderSessionFromExternalCartResponse {
+  message Error {
+    message FieldError {
+      google.protobuf.StringValue field = 1;
+      google.protobuf.StringValue input_value = 2;
+      google.protobuf.StringValue message = 3;
+    }
+
+    enum ErrorCode {
+      UNKNOWN_ERROR = 0;
+      STORE_NOT_FOUND = 1;
+      CANNOT_MAP_ORDER_ITEM = 2;
+      CANNOT_CREATE_CONSUMER = 3;
+      INVALID_MONETARY_FIELDS = 4;
+      CANNOT_CREATE_ORDER_SESSION = 5;
+      MENU_NOT_FOUND = 6;
+      UNCATEGORIZED = 7;
+      EXCEPTION_CAUGHT = 8;
+      INVALID_REQUEST = 9;
+    }
+
+    ErrorCode error_code = 1;
+    // One-line summary of error
+    google.protobuf.StringValue summary = 2;
+    // Additional details relating to error, suggestions to resolve, etc
+    google.protobuf.StringValue message = 3;
+    // If known, list of violating fields causing error
+    repeated FieldError field_errors = 4;
+  }
+  Error error = 1;
+  google.protobuf.StringValue order_session_id = 2;
+}
+
+message GetOrderSessionByIdRequest {
+  order.OrderSessionIdentifier order_session_id = 1;
+}
+
+message GetOrderSessionByIdResponse {
+  order.OrderSession order_session = 1;
+}
+
+message GetOrdersForConsumerByStoreRequest {
+  google.protobuf.Int64Value consumer_id = 1;
+  google.protobuf.Int64Value store_id = 2;
+}
+
+message GetOrdersForConsumerByStoreResponse {
+  message WrappedOrder {
+    order.ConsumerOrder order = 1;
+    bool has_legacy_rating = 2;
+  }
+
+  repeated WrappedOrder wrapped_orders = 1;
+}
+
+message GetMerchantOrderDetailsRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetMerchantOrderDetailsResponse {
+  order_service.OrderDetail order_detail = 1;
+}
+
+message GetOrderedStoresForConsumerRequest {
+  string consumer_id = 1;
+
+  // Optional: when specified, only considers the Mx that the Cx has placed orders with the specified fulfillment
+  // types (e.g. DELIVERY, PICKUP) at.
+  repeated common.FulfillmentType fulfillment_types = 2;
+}
+
+message GetOrderedStoresForConsumerResponse {
+  // The list of Mx that a Cx had placed orders at in the past 90 days.
+  repeated string store_ids = 1;
+
+  message StoreOrder {
+    string store_id = 1;
+    int64 num_orders_placed = 2;
+  }
+  // A list of Mx that the Cx placed orders at in the previous 90 days, along with
+  // the number of orders that were placed at each Mx.
+  repeated StoreOrder store_orders = 2;
+}
+
+enum ShipmentInfoErrorCode {
+  SHIPMENT_ORDER_NOT_FOUND = 0;
+  ORDER_HAS_NO_SHIPMENT_INFO = 1;
+  CANNOT_DESERIALIZE_SHIPPING_INFO = 2;
+  CANNOT_SERIALIZE_SHIPPING_INFO = 3;
+  UNKNOWN_ERROR = 4;
+}
+
+message GetConsumerOrderShipmentInfoRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+}
+
+message UpdateConsumerOrderShipmentInfoRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+  order.OrderShipmentInfo shipping_info = 3;
+}
+
+message GetConsumerOrderShipmentInfoResponse {
+  message Error {
+    ShipmentInfoErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  order.OrderShipmentInfo shipping_info = 1;
+  Error error = 2;
+}
+
+message UpdateConsumerOrderShipmentInfoResponse {
+  message Error {
+    ShipmentInfoErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  order.OrderShipmentInfo shipping_info = 1;
+  Error error = 2;
+}
+
+message UpdateConsumerOrdersShipmentInfoByLogisticsProviderRequest {
+  enum ACTION {
+    UNSPECIFIED = 0;
+    LABEL = 1;
+    TRACKING = 2;
+  }
+  order.ShippingLogisticsProvider shipping_vendor = 1;
+  ACTION action = 2;
+  order.ShippingTrackingEvent tracking_event = 3;
+}
+
+message UpdateConsumerOrdersShipmentInfoByLogisticsProviderResponse {
+  enum ErrorCode {
+    GET_RESOURCE_FAILED = 0;
+    SHIPPING_ORDER_NOT_FOUND = 1;
+    CANNOT_PROCESS_VENDOR_UPDATE = 2;
+    CANNOT_WRITE_TO_DB = 3;
+    UNKNOWN_ERROR = 4;
+  }
+
+  message Error {
+    ErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  bool success = 1;
+  Error error = 2;
+}
+
+message CreateShipmentOrderInThirdPartyLogisticsRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 2;
+}
+
+message CreateShipmentOrderInThirdPartyLogisticsResponse {
+  message Error {
+    ShipmentInfoErrorCode error_code = 1;
+    google.protobuf.StringValue message = 2;
+  }
+  bool success = 1;
+  Error error = 2;
+  google.protobuf.StringValue third_party_order_id = 3;
+  google.protobuf.StringValue third_party_partner_id = 4;
+}
+
+message GetOrderItemsForDasherRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetOrderItemsForDasherResponse {
+  message DeliveryOrderItem {
+    string name = 1;
+    string description = 2;
+    int64 quantity = 3;
+    google.protobuf.StringValue bundle_key = 4;
+    bool is_alcohol = 5;
+  }
+
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      INVALID_ORDER_IDENTIFIER = 1;
+      ORDER_IDENTIFIER_NOT_FOUND = 2;
+      DB_ERROR = 3;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  repeated DeliveryOrderItem success = 1;
+  int32 itemCount = 2;
+  int64 subtotal = 3;
+  Error error = 4;
+}
+
+message UpdateCxAgeVerificationRequest {
+  string consumer_id = 1;
+  string delivery_uuid = 2;
+  string order_uuid = 3;
+}
+
+message UpdateCxAgeVerificationResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      CX_IDV_NOT_FOUND = 1;
+      DB_ERROR = 2;
+      SERVICE_ORIGIN_DENIED = 3;
+      UPDATE_DELIVERY_FULFILLMENT_ERROR = 4;
+      COPS_ERROR = 5;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  common.AgeRestrictedIdVerificationVendor cx_age_verification = 1;
+  google.protobuf.StringValue cx_age_verification_image = 2;
+  Error error = 3;
+}
+
+message GetCxAgeVerificationByOrderRequest {
+  string order_uuid = 1;
+}
+
+message GetCxAgeVerificationByOrderResponse {
+  message Error {
+    enum ErrorCode {
+      UNKNOWN = 0;
+      AGE_RESTRICTED_ORDER_INFO_NOT_FOUND = 1;
+      DB_ERROR = 2;
+      SERVICE_ORIGIN_DENIED = 3;
+    }
+
+    ErrorCode error_code = 1;
+  }
+
+  common.AgeRestrictedIdVerificationVendor cx_age_verification = 1;
+  google.protobuf.StringValue cx_age_verification_image = 2;
+  Error error = 3;
+}
+
+message ProcessGoogleFoodOrderingFulfillmentActionRequest {
+  enum GoogleIntent {
+    CHECKOUT = 0;
+    TRANSACTION_DECISION = 1;
+  }
+  google.protobuf.BoolValue is_in_sandbox = 1;
+  google.protobuf.StringValue conversation_id = 2;
+  GoogleIntent intent = 3;
+  // for previewing the order
+  GoogleCart cart = 4;
+  // for placing the order
+  GoogleOrder order = 5;
+  // deleted field, do not use - for ref https://developers.google.com/protocol-buffers/docs/proto3#reserved
+  reserved 6;
+  reserved "client_context";
+}
+
+message GoogleCart {
+  string store_id = 1;
+  repeated GoogleLineItem line_items = 2;
+  google.protobuf.StringValue notes = 3;
+  ExternalConsumer consumer = 4;
+  google.protobuf.StringValue estimated_delivery_time = 5;
+  google.protobuf.StringValue estimated_pickup_time = 6;
+  common.CommonAddress delivery_address = 7;
+  string store_name = 8;
+}
+
+message GoogleLineItem {
+  enum GoogleLineItemType {
+    REGULAR = 0;
+    TAX = 1;
+    DISCOUNT = 2;
+    GRATUITY = 3;
+    DELIVERY = 4;
+    SUBTOTAL = 5;
+    FEE = 6;
+  }
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue item_id = 2;
+  google.protobuf.StringValue name = 3;
+  GoogleLineItemType type = 4;
+  common.QuantityInfo quantity_info = 5;
+  GooglePrice total_price = 6;
+  google.protobuf.StringValue notes = 7;
+  repeated GoogleLineItemOption options = 8;
+}
+
+message GooglePrice {
+  enum PriceType {
+    ESTIMATE = 0;
+    ACTUAL = 1;
+  }
+  PriceType price_type = 1;
+  google.protobuf.StringValue currency = 2;
+  google.protobuf.StringValue units = 3;
+  google.protobuf.Int32Value nanos = 4;
+}
+
+message GoogleLineItemOption {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue option_id = 2;
+  GooglePrice price = 3;
+  common.QuantityInfo quantity_info = 4;
+  google.protobuf.StringValue notes = 5;
+  repeated GoogleLineItemOption sub_options = 6;
+  google.protobuf.StringValue name = 7;
+}
+
+message GoogleOrder {
+  google.protobuf.StringValue id = 1;
+  GoogleCart cart = 2;
+  repeated GoogleLineItem other_items = 3;
+  GooglePrice total_price = 4;
+  google.protobuf.StringValue estimated_delivery_time = 5;
+  google.protobuf.StringValue estimated_pickup_time = 6;
+  google.protobuf.StringValue payment_token = 7;
+  google.protobuf.BoolValue optin_for_remarketing = 8;
+}
+
+message ClientContext {
+  google.protobuf.StringValue client_ip = 1;
+  // syntax for x_forwarded_for is <client>, <proxy1>, <proxy2>
+  repeated google.protobuf.StringValue x_forwarded_for = 2;
+  google.protobuf.StringValue user_agent = 3;
+}
+
+message ProcessGoogleFoodOrderingFulfillmentActionResponse {
+  // for previewing the order
+  GoogleOrder order = 1;
+  // for Google Pay support
+  GooglePayPaymentOptions payment_options = 2;
+
+  // for placing the order
+  GoogleOrderUpdate order_update = 3;
+
+  // for errors during preview
+  GoogleFoodErrorExtension error = 4;
+}
+
+message GooglePayPaymentOptions {
+  google.protobuf.Int32Value api_version = 1;
+  google.protobuf.Int32Value api_version_minor = 2;
+  GooglePayMerchantInfo merchant_info = 3;
+  repeated GooglePayPaymentMethod allowed_payment_methods = 4;
+  GooglePayTransactionInfo transaction_info = 5;
+}
+
+message GooglePayMerchantInfo {
+  google.protobuf.StringValue merchant_id = 1;
+  google.protobuf.StringValue merchant_name = 2;
+}
+
+message GooglePayPaymentMethod {
+  google.protobuf.StringValue type = 1;
+  GooglePayCardParameters parameters = 2;
+  GooglePayTokenizationSpecification tokenization_specification = 3;
+}
+
+message GooglePayCardParameters {
+  enum GooglePayAllowedAuthMethods {
+    PAN_ONLY = 0;
+    CRYPTOGRAM_3DS = 1;
+  }
+  enum GooglePayAllowedCardNetworks {
+    AMEX = 0;
+    DISCOVER = 1;
+    INTERAC = 2;
+    JCB = 3;
+    MASTERCARD = 4;
+    VISA = 5;
+  }
+  repeated GooglePayAllowedAuthMethods allowed_auth_methods = 1;
+  repeated GooglePayAllowedCardNetworks allowed_card_networks = 2;
+  google.protobuf.BoolValue billing_address_required = 3;
+  google.protobuf.BoolValue cvc_required = 4;
+}
+
+message GooglePayTokenizationSpecification {
+  // Stripe requires type, gateway, version and publishable key
+  // Other payment processors require type, gateway and gateway merchant id
+  google.protobuf.StringValue type = 1;
+  GooglePayTokenizationSpecificationParameters parameters = 2;
+}
+
+message GooglePayTokenizationSpecificationParameters {
+  google.protobuf.StringValue gateway = 1;
+  google.protobuf.StringValue gateway_merchant_id = 2;
+  google.protobuf.StringValue version = 3 [json_name = "stripe:version"];
+  google.protobuf.StringValue publishable_key = 4 [json_name = "stripe:publishableKey"];
+}
+
+message GooglePayTransactionInfo {
+  google.protobuf.StringValue currency_code = 1;
+  // Optional unique ID that identifies a transaction attempt
+  google.protobuf.StringValue transaction_id = 2;
+  // Const and default value is "ESTIMATED"
+  google.protobuf.StringValue total_price_status = 3;
+  google.protobuf.StringValue total_price = 4;
+}
+
+message GoogleOrderUpdate {
+  enum GoogleOrderState {
+    CREATED = 0;
+    CONFIRMED = 1;
+    REJECTED = 2;
+    CANCELLED = 3;
+    IN_PREPARATION = 4;
+    READY_FOR_PICKUP = 5;
+    IN_TRANSIT = 6;
+    FULFILLED = 7;
+  }
+  google.protobuf.StringValue order_uuid = 1;
+  GoogleOrderState state = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  repeated GoogleOrderManagementAction actions = 4;
+  google.protobuf.StringValue public_order_id = 5;
+  GooglePrice total_price = 6;
+  google.protobuf.StringValue estimated_fulfillment_time = 7;
+  // Required when state = "REJECTED"
+  GoogleRejectionInfo rejection_info = 8;
+}
+
+message GoogleOrderManagementAction {
+  enum GoogleActionType {
+    CUSTOMER_SERVICE = 0;
+    CALL_DRIVER = 1;
+    CALL_RESTAURANT = 2;
+    VIEW_DETAILS = 3;
+  }
+  GoogleActionType type = 1;
+  google.protobuf.StringValue button_title = 2;
+  google.protobuf.StringValue button_url_action = 3;
+}
+
+message GoogleRejectionInfo {
+  enum GoogleRejectionType {
+    INELIGIBLE = 0;
+    PAYMENT_DECLINED = 1;
+    UNAVAILABLE_SLOT = 2;
+    UNKNOWN = 3;
+  }
+  GoogleRejectionType rejection_type = 1;
+  google.protobuf.StringValue reason = 2;
+}
+
+message GoogleFoodErrorExtension {
+  repeated GoogleFoodOrderError errors = 1;
+  // if items do not have the correct price or are not available, google requires the error to also have the new order
+  // with corrected price or quantity for items and the latest payment options aka configurations incl. Stripe key
+  GoogleOrder corrected_order = 2;
+  GooglePayPaymentOptions payment_options = 3;
+}
+
+message GoogleFoodOrderError {
+  enum Error {
+    NOT_SPECIFIED = 0;
+    CLOSED = 1;
+    NO_CAPACITY = 2;
+    NO_COURIER_AVAILABLE = 3;
+    REQUIREMENTS_NOT_MET = 4;
+    UNAVAILABLE_SLOT = 5;
+    OUT_OF_SERVICE_AREA = 6;
+    AVAILABILITY_CHANGED = 7;
+    INCORRECT_PRICE = 8;
+    INVALID = 9;
+    NOT_FOUND = 10;
+    PRICE_CHANGED = 11;
+  }
+  Error error = 1;
+  google.protobuf.StringValue id = 2;
+  google.protobuf.StringValue description = 3;
+  GooglePrice updated_price = 4;
+  common.QuantityInfo available_quantity = 5;
+}
+
+message DoorDashEntityInfo {
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue address = 2;
+  google.protobuf.StringValue vat_id = 3;
+}
+
+message MerchantEntityInfo {
+  // MerchantEntityInfo is deprecated, do not use
+  google.protobuf.StringValue name = 1;
+  google.protobuf.StringValue address = 2;
+}
+
+message SendBundlePostCheckoutNotificationRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message SendBundlePostCheckoutNotificationResponse {
+  google.protobuf.BoolValue status = 1;
+  google.protobuf.StringValue error_reason = 2;
+}
+
+message SendOcaEmailRequest {
+  string delivery_uuid = 1;
+  string email_address = 2;
+}
+
+message SendOcaEmailResponse {
+  enum Status {
+    SUCCESS = 0;
+    ERROR = 1;
+    SKIP = 2;
+  }
+  Status status = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message SendRetailFulfillmentEmailRequest {
+  string delivery_uuid = 1;
+  string email_address = 2;
+  google.protobuf.BoolValue is_hsa_fsa = 3;
+  google.protobuf.BoolValue is_oca = 4;
+}
+
+message SendRetailFulfillmentEmailResponse {
+  enum Status {
+    SUCCESS = 0;
+    ERROR = 1;
+    SKIP = 2;
+  }
+  Status status = 1;
+  google.protobuf.StringValue error_message = 2;
+}
+
+message GetFeaturesForETARepredictionRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+}
+
+message GetFeaturesForETARepredictionResponse {
+  reserved 1;
+  common.eta_features.v1.ETACartFeatures eta_cart_features = 2;
+}
+
+message GetOrCreateInvoiceRequest {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  order.InvoiceType invoice_type = 2;
+  google.protobuf.StringValue invoice_recipient_name = 3;
+  google.protobuf.StringValue invoice_recipient_address = 4;
+  string consumer_id = 5;
+}
+
+message GetOrCreateInvoiceResponse {
+  google.protobuf.StringValue invoice_url = 1;
+}
+
+message ReorderOrderRequest {
+  string order_uuid = 1;
+  string fallback_context = 2;
+  string consumer_id = 3;
+  string user_id = 4;
+}
+
+message ReorderOrderResponse {
+  string cart_uuid = 1;
+  bool success = 2;
+  google.protobuf.StringValue fail_reason = 3;
+  bool is_group = 4;
+}
+
+message ReorderOrderV2Request {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message ReorderOrderV2Response {
+  google.protobuf.StringValue cart_uuid = 1;
+  google.protobuf.BoolValue success = 2;
+  google.protobuf.StringValue fail_reason = 3;
+  google.protobuf.BoolValue is_group = 4;
+}
+
+message DeleteInvalidItemsRequest {
+  string cart_uuid = 1;
+}
+
+message DeleteInvalidItemsResponse {
+  bool success = 1;
+  string fail_reason = 2;
+}
+
+message CancelExpiredGiftRequest {
+  order.ConsumerOrderIdentifier order_identifiers = 1;
+  google.protobuf.Timestamp cancel_time = 2;
+}
+message CancelExpiredGiftResponse {
+  bool success = 1;
+  string fail_reason = 2;
+}
+
+message DeliveryTimeInterval {
+  google.protobuf.StringValue start_time = 1;
+  google.protobuf.StringValue end_time = 2;
+}
+message OrderDeliveryTimesRequest {
+  google.protobuf.Timestamp end_time = 1;
+  int32 num_days = 2;
+  string cart_uuid = 3;
+  string consumer_id = 4;
+  string user_id = 5;
+  common.ClientDeviceCtx request_ctx = 6;
+  // this will be populated instead of cart_uuid on post-checkout requests
+  string order_uuid = 7;
+  // Specify request type/domain of GetOrderDeliveryTimes, especially to identify different callers from Cx mbff
+  DeliveryTimesRequestType delivery_times_request_type = 8;
+}
+
+enum DeliveryTimesRequestType {
+  // Request type is unspecified
+  REQUEST_TYPE_UNSPECIFIED = 0;
+  // Request type is post checkout
+  REQUEST_TYPE_POST_CHECKOUT = 1;
+  // Request type is adjust order
+  REQUEST_TYPE_ADJUST_ORDER = 2;
+}
+
+message OrderDeliveryTimesResponse {
+  bool asap_available = 1;
+  bool asap_pickup_available = 2;
+  repeated DeliveryTimeInterval scheduled_delivery_intervals = 3;
+  // pass timestamp of now formatted with store's timezone
+  string current_timestamp = 4;
+  // response to match the legacy DSJ response to serve lx needs
+  LegacyPostcheckoutDeliveryTimesResponse legacy_delivery_times_response = 5;
+  // backend driven signals for frontend logics
+  map<string, string> backend_driven_flags = 6;
+  // store timezone
+  google.protobuf.StringValue store_timezone = 7;
+  reserved 8;
+  reserved "reschedule_sheet_details";
+  // schedule delivery window replace scheduled_delivery_intervals for NV
+  repeated order_service.AvailableDay available_days = 9;
+  // backend driven reschedule page details
+  ReschedulePageDetails reschedule_page_details = 10;
+}
+
+message ReschedulePageDetails {
+  // page title for reschedule page
+  google.protobuf.StringValue page_title = 1;
+  // page subtitle for reschedule page
+  google.protobuf.StringValue page_subtitle = 2;
+  // current delivery time display string for reschedule page
+  google.protobuf.StringValue current_delivery_time_display_string = 3;
+}
+
+message LegacyPostcheckoutDeliveryTimesResponse {
+  string today = 1;
+  repeated DeliveryTimes delivery_times = 2;
+}
+
+message OrderDeliveryAvailabilityRequest {
+  string cart_uuid = 1;
+  string consumer_id = 2;
+  string user_id = 3;
+  common.ClientDeviceCtx request_ctx = 4;
+}
+
+message OrderDeliveryAvailabilityResponse {
+  bool asap_available = 1;
+  repeated int32 asap_miniutes_range = 2;
+  google.protobuf.Timestamp next_scheduled_delivery_time = 3;
+  bool is_killed = 4;
+  repeated string interruptions = 5;
+  bool is_within_delivery_region = 6;
+  bool is_outside_delivery_region = 7;
+  string unavailable_reason = 8;
+  bool asap_pickup_available = 9;
+  repeated int32 asap_pickup_minutes_range = 10;
+}
+
+message DeliveryTimes {
+  repeated string delivery_timestamp = 1;
+}
+
+message UpdateOrderItemMissingAndIncorrectInfoRequest {
+  int64 order_item_id = 1;
+  google.protobuf.Int32Value num_missing = 2;
+  google.protobuf.Int32Value num_incorrect = 3;
+  int64 delivery_id = 4;
+}
+
+message UpdateOrderItemMissingAndIncorrectInfoResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message GetInvoiceIfExistsRequest {
+  // Reserving the field number as order.InvoiceType invoice_type is deprecated from this request.
+  reserved 2;
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  string consumer_id = 3;
+}
+
+message GetInvoiceIfExistsResponse {
+  google.protobuf.BoolValue invoice_exists = 1;
+  google.protobuf.BoolValue void_to_create = 2;
+  google.protobuf.StringValue invoice_url = 3;
+  google.protobuf.StringValue invoice_recipient_name = 4;
+  google.protobuf.StringValue invoice_recipient_address = 5;
+  google.protobuf.Timestamp updatedAt = 6;
+}
+
+message VoidAndRecreateInvoiceRequest {
+  // Reserving the field number as order.InvoiceType invoice_type is deprecated from this request.
+  reserved 2;
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  google.protobuf.StringValue invoice_recipient_name = 3;
+  google.protobuf.StringValue invoice_recipient_address = 4;
+  string consumer_id = 5;
+}
+
+message VoidAndRecreateInvoiceResponse {
+  google.protobuf.StringValue invoice_url = 1;
+}
+
+message LiquorLicense {
+  google.protobuf.StringValue url = 1;
+  google.protobuf.StringValue label = 2;
+}
+
+message SendMxOrderReminderEmailRequest {
+  google.protobuf.Int64Value delivery_id = 1;
+  // Template id is the iterable campaign id used for the email template.
+  // If not sent as part of the request, this must be handled in code.
+  google.protobuf.Int64Value template_id = 2;
+}
+
+message SendMxOrderReminderEmailResponse {
+  google.protobuf.Int64Value delivery_id = 1;
+  order.MxOrderReminderEmailStatus status = 2;
+}
+
+message ReprocessBackfillMainDBToConsumerOrderRequest {
+  google.protobuf.Timestamp start_date = 1;
+  google.protobuf.Timestamp end_date = 2;
+  google.protobuf.StringValue use_case = 3;
+}
+
+message ReprocessBackfillMainDBToConsumerOrderResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+message PaySupplyChainOrderRequest {
+  // valid order identifiers
+  oneof entity {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+  }
+
+  google.protobuf.StringValue creator_user_id = 3;
+
+  SupplyChainOrderPaymentRequestSource payment_request_source = 4;
+  enum SupplyChainOrderPaymentRequestSource {
+    UNKNOWN = 0;
+    CONSUMER = 1;
+    CADENCE = 2;
+  }
+
+  string idempotency_key = 5;
+}
+
+message PaySupplyChainOrderResponse {
+  ProcessStatus process_status = 1;
+  enum ProcessStatus {
+    UNKNOWN = 0;
+    SUCCESSFUL = 1;
+    FAILED = 2;
+    PENDING = 3;
+    NOT_FOUND = 4;
+    NO_ADJUSTMENT_REQUIRED = 5;
+  }
+
+  PaymentResult payment_result = 2;
+  message PaymentResult {
+    money.MonetaryFields consumer_refund = 1;
+    money.MonetaryFields merchant_refund = 2;
+    money.MonetaryFields merchant_charge = 3;
+    money.MonetaryFields consumer_credit_charge = 4;
+    money.MonetaryFields consumer_charge = 5;
+  }
+
+  google.protobuf.StringValue error_type = 100;
+  google.protobuf.StringValue error_message = 101;
+  google.protobuf.StringValue error_domain = 102;
+}
+
+message CompleteSupplyChainOrderRequest {
+  // Provide an id to retrieve the order
+  oneof entity {
+    google.protobuf.StringValue order_uuid = 1;
+    google.protobuf.StringValue delivery_uuid = 2;
+  }
+  google.protobuf.Timestamp fulfilled_at = 3;
+}
+
+message CompleteSupplyChainOrderResponse {
+  order.ConsumerOrderIdentifier order_identifier = 1;
+  google.protobuf.Timestamp payment_due_date = 2;
+}
+
+message GetSupplyChainScheduledPaymentOrdersRequest {
+  google.protobuf.Timestamp scheduled_payment_date = 1;
+}
+
+enum SupplyChainScheduledPaymentState {
+  SUPPLY_CHAIN_SCHEDULED_PAYMENT_STATE_UNKNOWN = 0;
+  SUPPLY_CHAIN_SCHEDULED_PAYMENT_STATE_PENDING = 1;
+  SUPPLY_CHAIN_SCHEDULED_PAYMENT_STATE_SUCCESS = 2;
+  SUPPLY_CHAIN_SCHEDULED_PAYMENT_STATE_FAILURE = 3;
+}
+
+message SupplyChainScheduledPaymentOrder {
+  google.protobuf.StringValue order_uuid = 1;
+  SupplyChainScheduledPaymentState payment_state = 2;
+}
+
+message GetSupplyChainScheduledPaymentOrdersResponse {
+  repeated SupplyChainScheduledPaymentOrder scheduled_payment_order = 1;
+}
+
+message GetSupplyChainConsumerUnpaidOrdersBeforeTimeWithDetailsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Timestamp min_payment_due_date = 2;
+  google.protobuf.Int32Value limit = 3;
+  google.protobuf.Int32Value offset = 4;
+}
+
+message GetTopSupplyChainConsumerDelinquentOrderRequest {
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+message GetTopSupplyChainConsumerDelinquentOrderResponse {
+  // returns order_uuid of the most delinquent order or null if the consumer has no delinquent orders
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+message SendGroupOrderSplitBillNotificationRequest {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message SendGroupOrderSplitBillNotificationResponse {
+  google.protobuf.StringValue order_uuid = 1;
+  google.protobuf.BoolValue success = 2;
+  // return the count of pushed notification
+  google.protobuf.Int64Value notified_count = 3;
+}
+
+message RemoveGroupOrderParticipantAndSendNotificationRequest {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message RemoveGroupOrderParticipantAndSendNotificationResponse {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.BoolValue success = 2;
+  // return the count of pushed notification
+  google.protobuf.Int64Value notified_count = 3;
+}
+
+message SendGroupOrderParticipantReminderNotificationRequest {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message SendGroupOrderParticipantReminderNotificationResponse {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.BoolValue success = 2;
+  // return the count of pushed notification
+  google.protobuf.Int64Value notified_count = 3;
+}
+
+message RemoveGroupOrderFailedPaymentParticipantAndSendNotificationRequest {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message RemoveGroupOrderFailedPaymentParticipantAndSendNotificationResponse {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.BoolValue success = 2;
+  // return the count of pushed notification
+  google.protobuf.Int64Value notified_count = 3;
+}
+
+message SendGroupOrderParticipantFailedPaymentNotificationRequest {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+message SendGroupOrderParticipantFailedPaymentNotificationResponse {
+  google.protobuf.StringValue cart_id = 1;
+  google.protobuf.BoolValue success = 2;
+  // return the count of pushed notification
+  google.protobuf.Int64Value notified_count = 3;
+}
+
+message GetSupplyChainStoreUnpaidOrdersRequest {
+  google.protobuf.StringValue store_id = 1;
+  google.protobuf.Int32Value limit = 2;
+  google.protobuf.Int32Value offset = 3;
+}
+
+message GetSupplyChainStoreUnpaidOrdersResponse {
+  message SupplyChainOrder {
+    message SupplyChainConsumer {
+      google.protobuf.StringValue first_name = 1;
+      google.protobuf.StringValue last_name = 2;
+    }
+
+    google.protobuf.StringValue delivery_uuid = 1;
+    google.protobuf.Timestamp delivery_time = 2;
+    SupplyChainConsumer consumer = 3;
+    money.MonetaryFields order_value = 4;
+    google.protobuf.Timestamp paid_at = 5;
+    google.protobuf.Timestamp cancelled_at = 6;
+    google.protobuf.Int32Value order_items_count = 7;
+    google.protobuf.Timestamp payment_due_date = 8;
+  }
+
+  repeated SupplyChainOrder unpaid_orders = 1;
+  google.protobuf.Int32Value total_orders = 2;
+}
+
+message IsDeliveryAddressReplaceableRequest {
+  google.protobuf.StringValue delivery_uuid = 1;
+  google.protobuf.StringValue address_id = 2;
+}
+
+message IsDeliveryAddressReplaceableResponse {
+  reserved 1;
+  reserved "is_address_replaceable";
+  google.protobuf.BoolValue is_delivery_address_replaceable = 2;
+}
+
+message CreateOrderForReturnRequest {
+  string original_order_cart_id = 1;
+  common.FulfillmentType fulfillment_type = 2;
+  common.ClientDeviceCtx request_ctx = 3;
+  string locale = 4;
+  ReturnFlowType return_flow_type = 5;
+}
+
+message CreateOrderForReturnResponse {
+  google.protobuf.StringValue original_order_uuid = 1;
+  google.protobuf.StringValue return_order_uuid = 2;
+  google.protobuf.StringValue return_order_cart_id = 3;
+  google.protobuf.StringValue return_delivery_uuid = 4;
+}
+
+// Cart badge type
+enum CartBadgeType {
+  // Expiry time of cart badge
+  CART_BADGE_TYPE_EXPIRY = 0;
+  // Group cart badge
+  CART_BADGE_TYPE_GROUP = 1;
+  // Bundle / DoubleDash badge
+  CART_BADGE_TYPE_BUNDLE = 2;
+  // Store availability badge - store temp closed
+  CART_BADGE_TYPE_STORE_TEMP_CLOSED = 3;
+  // Store availability badge - outside delivery range
+  CART_BADGE_TYPE_STORE_DELIVERY_RANGE = 4;
+  // Store availability badge - store hours opening soon
+  CART_BADGE_TYPE_STORE_HOURS_OPENING_SOON = 5;
+  // Store availability badge - store hours closing soon
+  CART_BADGE_TYPE_STORE_HOURS_CLOSING_SOON = 6;
+  // Availbale promotion badge
+  CART_BADGE_TYPE_PROMO = 7;
+}
+
+message Badge {
+  google.protobuf.StringValue text = 1;
+  google.protobuf.StringValue background_color = 2;
+  CartBadgeType type = 3;
+  google.protobuf.StringValue placement = 4;
+  google.protobuf.StringValue dls_tag_size = 5;
+  google.protobuf.StringValue dls_tag_style = 6;
+  google.protobuf.StringValue dls_tag_type = 7;
+  google.protobuf.StringValue leading_icon = 8;
+  google.protobuf.UInt32Value leading_icon_size = 9;
+  google.protobuf.StringValue trailing_icon = 10;
+  google.protobuf.UInt32Value trailing_icon_size = 11;
+  google.protobuf.StringValue end_time = 12;
+}
+
+// Detailed Cart object hydrated with extra info
+message DetailedCart {
+  message CartExpirationDetails {
+    // Signifies if cart is expiring soon
+    google.protobuf.BoolValue is_expiring_soon = 1;
+    // add more fields here as needed
+  }
+  // Normal cart
+  cart_service.v1.ConsumerCart cart = 1;
+  // List of ordered badges
+  repeated Badge badges = 2;
+  // Map of StoreInfo related to each cart - key is cartUuid
+  map<string, StoreInfo> store_info_map = 3;
+  // message containing cart expiration info to help with identifying which carts are expiring
+  CartExpirationDetails expiration_details = 4;
+}
+
+// Store info
+message StoreInfo {
+  // Store name
+  google.protobuf.StringValue name = 1;
+  // Store icon image url
+  google.protobuf.StringValue image_url = 2;
+  // Bool to show DashPass icon
+  google.protobuf.BoolValue is_dashpass_eligible = 3;
+  // Mds address
+  common.CommonAddress address = 4;
+}
+
+// Request for ListDetailedCarts
+message ListDetailedCartsRequest {
+  // Context key
+  cart_service.v1.CartContextV2 cart_context_v2 = 1;
+  // Limit for pagination
+  google.protobuf.Int32Value limit = 2;
+  // Offset for pagination
+  google.protobuf.Int32Value offset = 3;
+  // The location of consumer device or their delivery address
+  common.ConsumerLocation consumer_location = 4;
+}
+
+// Response for ListDetailedCarts
+message ListDetailedCartsResponse {
+  // List of detailed carts
+  repeated DetailedCart carts = 1;
+  // Indication to the UI if we have reached the max personal carts limit so that UI can display a user banner
+  google.protobuf.BoolValue max_personal_carts_limit_reached = 2;
+}
+
+message ListLightweightOrdersByConsumerIdRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  google.protobuf.Int32Value limit = 4;
+  google.protobuf.StringValue cursor = 5;
+  google.protobuf.BoolValue isRetailCaller = 6;
+}
+
+message ListLightweightOrdersByConsumerIdResponse {
+  repeated LightweightOrder lightweight_orders = 1;
+  google.protobuf.StringValue next_cursor = 2;
+
+  message LightweightOrderConfig {
+    common.bundle_order_info.v1.BundleType order_bundle_type = 1;
+    common.bundle_order_info.v1.BundleOrderRole order_bundle_role = 2;
+  }
+
+  message LightweightOrder {
+    google.protobuf.StringValue store_id = 1;
+    google.protobuf.StringValue order_uuid = 2;
+    google.protobuf.Timestamp order_created_at = 3;
+    repeated LightweightOrderedItem items = 4;
+    LightweightOrderConfig lightweight_order_config = 5;
+  }
+
+  message LightweightOrderedItem {
+    google.protobuf.StringValue item_id = 1;
+    google.protobuf.StringValue item_name = 2;
+    google.protobuf.UInt32Value item_quantity = 3;
+    google.protobuf.StringValue item_special_instructions = 4;
+    repeated OrderedItemExtra extras = 5;
+    google.protobuf.StringValue item_merchant_supplied_id = 6;
+
+    // used by URPC reorder use cases, matching items by dd_sic
+    google.protobuf.StringValue dd_sic = 7;
+
+    repeated common.restriction_rules.v1.RestrictedTypeWLevel applied_restrictions = 8;
+  }
+}
+
+message GetCnGCartStickyFooterRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // consumer cart
+  cart_service.v1.ConsumerCart cart = 2;
+}
+
+message GetCnGCartStickyFooterResponse {
+  // title line of footer, e.g. "Add items before your dasher..."
+  google.protobuf.StringValue message = 1;
+  // sub message of footer, e.g. "Dasher has picked x of y items"
+  google.protobuf.StringValue sub_message = 2;
+  google.protobuf.StringValue icon_name = 3;
+  google.protobuf.StringValue background_color = 4;
+  google.protobuf.StringValue text_color = 5;
+  google.protobuf.Int32Value icon_size = 6;
+  google.protobuf.StringValue end_button = 7;
+  google.protobuf.StringValue deeplink = 8;
+}
+
+// this message will used as request object to create cart from order session
+message CreateCartFromOrderSessionRequest {
+  // source platform of where cart was created
+  enum SourcePlatform {
+    UNKNOWN = 0;
+    STOREFRONT_MOBILE_APP = 1;
+  }
+
+  // order session id
+  google.protobuf.StringValue order_session_id = 1;
+  // consumer id could be guest or logged in
+  google.protobuf.StringValue consumer_id = 2;
+  // should be set to true if previously existing carts for this consumer needs to deleted after creating a new cart.
+  google.protobuf.BoolValue should_delete_existing_carts = 3;
+  // source platform of where cart was created
+  SourcePlatform source_platform = 4;
+}
+
+// response object
+message CreateCartFromOrderSessionResponse {
+  message Error {
+    message FieldError {
+      google.protobuf.StringValue field = 1;
+      google.protobuf.StringValue input_value = 2;
+      google.protobuf.StringValue message = 3;
+    }
+
+    enum ErrorCode {
+      UNKNOWN_ERROR = 0;
+      ORDER_SESSION_NOT_FOUND = 1;
+      CONSUMER_ID_NOT_FOUND = 2;
+      INVALID_REQUEST = 3;
+      EXCEPTION_CAUGHT = 4;
+    }
+
+    ErrorCode error_code = 1;
+    // One-line summary of error
+    google.protobuf.StringValue summary = 2;
+    // Additional details relating to error, suggestions to resolve, etc
+    google.protobuf.StringValue message = 3;
+    // If known, list of violating fields causing error
+    repeated FieldError field_errors = 4;
+  }
+
+  message Success {
+    reserved 3; // for the deprecated timestamp based scheduled_delivery_time
+    reserved "scheduled_delivery_time"; // for the deprecated timestamp based scheduled_delivery_time
+    google.protobuf.StringValue cart_uuid = 2;
+    google.protobuf.StringValue scheduled_time = 4;
+  }
+  // it will return either the cart uuid or error
+  oneof result {
+    Error error = 1;
+    Success success = 2;
+  }
+}
+
+// DDPOSCart for preview
+message DDPOSCart {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue store_id = 2;
+  google.protobuf.StringValue menu_id = 3;
+  repeated DDPOSCartItem items = 4;
+  RevenueCenter revenue_center = 5;
+  money.MonetaryFields discount_amount = 6;
+  DDPOSDiscount discount_info = 7;
+}
+
+// DDPOSCartItem within DDPOSCart
+message DDPOSCartItem {
+  reserved 1;
+  reserved "menu_item_id";
+  google.protobuf.Int64Value unit_price = 2;
+  google.protobuf.Int32Value quantity = 3;
+  repeated DDPOSCartItemExtra extras = 4;
+  google.protobuf.StringValue substitution_preference = 5;
+  google.protobuf.StringValue special_instructions = 6;
+  google.protobuf.StringValue item_category_name = 7;
+  google.protobuf.StringValue item_name = 8;
+  google.protobuf.StringValue item_description = 9;
+  google.protobuf.StringValue id = 10;
+  google.protobuf.BoolValue is_open_item = 11;
+  google.protobuf.FloatValue tax_rate = 12;
+}
+
+// DDPOSCartItemExtra within DDPOSCartItem
+message DDPOSCartItemExtra {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value unit_price = 3;
+  repeated DDPOSCartItemExtraOption options = 4;
+  google.protobuf.StringValue extra_name = 5;
+}
+
+// DDPOSCartItemExtraOption within DDPOSCartItemExtra
+message DDPOSCartItemExtraOption {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value unit_price = 3;
+  repeated DDPOSCartItemExtraNested extras = 4;
+  google.protobuf.StringValue option_name = 5;
+}
+
+// additional level of extras on the option for DD POS (temp workaround for UG's support in 23 H2)
+message DDPOSCartItemExtraNested {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value unit_price = 3;
+  repeated DDPOSCartItemExtraOptionNested options = 4;
+  google.protobuf.StringValue extra_name = 5;
+}
+
+// additional level of options on the nested extras for DD POS (temp workaround for UG's support in 23 H2)
+message DDPOSCartItemExtraOptionNested {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.Int32Value quantity = 2;
+  google.protobuf.Int64Value unit_price = 3;
+  google.protobuf.StringValue option_name = 4;
+}
+
+message DDPOSLineItem {
+  // id of the charge, unique identifier across all platforms
+  money.ChargeId charge_id = 1;
+
+  // Localized string of the charge
+  string label = 2;
+
+  money.MonetaryFields final_money = 3;
+}
+
+// from PreviewOrderV2(orderSession) response
+message DDPOSOrderPreview {
+  reserved 3;
+  reserved "line_items";
+  google.protobuf.StringValue id = 1;
+  DDPOSCart cart = 2;
+  money.MonetaryFields total_before_tip = 4;
+  repeated DDPOSLineItem preview_line_items = 5;
+}
+
+// this message will used as request object to get details for dd pos order preview
+message DDPOSPreviewOrderRequest {
+  google.protobuf.StringValue currency = 1;
+  DDPOSCart cart = 2;
+  // For degraded order playback
+  google.protobuf.Timestamp degraded_order_created_at = 3;
+  // Consumer Loyalty information
+  DDPosConsumerLoyaltyInfo dd_pos_consumer_loyalty_info = 4;
+  common.PlatformType submit_platform = 5;
+  common.FulfillmentType fulfillment_type = 6;
+  // POS consumer details
+  DDPOSConsumer consumer = 7;
+  // optional: contains information about gift card redemptions for the order
+  common.order_config.v1.DDPOSGiftCardRedemptionInfo gift_card_redemption_info = 8;
+}
+
+message DDPOSConsumer {
+  // first name
+  google.protobuf.StringValue first_name = 1;
+  // last name
+  google.protobuf.StringValue last_name = 2;
+}
+
+// Consumer Loyalty information
+message DDPosConsumerLoyaltyInfo {
+  // Loyalty finger print
+  google.protobuf.StringValue stripe_fingerprint = 1;
+
+  // Loyalty phone number
+  google.protobuf.StringValue phone_number = 2;
+
+  // Loyalty details
+  common.DDPosLoyaltyDetails dd_pos_loyalty_details = 3;
+}
+
+// response object
+message DDPOSPreviewOrderResponse {
+  message PreviewError {
+    // Deprecated: whole PreviewError is deprecated and should not be used.
+    message FieldError {
+      google.protobuf.StringValue field = 1;
+      google.protobuf.StringValue input_value = 2;
+      google.protobuf.StringValue message = 3;
+    }
+    enum ErrorCode {
+      UNKNOWN_ERROR = 0;
+      STORE_NOT_FOUND = 1;
+      CANNOT_MAP_ORDER_ITEM = 2;
+      CANNOT_CREATE_CONSUMER = 3;
+      INVALID_MONETARY_FIELDS = 4;
+      CANNOT_CREATE_ORDER_SESSION = 5;
+      MENU_NOT_FOUND = 6;
+      UNCATEGORIZED = 7;
+      EXCEPTION_CAUGHT = 8;
+      INVALID_REQUEST = 9;
+    }
+    // all fields deprecated since PreviewError is deprecated
+    reserved 1;
+    reserved "error_code";
+    reserved 2;
+    reserved "summary";
+    reserved 3;
+    reserved "message";
+    reserved 4;
+    reserved "field_errors";
+  }
+  reserved 1;
+  reserved "preview_error"; // deprecated since errors should be thrown as exceptions
+  reserved 6;
+  reserved "doordash_loyalty_points_summary"; // deprecated since doordash_loyalty_points_summary is now in dd_pos_loyalty_info
+  reserved 7;
+  reserved "store_loyalty_program_data"; // deprecated since store_loyalty_program_data is now in dd_pos_loyalty_info
+  order.OrderSessionIdentifier order_session_id = 2;
+  DDPOSOrderPreview preview = 3;
+  google.protobuf.StringValue consumer_id = 4;
+  // when this current menu last got updated at
+  google.protobuf.Int64Value menu_updated_at = 5;
+  // DDPOS, Pathfinder specific Loyalty Info
+  DDPosLoyaltyInfo dd_pos_loyalty_info = 8;
+}
+
+message DDPosLoyaltyInfo {
+  // DoorDash Loyalty Points Summary for the order
+  money.DoorDashLoyaltyPointsSummary doordash_loyalty_points_summary = 1;
+  // Cx loyalty phone number
+  google.protobuf.StringValue phone_number = 2;
+  // Cx loyalty Opt-in status
+  common.loyalty.v1.LoyaltyOptInStatus opt_in_status = 3;
+  // Business name of the store only for terms and legal text in loyalty flow
+  google.protobuf.StringValue business_name = 4;
+}
+
+// ------- DDPOSOrder for submission-----------
+message DDPOSOrder {
+  reserved 1;
+  reserved "id";
+  reserved 3;
+  reserved "other_items";
+  reserved 5;
+  reserved "payment_intent"; // deprecated since payment is taken before submission endpoint call
+  reserved 6;
+  reserved "line_items";
+  // ----- end of deprecated fields -----
+  DDPOSCart cart = 2;
+  google.protobuf.StringValue client_total = 4;
+  repeated money.TipAmount tip_amounts = 7;
+}
+
+// this is the result of order creation (mapping from CreateOrderFromCart(orderSession) response)
+message DDPOSOrderResponse {
+  enum OrderState {
+    CREATED = 0;
+    REJECTED = 1;
+  }
+  message OrderError {
+    // DEPRECATED: whole OrderError is deprecated and should not be used.
+    message FieldError {
+      google.protobuf.StringValue field = 1;
+      google.protobuf.StringValue input_value = 2;
+      google.protobuf.StringValue message = 3;
+    }
+
+    enum ErrorCode {
+      UNKNOWN_ERROR = 0;
+      PAYMENT_DECLINED = 1;
+      EXCEPTION_CAUGHT = 2;
+      INVALID_REQUEST = 3;
+    }
+    // all fields deprecated since OrderError is deprecated
+    reserved 1;
+    reserved "error_code";
+    reserved 2;
+    reserved "summary";
+    reserved 3;
+    reserved "message";
+    reserved 4;
+    reserved "field_errors";
+  }
+  reserved 1;
+  reserved "order_error"; // deprecated since errors should be thrown as exceptions
+  google.protobuf.StringValue order_uuid = 2;
+  OrderState state = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// this message will used as request object to perform dd pos order submission
+message DDPOSSubmitOrderRequest {
+  google.protobuf.StringValue currency = 1;
+  DDPOSOrder order = 2;
+  common.PaymentMethod payment_method = 3;
+  order.OrderSessionIdentifier order_session_id = 4;
+  // For degraded order playback
+  google.protobuf.Timestamp degraded_order_created_at = 5;
+  google.protobuf.StringValue employee_pin = 6;
+  google.protobuf.StringValue employee_uuid = 7;
+  google.protobuf.StringValue revenue_center_uuid = 8;
+  google.protobuf.StringValue revenue_center_name = 9;
+  // Consumer Loyalty information
+  DDPosConsumerLoyaltyInfo dd_pos_consumer_loyalty_info = 10;
+  common.PlatformType submit_platform = 11;
+  common.FulfillmentType fulfillment_type = 12;
+  // Applied price modification
+  common.order_config.v1.DDPosAppliedPriceModification dd_pos_applied_price_modifications = 13;
+  // Order ticket number that is printed on tickets and receipts from POS and Kiosk
+  google.protobuf.StringValue ticket_number = 14;
+
+  // Split order details
+  repeated common.order_config.v1.SplitOrderDetails split_order_details = 15;
+
+  // optional: saved order id
+  google.protobuf.StringValue saved_order_id = 16;
+
+  // Split order details need line items to calculate the split amount + tax
+  // for each breakdown
+  repeated DDPOSLineItem preview_line_items = 17;
+
+  // optional: contains information about gift card redemptions for the order
+  common.order_config.v1.DDPOSGiftCardRedemptionInfo gift_card_redemption_info = 18;
+}
+
+// response object
+message DDPOSSubmitOrderResponse {
+  DDPOSOrderResponse order = 1;
+}
+
+// request of shop anywhere's create/update order session from Cx input shopping list
+message CreateOrderSessionFromShoppingListRequest {
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  string shop_anywhere_store_id = 2;
+  money.MonetaryFields estimated_subtotal = 3;
+  common.FulfillmentType fulfillment_type = 4;
+  repeated common.shop_anywhere.v1.ShoppingCartItem shopping_list = 5;
+  google.protobuf.StringValue submarket_id = 6 [(doordash.api.inject) = {
+    field: "cx_geo_submarket_id",
+    injection_rule: {cast_type: "nullable_string"}
+  }];
+  // the uuid of the order session created, only present if it is an update scenario
+  google.protobuf.StringValue order_session_id = 7;
+  // promotion ids, optional too.
+  repeated google.protobuf.StringValue promotion_ids = 8;
+  // removed auto redeemded promotion ids that are removed by Cx, optional too.
+  repeated google.protobuf.StringValue removed_auto_redeemed_promotion_ids = 9;
+}
+
+// response of shop anywhere's create order session from Cx input shopping list
+message CreateOrderSessionFromShoppingListResponse {
+  // the uuid of the order session created,
+  // we don't need error code here since we should just directly throw exception and let it propagate with meaningful error msg
+  string order_session_id = 1;
+}
+
+// request of creating preview from order session
+message CreatePreviewFromOrderSessionRequest {
+  // the uuid of the order session created
+  google.protobuf.StringValue order_session_id = 1;
+
+  // submit platform
+  common.PlatformType submit_platform = 2;
+
+  // is payment with credit card
+  google.protobuf.BoolValue is_card_payment = 3;
+
+  // delivery option type
+  common.DeliveryOptionType delivery_option_type = 4;
+
+  // should apply credits
+  google.protobuf.BoolValue should_apply_credits = 5;
+
+  // Exclusion list for requested data types
+  repeated PreviewOrderRequestV2.ExcludedDataType excluded_data_types = 6;
+
+  // scheduled delivery time
+  google.protobuf.Timestamp scheduled_delivery_time = 7;
+
+  // amount of reward balance applied
+  google.protobuf.Int32Value reward_balance_applied_amount = 8;
+
+  // type of the preview
+  PreviewType preview_type = 9;
+
+  // consumer Id, will be injected when we onboard this to UG
+  google.protobuf.StringValue consumer_id = 10;
+
+  /*
+     TODO: once finalize the details
+      add // The delivery option that is selected by the Cx when previewing the order.
+            DeliveryOptionInfo delivery_options
+  */
+}
+
+// response of creating preview from order session
+message CreatePreviewFromOrderSessionResponse {
+  // V2 preview response
+  PreviewOrderResponseV2 preview_order_response_v2 = 1;
+}
+
+// request of creating preview from order session
+message CreateOrderFromOrderSessionRequest {
+  // the uuid of the order session created
+  google.protobuf.StringValue order_session_id = 1;
+
+  // tip amounts
+  repeated money.TipAmount tip_amounts = 2;
+
+  // submit platform
+  common.PlatformType submit_platform = 3;
+
+  // if this order is asap
+  google.protobuf.BoolValue is_asap = 4;
+
+  // if this order is consumer pickup (should be defaulted to false for Shop Anywhere orders)
+  google.protobuf.BoolValue is_consumer_pickup = 5;
+
+  // should apply credits
+  google.protobuf.BoolValue should_apply_credits = 6;
+
+  // stripe token
+  google.protobuf.StringValue stripe_token = 7;
+
+  // dasher instruction
+  google.protobuf.StringValue dasher_instruction = 8;
+
+  // Cx fraud context
+  money.ClientFraudContext client_fraud_context = 9;
+
+  // dropoff preferences
+  google.protobuf.StringValue dropoff_preferences = 10;
+
+  // delivery option type
+  common.DeliveryOptionType delivery_option_type = 11;
+
+  // expense order options
+  ExpenseOrderOptionsForCreateOrder expense_order_options = 12;
+
+  // is payment with credit card
+  google.protobuf.BoolValue is_card_payment = 13;
+
+  // amount applied with Dashcard pay with points - support Redeem Reward Points and Refund Reward Points
+  google.protobuf.Int32Value reward_balance_applied_amount = 14;
+
+  // for compliance - does Cx dropoff location have accessibility requirements or not
+  google.protobuf.BoolValue has_accessibility_requirements = 15;
+
+  // Fields for validation
+  google.protobuf.StringValue client_total = 16;
+
+  // scheduled delivery time
+  google.protobuf.Timestamp scheduled_delivery_time = 17;
+
+  // consumer Id, injected by UG
+  google.protobuf.StringValue consumer_id = 18 [(doordash.api.inject_id) = CX_ID];
+
+  // delivery option info
+  DeliveryOptionInfo delivery_options = 19;
+
+  /*
+     TODO: once finalize the details
+      add common.PaymentMethod payment_method
+  */
+}
+
+// response of creating order from order session
+message CreateOrderFromOrderSessionResponse {
+  reserved 1; // deprecated fields
+  reserved "create_order_from_cart_response";
+
+  message OrderCart {
+    google.protobuf.StringValue order_uuid = 1;
+  }
+
+  google.protobuf.BoolValue is_first_new_verticals_order_cart = 2;
+  OrderCart order_cart = 3;
+}
+
+message CompleteSelfDeliveryOrderRequest {
+  google.protobuf.StringValue delivery_uuid = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message CompleteSelfDeliveryOrderResponse {
+  bool success = 1;
+}
+
+message SendLifecycleEventsForOrdersRequest {
+  repeated order_service.OrderAndEvents orderAndEvents = 1;
+}
+
+message SendLifecycleEventsForOrdersResponse {
+  repeated order_service.OrderSendEventsResponses event_responses = 1;
+}
+
+message GetPreloadedCartForConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue store_id = 2;
+  repeated CartItem cart_items = 3;
+}
+
+message GetPreloadedCartForConsumerResponse {
+  cart_service.v1.ConsumerCart cart = 1;
+}
+
+// ------- Payment charge details for order receipt -----------
+/*
+   List of payment details included as part of cart payment.
+*/
+message PaymentDetailsList {
+  // Number of details
+  google.protobuf.Int32Value count = 1;
+
+  // List of detail elements
+  repeated PaymentDetails data = 2;
+}
+
+/*
+   payment charge details for order receipt
+*/
+message PaymentDetails {
+  // Current amount for charge
+  money.MonetaryFields net_amount = 1;
+
+  // Original amount of charge
+  money.MonetaryFields original_amount = 2;
+
+  // Status of charge
+  google.protobuf.StringValue status = 3;
+
+  // Timestamp of when this charge was created
+  google.protobuf.Timestamp created_at = 4;
+
+  // Timestamp of when this charge was last updated
+  google.protobuf.Timestamp updated_at = 5;
+
+  // Summary of payment method used
+  PaymentMethodDetails payment_method = 6;
+
+  // details related to batching of this payment with other orders
+  PaymentBatchingDetails batching_details = 7;
+}
+
+/*
+   payment batching details for order receipt
+*/
+message PaymentBatchingDetails {
+  // Whether the payment is batched yet or not (pending batching)
+  google.protobuf.BoolValue is_batched = 1;
+
+  // list of cart payments associated with this batched payment
+  repeated CartPaymentBatchDetails batched_cart_payments = 2;
+}
+
+/*
+
+*/
+message CartPaymentBatchDetails {
+  // Unique identifier of the cart payment
+  google.protobuf.StringValue cart_payment_id = 1;
+
+  // Whether this cart payment correlates to the current order
+  google.protobuf.BoolValue is_current_order = 2;
+
+  // Amount allocated to the associated cart payment out of this batched payment
+  money.MonetaryFields amount_allocated = 3;
+
+  // store name for the associated order
+  google.protobuf.StringValue store_name = 4;
+}
+
+/*
+   Payment method summary of Cart Payment.
+*/
+message PaymentMethodDetails {
+  // Identifier of payment method
+  google.protobuf.StringValue dd_payment_method_id = 1;
+
+  // Type
+  google.protobuf.StringValue type = 2;
+
+  // Remaining balance if payment method is EBT
+  money.MonetaryFields ebt_remaining_balance = 3;
+
+  // last 4
+  google.protobuf.StringValue last4 = 8;
+
+  // brand
+  google.protobuf.StringValue brand = 9;
+
+  // Metadata associated with this payment method
+  google.protobuf.Struct metadata = 10;
+
+  // wallet
+  doordash.payment.payin.Wallet wallet = 11;
+}
+
+message GetScheduleAvailabilityForStoreRequest {
+  // ID of the primary/o1 store
+  google.protobuf.StringValue store_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Optional, when present returns only availability for that menu
+  google.protobuf.StringValue menu_id = 2 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+
+  // Used for padding out the first delivery window
+  google.protobuf.Int64Value asap_minutes_estimate = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // E.g. DELIVERY, PICKUP, etc
+  common.FulfillmentType fulfillment_type = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Consumer ID that is injected
+  google.protobuf.StringValue consumer_id = 5 [(doordash.api.inject_id) = CX_ID];
+}
+
+message GetScheduleAvailabilityForStoreResponse {
+  repeated order_service.AvailableDay available_days = 1;
+}
+
+// request for adding or updating a marketplace prescription item in cart
+message UpsertPrescriptionItemToCartRequest {
+  reserved 7;
+  reserved "patient_address_id";
+  // consumer id
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // cart identifier
+  oneof cart_identifier {
+    // if present, create the cart
+    string store_id = 2;
+    // if present, update the cart
+    string cart_uuid = 3;
+  }
+  // Prescription patient first name
+  google.protobuf.StringValue patient_first_name = 4;
+  // Prescription patient last name
+  google.protobuf.StringValue patient_last_name = 5;
+  // Prescription patient phone number
+  google.protobuf.StringValue patient_phone_number = 6;
+  // copay amount for all prescription items
+  money.MonetaryFields prescription_copay = 8;
+  // Prescription patient address id
+  oneof patient_address_id {
+    // Prescription patient address id
+    string patient_geo_address_id = 9;
+    // Prescription patient source place id
+    string patient_source_place_id = 10;
+  }
+}
+
+// response for adding or updating a marketplace prescription item in cart
+// keeps the same response format as v3/carts/add_item
+message UpsertPrescriptionItemToCartResponse {
+  // cart info
+  message Cart {
+    // cart uuid
+    string id = 1;
+  }
+
+  // the created/updated cart
+  Cart cart = 1;
+  // cart item id of the current prescription item in the cart
+  string id = 2;
+}
+
+// request to get a cx' mp prescription item details
+message GetPrescriptionItemInCartRequest {
+  // consumer id
+  string consumer_id = 1 [
+    (doordash.api.inject_id) = CX_ID,
+    (doordash.api.validate.rules).missing_value = {action: FAIL}
+  ];
+  // cart uuid
+  string cart_uuid = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// response returning a cx' mp prescription item details
+message GetPrescriptionItemInCartResponse {
+  // printable address
+  message PrintableAddress {
+    reserved 1;
+    reserved "id";
+    // line 1
+    google.protobuf.StringValue line_1 = 2;
+    // line 2
+    google.protobuf.StringValue line_2 = 3;
+    // geo address id
+    string geo_address_id = 4;
+  }
+
+  // prescription data
+  message PrescriptionItem {
+    // Prescription patient first name
+    google.protobuf.StringValue patient_first_name = 1;
+    // Prescription patient last name
+    google.protobuf.StringValue patient_last_name = 2;
+    // Prescription patient phone number
+    google.protobuf.StringValue patient_phone_number = 3;
+    // Prescription patient address
+    PrintableAddress patient_address = 4;
+    // copay amount
+    money.MonetaryFields prescription_copay = 5;
+  }
+
+  // pharmacy store data
+  message PharmacyStore {
+    // pharmacy store_id
+    string id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+    // pharmacy store name
+    string name = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+    // pharmacy store address
+    PrintableAddress address = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+    // additional store info
+    PrescriptionStoreInfo prescription_store_info = 4;
+  }
+
+  // list of prescriptions for dx to pick up
+  repeated PrescriptionItem prescription_items = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  PharmacyStore pharmacy_store = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+// Request for previewing auto-checkout configuration details
+message PreviewAutoCheckoutDetailsRequest {
+  // consumer id - injected by UG
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // store id
+  google.protobuf.StringValue store_id = 2;
+  // delivery address id
+  google.protobuf.Int32Value delivery_address_id = 3;
+  // order fulfillment type (delivery/pickup)
+  google.protobuf.StringValue fulfillment_type = 4;
+  // order checkout/reminder time
+  google.protobuf.Timestamp checkout_time = 5;
+  // is group cart
+  google.protobuf.BoolValue is_group = 6;
+  // group cart types
+  cart_service.v1.GroupCartType group_cart_type = 7;
+}
+
+// Response for previewing auto-checkout configuration details
+message PreviewAutoCheckoutDetailsResponse {
+  // all eligible budgets
+  repeated ExpenseOrderBudget budgets = 1;
+}
+
+message UpdateGiftRecipientEditableAddressFieldsRequest {
+  google.protobuf.StringValue order_uuid = 1;
+  order.GiftRecipientEditableAddressFields recipient_editable_address_fields = 2;
+}
+message UpdateGiftRecipientEditableAddressFieldsResponse {
+  google.protobuf.StringValue order_uuid = 1;
+}
+
+// Request for getting order deadline options for store/menu
+message GetOrderDeadlineOptionsForStoreRequest {
+  // ID of the primary store
+  google.protobuf.StringValue store_id = 1;
+  // Optional, when present returns only availability for that menu
+  google.protobuf.StringValue menu_id = 2;
+  // E.g. DELIVERY, PICKUP, etc
+  common.FulfillmentType fulfillment_type = 3;
+  // Optional, number of days to return: default  is 1
+  google.protobuf.Int64Value num_days = 4;
+  // if these following two fields are not empty,
+  // we provide recommended order deadline in response
+  // scheduled window start time
+  google.protobuf.Timestamp scheduled_window_start = 5;
+  // scheduled window end time
+  google.protobuf.Timestamp scheduled_window_end = 6;
+  // Consumer ID that is injected
+  google.protobuf.StringValue consumer_id = 7 [(doordash.api.inject_id) = CX_ID];
+}
+
+// response for getting order deadline options for store/menu
+message GetOrderDeadlineOptionsForStoreResponse {
+  // Lists of available time points for a store/menu grouped by day
+  OrderDeadlineOptions order_deadline_options = 1;
+  // Map from menuId to menu hours
+  map<string, store_availability.v2.Hours> menu_availabilities = 2;
+  google.protobuf.Int64Value eta_minute = 3;
+  google.protobuf.Int64Value buffer = 4;
+  google.protobuf.Int64Value dollar_threshold = 5; // value should be in cents
+  TimePoint recommended_order_deadline = 6;
+}
+
+//  Wrapper for order deadline options
+message OrderDeadlineOptions {
+  // Order deadline options
+  repeated OrderDeadlineOptionsByDay order_deadline_options = 1;
+}
+
+//  Lists of times for a store/menu grouped by day
+message OrderDeadlineOptionsByDay {
+  // type representing year, month and day only
+  date.Date day_timestamp = 1;
+  // the list of time points and corresponding display strings
+  repeated TimePoint time_points = 2;
+}
+
+// A pair of time in UTC and its corresponding display string based on timezone
+message TimePoint {
+  // the display string of the time point
+  string display_string = 1;
+  // the time point
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// request for listing consumer domain orders with details for given consumer id
+message ListConsumerDomainOrdersWithDetailsByConsumerIdRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // limit for pagination
+  google.protobuf.Int32Value limit = 2;
+  // offset for pagination
+  google.protobuf.Int32Value offset = 3;
+}
+
+// response for listing consumer domain orders with details for given order ids
+message ListConsumerDomainOrdersWithDetailsByOrderIdsRequest {
+  // order UUIDs - can be CxDomain/MxDomain
+  repeated google.protobuf.StringValue order_uuids = 1;
+}
+
+// request for listing consumer domain orders with details
+message ListConsumerDomainOrdersWithDetailsResponse {
+  // payment card info
+  message PaymentCard {
+    // payment card id
+    google.protobuf.StringValue id = 1;
+    // is active
+    bool active = 2;
+    // tokenization method
+    google.protobuf.StringValue tokenization_method = 3;
+    // dynamic last 4 digits
+    google.protobuf.StringValue dynamic_last4 = 4 [(doordash.api.pii_field_handling) = {mask_entirely: true}];
+    // last 4 digits
+    google.protobuf.StringValue last4 = 5 [(doordash.api.pii_field_handling) = {mask_entirely: true}];
+    // type
+    google.protobuf.StringValue type = 6;
+  }
+
+  // consumer info
+  message Consumer {
+    // consumer id
+    google.protobuf.StringValue consumer_id = 1;
+    // user id
+    google.protobuf.StringValue user_id = 2;
+    // first name
+    google.protobuf.StringValue first_name = 3 [(doordash.api.pii_field_handling) = {mask_entirely: true}];
+    // last name
+    google.protobuf.StringValue last_name = 4 [(doordash.api.pii_field_handling) = {mask_entirely: true}];
+  }
+
+  // consumer address info
+  message ConsumerAddress {
+    // address id
+    google.protobuf.StringValue address_id = 1;
+    // formatted address
+    google.protobuf.StringValue formatted_address = 2 [(doordash.api.pii_field_handling) = {mask_entirely: true}];
+    // timezone
+    google.protobuf.StringValue timezone = 3;
+    // country code
+    google.protobuf.StringValue country_code = 4;
+  }
+
+  // consumer rating info
+  message ConsumerRating {
+    // review uuid
+    google.protobuf.StringValue consumer_review_uuid = 1;
+    // order uuid
+    google.protobuf.StringValue order_uuid = 2;
+    // has rating flag
+    google.protobuf.BoolValue has_rating = 3;
+    // number of stars
+    google.protobuf.Int32Value num_stars = 4;
+    // epoch milliseconds of review timestamp
+    google.protobuf.Int64Value reviewed_at = 5;
+    // has dasher rating flag
+    google.protobuf.BoolValue has_dasher_rating = 6;
+  }
+
+  // list of consumer domain orders retrieved
+  repeated common.consumer_domain_order.v1.ConsumerDomainOrder consumer_domain_orders = 1;
+  // map of consumerDomainOrderUuid to consumer
+  map<string, Consumer> consumers = 2;
+  // map of consumerDomainOrderUuid to delivery address
+  map<string, ConsumerAddress> delivery_addresses = 3;
+  // map of consumerDomainOrderUuid to payment card
+  map<string, PaymentCard> payment_cards = 4;
+  // map of consumerDomainOrderUuid to consumer rating
+  map<string, ConsumerRating> consumer_rating = 5;
+}
+
+message DDPOSDiscount {
+  google.protobuf.StringValue uuid = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue currency = 3;
+  DDPOSDiscountDetails details = 4;
+}
+
+message DDPOSDiscountDetails {
+  google.protobuf.BoolValue is_auto_apply = 1;
+  repeated PriceModificationCriteria discount_criteria = 2;
+
+  // Discount details type
+  oneof details_type {
+    // Discount is flat
+    Flat flat = 3;
+    // Discount is a percentage
+    Percentage percentage = 4;
+  }
+}
+
+message Flat {
+  money.MonetaryFields amount = 1;
+}
+
+message Percentage {
+  google.protobuf.Int32Value percentage = 1;
+}
+
+message PriceModificationCriteria {
+  // Price modification criteria type
+  oneof criteria_type {
+    // Minimum subtotal
+    MinimumSubtotal minimum_subtotal = 1;
+    // Payment type
+    PaymentType payment_type = 2;
+  }
+}
+
+message MinimumSubtotal {
+  google.protobuf.Int32Value amount = 1;
+}
+
+message PaymentType {
+  CriteriaPaymentType type = 1;
+}
+
+enum CriteriaPaymentType {
+  PAYMENT_TYPE_UNSPECIFIED = 0;
+  PAYMENT_TYPE_CRITERIA_CREDIT_CARD = 1;
+}
+
+// Config for a revenue center
+message RevenueCenter {
+  // Revenue center id
+  google.protobuf.StringValue uuid = 1;
+
+  // Revenue center name
+  google.protobuf.StringValue name = 2;
+
+  // Whether the order is paid via another system
+  google.protobuf.BoolValue is_order_paid = 3;
+
+  // Whether we should print the revenue name on the ticket
+  google.protobuf.BoolValue should_print_on_ticket = 4;
+
+  // Whether this is the default revenue center
+  google.protobuf.BoolValue is_archived = 5;
+}

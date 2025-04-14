@@ -1,0 +1,108 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package experience_reliability_service.cnr_lifecycle_event_api.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+// API used to call methods for C&R lifecycle events
+service CNRLifecycleEventService {
+  option (doordash.api.service) = {
+    name: "experience-reliability-service"
+    url: "cnr-platform-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["experience-reliability-service"]
+    api_key_name: "CNR_PLATFORM_API_KEY"
+    owner: {
+      id: "cnr-platform-alerts"
+      name: "cnr-platform"
+      slack_channel: "#ask-credit-refund-platform"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  // Timeout after 10,000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+
+  // All of these endpoints are now in cnr-platform.
+  // Creates a new C&R lifecycle event
+  rpc CreateCNRLifecycleEvent(CreateCNRLifecycleEventRequest) returns (CreateCNRLifecycleEventResponse);
+  rpc QueryByDeliveryUuidCNRLifecycleEvent(QueryByDeliveryUuidCNRLifecycleEventRequest) returns (QueryByDeliveryUuidCNRLifecycleEventResponse) {
+    option (google.api.http) = {get: "/experience-reliability-service/v1/query-event-by-delivery-uuid"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_credit_and_refund_lifecycle_event_tool_owner_view"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Requires a C&R lifecycle event struct
+message CreateCNRLifecycleEventRequest {
+  // required field
+  CNRLifecycleEvent cnr_lifecycle_event = 1;
+}
+
+// Requires a uuid for the C&R lifecycle event
+message CreateCNRLifecycleEventResponse {
+  // unique id for the C&R lifecycle event
+  google.protobuf.Int64Value cnr_lifecycle_event_id = 1;
+}
+
+message QueryByDeliveryUuidCNRLifecycleEventRequest {
+  // required field: delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+}
+
+message QueryByDeliveryUuidCNRLifecycleEventResponse {
+  // required field: credit and refund lifecycle events associated with the delivery uuid
+  repeated CNRLifecycleEvent cnr_lifecycle_event = 1;
+}
+
+// C&R Lifecycle event struct
+message CNRLifecycleEvent {
+  // delivery uuid is required
+  google.protobuf.StringValue delivery_uuid = 1;
+  // delivery id is optional, better to have
+  google.protobuf.Int64Value delivery_id = 2;
+  // Time the event was created at
+  google.protobuf.Timestamp created_at = 3;
+  // String identifying the type credit and refund lifecycle event
+  google.protobuf.StringValue event_category = 4;
+  // String identifying the source of the credit and refund lifecycle event (i.e. self-help, agent, etc.)
+  google.protobuf.StringValue created_by_source = 5;
+  // user id of the user (i.e. agent or customer) that created the event
+  google.protobuf.Int64Value created_by_user_id = 6;
+  /* metadata will store a summary of the C&R lifecycle event
+     for example: if it was a fraud event, metadata will hold the rule name,
+     rule description, and summary.
+  */
+  google.protobuf.StringValue metadata = 7;
+
+  // email of the user (i.e. agent or customer) that created the event
+  google.protobuf.StringValue created_by_user_email = 8;
+  // request id of create/accept order resolutions
+  google.protobuf.StringValue request_id = 9;
+  // add sub_category to distinguish the events better
+  google.protobuf.StringValue sub_category = 10;
+}

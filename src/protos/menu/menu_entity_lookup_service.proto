@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package menu.entityresolution.v1;
+
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/menu/entityresolution/v1/grpc";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.menu.entityresolution.v1.grpc";
+
+// api to search for linked menu entities
+service EntityLookupService {
+  // return item_dags that exists in the target store_id and menu_id
+  // and are equivalent to the input item_dag within the business
+  rpc GetRelatedItems(GetRelatedItemsRequest) returns (GetRelatedItemsResponse);
+
+  // return list of entity_ids that match the input store_id and entity_id
+  rpc GetRelatedEntities(GetRelatedEntitiesRequest) returns (GetRelatedEntitiesResponse);
+}
+
+// Adjacency list representation of graph
+message ItemDAG {
+  // container for list of entities, each node in the item dag
+  message Nodes {
+    // list of entity nodes
+    repeated string node_id = 1;
+  }
+  // root node of item dag
+  string root_item_id = 1;
+  // directed edges: connections[from] = to_nodes
+  map<string, Nodes> connections = 2;
+}
+
+// single item_dag lookup
+message ItemLookupRequest {
+  // item dag
+  ItemDAG input_item = 1;
+  // store that contained item
+  string store_id = 2;
+  // menu that contained item - optional
+  google.protobuf.StringValue menu_id = 3;
+}
+
+// single item_dag response
+message ItemLookupResponse {
+  // input item_dag
+  ItemLookupRequest lookup_request = 1;
+  // equivalent item_dags within the business
+  // empty list = no equivalent item_dags found
+  repeated ItemDAG related_item_dags = 2;
+}
+
+// request to find equivalent item dag in target store_id and menu_id
+message GetRelatedItemsRequest {
+  // target store_id
+  string target_store_id = 1;
+  // target menu_id
+  string target_menu_id = 2;
+  // input items to find equivalents
+  repeated ItemLookupRequest lookup_requests = 3;
+}
+
+// response with equivalent item_dags
+message GetRelatedItemsResponse {
+  // set of responses
+  repeated ItemLookupResponse lookup_responses = 1;
+}
+
+// sort order for related entities
+enum SortOrder {
+  // Unspecified sort order
+  SORT_ORDER_UNSPECIFIED = 0;
+  // Descending order
+  SORT_ORDER_DESC = 1;
+  // Ascending order
+  SORT_ORDER_ASC = 2;
+}
+
+// individual store_id and entity_id request
+message EntityRequest {
+  // RequestParameters are the parameters for the request
+  message RequestParameters {
+    // entity_id within the store
+    string entity_id = 1;
+
+    // (optional): limit the number of related entities to return (server side will have an upper limit)
+    google.protobuf.Int32Value limit = 2;
+    // (optional): entity_id to start search results from (exclusive)
+    string entity_id_start_excluded = 3;
+  }
+  // store_id
+  string store_id = 1;
+
+  // list of RequestParameters for the store
+  repeated RequestParameters request_parameters = 2;
+}
+
+// request to find related entities from list of store_id and entity_ids
+message GetRelatedEntitiesRequest {
+  reserved 1, 2, 4;
+  reserved "store_entities", "limit", "entity_id_start_excluded";
+  // list of target entities
+  repeated EntityRequest target_entities = 5;
+  // (optional): sort order of related entities by entity_id (default: desc)
+  SortOrder sort_order = 3;
+}
+
+// entities related to the input store_id and entity_id
+message RelatedEntities {
+  // store_id
+  string store_id = 1;
+  // entity_id in the request
+  string entity_id = 2;
+
+  // entity_ids within the store
+  repeated string related_entity_ids = 3;
+
+  // entity_id to start search results from (exclusive)
+  string cursor = 4;
+}
+
+// response with related entity_ids
+message GetRelatedEntitiesResponse {
+  reserved 1, 2;
+  reserved "estimated_count", "related_store_entities";
+  // list of RelatedEntities with related entity_ids
+  repeated RelatedEntities related_entities = 3;
+
+  // list of entity ids that failed to be fetched
+  repeated string failed_entity_ids = 4;
+}

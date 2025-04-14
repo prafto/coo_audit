@@ -1,0 +1,420 @@
+syntax = "proto3";
+package dasher_app_platform.onadash.v1;
+
+import "action-catalog/dx/dap/navigate.proto";
+import "common/service_client_config.proto";
+import "component-catalog.common/prism/shared/icon.proto";
+import "component-catalog.common/prism/tokens/color.proto";
+import "dasher_fulfillment/common/foundry_tracing.proto";
+import "dasher_fulfillment/screen.proto";
+import "dasher_fulfillment/workflow/workflow.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/client.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lego.response/lego_response.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher_app_platform.onadash";
+
+// Service definition for dasher fulfillment OnADashService
+service OnADashService {
+  option (doordash.api.service) = {
+    name: "dasher-fulfillment-onadash-service"
+    url: "dasher-fulfillment-web-tier0.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["onadash"]
+    api_key_name: "DASHER-FULFILLMENT-API-KEY"
+    owner: {
+      name: "dasher-app-platform-team"
+      id: "dasher-app-platform-team"
+      slack_channel: "#ask-dx-app-platform"
+      email_alias: "dasher-app-platform@doordash.com"
+    }
+    target_products: [DX]
+  };
+  option (service_client.client_config).response_attempt_timeout_millis = 10000;
+  // Service name
+  option (service_client.client_config).service_name = "onadash-service";
+  // Polling API for OnADash
+  rpc PollOnADash(PollOnADashRequest) returns (PollOnADashResponse) {
+    option (google.api.http) = {
+      post: "/onadash/v1/steps",
+      body: "onadash_parameters"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // Complete a OnADash screen step
+  rpc CompleteOnADashStep(CompleteOnADashStepRequest) returns (PollOnADashResponse) {
+    option (google.api.http) = {
+      post: "/onadash/v1/steps/complete",
+      body: "onadash_parameters"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // Unassign a task group
+  rpc UnassignOnADashTaskGroups(UnassignOnADashTaskGroupsRequest) returns (PollOnADashResponse) {
+    option (google.api.http) = {
+      post: "/onadash/v1/steps/unassign",
+      body: "onadash_parameters"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+    };
+  }
+
+  // Activate a task group to switch tasks
+  rpc ActivateOnADashTaskGroups(ActivateOnADashTaskGroupsRequest) returns (PollOnADashResponse) {
+    option (google.api.http) = {
+      post: "/onadash/v1/steps/activate",
+      body: "onadash_parameters"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+    };
+  }
+
+  // Fetch the map data for task agenda UI
+  rpc FetchMapData(FetchMapDataRequest) returns (FetchMapDataResponse) {
+    option (google.api.http) = {get: "/onadash/v1/map/fetch"};
+
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+    };
+  }
+
+  // Update the delivery attempt status
+  rpc UpdateAttemptState(UpdateAttemptStateRequest) returns (PollOnADashResponse) {
+    option (google.api.http) = {
+      post: "/onadash/v1/steps/update_attempt",
+      body: "onadash_parameters"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DX_USER]
+      target_products: [DX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+}
+
+// OnADash request
+message PollOnADashRequest {
+  // The version of onadash polling request
+  string version = 1;
+  // dasher id as context
+  int64 dasher_id = 2;
+  // dasher id as context
+  int64 shift_id = 3;
+  // sync_token
+  string sync_token = 4;
+  // Metadata used for rendering screens
+  google.protobuf.Struct onadash_parameters = 5;
+}
+
+// OnADash response
+message PollOnADashResponse {
+  reserved 5, 6;
+  reserved "active_screens", "updated_screens";
+  // UUID for the OnADash generated
+  string id = 1;
+  // onadash version
+  string version = 2;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 3;
+  // sync_token returned from the server
+  string sync_token = 4;
+  // all active core step ids
+  repeated string active_steps = 7;
+  // The updated core screen in onadash since last checkpoint. Have 1:1 relationship with task service steps
+  repeated OnADashCoreScreens updated_steps = 8;
+  // The updated tasks for task agenda
+  repeated TaskAgendaTask updated_tasks = 9;
+  // Assigned tasks for the current session
+  repeated string assigned_tasks = 10;
+}
+
+// Task agenda item
+message TaskAgendaTask {
+  // Unique identifier for the task
+  string id = 1;
+  // The type of task (e.g., "task" or "group")
+  TaskType type = 2;
+  // The title of the task, for display purposes
+  string title = 3;
+  // The subtitle of the task, including any relevant details such as deadline or location
+  string subtitle = 4;
+  // Icon details associated with the task
+  component_catalog.common.prism.shared.v1.Icon icon = 5;
+  // Text that can be copied by the user, typically an address or reference
+  string copyable_text = 6;
+  // Indicator of whether the task can be activated by the user
+  bool can_activate = 7;
+  // List of subtasks if the task is a group, only when type is GROUP
+  repeated TaskAgendaTask tasks = 8;
+  // The type of task detail (e.g. "to_be_delivered" or "regular")
+  TaskDetailType task_detail_type = 9 [(doordash.api.validate.rules).missing_value = {action: IGNORE}];
+}
+
+// Enum for task types
+enum TaskType {
+  // Unspecified task type
+  TASK_TYPE_UNSPECIFIED = 0;
+  // Task type for a single task
+  TASK_TYPE_TASK = 1;
+  // Task type for a group of tasks
+  TASK_TYPE_GROUP = 2;
+}
+
+// Enum for task types
+enum TaskDetailType {
+  // Unspecified task detail type
+  TASK_DETAIL_TYPE_UNSPECIFIED = 0;
+  // Task detail type for regular task
+  TASK_DETAIL_TYPE_REGULAR = 1;
+  // Task detail type for a task planned to be returned
+  TASK_DETAIL_TYPE_TO_BE_RETURNED = 2;
+  // Task detail type for a task planned to be redelivered
+  TASK_DETAIL_TYPE_TO_BE_REDELIVERED = 3;
+}
+
+// OnADash core screen
+message OnADashCoreScreens {
+  // The version of onadash polling request
+  string version = 1;
+  // timestamp for the screen
+  google.protobuf.Timestamp created_at = 2;
+  // screen id
+  string id = 3;
+  // screen type
+  string type = 4;
+  // metadata of the screen
+  OnADashScreenResponseMetadata metadata = 5;
+  // screen content
+  CoreScreenContent content = 6;
+  // Associated task-related ids for the step.
+  repeated AssociatedIdMetadata associated_ids = 7;
+}
+
+// Associated id information for the step. Including task_group_id and offer_id
+message AssociatedIdMetadata {
+  // The task_group_id within the step
+  string task_group_id = 1;
+  // The offer_id associated to the task_group
+  string offer_id = 2;
+  // The offer_type associated to the delivery or task_group
+  string offer_type = 4;
+  // a unified id e.g delivery_uuid=abc;task_group_id=123;offer_id=def;etc=foo;
+  string id = 5;
+}
+
+// OnADash screen response content
+message CoreScreenContent {
+  // The core screen content
+  dasher_app_platform.workflow.v1.GetWorkflowResponse workflow = 1;
+  // Native page content
+  google.protobuf.Struct native_screen = 2;
+}
+
+// Metadata of the response workflow
+message OnADashScreenResponseMetadata {
+  reserved 2;
+  reserved "task_group_ids";
+  // Show earnings summary or not
+  bool show_earnings_summary = 1;
+  // delivery metadata
+  DeliveryMetadata delivery_metadata = 3;
+  // Tracing context for the onadash step
+  dasher_app_platform.tracing.v1.FoundryTracingContext tracing_info = 4;
+}
+
+// Delivery metadata
+message DeliveryMetadata {
+  // The delivery uuid
+  repeated string delivery_uuids = 1;
+}
+
+// Complete a OnADash screen step request
+message CompleteOnADashStepRequest {
+  // The shift id of the task
+  string shift_id = 1;
+  // The step id to complete
+  string step_id = 2;
+  // The version of onadash polling request
+  string version = 3;
+  // sync_token
+  string sync_token = 4;
+  // dasher id as context
+  int64 dasher_id = 5;
+  // Metadata used for rendering screens
+  google.protobuf.Struct onadash_parameters = 6;
+  // Dasher's Latitude
+  double lat = 7;
+  // Dasher's Longitude
+  double lng = 8;
+}
+
+// Unassign a task group request
+message UnassignOnADashTaskGroupsRequest {
+  // The shift id of the task
+  string shift_id = 1;
+  // The task group ids to unassign
+  repeated string task_group_id = 2;
+  // The version of onadash polling request
+  string version = 3;
+  // sync_token
+  string sync_token = 4;
+  // dasher id as context
+  int64 dasher_id = 5;
+  // Metadata used for rendering screens
+  google.protobuf.Struct onadash_parameters = 6;
+  // reason for unassigning the screen
+  string reason = 7;
+}
+
+// Activate a task group to switch tasks request
+message ActivateOnADashTaskGroupsRequest {
+  // The id of the task agenda task to activate
+  string id = 1;
+  // The version of onadash polling request
+  string version = 2;
+  // sync_token
+  string sync_token = 3;
+  // dasher id as context
+  int64 dasher_id = 4;
+  // Metadata used for rendering screens
+  google.protobuf.Struct onadash_parameters = 5;
+  // The shift id of the task
+  string shift_id = 6;
+}
+
+// Fetch map data request
+message FetchMapDataRequest {
+  // The version of onadash polling request
+  string version = 1;
+  // dasher id as context
+  int64 dasher_id = 2;
+  // dasher id as context
+  int64 shift_id = 3;
+  // location of the dasher: lat
+  double lat = 4;
+  // location of the dasher: lng
+  double lng = 5;
+}
+
+// Fetch map data response
+message FetchMapDataResponse {
+  // Polylines for the map
+  repeated Polylines polylines = 1;
+  // Markers for the map
+  repeated Markers markers = 2;
+}
+
+// Polylines for the map
+message Polylines {
+  // The polyline path
+  string path = 1;
+  // The color of the polyline
+  component_catalog.common.prism.tokens.v1.Color line_color = 2;
+}
+
+// Markers for the map
+message Markers {
+  // The task id for the marker
+  string task_id = 1;
+  // the coordinate of the marker
+  Coordinate coordinate = 2;
+  // The icon for the marker
+  component_catalog.common.prism.shared.v1.Icon icon = 3;
+  // The color of the marker
+  component_catalog.common.prism.tokens.v1.Color marker_color = 4;
+}
+
+// Coordinate for the marker
+message Coordinate {
+  // The latitude of the marker
+  double latitude = 1;
+  // The longitude of the marker
+  double longitude = 2;
+}
+
+// Update the attempt state request
+message UpdateAttemptStateRequest {
+  // Array of delivery UUIDs (not required if id exists)
+  repeated string delivery_uuids = 1;
+  // The shift id of the request
+  string shift_id = 2;
+  // The version of OnADash
+  string version = 3;
+  // sync_token
+  string sync_token = 4;
+  // reason for being undelivered
+  string undelivered_reason = 5;
+  // The state of the attempt (e.g. "TO_BE_REDELIVERED" or "TO_BE_RETURNED" or "REDELIVERY_IN_PROGRESS")
+  AttemptStateType attempt_state = 6;
+  // OnADash parameters as context
+  google.protobuf.Struct onadash_parameters = 7;
+  // The id of the task agenda task to activate (when called from task agenda)
+  // not required if id delivery_uuids
+  string id = 8;
+}
+
+// Enum for state type
+enum AttemptStateType {
+  // The state is unspecified
+  ATTEMPT_STATE_TYPE_UNSPECIFIED = 0;
+  // The delivery is set to be redelivered
+  ATTEMPT_STATE_TYPE_TO_BE_REDELIVERED = 1;
+  // The delivery is set to be returned
+  ATTEMPT_STATE_TYPE_TO_BE_RETURNED = 2;
+  // The redelivery is in progress
+  ATTEMPT_STATE_TYPE_REDELIVERY_IN_PROGRESS = 3;
+}

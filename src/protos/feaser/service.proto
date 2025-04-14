@@ -1,0 +1,179 @@
+syntax = "proto3";
+
+package feaser.v1;
+
+import "common/service_client_config.proto";
+import "sibyl_prediction_service/prediction.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.feaser";
+
+// Service for feature serving
+service FeaserService {
+  // The following applies for all RPCs in the service, if not overridden on individual RPCs.
+
+  // Declare the name of service for Hermes clients
+  option (service_client.client_config).service_name = "feaser";
+  // Timeout for a response in milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 200;
+  // Makes a total n attempts (initial + n -1 retries).
+  option (service_client.client_config).retry_config.max_attempts = 2;
+  // Break the circuit if the error rate exceeds x%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.01;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 3;
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Readiness check
+  rpc GetReadiness(FeaserServiceGetReadinessRequest) returns (FeaserServiceGetReadinessResponse);
+  // Core endpoint to get feature values
+  rpc GetFeatureValues(GetFeatureValuesRequest) returns (GetFeatureValuesResponse);
+  // Core endpoint to get signal values
+  rpc GetSignalValues(GetSignalValuesRequest) returns (GetSignalValuesResponse);
+}
+
+// Readiness check request container
+message FeaserServiceGetReadinessRequest {}
+
+// Readiness check response container
+message FeaserServiceGetReadinessResponse {
+  // true when service is ready
+  bool ready = 1;
+}
+
+// Request for a batch of feature values
+message GetFeatureValuesRequest {
+  // Batch of feature value requests
+  repeated FeatureValuePbRequest request_set = 1;
+  // Information on caller and use-case
+  RequestContext request_context = 2;
+}
+
+// Request for a feature value
+message FeatureValuePbRequest {
+  // Name of feature
+  string feature_name = 1;
+  // Entities involved to resolve this feature
+  repeated Entity entities = 2;
+}
+
+// Type of signal data type
+enum DataType {
+  // unspecified
+  DATA_TYPE_UNSPECIFIED = 0;
+  // float type
+  DATA_TYPE_FLOAT = 1;
+  // int type
+  DATA_TYPE_INT = 2;
+  // string type
+  DATA_TYPE_STRING = 3;
+}
+
+// Type of signals
+enum SignalType {
+  // unspeficied
+  SIGNAL_TYPE_UNSPECIFIED = 0;
+  // Aggregated type
+  SIGNAL_TYPE_AGGREGATED = 1;
+  // Signal time series
+  SIGNAL_TYPE_TIME_SERIES = 2;
+}
+
+// Signal window type
+enum WindowType {
+  // unspeficied
+  WINDOW_TYPE_UNSPECIFIED = 0;
+  // For minut aggregation
+  WINDOW_TYPE_MINUTE = 1;
+  // For hour aggregation
+  WINDOW_TYPE_HOUR = 2;
+  // For day aggreagtion
+  WINDOW_TYPE_DAY = 3;
+  // For year aggregation
+  WINDOW_TYPE_YEAR = 4;
+}
+
+// Request for a batch of signal values
+message GetSignalValuesRequest {
+  // Batch of Signal value requests
+  repeated SignalValuePbRequest request_set = 1;
+  // Information on caller and use-case
+  RequestContext request_context = 2;
+}
+
+// Request for a signal value
+message SignalValuePbRequest {
+  // Name of signal
+  string signal_name = 1;
+  // Type of signal
+  SignalType signal_type = 2;
+  // Type of window
+  WindowType window_type = 3;
+  // window size
+  int32 window_size = 4;
+  // Entities involved to resolve this feature
+  repeated Entity entities = 5;
+  // Signal data type
+  DataType data_type = 6;
+}
+
+// Entity definition
+message Entity {
+  // Name of the entity such as store_id, consumer_id, etc
+  string entity_name = 1;
+  // id values as string, ex: 10120
+  string id_value = 2;
+}
+
+// Feature value container
+message FeatureValuePb {
+  // Value container for different feature types.
+  oneof value {
+    // numerical
+    float numerical_value = 1;
+    // categorical int
+    int32 categorical_value_int = 2;
+    // categorical string
+    string categorical_value_str = 3;
+    // vector embedding
+    Embedding embedding_value = 4;
+    // list of ints
+    Int64List int64_list_value = 5;
+    // list of floats
+    FloatList float_list_value = 6;
+    // string
+    string string_value = 7;
+  }
+}
+
+// Put all possible result code for feaser here
+enum FeaserResultCode {
+  // Default (enforced by lint practices
+  // https://developers.google.com/protocol-buffers/docs/style#enums)
+  FEASER_RESULT_CODE_UNSPECIFIED = 0;
+  // Ok
+  FEASER_RESULT_CODE_SUCCESS = 1;
+  // deadline exceeded
+  FEASER_RESULT_CODE_TIMEOUT = 2;
+  // internal server error
+  FEASER_RESULT_CODE_INTERNAL = 3;
+}
+
+// Feature value response
+// Returns feature values in the order in which features were requested
+message GetFeatureValuesResponse {
+  // respones status code
+  FeaserResultCode result_code = 1;
+  // list of values in the order of requested features
+  repeated FeatureValuePb values = 2;
+}
+
+// Signal value response
+// Returns signal values in the order in which signals were requested
+message GetSignalValuesResponse {
+  // respones status code
+  FeaserResultCode result_code = 1;
+  // list of values in the order of requested features
+  repeated FeatureValuePb values = 2;
+}

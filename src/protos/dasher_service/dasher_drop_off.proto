@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package dasher_service.dasher_drop_off.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.dasher_drop_off";
+
+// service to handle dasher drop off related experiences
+service DasherDropOffService {
+  option (service_client.client_config).service_name = "dasher-service";
+  option (service_client.client_config).service_app = "dasher";
+
+  // Request to retrieve the list of options, if any, to help dashers deal with not being allowed to drop off their delivery.
+  // See https://docs.google.com/document/d/1k1Jhah_xVmSroKRHcnTeKR24TNyyOAJbuO2CRK5Yl6I/edit for more details
+  rpc GetDasherDropOffHelpOptions(GetDasherDropOffHelpOptionsRequest) returns (GetDasherDropOffHelpOptionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+
+  // Stores the action that the dasher took, from the drop off help menu
+  rpc SaveDasherDropOffHelpAction(SaveDasherDropOffHelpActionRequest) returns (SaveDasherDropOffHelpActionResponse) {}
+}
+
+// Request object for saving the action that the Dasher took to exit the Drop Off Help Menu
+message SaveDasherDropOffHelpActionRequest {
+  // the id of the dasher
+  // REQUIRED
+  google.protobuf.Int32Value dasher_id = 1;
+  // the uuid of the delivery they're trying to drop off
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 2;
+  // the id of the Drop Off Help Option that the Dx clicked on (e.g. "Can't find Customer Location")
+  // REQUIRED
+  google.protobuf.Int32Value help_option_id = 3;
+  // the id of the Drop Off Help Action that the Dx took (e.g. "Call Dasher Support")
+  // REQUIRED
+  google.protobuf.Int32Value help_action_id = 4;
+}
+
+// Empty for now
+message SaveDasherDropOffHelpActionResponse {}
+
+// Request object for getting the list of drop off help options available to the dasher for bypassing the given delivery
+message GetDasherDropOffHelpOptionsRequest {
+  // the id of the dasher
+  // REQUIRED
+  google.protobuf.Int32Value dasher_id = 1;
+  // the uuid of the delivery they're trying to drop off
+  // REQUIRED
+  google.protobuf.StringValue delivery_uuid = 2;
+  // whether or not the dasher was allowed to drop off; determined by Assignment Service currently
+  // REQUIRED
+  google.protobuf.BoolValue drop_off_allowed = 3;
+  // Dasher's straight line distance, in meters, from the drop off point
+  // REQUIRED
+  google.protobuf.DoubleValue drop_off_distance_meters = 4;
+  // the max drop off distance, in meters, allowed for this delivery
+  // REQUIRED
+  google.protobuf.DoubleValue drop_off_distance_limit_meters = 5;
+  // the Cx selected drop off method for the delivery
+  // REQUIRED
+  DropOffMethod drop_off_method = 6;
+}
+
+// See https://docs.google.com/document/d/1kDcVyhbZ_rTNuT0W0Ts__W2TeUNquw4cZRWNLo34sGg/edit# for more details
+message GetDasherDropOffHelpOptionsResponse {
+  // the menu groups for this response, each containing a set of options
+  // Could be empty!
+  repeated DropOffHelpGroup help_option_groups = 1;
+}
+
+// A group of drop off help options, with a title text to group them
+message DropOffHelpGroup {
+  // The title text to display over this group of options
+  // NOT NULLABLE
+  google.protobuf.StringValue group_title = 1;
+  // The help options that belong to this group
+  // Will not be empty
+  repeated DropOffHelpOption help_options = 2;
+}
+
+// Represents a help option, which include both its text in the menu view, and also as a focused bottom sheet when the menu option is clicked
+message DropOffHelpOption {
+  // the id of this option
+  // NOT NULLABLE
+  google.protobuf.Int32Value id = 1;
+  // the type of this option
+  // NOT NULLABLE
+  DropOffHelpOptionType type = 2;
+  // the text of this option when shown as a menu item
+  // NOT NULLABLE
+  google.protobuf.StringValue menu_text = 3;
+  // the title text of the bottom sheet that shows when user clicks on the menu item
+  // NOT NULLABLE
+  google.protobuf.StringValue details_title = 4;
+  // the body text of the bottom sheet that shows when user clicks on the menu item
+  // NULLABLE
+  google.protobuf.StringValue details_text = 5;
+  // list of actions that are available for this option
+  // CAN BE EMPTY
+  repeated DropOffHelpAction actions = 6;
+}
+
+// Represents the type of a help option
+enum DropOffHelpOptionType {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_OPTION_TYPE_UNSPECIFIED = 0;
+  // an option that specifies contacting customer
+  DROP_OFF_HELP_OPTION_TYPE_CONTACT_CUSTOMER = 1;
+  // an option that specifies contacting support
+  DROP_OFF_HELP_OPTION_TYPE_CONTACT_SUPPORT = 2;
+  // an option that allows dasher to the next step of the dropoff flow
+  DROP_OFF_HELP_OPTION_TYPE_CONTINUE_TO_COMPLETE_DELIVERY = 3;
+}
+
+// Represents a button action that Dashers can click to go to the next step in the process. Includes how the button is displayed.
+message DropOffHelpAction {
+  // the id of this action
+  // NOT NULLABLE
+  google.protobuf.Int32Value id = 1;
+  // the type of this option
+  // NOT NULLABLE
+  DropOffHelpActionType type = 2;
+  // the button text for this action
+  // NOT NULLABLE
+  google.protobuf.StringValue display_text = 3;
+  // the visual style for the button of this action
+  // NOT NULLABLE
+  DropOffHelpActionStyle style = 4;
+}
+
+// Represents the type of the action
+enum DropOffHelpActionType {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_ACTION_TYPE_UNSPECIFIED = 0;
+  // An action button that just lets the Dasher bypass to the next step
+  DROP_OFF_HELP_ACTION_TYPE_CONTINUE_DELIVERY = 1;
+  // An action button that initiates support text chat flow
+  DROP_OFF_HELP_ACTION_TYPE_SUPPORT_CHAT = 2;
+  // An action button that starts a phone call with support agents
+  DROP_OFF_HELP_ACTION_TYPE_SUPPORT_CALL = 3;
+  // An action button that starts the contactless abandon delivery flow
+  DROP_OFF_HELP_ACTION_TYPE_ABANDON_CONTACTLESS_DELIVERY = 4;
+  // An action button that starts the HITM customer unavailable flow
+  DROP_OFF_HELP_ACTION_TYPE_CUSTOMER_UNAVAILABLE = 5;
+  // An action button that will simply close the flow
+  DROP_OFF_HELP_ACTION_TYPE_CLOSE = 6;
+}
+
+// Identifies how the action button should be displayed in the UI.
+enum DropOffHelpActionStyle {
+  // Required as per proto3 rules
+  DROP_OFF_HELP_ACTION_STYLE_UNSPECIFIED = 0;
+  // By default, display this style as red
+  DROP_OFF_HELP_ACTION_STYLE_PRIMARY = 1;
+  // By default, display this style as gray
+  DROP_OFF_HELP_ACTION_STYLE_SECONDARY = 2;
+  // By default, display this style with an X
+  DROP_OFF_HELP_ACTION_STYLE_CANCEL = 3;
+}
+
+// Represents the supported drop off methods for generating help options
+enum DropOffMethod {
+  // Required as per proto3 rules
+  // The default value will be treated as DROP_OFF_METHOD_CONTACTLESS
+  DROP_OFF_METHOD_UNSPECIFIED = 0;
+  // Cx delivery preference to get the order delivered directly to them
+  DROP_OFF_METHOD_HAND_IT_TO_ME = 1;
+  // Cx delivery preference to get the order delivered with no contact
+  DROP_OFF_METHOD_CONTACTLESS = 2;
+}

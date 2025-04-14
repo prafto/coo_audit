@@ -1,0 +1,405 @@
+syntax = "proto3";
+
+package doordash.payin.cart_payment.v1;
+
+import "common/money.proto";
+import "common/payin.proto";
+import "common/service_client_config.proto";
+import "data_classification.v1/data_classification.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/cart_payment_v1.proto";
+import "payin/common_v1.proto";
+import "payin/payer_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/cart_payment/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payin.cart_payment.v1";
+
+// Cart Payment Service responsible for transaction
+service CartPaymentV1Service {
+  option (doordash.api.service) = {
+    name: "payin-platform-cart-payment.service"
+    url: "payin-platform-cart-payment.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["payin-platform"]
+    // api_key_name should follow a format similar to
+    api_key_name: "PAYIN_PLATFORM_API_KEY"
+    owner: {
+      name: "payment"
+      id: "payment-platform"
+      slack_channel: "#ask-eng-payin"
+      email_alias: "eng-payment@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // Service info
+  option (service_client.client_config).service_name = "payin-platform";
+  option (service_client.client_config).service_app = "cart-payment";
+  // Retry config
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 20;
+  // Circuit Breaker config
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 30;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 15000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 2000;
+
+  // CreateCartPaymentV1
+  rpc CreateCartPaymentV1(CreateCartPaymentV1Request) returns (CreateCartPaymentV1Response);
+  // UpdateCartPaymentV1
+  rpc UpdateCartPaymentV1(UpdateCartPaymentV1Request) returns (UpdateCartPaymentV1Response);
+  // ConfirmCartPaymentV1
+  rpc ConfirmCartPaymentV1(ConfirmCartPaymentV1Request) returns (ConfirmCartPaymentV1Response);
+  // AdjustConsumerChargeV1
+  rpc AdjustConsumerChargeV1(AdjustConsumerChargeV1Request) returns (AdjustConsumerChargeV1Response);
+  // CancelCartPaymentV1
+  rpc CancelCartPaymentV1(CancelCartPaymentV1Request) returns (CancelCartPaymentV1Response);
+  // CancelCartPaymentByReferenceIdV1
+  rpc CancelCartPaymentByReferenceIdV1(CancelCartPaymentByReferenceIdV1Request) returns (CancelCartPaymentByReferenceIdV1Response);
+  // ListCartPaymentsV1
+  rpc ListCartPaymentsV1(ListCartPaymentsV1Request) returns (ListCartPaymentsV1Response);
+  // GetCartPaymentV1
+  rpc GetCartPaymentV1(GetCartPaymentV1Request) returns (GetCartPaymentV1Response);
+  // SwitchPaymentMethodV1
+  rpc SwitchPaymentMethodV1(SwitchPaymentMethodV1Request) returns (SwitchPaymentMethodV1Response);
+
+  // SwitchPaymentMethod
+  rpc SwitchPaymentMethodV2(SwitchPaymentMethodV2Request) returns (SwitchPaymentMethodV2Response) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/payin-platform/v2/switch-payment-method"
+
+      // Needed for post, patch, put methods. Omit for others.
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // ValidateSwitchPaymentMethod
+  rpc ValidateSwitchPaymentMethod(ValidateSwitchPaymentMethodRequest) returns (ValidateSwitchPaymentMethodResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/payin-platform/v2/validate-switch-payment-method"
+
+      // Needed for post, patch, put methods. Omit for others.
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // CapturePaymentV1: Allows to capture a payment through either cart payment id or payment intent id
+  rpc CapturePaymentV1(CapturePaymentV1Request) returns (CapturePaymentV1Response);
+
+  // List payment history details for a list of correlation ids
+  rpc ListPaymentHistoryV1(ListPaymentHistoryV1Request) returns (ListPaymentHistoryV1Response);
+}
+
+// CreateCartPaymentV1Request
+message CreateCartPaymentV1Request {
+  // client provided payer correlation id used to identify a payer
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+  // id of payment method used for this payment
+  google.protobuf.StringValue payment_method_id = 2;
+  // one-time payment method token issued by payment gateway
+  doordash.payin.common.v1.PaymentMethodToken payment_method_token = 3;
+  // id of legacy stripe card as payment method
+  google.protobuf.Int64Value dd_stripe_card_id = 4;
+  // client description of this payment
+  google.protobuf.StringValue client_description = 5;
+  // client provided correlation ids of this payment
+  doordash.payin.cart_payment.v1.CorrelationIds correlation_ids = 6;
+  // metadata of this payment to be persisted in payment system
+  map<string, string> metadata = 7;
+  // amount of this payment, should be positive number
+  google.protobuf.Int64Value amount = 8;
+  // country of this payment
+  doordash.payin.common.v1.Country payment_country = 9;
+  // payment currency
+  doordash.payin.common.v1.Currency currency = 10;
+  // whether create this payment with separate auth and capture; always true
+  google.protobuf.BoolValue delay_capture = 11;
+  // client should retry with same idempotency key to avoid double charge
+  google.protobuf.StringValue idempotency_key = 12;
+  // payer's bank statement description
+  google.protobuf.StringValue payer_statement_description = 13;
+  // define if the payment funds need to flow separately to DoorDash account and Mx account
+  doordash.payin.cart_payment.v1.SplitPayment split_payment = 14;
+  // Purchase metadata used by payment service to drive internal behaviors when creating a cart payment
+  doordash.payin.cart_payment.v1.PurchaseInfo purchase_info = 15;
+  // If 3DS flow should be invoked for the cart payment to create
+  google.protobuf.BoolValue three_d_secure_requested = 16;
+  // Pre-provider based fraud context
+  money.ClientFraudContext client_fraud_context = 17;
+  // Information about the selected payment method during checkout.
+  // Used to especially be able to distinguish usage of digital wallet (apple/google pay, cash app, venmo, ...)
+  //
+  // We will validate this against the payment method information passed in as other parameters in this request.
+  // The goal is to ensure that the payment method information passed in is consistent with the selected payment method
+  // so that upstream dependencies can trust this information.
+  // If one of the fields are omitted, we will skip the validation for it.
+  .payin.v1.PaymentContext payment_context = 18;
+}
+
+// CreateCartPaymentV1Response
+message CreateCartPaymentV1Response {
+  // cart payment response
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// SwitchPaymentMethodRequest
+message SwitchPaymentMethodV1Request {
+  // cart_payment_id
+  google.protobuf.StringValue cart_payment_id = 1;
+  // cart_payment_request
+  CartPaymentUpdateData cart_payment_update_data = 2;
+
+  // Context information on the order to be used by workflow activities such as sending emails
+  message OrderContext {
+    // order_uuid of the order to switch payments for
+    google.protobuf.StringValue order_uuid = 1;
+    // Deprecated - merchant_name of the order to switch payments for
+    google.protobuf.StringValue merchant_name = 2 [deprecated = true];
+    // Deprecated - created_at timestamp of the order to switch payments for
+    google.protobuf.Timestamp created_at = 3 [deprecated = true];
+  }
+  // Context information on the order to be used by workflow activities such as sending emails
+  OrderContext order_context = 3;
+
+  // Context information on the consumer to be used by workflow activities such as sending emails
+  // This is only used by the TX flow
+  message ConsumerContext {
+    // first_name
+    google.protobuf.StringValue first_name = 1;
+    // last_name
+    google.protobuf.StringValue last_name = 2;
+    // locale
+    google.protobuf.StringValue locale = 3;
+    // email
+    google.protobuf.StringValue email = 4 [(data_classification.v1.data_classification).pii = true];
+    // consumer_id
+    google.protobuf.StringValue consumer_id = 5;
+  }
+  // consumer_context on the order to switch payment for
+  ConsumerContext consumer_context = 4;
+}
+
+// SwitchPaymentMethodV1Response
+message SwitchPaymentMethodV1Response {
+  // updated cart payment response
+  UpdateCartPaymentV1Response update_cart_payment_v1_response = 1;
+}
+
+// SwitchPaymentMethodV2Request
+message SwitchPaymentMethodV2Request {
+  // cart_payment_request
+  CartPaymentUpdateData cart_payment_update_data = 1;
+
+  // Order uuid
+  google.protobuf.StringValue order_uuid = 2;
+
+  // The consumer id of the request - this will be injected by unified gateway
+  google.protobuf.StringValue consumer_id = 3 [(doordash.api.inject_id) = CX_ID];
+}
+
+// SwitchPaymentMethodV2Response
+message SwitchPaymentMethodV2Response {
+  // Whether the request was successful
+  google.protobuf.BoolValue is_success = 1;
+}
+
+// Used by clients to validate order is eligible for switch PM
+message ValidateSwitchPaymentMethodRequest {
+  // The same request for SwitchPaymentMethodRequest
+  SwitchPaymentMethodV1Request switch_payment_method_v1_request = 1 [deprecated = true];
+  // The consumer id of the request - this will be injected by unified gateway
+  google.protobuf.StringValue consumer_id = 2 [(doordash.api.inject_id) = CX_ID];
+  // The same request for SwitchPaymentMethodV2Request
+  SwitchPaymentMethodV2Request switch_payment_method_v2_request = 3;
+}
+
+// ValidateSwitchPaymentMethodResponse - validation errors will be thrown if order is not eligible
+message ValidateSwitchPaymentMethodResponse {
+  // Should always return true if a response is returned
+  google.protobuf.BoolValue is_validated = 1;
+}
+
+// CartPaymentUpdateData
+message CartPaymentUpdateData {
+  // refund reason
+  google.protobuf.StringValue refund_reason = 1;
+  // idempotency_key
+  google.protobuf.StringValue idempotency_key = 2;
+  // amount
+  google.protobuf.Int64Value amount = 3;
+  // amount_delta
+  google.protobuf.Int64Value amount_delta = 4;
+  // client description
+  google.protobuf.StringValue client_description = 5;
+  // split_payment
+  doordash.payin.cart_payment.v1.SplitPayment split_payment = 6;
+  // alternative_payment_method used by switch payment method
+  doordash.payin.cart_payment.v1.AlternativePaymentMethod alternative_payment_method = 7;
+}
+
+// UpdateCartPaymentV1Request
+message UpdateCartPaymentV1Request {
+  // cart_payment_id
+  google.protobuf.StringValue cart_payment_id = 1;
+  // cart_payment_request
+  CartPaymentUpdateData cart_payment_update_data = 2;
+}
+
+// UpdateCartPaymentV1Response
+message UpdateCartPaymentV1Response {
+  // updated cart payment response
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// ConfirmCartPaymentV1Request
+message ConfirmCartPaymentV1Request {
+  // cart_payment_id
+  google.protobuf.StringValue cart_payment_id = 1;
+}
+
+// ConfirmCartPaymentV1Response
+message ConfirmCartPaymentV1Response {
+  // cart payment response
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// AdjustConsumerChargeV1Request
+message AdjustConsumerChargeV1Request {
+  // dd_consumer_charge_id
+  google.protobuf.Int64Value dd_consumer_charge_id = 1;
+  // cart_payment_request
+  CartPaymentUpdateData cart_payment_update_data = 2;
+}
+
+// AdjustConsumerChargeV1Response
+message AdjustConsumerChargeV1Response {
+  // cart_payment
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// CancelCartPaymentV1Request
+message CancelCartPaymentV1Request {
+  // cart_payment_id
+  google.protobuf.StringValue cart_payment_id = 1;
+}
+
+// CancelCartPaymentV1Response
+message CancelCartPaymentV1Response {
+  // cart_payment
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// CancelCartPaymentByReferenceIdV1Request
+message CancelCartPaymentByReferenceIdV1Request {
+  // Cart payment correlation ids
+  doordash.payin.cart_payment.v1.CorrelationIds cart_payment_correlation_ids = 1;
+  // cart_payment_creation_idempotency_key
+  google.protobuf.StringValue cart_payment_creation_idempotency_key = 2;
+  // cancel_all
+  google.protobuf.BoolValue cancel_all = 3;
+}
+
+// CancelCartPaymentByReferenceIdV1Response
+message CancelCartPaymentByReferenceIdV1Response {
+  // cart_payment
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// ListCartPaymentsV1Request
+message ListCartPaymentsV1Request {
+  // payer_correlation_ids
+  doordash.payin.common.v1.PayerCorrelationIds payer_correlation_ids = 1;
+  // cart_payment_correlation_ids
+  doordash.payin.cart_payment.v1.CorrelationIds cart_payment_correlation_ids = 2;
+  // created_at_gte
+  google.protobuf.Timestamp created_at_gte = 3;
+  // created_at_lte
+  google.protobuf.Timestamp created_at_lte = 4;
+  // intent_status
+  doordash.payin.common.v1.IntentStatus intent_status = 5;
+  // limit
+  google.protobuf.Int32Value limit = 6;
+  // TODO sort key check with the team
+  // provider_correlation_ids
+  doordash.payin.common.v1.ProviderCorrelationIds provider_correlation_ids = 7;
+}
+
+// ListCartPaymentsV1Response
+message ListCartPaymentsV1Response {
+  // count
+  google.protobuf.Int32Value count = 1;
+  // Currently default to False. Returning all the cart payments for a query
+  google.protobuf.BoolValue has_more = 2;
+  // list of CartPayment
+  repeated doordash.payin.cart_payment.v1.CartPayment data = 3;
+}
+
+// GetCartPaymentV1Request
+message GetCartPaymentV1Request {
+  // cart_payment_id
+  google.protobuf.StringValue cart_payment_id = 1;
+}
+
+// GetCartPaymentV1Response
+message GetCartPaymentV1Response {
+  // cart payment
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// CapturePaymentV1Request
+message CapturePaymentV1Request {
+  // One of payment_intent_id or cart_payment_id must be provided
+  oneof payment_identifier {
+    // payment_intent_id
+    google.protobuf.StringValue payment_intent_id = 1;
+    // cart_payment_id
+    google.protobuf.StringValue cart_payment_id = 2;
+  }
+  // idempotency_key
+  google.protobuf.StringValue idempotency_key = 3;
+}
+
+// CapturePaymentV1Response
+message CapturePaymentV1Response {
+  // cart payment
+  doordash.payin.cart_payment.v1.CartPayment cart_payment = 1;
+}
+
+// ListPaymentHistoryRequest
+message ListPaymentHistoryV1Request {
+  // List of correlation ids for which payment history details are needed
+  repeated doordash.payin.cart_payment.v1.CorrelationIds correlation_ids = 1;
+}
+
+// ListPaymentHistoryResponse
+message ListPaymentHistoryV1Response {
+  // count
+  google.protobuf.Int32Value count = 1;
+  // Currently default to False. Returning all the payment history for a query
+  google.protobuf.BoolValue has_more = 2;
+  // List of payment history details
+  doordash.payin.cart_payment.v1.PaymentHistoryList payment_history_list = 3;
+}

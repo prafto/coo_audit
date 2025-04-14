@@ -1,0 +1,367 @@
+syntax = "proto3";
+
+package janus_service.v1;
+
+import "common/notification.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_injection.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "janus_service/janus_service_common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.janus_service";
+
+/**
+ * serve as a light-weight wrapper layer for notification preferences.
+ * The principles for this wrapper layer are:
+ * - Different use cases should have separate endpoints. DO NOT MIX them
+ * - BFF endpoints should only perform straight forward request and response transformation. No business logic should involve
+ * - Keep return data structure as simple as possible and avoid unnecessary nested structure
+ */
+service NotificationPreferencesService {
+  option (doordash.api.service) = {
+    name: "janus-service"
+    url: "janus-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["notification_preferences"]
+    api_key_name: "JANUS-SERVICE-API-KEY"
+    owner: {
+      name: "Notification-Foundation"
+      id: "comms-platform-observability"
+      slack_channel: "#ask-comms-platform"
+      email_alias: "growth-notification-foundation-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  // for in-house email preference management MVP
+  rpc GetEmailPreferences(GetEmailPreferencesRequest) returns (GetEmailPreferencesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {get: "/notification_preferences/v1/email/{encrypted_token}"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2 // Hackathon MVP project
+      lifecycle: DEV
+      authorization: [NONE] /* Not for login scenario */
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+      slo_config: {
+        // SLO in test mode unless once lifecycle in PROD and run SLO refresh script
+        // https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=9
+        critical_alerts_enabled: false
+      }
+    };
+  }
+
+  // for in-house email preference management MVP
+  rpc SetEmailPreferences(SetEmailPreferencesRequest) returns (SetEmailPreferencesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      patch: "/notification_preferences/v1/email/{encrypted_token}"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2 // Hackathon MVP project
+      lifecycle: DEV
+      authorization: [NONE] /* Not for login scenario */
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+      slo_config: {
+        // SLO in test mode unless once lifecycle in PROD and run SLO refresh script
+        // https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=9
+        critical_alerts_enabled: false
+      }
+    };
+  }
+
+  // for Cx + DoorDash app/web use case
+  rpc GetDoorDashCxPreferences(GetDoorDashCxPreferencesRequest) returns (GetDoorDashCxPreferencesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {get: "/notification_preferences/v1/doordash/consumer"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1 // T1 for UG usage as failing to get notification preference won't impact placing or fulfilling order
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        // SLO in test mode unless once lifecycle in PROD and run SLO refresh script
+        // https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=9
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+
+  // for Cx + DoorDash app/web use case
+  rpc SetDoorDashCxPreferences(SetDoorDashCxPreferencesRequest) returns (SetDoorDashCxPreferencesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      patch: "/notification_preferences/v1/doordash/consumer"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1 // T1 for UG usage as failing to update notification preference won't impact placing or fulfilling order
+      lifecycle: PROD
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+      slo_config: {
+        // SLO in test mode unless once lifecycle in PROD and run SLO refresh script
+        // https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=9
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+
+  // for AUS email notification preference compliance requirements
+  rpc GetEmailPreferenceLink(GetEmailPreferenceLinkRequest) returns (GetEmailPreferenceLinkResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {get: "/notification_preferences/v1/email_preference_page_link"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        DX_USER
+      ]
+      target_products: [
+        CX,
+        DX
+      ]
+      slo_config: {
+        // SLO in test mode unless once lifecycle in PROD and run SLO refresh script
+        // https://devconsole.doordash.team/codelabs/exposing+an+endpoint+with+unified+gateway?step=9
+        critical_alerts_enabled: false
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 1
+      }
+    };
+  }
+}
+
+/*
+ * Get preferences for Cx + DoorDash app/web use case
+ */
+message GetDoorDashCxPreferencesRequest {
+  // keyed on Cx id only for each preference
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // to translate preference display info into proper language, default to en-US
+  Locale locale = 2;
+
+  // (optional) filter one or a list of similar preferences to get, return all preferences if filters is empty
+  PreferenceTag filter = 3;
+}
+
+/*
+ * Get response
+ */
+message GetDoorDashCxPreferencesResponse {
+  // preference result
+  message PreferenceResult {
+    // (channel + message_type + sub_message_type) is unique for each preference
+    PreferenceTag preference_tag = 1;
+
+    // true for opt-in, false for opt-out
+    bool opt_in = 2;
+
+    // friendly display language (translated according to locale) for given preference
+    PreferenceDisplayInfo display_info = 3;
+  }
+
+  // preference results
+  repeated PreferenceResult preferences = 1;
+}
+
+// Set preferences for Cx + DoorDash app/web use case, keyed on Cx id only for each preference
+message SetDoorDashCxPreferencesRequest {
+  // mutable preference, preference_tag is the key and opt_in is the value
+  message MutablePreference {
+    // (channel + message_type + sub_message_type) is unique for each preference
+    // will throw invalid error if provided preference tag cannot pin to one sigular preference
+    PreferenceTag preference_tag = 1;
+
+    // true for opt-in, false for opt-out
+    bool opt_in = 2;
+  }
+
+  // keyed on Cx id only for each preference
+  string consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // list of preferences to update
+  repeated MutablePreference preferences = 2;
+}
+
+/*
+ * Set response
+ */
+message SetDoorDashCxPreferencesResponse {}
+
+/*
+ * Accepted locales
+ */
+enum Locale {
+  // will map to LOCALE_EN_US
+  LOCALE_UNSPECIFIED = 0;
+  // en-US, default
+  LOCALE_EN_US = 1;
+  // en-AU
+  LOCALE_EN_AU = 2;
+  // en-CA
+  LOCALE_EN_CA = 3;
+  // en-NZ
+  LOCALE_EN_NZ = 4;
+  // es-US
+  LOCALE_ES_US = 5;
+  // fr-CA
+  LOCALE_FR_CA = 6;
+}
+
+/**
+ * channel + message_type + sub_message_type should uniquely identity a preference
+ *
+ * Can be used in Get requests to filter one or a list of preferences to return:
+ * 1. all three provided: return one preference
+ * 2. none provided: return all preferences flattened
+ * 3. some provided: return all matching preferences flattened
+ */
+message PreferenceTag {
+  // message type can be (unspecified, transactional, marketing)
+  common.notification.v1.NotificationMessageType message_type = 1;
+
+  // granular sub messagetype. Some preference don't have this
+  common.notification.v1.NotificationSubMessageType sub_message_type = 2;
+
+  // channel type can be (unspecified, push, email, sms), hub is not supported yet
+  common.notification.v1.NotificationChannelType channel_type = 3;
+}
+
+/**
+ * friendly display language (translated according to locale) for different preferences
+ */
+message PreferenceDisplayInfo {
+  // (optional) message type titile
+  google.protobuf.StringValue message_type_title = 1;
+
+  // (optional) message type description
+  google.protobuf.StringValue message_type_description = 2;
+
+  // (optional) channel title
+  google.protobuf.StringValue channel_title = 3;
+
+  // (optional) channel description
+  google.protobuf.StringValue channel_description = 4;
+
+  // (optional) channel terms and conditions
+  google.protobuf.StringValue channel_terms_and_conditions = 5;
+}
+
+/**
+ * message_type + sub_message_type should uniquely identity an email preference
+ */
+message EmailPreferenceTag {
+  // message type can be (unspecified, transactional, marketing)
+  common.notification.v1.NotificationMessageType message_type = 1;
+
+  // granular sub messagetype. Some preference don't have this
+  common.notification.v1.NotificationSubMessageType sub_message_type = 2;
+}
+
+// Get request for in-house email preference management MVP
+message GetEmailPreferencesRequest {
+  // encrypted value for (email + audience_type)
+  string encrypted_token = 1;
+}
+
+// Get response for in-house email preference management MVP
+message GetEmailPreferencesResponse {
+  // preference result
+  message PreferenceResult {
+    // (message_type + sub_message_type) is unique for each email preference
+    EmailPreferenceTag preference_tag = 1;
+
+    // true for opt-in, false for opt-out
+    bool opt_in = 2;
+
+    // true if given email preference allows user to update
+    bool allow_update = 3;
+  }
+
+  // user email
+  string email = 1;
+
+  // audience type
+  common.notification.v1.NotificationAudienceType audience_type = 2;
+
+  // preference results
+  repeated PreferenceResult preferences = 3;
+}
+
+// Set request for in-house email preference management MVP
+message SetEmailPreferencesRequest {
+  // mutable preference, preference_tag is the key and opt_in is the value
+  message MutablePreference {
+    // (message_type + sub_message_type) is unique for each email preference
+    // will throw invalid error if provided preference tag cannot pin to one sigular preference
+    EmailPreferenceTag preference_tag = 1;
+
+    // true for opt-in, false for opt-out
+    bool opt_in = 2;
+  }
+  // encrypted value for (email + audience_type)
+  string encrypted_token = 1;
+
+  // list of preferences to update
+  repeated MutablePreference preferences = 2;
+}
+
+// Set response for in-house email preference management MVP
+message SetEmailPreferencesResponse {}
+
+/*
+ * Get Cassie email subscriptions page link.
+ */
+message GetEmailPreferenceLinkRequest {
+  // Removed email param and it'll be fetched from the token
+  reserved 1;
+  reserved "email";
+
+  // Entity type
+  common.notification.v1.NotificationAudienceType entity_type = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Locale
+  Locale locale = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+/*
+ * Get response
+ */
+message GetEmailPreferenceLinkResponse {
+  // Email preference link
+  string preference_link = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}

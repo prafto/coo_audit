@@ -1,0 +1,1398 @@
+syntax = "proto3";
+
+package promotion_service;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/payin.proto";
+import "common/restriction_rules.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/payment_method_v1.proto";
+import "promotion/banner.proto";
+import "promotion/billing.proto";
+import "promotion/campaign.proto";
+import "promotion/campaign_feed.proto";
+import "promotion/carousel.proto";
+import "promotion/cart.proto";
+import "promotion/claim.proto";
+import "promotion/code.proto";
+import "promotion/common.proto";
+import "promotion/fee.proto";
+import "promotion/incentive.proto";
+import "promotion/item_campaign.proto";
+import "promotion/placement.proto";
+import "promotion/pricing.proto";
+import "promotion/promotion.proto";
+import "promotion/promotion_eligibility.proto";
+import "promotion/redemption.proto";
+
+option go_package = "promotion";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.promotion";
+
+/*
+   Clients/Services consuming this service:
+   pricing
+   order_service
+   DSJ
+   search
+   web BFF
+   mobile BFF
+   webhook BFF
+   admin client
+   growth-service
+*/
+
+service PromotionService {
+  option (service_client.client_config).service_name = "promotion-service";
+  option (service_client.client_config).service_app = "web";
+  option (service_client.client_config).retry_config.max_attempts = 1;
+
+  // CRUD APIs - called by:
+  // admin web client
+  rpc CreateCampaign(CreateCampaignRequest) returns (CreateCampaignResponse);
+  rpc UpdateCampaign(UpdateCampaignRequest) returns (UpdateCampaignResponse);
+
+  // ACTIVATION FLAGS - called by:
+  // called by admin web client
+  rpc ActivateCampaign(ActivateCampaignRequest) returns (ActivateCampaignResponse);
+  rpc DeactivateCampaign(DeactivateCampaignRequest) returns (DeactivateCampaignResponse);
+
+  // Discoverability API - returns campaigns matching query facets/filters
+  // Used by campaign manager admin client and DSJ promotions POST API, or any time we do a lookup by code
+  // NOTE - this API does NOT return claimable campaigns if using store or submarket facets
+  rpc GetCampaigns(GetCampaignsRequest) returns (GetCampaignsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+  rpc GetCampaignById(GetCampaignByIdRequest) returns (GetCampaignByIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+  }
+
+  // Retrieving historical campaigns - called by:
+  // promotion-streaming
+  rpc GetCampaignByIdAndTs(GetCampaignByIdAndTsRequest) returns (GetCampaignByIdAndTsResponse);
+
+  // Get campaign's update histories by campaign id
+  rpc GetCampaignHistoryById(GetCampaignHistoryByIdRequest) returns (GetCampaignHistoryByIdResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+  }
+
+  rpc GetTemplates(GetTemplatesRequest) returns (GetTemplatesResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 200;
+  }
+
+  rpc GetCampaignPlacementsForStores(GetCampaignPlacementsForStoresRequest) returns (GetCampaignPlacementsForStoresResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+  rpc GetCampaignPlacementsForStoresFilters(GetCampaignPlacementsForStoresFiltersRequest) returns (GetCampaignPlacementsForStoresFiltersResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 80;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // VALIDATION - called by:
+  // pricing
+  // order
+  // DSJ
+  rpc ValidatePromotion(ValidatePromotionRequest) returns (ValidatePromotionResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13; // retry on internal error status code (e.g., job was cancelled)
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 350;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 1; //CANCELLED
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 3; //INVALID_ARGUMENT
+    option (service_client.client_method_config).circuit_breaker_config.do_ignore_grpc_code = 5; // NOT_FOUND
+  }
+
+  // REDEEMING - called by
+  // order_service
+  // DSJ (maybe)
+  rpc RedeemPromotion(RedeemPromotionRequest) returns (RedeemPromotionResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetBestEligibleCampaign(GetBestEligibleCampaignRequest) returns (GetBestEligibleCampaignResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13;
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetCampaignsForOrderCartPricing(GetCampaignsForOrderCartPricingRequest) returns (GetCampaignsForOrderCartPricingResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13;
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // Called by MFS/MTS
+  rpc GetMerchantChargeInfoById(GetMerchantChargeInformationRequest) returns (GetMerchantChargeInformationResponse);
+
+  // Called by Feed to get carousel data
+  rpc GetCarouselMetadataForConsumer(GetCarouselMetadataForConsumerRequest) returns (GetCarouselMetadataForConsumerResponse) {
+    option (service_client.client_method_config).retry_config.max_attempts = 2;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 13;
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 80;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+  rpc GetCarouselPlacementsForStores(GetCarouselPlacementsForStoresRequest) returns (GetCarouselPlacementsForStoresResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetCarousels(GetCarouselsRequest) returns (GetCarouselsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // Carousel CRUD
+  //autopopulate uuid if id is not already defined
+  rpc CreateCarousel(CreateCarouselRequest) returns (CreateCarouselResponse);
+  rpc DeleteCarousel(DeleteCarouselRequest) returns (DeleteCarouselResponse);
+  rpc UpdateCarousel(UpdateCarouselRequest) returns (UpdateCarouselResponse); //ensure id remains the same
+  rpc GetCarouselById(GetCarouselByIdRequest) returns (GetCarouselByIdResponse);
+
+  // Carousel consumer view
+  rpc GetCarouselByIdForConsumer(GetCarouselByIdForConsumerRequest) returns (GetCarouselByIdForConsumerResponse);
+
+  // Carousel admin view
+  rpc GetCarouselForAdmins(GetCarouselForAdminsRequest) returns (GetCarouselForAdminsResponse);
+
+  //Banner
+  rpc GetBanners(GetBannersRequest) returns (GetBannersResponse);
+
+  // Deprecated API
+  rpc ClickToApplyPromotion(ClickToApplyPromotionRequest) returns (ClickToApplyPromotionResponse);
+
+  // Claim - called by:
+  // DSJ (Dashpass)
+  // Growth-service (Referrals)
+  rpc ClaimCampaign(ClaimCampaignRequest) returns (ClaimCampaignResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+
+  rpc RunAdhocCommand(AdhocRequest) returns (AdhocResponse);
+
+  rpc GetItemCampaignsForStores(GetItemCampaignsForStoresRequest) returns (GetItemCampaignsForStoresResponse);
+
+  // Deprecated
+  rpc GetHomeBanners(GetHomeBannersRequest) returns (GetHomeBannersResponse);
+
+  rpc GetBannersV2(GetBannersV2Request) returns (GetBannersV2Response) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetItemCarousels(GetItemCarouselsRequest) returns (GetItemCarouselsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc GetCPMFees(GetCPMFeesRequest) returns (GetCPMFeesResponse);
+
+  // carousel history view for carousel manager (admin-gateway)j
+  rpc GetCarouselHistories(GetCarouselHistoriesRequest) returns (GetCarouselHistoriesResponse);
+  rpc GetCarouselByIdAndTs(GetCarouselByIdAndTsRequest) returns (GetCarouselByIdAndTsResponse);
+
+  rpc GetBillingCriteria(GetBillingCriteriaRequest) returns (GetBillingCriteriaResponse);
+  rpc GetBillings(GetBillingsRequest) returns (GetBillingsResponse);
+
+  // Single store carousel view and single item carousel view
+
+  rpc GetStoreCarouselLandingPage(GetStoreCarouselLandingPageRequest) returns (GetStoreCarouselLandingPageResponse);
+  rpc GetItemCarouselLandingPage(GetItemCarouselLandingPageRequest) returns (GetItemCarouselLandingPageResponse);
+
+  rpc GetIncentivesForStores(GetIncentivesForStoresRequest) returns (GetIncentivesForStoresResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetDeliveryFeeIncentivesForStores(GetDeliveryFeeIncentivesForStoresRequest) returns (GetDeliveryFeeIncentivesForStoresResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc GetRemainingFreeTrialCreditsForCampaign(GetRemainingFreeTrialCreditsForCampaignRequest) returns (GetRemainingFreeTrialCreditsForCampaignResponse);
+
+  rpc GetRedemptionsByConsumerId(GetRedemptionsByConsumerIdRequest) returns (GetRedemptionsByConsumerIdResponse);
+
+  // RPC for product/item based campaigns
+  // initially used to support cpg/cng complex deals
+  // RPC used to decorate collections, categories, filter/search results
+  // Given a list of item ids, return any eligible promo for each item
+  rpc GetProductPromotions(GetProductPromotionsRequest) returns (GetProductPromotionsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  // RPC used to fetch a set of campaigns for the merchant
+  // Given a business id, return a mapping of campaign ids to item ids
+  // This RPC does not do eligibility check so it can easily be cached to handle large sets of items
+  rpc GetProductIdsWithPossibleDealsForMx(GetProductIdsWithPossibleDealsForMxRequest) returns (GetProductIdsWithPossibleDealsForMxResponse);
+}
+
+message GetProductIdsWithPossibleDealsForMxRequest {
+  // we want both biz id and store id so we don't have to translate between the two in promo
+  repeated StoreData store_data = 1;
+}
+
+message GetProductIdsWithPossibleDealsForMxResponse {
+  // for each (store, campaign) combination we return a set of products with possible deals
+  repeated DealProducts deal_products = 1;
+}
+
+message DealProducts {
+  string campaign_id = 1;
+  ProductIds product_ids = 2;
+  StoreData store_data = 3;
+}
+
+message GetProductPromotionsRequest {
+  string consumer_id = 1;
+  repeated StoreProductGrouping store_product_grouping = 2;
+  bool enable_full_data = 3; // used for item page to fetch data about campaign “terms and conditions, etc”
+  FederatedSource.Type federated_source = 4;
+  money.FederatedSource.Type federated_source_type = 5;
+}
+
+message ProductData {
+  string item_id = 1;
+  google.protobuf.StringValue merchant_supplied_id = 2;
+  google.protobuf.StringValue dd_sic = 3;
+  money.MonetaryFields item_price = 4;
+  FederatedIncentiveData incentive_data = 5;
+}
+
+message FederatedIncentiveData {
+  Incentive incentive = 1;
+  StoreData store_data = 2;
+  string collection_id = 3;
+  ComplexItemPromotionFullDetails details = 4;
+  string id = 5;
+}
+
+message StoreProductGrouping {
+  StoreData store_data = 1;
+  repeated ProductData product_data = 2;
+}
+
+message GetProductPromotionsResponse {
+  // for each eligible (store, campaign) combination for consumer, we return back subset of items from request
+  repeated ItemPromotion item_promotions = 1;
+}
+
+message ItemPromotion {
+  ProductIds product_ids = 1;
+  string campaign_id = 2;
+  string title = 3;
+  string collection_id = 4;
+  // only if enable_full_data is set to true, for single item page view
+  ComplexItemPromotionFullDetails details = 5;
+  StoreData store_data = 6;
+  PromoData promo_data = 7; // set only if the discount is of type FLAT_AMOUNT_OFF
+  // detailed coupon data for external deals provider
+  DealsAggregatorCouponData coupon_data = 8;
+  // Funding entity types for the promotion.
+  repeated money.Entity.EntityType funding_entity_types = 9;
+}
+
+// used as reference values to determine min value of item
+message PromoData {
+  google.protobuf.Int32Value required_item_quantity = 1; // X value, Required item quantity
+  money.MonetaryFields flat_amount_off = 2; // Y value of flat unit amount
+}
+
+message ComplexItemPromotionFullDetails {
+  string terms_and_conditions = 1;
+  string description = 2;
+  TermsAndConditionDetails terms_and_condition_details = 3;
+}
+
+message TermsAndConditionDetails {
+  google.protobuf.Timestamp end_date = 1;
+  google.protobuf.Int32Value num_required_items = 2; // num_required_items at cart_criteria
+  google.protobuf.Int32Value max_applications = 3; // max_applications at incentives
+}
+
+message DealsAggregatorCouponData {
+  // represent the different external deals aggregator, e.g. Ibotta
+  google.protobuf.StringValue external_deals_aggregator = 1;
+  // determine whether the deal needs to be represented as a coupon
+  google.protobuf.BoolValue is_external_deals_aggregator_deals_coupon_needed = 2;
+  // if the deal is a coupon, represents whether the coupon has already been claimed
+  google.protobuf.BoolValue is_external_deals_aggregator_deals_coupon_claimed = 3;
+  // based on the feed or order route, determine how to evaluate the userCriterion. Set to true for order. Set to false for feed.
+  google.protobuf.BoolValue needs_to_check_coupon_claimed_status = 4;
+}
+
+message GetCarouselByIdAndTsRequest {
+  google.protobuf.StringValue carousel_id = 1;
+  google.protobuf.Timestamp first_effective_ts = 2;
+}
+
+message GetCarouselByIdAndTsResponse {
+  Carousel carousel = 1;
+}
+
+message GetCarouselHistoriesRequest {
+  google.protobuf.StringValue carousel_id = 1;
+}
+
+message GetCarouselHistoriesResponse {
+  repeated CarouselHistory carousel_histories = 1;
+}
+
+message CarouselHistory {
+  google.protobuf.Timestamp first_effective_ts = 1;
+  common.Creator updated_by = 2;
+}
+
+message GetBannersV2Request {
+  string consumer_id = 1;
+  repeated StoreData store_data = 2;
+  repeated string geo_hashes = 3;
+  google.protobuf.StringValue consumer_submarket_id = 5;
+  google.protobuf.StringValue consumer_district_id = 6;
+  Placement.PlacementType placement_type = 7;
+  // common.PageType page_type = 8;
+  repeated string vertical_ids = 9;
+  Placement.LandingPageType landing_page_type = 10;
+  // Consumer timezone e.g. US/Pacific see full list here https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+  google.protobuf.StringValue consumer_timezone = 11;
+
+  // The DoorDash places (geofences) that the Cx is located in. It is possible for a Cx to be in multiple overlapping
+  // geofences at a given location.
+  repeated string consumer_place_ids = 12;
+
+  // Consumer Location used to fetch place_ids internally, if specified, will take precedence over consumer_place_ids.
+  common.ConsumerLocation consumer_location = 13;
+  // request id
+  string request_id = 14;
+}
+
+message GetBannersV2Response {
+  repeated Banner items = 1;
+  string request_id = 2;
+}
+
+message GetHomeBannersRequest {
+  string consumer_id = 1;
+  repeated StoreData store_data = 2;
+  repeated string geo_hashes = 3;
+  google.protobuf.StringValue consumer_submarket_id = 5;
+  google.protobuf.StringValue consumer_district_id = 6;
+}
+
+message GetHomeBannersResponse {
+  repeated Banner items = 1;
+}
+
+message GetCarouselPlacementsForStoresRequest {
+  // store_ids gets truncated in promotion service
+  // Correct usage is to chunk up the list of store_ids and make parallel calls
+  // size of chunk is controlled by runtime, contact promo svc team to get current max chunk size
+  string consumer_id = 1;
+  repeated string store_ids = 2;
+  string carousel_id = 3;
+  // common.PageType page_type = 4;
+  repeated string vertical_ids = 5;
+  Placement.LandingPageType landing_page_type = 6;
+}
+
+message GetCarouselPlacementsForStoresResponse {
+  repeated CampaignPlacementItem items = 1;
+  LiteCarousel lite_carousel = 2;
+}
+
+message GetCarouselForAdminsRequest {
+  google.protobuf.Int32Value submarket_id = 1;
+  google.protobuf.BoolValue is_active = 2;
+}
+
+message GetCarouselForAdminsResponse {
+  repeated Carousel carousels = 1;
+}
+
+message CreateCarouselRequest {
+  Carousel carousel = 1;
+}
+message CreateCarouselResponse {
+  Carousel carousel = 1;
+}
+
+message DeleteCarouselRequest {
+  string carousel_id = 1;
+}
+message DeleteCarouselResponse {}
+
+message UpdateCarouselRequest {
+  Carousel carousel = 1; // in backend, check id is there and the carousel exists already in db
+}
+message UpdateCarouselResponse {
+  Carousel carousel = 1;
+}
+
+message GetCarouselByIdRequest {
+  string carousel_id = 1;
+}
+message GetCarouselByIdResponse {
+  Carousel carousel = 1;
+}
+
+message GetCarouselByIdForConsumerRequest {
+  string carousel_id = 1;
+  string consumer_id = 2;
+  google.protobuf.StringValue consumer_timezone = 3;
+}
+
+message GetCarouselByIdForConsumerResponse {
+  Carousel carousel = 1;
+}
+
+message GetCarouselMetadataForConsumerRequest {
+  google.protobuf.StringValue consumer_id = 1; //nullable for guest
+  int32 submarket_id = 2; //required
+  google.protobuf.BoolValue deals_hub_expt_is_web_platform = 3; // deprecate after deals hub expt ends
+  google.protobuf.BoolValue is_pickup_enabled = 4;
+  // common.PageType page_type = 5;
+  Placement.LandingPageType landing_page_type = 6;
+  repeated string vertical_ids = 7;
+  // Consumer timezone e.g. US/Pacific see full list here https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+  google.protobuf.StringValue consumer_timezone = 8;
+  CarouselMetadataUseCase use_case = 9;
+}
+
+message GetCarouselMetadataForConsumerResponse {
+  //repeated Carousel carousel = 1; DEPRECATED
+  repeated LiteCarousel lite_carousel = 2;
+}
+
+message FeedFilter {
+  enum FilterType {
+    FILTER_INVALID = 0;
+    FILTER_UNSET = 1;
+    FILTER_ALL_DEALS = 2;
+    FILTER_DELIVERY_DISCOUNTS = 3;
+    FILTER_SUBTOTAL_DISCOUNTS = 4;
+    FILTER_ITEM_DISCOUNTS = 5;
+  }
+
+  FilterType type = 1;
+  google.protobuf.StringValue label_text = 2;
+}
+
+message GetCampaignPlacementsForStoresRequest {
+  // store_ids gets truncated in promotion service
+  // Correct usage is to chunk up the list of store_ids and make parallel calls
+  // size of chunk is controlled by runtime, contact promo svc team to get current max chunk size
+  string consumer_id = 1;
+  repeated string store_ids = 2;
+  repeated Placement.PlacementType placement_type = 3;
+  string submarket_id = 4; // this is required for notification hub campaigns
+  // [DEPRECATED] google.protobuf.StringValue carousel_id = 5; //nullable
+  repeated FeedFilter feed_filter = 6;
+  // common.PageType page_type = 7;
+  repeated string vertical_ids = 8;
+  Placement.LandingPageType landing_page_type = 9;
+  // the consumer location
+  common.ConsumerLocation consumer_location = 10;
+}
+
+message GetCampaignPlacementsForStoresResponse {
+  repeated CampaignPlacementItem items = 1;
+  repeated CarouselMetadata carousel_metadata = 2;
+}
+
+message GetCampaignPlacementsForStoresFiltersRequest {
+  // country name where the filtering is happening
+  string country_shortname = 1;
+}
+
+message GetCampaignPlacementsForStoresFiltersResponse {
+  repeated FeedFilter available_filters = 1;
+}
+
+message CampaignPlacementItem {
+  string campaign_id = 1;
+  string store_id = 2;
+
+  // User facing campaign title
+  string title = 3;
+
+  // User facing campaign description
+  string description = 4;
+
+  // contains type = Feed, Carousel, Banner, etc
+  // contains contentId used for carousel and banners
+  // contains sort Order for inner carousel sort
+  // should this be repeated or one item per placement like before
+  repeated Placement placements = 5;
+
+  // needed for store page banner title/desc processing and later Pricing service
+  repeated Incentive incentives = 6;
+
+  // temporarily used for mx store page banners
+  string campaign_template_id = 7;
+
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp start_time = 9;
+  google.protobuf.Timestamp end_time = 10;
+
+  google.protobuf.BoolValue is_dashpass_subscriber_promo = 11;
+
+  // propagate this from the call chain GetItemCampaignsForStores -> GetCampaignPlacementsForStores
+  repeated Billing billings = 12;
+  // it is a auto-apply campaign or not
+  repeated AppliedBy applied_by = 13;
+  // it is a merchant campaign or not
+  google.protobuf.StringValue funding_source = 14;
+  repeated Code code = 15;
+  common.CampaignTermAndConditionContent term_and_condition_content = 16;
+  Vertical.Type vertical = 17;
+
+  // ad_id/ad_group_id of membership
+  string ad_id = 18;
+  string ad_group_id = 19;
+
+  repeated google.protobuf.StringValue campaign_tags = 20;
+
+  // true if the campaign is a nudge campaign and not redeemable
+  bool is_nudge_campaign = 21;
+  // nudge reasons for the nudge campaign
+  repeated NudgeableReason nudge_reasons = 22;
+  reserved 23;
+  reserved "enrichment_id";
+  // applied enrichment id for the campaign
+  google.protobuf.StringValue applied_enrichment_id = 24;
+}
+
+message CarouselMetadata {
+  // id of carousel within a submarket
+  string carousel_id = 1;
+  int32 sort_order = 2;
+  // user facing carousel title
+  string title = 3; // winback
+  // User facing carousel description
+  string description = 4;
+  // enforce manual sort order on carousel or not, default to false
+  google.protobuf.BoolValue enforce_manual_sort_order = 5;
+}
+
+message GetCarouselsRequest {
+  string consumer_id = 1;
+  repeated string geo_hashes = 2;
+  repeated Placement.PlacementType placement_type = 3;
+  repeated FeedFilter feed_filter = 4;
+  repeated string carousel_ids = 5;
+  repeated string store_ids = 6;
+  // common.PageType page_type = 7;
+  repeated string vertical_ids = 8;
+  Placement.LandingPageType landing_page_type = 9;
+  // Consumer submarket id
+  google.protobuf.StringValue consumer_submarket_id = 10;
+  // Consumer timezone e.g. US/Pacific see full list here https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+  google.protobuf.StringValue consumer_timezone = 11;
+  // Return placements of nudge campaigns if they match any type in allowed_nudge_reasons
+  repeated NudgeableReason allowed_nudge_reasons = 12;
+}
+
+message GetCarouselsResponse {
+  repeated CampaignPlacementItem items = 1;
+  LiteCarousel lite_carousel = 2;
+}
+
+// DISCOVERABILITY
+message GetCampaignsRequest {
+  repeated QueryFacet query_facet = 1;
+  repeated QueryFilter query_filter = 2;
+}
+
+message GetCampaignsResponse {
+  repeated Campaign campaign = 1;
+}
+
+message QueryFacet {
+  // the types listed map to the various cassandra tables or es index we will store protos in
+  QueryFacetType type = 1;
+  enum QueryFacetType {
+    QUERY_FACET_TYPE_INVALID = 0;
+    QUERY_FACET_TYPE_UNSET = 1;
+    QUERY_FACET_TYPE_ALL = 2;
+    QUERY_FACET_TYPE_CODE = 3;
+    QUERY_FACET_TYPE_STORE = 4;
+    QUERY_FACET_TYPE_SUBMARKET = 5;
+    QUERY_FACET_TYPE_CAMPAIGN_SEARCH = 6; // campaign search via elasticsearch
+    // TODO: do we need to be able to query by membership?
+  }
+
+  // values here correspond to the selected enum
+  oneof value {
+    string code = 3; // QUERY_FACET_TYPE_CODE
+    string store_id = 4; // QUERY_FACET_TYPE_STORE
+    string submarket_id = 5; // QUERY_FACET_TYPE_SUBMARKET
+    CampaignSearchFilter campaign_search_filter = 6; // QUERY_FACET_TYPE_CAMPAIGN_SEARCH
+  }
+}
+
+message CampaignSearchFilter {
+  // supports a max of 1k (store_ids + ad_store_ids) in one request
+  repeated google.protobuf.StringValue store_ids = 1; // searches store memberships
+  repeated google.protobuf.StringValue ad_store_ids = 5; // searches ad group memberships
+  // optional additional filters
+  repeated google.protobuf.StringValue campaign_ids = 6;
+  repeated google.protobuf.StringValue template_ids = 4;
+
+  // find campaigns owned by the specified advertisers
+  repeated google.protobuf.StringValue advertiser_ids = 8;
+
+  // find campaigns that contain any specified ad group
+  repeated google.protobuf.StringValue ad_group_ids = 9;
+
+  // pagination params. offset is where to start reading, limit is how many results to return
+  google.protobuf.Int32Value offset = 2;
+  google.protobuf.Int32Value limit = 3;
+
+  // find campaigns by experience (Doordash, Wolt, Caviar, etc.)
+  repeated common.Experience experiences = 10;
+
+  // find campaigns that contain any specified membership
+  repeated google.protobuf.StringValue membership_ids = 11;
+
+  // find campaigns that contain any specified promotion
+  repeated google.protobuf.StringValue promotion_ids = 12;
+
+  // find campaigns that contain any specified campaigns by external id
+  repeated google.protobuf.StringValue external_campaign_ids = 13;
+
+  //Date Range filter
+  DateRange date_range = 7;
+}
+
+message QueryFilter {
+  // the types listed indicate properties that can be filtered by on a result set from a QueryFacet
+  QueryFilterType type = 1;
+  enum QueryFilterType {
+    QUERY_FILTER_TYPE_INVALID = 0;
+    QUERY_FILTER_TYPE_UNSET = 1;
+    QUERY_FILTER_TYPE_IS_ACTIVE = 2;
+    QUERY_FILTER_TYPE_APPLIED_BY = 3;
+    QUERY_FILTER_TYPE_PLACEMENT = 4;
+  }
+
+  // values here correspond to the selected enum
+  oneof value {
+    bool is_active = 2;
+    AppliedBy.AppliedByType applied_by_type = 3;
+    Placement.PlacementType placement_type = 4;
+  }
+}
+
+message GetTemplatesRequest {}
+
+message GetTemplatesResponse {
+  repeated Campaign campaign = 1;
+}
+
+// DIRECT QUERY
+message GetCampaignByIdRequest {
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+message GetCampaignByIdResponse {
+  Campaign campaign = 1;
+}
+
+message GetCampaignByIdAndTsRequest {
+  google.protobuf.StringValue campaign_id = 1;
+  google.protobuf.Timestamp first_effective_ts = 2;
+}
+
+message GetCampaignByIdAndTsResponse {
+  Campaign campaign = 1;
+}
+
+message GetCampaignHistoryByIdRequest {
+  google.protobuf.StringValue campaign_id = 1;
+
+  // pagination control
+  // response offset
+  google.protobuf.Int64Value offset = 2;
+
+  // response limit
+  google.protobuf.Int64Value limit = 3;
+}
+
+message GetCampaignHistoryByIdResponse {
+  repeated Campaign campaigns = 1;
+  google.protobuf.Int64Value total_count = 2;
+}
+
+message GetMerchantChargeInformationRequest {
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+message MerchantFundedDiscount {
+  money.MonetaryFields max_discount_value = 1;
+  money.MonetaryFields additional_fee = 2;
+}
+
+message GetMerchantChargeInformationResponse {
+  //campaign id for the new Promo Service data and promotion id if the data is coming from DSJ
+  google.protobuf.StringValue id = 1;
+
+  money.PromotionType funded_by = 2;
+
+  // information about incentives associated with campaign applied
+  // deprecated
+  MerchantFundedDiscount percent_off = 3;
+  MerchantFundedDiscount flat_amount_off = 4;
+  MerchantFundedDiscount delivery_fee = 5;
+  MerchantFundedDiscount service_fee = 6;
+  MerchantFundedDiscount small_order_fee = 7;
+
+  Fee fee = 8;
+
+  bool is_invoiced = 9;
+  map<string, string> invoicing_fields = 10;
+}
+
+// CRUD
+message CreateCampaignRequest {
+  Campaign campaign = 1;
+  google.protobuf.BoolValue skip_history_table_insert = 2;
+}
+
+message CreateCampaignResponse {
+  Campaign campaign = 1;
+}
+
+message UpdateCampaignRequest {
+  Campaign campaign = 1;
+  google.protobuf.BoolValue skip_history_table_update = 2;
+}
+
+message UpdateCampaignResponse {
+  Campaign campaign = 1;
+}
+
+// SET ACTIVE FLAGS
+message ActivateCampaignRequest {
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+message ActivateCampaignResponse {}
+
+message DeactivateCampaignRequest {
+  google.protobuf.StringValue campaign_id = 1;
+
+  DeactivationInfo deactivation_info = 2;
+}
+
+message DeactivateCampaignResponse {}
+
+message AttemptedPromotion {
+  oneof value {
+    string code = 1;
+    SelectedPromotion promotion = 2;
+  }
+  // flag indicating if the promotion is stackable
+  bool is_stackable = 3;
+  message SelectedPromotion {
+    string campaign_id = 1;
+    string ad_group_id = 2;
+    string ad_id = 3;
+
+    // to let us know that we should avoid this promotion on auto apply as the user has removed it from their wallet
+    bool is_removal = 4;
+  }
+}
+
+// TODO: several ways to handle validation and redeeming.  given a campaign + cart do we return ALL applicable incentives (allows the client or user to pick the incentive to use)
+// TODO: OR do we return the BEST incentive?
+// TODO: one way would require the request to contain the user desired incentive, which would be validated / redeemed
+// TODO: both ways
+// VALIDATION
+// we are passing an campaign id and cart in order to confirm that the incentives presented to the user are still valid
+// this is called immediately before redeeming once the user submits the order cart
+message ValidatePromotionRequest {
+  google.protobuf.StringValue campaign_id = 1;
+  Cart cart = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.StringValue store_id = 4;
+  PaymentMethodDetails payment_method_details = 5;
+  google.protobuf.BoolValue promotion_nudge_enabled = 6;
+  // adds consumer location to ValidatePromotionRequest
+  common.ConsumerLocation consumer_location = 7;
+  AttemptedPromotion promotion = 8;
+  SourceType source = 9;
+
+  // adds user's live location to ValidatePromotionRequest. consumer_location stores delivery address location info
+  common.ConsumerLocation real_time_location = 10;
+
+  //Represents the source of the request
+  enum SourceType {
+    //unknown source
+    SOURCE_TYPE_UNSPECIFIED = 0;
+    //source is mobile bff
+    SOURCE_TYPE_MOBILE_BFF_VALIDATE = 1;
+    //source is web bff
+    SOURCE_TYPE_WEB_BFF_VALIDATE = 2;
+    //source is sticky footer
+    SOURCE_TYPE_STICKY_FOOTER = 3;
+    //source is order quote. Usually GenerationOrderQuoteV2 or finalizeOrderQuoteV2
+    SOURCE_TYPE_ORDER_QUOTE = 4;
+    //source is unspecified, but coming from mobile bff.
+    SOURCE_TYPE_MOBILE_BFF_UNSPECIFIED = 5;
+    //source is unspecified, but coming from web bff.
+    SOURCE_TYPE_WEB_BFF_UNSPECIFIED = 6;
+    //source is unspecified, but coming from order service
+    SOURCE_TYPE_ORDER_SERVICE_UNSPECIFIED = 7;
+    //source is unspecified, but coming from pricing service
+    SOURCE_TYPE_PRICING_SERVICE_UNSPECIFIED = 8;
+    //when order service calls validatePromotion for their email's promotional footer
+    SOURCE_TYPE_ORDER_SERVICE_CONFIRMATION_EMAIL_FOOTER = 9;
+    //source is mobile bff update cart endpoint
+    SOURCE_TYPE_MOBILE_UPDATE_CART = 10;
+    //source is mobile bff remove promotion, v1/carts/:cartId/consumer_promotions DELETE
+    SOURCE_TYPE_MOBILE_MANUAL_PROMOTION_REMOVAL = 11;
+  }
+}
+
+message ValidatePromotionResponse {
+  Campaign campaign = 1;
+
+  // Applicable incentives based on the campaign + cart
+  repeated Incentive incentives = 2;
+
+  string error = 3;
+
+  repeated PromotionEligibilityResolution promotion_eligibility_resolutions = 4;
+  google.protobuf.BoolValue is_redeemable = 5;
+
+  string ad_id = 6;
+  string ad_group_id = 7;
+  string campaign_id = 8;
+  // flag indicating if the promotion is stackable
+  bool is_stackable = 9;
+}
+
+//  REDEEMING
+message RedeemPromotionRequest {
+  google.protobuf.StringValue campaign_id = 1;
+  google.protobuf.StringValue order_id = 2;
+  google.protobuf.StringValue store_id = 3;
+  google.protobuf.StringValue consumer_id = 4;
+  google.protobuf.StringValue claim_id = 5;
+  Cart cart = 6; // incase we need anything from cart
+  money.MonetaryFields promotion_value = 7; // Total discount promotion value in a redemption
+
+  // no need for monetaryfields since order service has fee as Long and the monetary field value should be the same as
+  // the fee object
+  google.protobuf.Int64Value marketing_fee = 8;
+  google.protobuf.StringValue delivery_id = 9;
+
+  // The order UUID
+  google.protobuf.StringValue order_uuid = 10;
+  // Number of redemptions applied, default to 1
+  // Complex deals can be applied multiple times per order.
+  // i.e. buy 1 get $1 off, buy 2 will get $2 off. num_applications is 2.
+  google.protobuf.Int32Value num_applications = 11;
+  google.protobuf.Int64Value invoiceable_marketing_fee = 12;
+  // The campaign federated source
+  money.FederatedSource.Type federated_source_type = 13;
+
+  // campaign membership_id
+  google.protobuf.StringValue ad_group_id = 14;
+
+  // promotion_id
+  google.protobuf.StringValue ad_id = 15;
+
+  google.protobuf.Int64Value marketing_fee_tax = 16;
+  order.MarketingFeeComponentBreakdown marketing_fee_breakdown = 17;
+
+  // funding object for the given redemption
+  money.Funding funding = 18;
+
+  // items related to the redemption
+  repeated string item_ids = 19;
+
+  // The experience that this promo is being redeemed on
+  common.Experience experience = 20;
+}
+
+message RedeemPromotionResponse {
+  Campaign campaign = 1;
+
+  // applied incentives based on the campaign + cart
+  // TODO: or do we sparsly populate the returned campaign object with only those incentives that were applied?
+  repeated Incentive incentives = 2;
+
+  string error = 3;
+}
+
+message GetBestEligibleCampaignRequest {
+  string consumer_id = 1;
+  Cart cart = 2;
+  string store_id = 3;
+  PaymentMethodDetails payment_method_details = 4;
+  google.protobuf.BoolValue promotion_nudge_enabled = 5;
+}
+
+message GetBestEligibleCampaignResponse {
+  Campaign campaign = 1;
+
+  // Applicable incentives based on the campaign + cart
+  repeated Incentive incentives = 2;
+  google.protobuf.BoolValue is_redeemable = 3;
+}
+
+message StoreData {
+  string store_id = 1;
+  google.protobuf.StringValue business_id = 2;
+  google.protobuf.StringValue business_group_id = 3;
+  google.protobuf.BoolValue asap_available = 4;
+  google.protobuf.BoolValue pickup_available = 5;
+  common.StoreLocation store_location = 6;
+  reserved 7;
+  google.protobuf.StringValue store_business_vertical_id = 8;
+  google.protobuf.StringValue store_timezone = 9;
+  money.BasisPoint original_service_rate = 10;
+}
+
+//  Banner
+message GetBannersRequest {
+  string consumer_id = 1;
+  repeated string store_ids = 2;
+  Placement.PlacementType placement_type = 3;
+  google.protobuf.StringValue consumer_submarket_id = 4;
+  google.protobuf.StringValue item_id = 5;
+  google.protobuf.StringValue cart_id = 6;
+  google.protobuf.StringValue consumer_district_id = 7;
+  repeated StoreData store_data = 8;
+  repeated string vertical_ids = 9;
+  Placement.LandingPageType landing_page_type = 10;
+}
+
+message GetBannersResponse {
+  repeated Banner items = 1;
+}
+message ClickToApplyPromotionRequest {
+  string promotion_id = 1;
+  google.protobuf.StringValue email = 2;
+  google.protobuf.StringValue hash = 3;
+  google.protobuf.StringValue consumer_id = 4;
+  google.protobuf.StringValue start_date = 5;
+}
+
+message ClickToApplyPromotionResponse {
+  bool is_success = 1;
+  google.protobuf.StringValue message = 2;
+}
+
+message ClaimCampaignRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  oneof value {
+    string code = 2;
+    string campaign_id = 3;
+  }
+  Claim.ClaimType claim_type = 4;
+  AttemptedPromotion promotion = 5;
+}
+
+message ClaimCampaignResponse {
+  bool is_success = 1;
+  repeated ClaimAttribute claim_attributes = 2;
+  google.protobuf.StringValue message = 3;
+  // should_attempt_promotion_validation: if claim response is success or promo is not claimable, client should do validatePromo endpoint call
+  bool should_attempt_promotion_validation = 4;
+}
+
+message ClaimAttribute {
+  string key = 1;
+  string value = 2;
+}
+
+message AdhocRequest {
+  string command = 1;
+  map<string, string> additional_info = 2;
+}
+
+message AdhocResponse {
+  string error = 1;
+  string additional_details = 2;
+}
+
+message GetItemCampaignsForStoresRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  repeated google.protobuf.StringValue store_ids = 2;
+
+  // Filters for campaigns that have this placement type.
+  Placement.PlacementType placement_type = 3;
+
+  // Additional string that can be used to query items.
+  google.protobuf.StringValue query = 4;
+
+  google.protobuf.StringValue submarket_id = 5;
+}
+
+message GetItemCampaignsForStoresResponse {
+  repeated ItemCampaignsForStore item_campaigns_for_stores = 1;
+}
+
+message PaymentMethodDetails {
+  google.protobuf.StringValue brand = 1;
+  google.protobuf.StringValue brand_product = 2;
+  google.protobuf.StringValue bin = 3; // Needs to be in the format of "BINIIN-xxxx-DD"
+  google.protobuf.StringValue payment_method_id = 4;
+  // DEPRECATED: Use the payment_method_type in PaymentContext instead.
+  // Payment method TYPE that was selected for the order
+  // Used for payment method promotion project (i.e. Cash App Pay promotion)
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA
+  doordash.payin.payment_method.v1.PaymentMethodType payment_method_type = 5 [deprecated = true];
+}
+
+message GetItemCarouselsRequest {
+  string consumer_id = 1;
+  repeated string geo_hashes = 2;
+  repeated Placement.PlacementType placement_types = 3;
+  repeated string carousel_ids = 4;
+  repeated string store_ids = 5;
+  repeated string vertical_ids = 6;
+  Placement.LandingPageType landing_page_type = 7;
+  google.protobuf.StringValue consumer_submarket_id = 8;
+  // list of carousel request data
+  repeated CarouselRequestData carousel_request_data = 9;
+}
+
+// Request for carousels to fetch for
+// In future we would deprecate this and internally fetch all carousels
+message CarouselRequestData {
+  // carousel id
+  string carousel_id = 1;
+  // vertical experience
+  VerticalExperience vertical_experience = 2;
+}
+
+message ItemCarouselCampaign {
+  string carousel_id = 1;
+  string store_id = 2;
+  string item_id = 3;
+  google.protobuf.Int32Value sort_order = 4;
+  repeated string vertical_ids = 5;
+  google.protobuf.StringValue item_name = 6;
+  google.protobuf.StringValue item_image_url = 7;
+  google.protobuf.Int32Value item_price = 8;
+  repeated Placement.LandingPageType landing_page_types = 9;
+  google.protobuf.StringValue item_description = 10;
+  google.protobuf.StringValue menu_id = 11;
+  google.protobuf.BoolValue has_required_options = 12;
+}
+
+message RetailItemCarouselCampaign {
+  string carousel_id = 1;
+  string store_id = 2;
+  string item_id = 3;
+  google.protobuf.Int32Value sort_order = 4;
+  repeated string vertical_ids = 5;
+  repeated Placement.LandingPageType landing_page_types = 6;
+  // Universal item id that identifies this item in retail system
+  google.protobuf.StringValue universal_item_id = 7;
+}
+
+message GetItemCarouselsResponse {
+  repeated ItemCarouselCampaign items = 1;
+  LiteCarousel lite_carousel = 2;
+  repeated RetailItemCarouselCampaign retail_items = 3;
+}
+
+message GetCPMFeesRequest {
+  google.protobuf.StringValue campaign_id = 1;
+}
+
+message GetCPMFeesResponse {
+  google.protobuf.StringValue campaign_id = 1;
+  repeated CPMFee cpm_fees = 2;
+}
+
+message GetBillingCriteriaRequest {
+  PricingModel pricing_model = 1;
+  PricingType pricing_type = 2;
+}
+
+message GetBillingCriteriaResponse {
+  PricingModel pricing_model = 1;
+  PricingType pricing_type = 2;
+  repeated Billing.BillingCriterion billing_criteria = 3;
+}
+
+message GetBillingsRequest {
+  string campaign_id = 1;
+}
+
+message GetBillingsResponse {
+  string campaign_id = 1;
+  repeated Billing billings = 2;
+}
+
+message DateRange {
+  // start timestamp for date filtering
+  google.protobuf.Timestamp start_time = 1;
+  // end timestamp for date filtering
+  google.protobuf.Timestamp end_time = 2;
+}
+
+message GetStoreCarouselLandingPageRequest {
+  string consumer_id = 1;
+  repeated string geo_hashes = 2;
+  Placement.PlacementType placement_type = 3;
+  string carousel_id = 4;
+  repeated string store_ids = 5;
+  google.protobuf.StringValue consumer_submarket_id = 6;
+  google.protobuf.StringValue consumer_timezone = 7;
+}
+
+message GetStoreCarouselLandingPageResponse {
+  repeated CampaignPlacementItem items = 1;
+  LiteCarousel lite_carousel = 2;
+}
+
+message GetItemCarouselLandingPageRequest {
+  string consumer_id = 1;
+  repeated string geo_hashes = 2;
+  Placement.PlacementType placement_type = 3;
+  string carousel_id = 4;
+  repeated string store_ids = 5;
+  google.protobuf.StringValue consumer_submarket_id = 6;
+  google.protobuf.StringValue consumer_timezone = 7;
+}
+
+message GetItemCarouselLandingPageResponse {
+  repeated ItemCarouselCampaign items = 1;
+  LiteCarousel lite_carousel = 2;
+  repeated RetailItemCarouselCampaign retail_items = 3;
+}
+
+// original fee amount and context. copied from quote_adjuster.proto
+message FeeDetails {
+  // delivery_fee, service_fee, ...
+  money.DiscountMonetaryField monetary_field = 1;
+  money.MonetaryFields fee_amount = 2;
+  money.BasisPoint fee_rate = 3;
+  google.protobuf.Int32Value fee_units_charged = 4;
+  money.MonetaryFields unit_fee_amount = 5;
+
+  // Metadata of extra info may return based on fee type
+  map<string, google.protobuf.Any> additional_info = 6;
+}
+
+message GetCampaignsForOrderCartPricingRequest {
+  string consumer_id = 1;
+  Cart cart = 2;
+  string store_id = 3 [deprecated = true];
+  PaymentMethodDetails payment_method_details = 4;
+
+  // force check specific promo code or campaign
+  google.protobuf.StringValue manual_validate_code_or_campaign_id = 5;
+
+  // list of ids and/or promo codes to not use for this request
+  // cart's removed_autoredeemed_promotion_ids
+  repeated google.protobuf.StringValue ignore_codes_or_campaign_ids = 7;
+
+  google.protobuf.BoolValue promotion_nudge_enabled = 8;
+
+  // only return “isAdjustableEnabled=true” campaigns if the following has been set to true.
+  // For now, this is only large retail order discount
+  google.protobuf.BoolValue is_adjustable_enabled = 9;
+  AdditionalStoreInfo additional_store_info = 10 [deprecated = true];
+  common.ConsumerLocation consumer_location = 11;
+  StoreData store_data = 12;
+  // skip considering the ingested campaigns like the DashPass campaigns in the result
+  google.protobuf.BoolValue ignore_ingested_campaigns = 13;
+  google.protobuf.Timestamp scheduled_delivery_time = 14;
+  google.protobuf.BoolValue should_treat_paused_subscriber_as_active = 15;
+  google.protobuf.StringValue consumer_timezone = 16;
+  google.protobuf.StringValue starting_point_id = 17;
+  repeated AttemptedPromotion attempted_promotions = 18;
+  repeated FeeDetails original_fee_details = 19; // info about the original fees
+  //source of the call to this end point, likely sticky footer or preview order
+  ValidatePromotionRequest.SourceType source = 20;
+
+  // Provides context about the payment method used for the order
+  // Use case includes validating payment method type for payment method promotions
+  // https://docs.google.com/document/d/1NRhPssxPwA_rcafz30kFnEDmcD44CCPyKv5Ck6flVDA/edit
+  payin.v1.PaymentContext payment_context = 21;
+  money.OrderFlowType order_flow_type = 22;
+
+  // This field stores information about a Cx's device
+  common.ClientDeviceCtx client_device_context = 23;
+}
+
+message AdditionalStoreInfo {
+  string store_business_id = 1;
+  string store_business_vertical_id = 2;
+  string store_id = 3;
+}
+
+message GetCampaignsForOrderCartPricingResponse {
+  // a list of campaigns applicable to the cart
+  // each object in the list will only contain one type of discount, defined by common.money.DiscountMonetaryField
+  // each object will also have a list of campaigns, stripped down to only contain the relevant incentive
+  repeated PricingDiscountCampaigns discount_campaigns = 1;
+
+  // should be empty if the manually requested campaign (if any) is valid
+  ValidationErrorResult validation_error_result_for_manual_campaign = 2;
+
+  // DEPRECATED - use all_nudgeable_campaigns
+  // If there are any nudgeable campaigns for this order
+  // this means that there should be no promo campaigns in field 1
+  Campaign nudgeable_campaign = 3;
+  NudgeableReason nudgeable_reason = 4;
+
+  // This field is a sorted list of the nudgable campaigns for the order.
+  // This means that the campaign in the field 3 will be the first in this one.
+  repeated Campaign all_nudgeable_campaigns = 5;
+  map<string, promotion_service.NudgeableReason> nudgable_reasons_map = 6;
+
+  // item discount restrictions for this store. eg. max 20% off alcohol
+  repeated StoreItemDiscountRestriction store_item_discount_restrictions = 7;
+
+  // a map to signal to client if a campaign should be hidden with ad_id as key
+  map<string, ListOfDisabledSurface> disabled_display_map = 8;
+}
+
+message ListOfDisabledSurface {
+  repeated money.DisabledDisplaySurface disabled_display_surfaces = 1;
+}
+
+// StoreItemDiscountRestriction describes restrictions on discounts for items in a cart
+message StoreItemDiscountRestriction {
+  // items that restriction applies to
+  common.restriction_rules.v1.RestrictedItemType item_type = 1;
+
+  // type of discount restriction for these items
+  RestrictionType restriction_type = 2;
+  enum RestrictionType {
+    RESTRICTION_TYPE_INVALID = 0;
+    // item is not eligible for any discount
+    RESTRICTION_TYPE_DISCOUNT_NOT_ALLOWED = 1;
+    // item has a max percent off
+    RESTRICTION_TYPE_MAX_DISCOUNT_PERCENT = 2;
+  }
+
+  // max percent off for the item (only needed if restriction_type is MAX_DISCOUNT_PERCENT)
+  google.protobuf.Int32Value max_discount_percent = 3;
+}
+
+message PricingDiscountCampaigns {
+  money.DiscountMonetaryField discount_type = 1;
+  // filtered to only contain the incentive that matches discount type defined in field 1 ^
+  repeated Campaign campaigns = 2;
+}
+
+message ValidationErrorResult {
+  google.protobuf.StringValue error = 1;
+  repeated PromotionEligibilityResolution promotion_eligibility_resolutions = 2;
+}
+
+message GetDeliveryFeeIncentivesForStoresRequest {
+  string consumer_id = 1;
+  repeated StoreData store_data = 2;
+  google.protobuf.StringValue currency = 3;
+  common.ConsumerLocation consumer_location = 4;
+  google.protobuf.StringValue starting_point_id = 5;
+}
+
+message GetDeliveryFeeIncentivesForStoresResponse {
+  repeated IncentivesForStore incentives_for_stores = 1;
+}
+
+message GetIncentivesForStoresRequest {
+  string consumer_id = 1;
+  repeated string store_ids = 2 [deprecated = true];
+  repeated money.DiscountMonetaryField discount_types = 3;
+  google.protobuf.StringValue currency = 4;
+  repeated StoreData store_data = 5;
+  common.ConsumerLocation consumer_location = 6;
+  google.protobuf.StringValue starting_point_id = 7;
+}
+
+message GetIncentivesForStoresResponse {
+  repeated IncentivesForStore incentives_for_stores = 1;
+}
+
+message IncentivesForStore {
+  string store_id = 1;
+  repeated IncentiveDetails incentive_details = 2;
+}
+
+message IncentiveDetails {
+  string campaign_id = 1;
+  Incentive incentive = 2;
+}
+
+message GetRemainingFreeTrialCreditsForCampaignRequest {
+  string campaign_id = 1;
+  repeated string store_ids = 2;
+}
+
+message GetRemainingFreeTrialCreditsForCampaignResponse {
+  string campaign_id = 1;
+  repeated CreditRemainingForStore credit_remaining_for_stores = 2;
+}
+
+message CreditRemainingForStore {
+  string store_id = 1;
+  // due to performance concerns, we do not use monetary fields here
+  // within promotion-service, this will require fetching by ID which is a potentially heavy call
+  // the current use case of this is meant for MAS, which already has monetary field information about the credits
+  google.protobuf.Int32Value credits_left = 2;
+}
+
+message GetRedemptionsByConsumerIdRequest {
+  // required, retrieve consumer's latest deliveries by consumer id
+  google.protobuf.Int64Value consumer_id = 1;
+  // how for back to search, default limiting to 50
+}
+
+message GetRedemptionsByConsumerIdResponse {
+  repeated Redemption redemptions = 1;
+}

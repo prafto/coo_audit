@@ -1,0 +1,729 @@
+syntax = "proto3";
+
+package dashmart.v1;
+
+import "dashmart/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "dashmart_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashmart.v1";
+
+// APIs related to handling of parcels for sortation purposes within a dashmart
+service ParcelService {
+  // Get parcels for a facility
+  rpc GetParcelsForFacility(GetParcelsForFacilityRequest) returns (GetParcelsForFacilityResponse);
+  // Get various parcel stats for a facility
+  rpc GetParcelStatsForFacility(GetParcelStatsForFacilityRequest) returns (GetParcelStatsForFacilityResponse);
+  // Get parcel batches for a facility by batch_status_type or search term
+  rpc GetParcelBatchesForFacility(GetParcelBatchesForFacilityRequest) returns (GetParcelBatchesForFacilityResponse);
+  // Get various counts of parcel batches for a facility
+  rpc GetParcelBatchStatusCountsForFacility(GetParcelBatchStatusCountsForFacilityRequest) returns (GetParcelBatchStatusCountsForFacilityResponse);
+  // Scan parcels at a facility
+  rpc ScanParcel(ScanParcelRequest) returns (ScanParcelResponse);
+  // Complete quality check by reschedule all missorted/missing parcels
+  rpc CompleteQualityCheck(CompleteQualityCheckRequest) returns (CompleteQualityCheckResponse);
+  // Request redelivery of a parcel
+  rpc RequestParcelRedelivery(RequestParcelRedeliveryRequest) returns (RequestParcelRedeliveryResponse);
+  // scan parcel in a QA process
+  rpc ScanParcelForQa(ScanParcelForQaRequest) returns (ScanParcelForQaResponse);
+  // complete the QA process for a batch
+  rpc CompleteBatchQa(CompleteBatchQaRequest) returns (CompleteBatchQaResponse);
+  // restore the missing parcels in the batch QA process
+  rpc RestoreBatchMissingParcel(RestoreBatchMissingParcelRequest) returns (RestoreBatchMissingParcelResponse);
+  // get batch bin qa details for facility
+  rpc GetBatchBinQaDetailsForFacility(GetBatchBinQaDetailsForFacilityRequest) returns (GetBatchBinQaDetailsForFacilityResponse);
+  // reset the parcel qa status and other data for a batch
+  rpc ResetQaStatusForBatch(ResetQaStatusForBatchRequest) returns (ResetQaStatusForBatchResponse);
+  // Set parcel to returned to mx state
+  rpc SetParcelReturnedToMx(SetParcelReturnedToMxRequest) returns (SetParcelReturnedToMxResponse);
+  // Unassign runner and reschedule for a single parcel
+  rpc UnassignAndRescheduleSingleParcel(UnassignAndRescheduleSingleParcelRequest) returns (UnassignAndRescheduleSingleParcelResponse);
+  // Get sortation sets for the given facility and time range
+  rpc GetSortationSetsForFacility(GetSortationSetsForFacilityRequest) returns (GetSortationSetsForFacilityResponse);
+  // Update sets dispatch time from the sort app
+  rpc UpdateSetsDispatchTime(UpdateSetsDispatchTimeRequest) returns (UpdateSetsDispatchTimeResponse);
+  // Update automatic dispatch toggle status
+  rpc UpdateAutomaticDispatchStatus(UpdateAutomaticDispatchStatusRequest) returns (UpdateAutomaticDispatchStatusResponse);
+  // Get dispatch summary stats
+  rpc GetDispatchSummaryStats(GetDispatchSummaryStatsRequest) returns (GetDispatchSummaryStatsResponse);
+  // Gets unassigned routes for a given time range at a facility
+  rpc GetAvailableParcelRoutesCountByTime(GetAvailableParcelRoutesCountByTimeRequest) returns (GetAvailableParcelRoutesCountByTimeResponse);
+  // Get parcels by forceBatchId
+  rpc GetParcelsByForceBatchId(GetParcelsByForceBatchIdRequest) returns (GetParcelsByForceBatchIdResponse);
+}
+
+// ParcelFulfillmentStatus
+enum ParcelFulfillmentStatus {
+  // The default status that gets applied if this is not set. This is not expected to be used.
+  PARCEL_FULFILLMENT_STATUS_UNSPECIFIED = 0;
+  // Indicates the parcel is ready for fulfillment (and can be placed on a shelf)
+  PARCEL_FULFILLMENT_STATUS_READY = 1;
+  // Indicates the parcel is not yet ready for fulfillment (and should be set aside for the next day)
+  PARCEL_FULFILLMENT_STATUS_NOT_READY = 2;
+  // Indicates the parcel has already been scanned in and should therefore be prepared for redelivery
+  PARCEL_FULFILLMENT_STATUS_REDELIVERY_REQUIRED = 3;
+  // Indicates the parcel is pending redelivery and does not need to retry redelivery again
+  PARCEL_FULFILLMENT_STATUS_PENDING_REDELIVERY = 4;
+  // Indicates the parcel is received at hub site for hub-spoke model
+  PARCEL_FULFILLMENT_STATUS_HUB_RECEIVED_FOR_SPOKE = 5;
+  // Indicates the parcel is received at an incorrect site
+  PARCEL_FULFILLMENT_STATUS_INCORRECT_FACILITY = 6;
+  // Indicates the parcel is returned to mx
+  PARCEL_FULFILLMENT_STATUS_RETURNED_TO_MX = 7;
+  // Indicates the parcel is to be unassigned
+  PARCEL_FULFILLMENT_STATUS_RNX_UNASSIGN_NEEDED = 8;
+  // Indicates that a delivery was initiated on the backend already
+  PARCEL_FULFILLMENT_STATUS_REDELIVERY_INITIATED = 9;
+}
+
+// Parcel Qa Status
+enum ParcelQaStatus {
+  // The default status that gets applied if this is not set. This is not expected to be used.
+  PARCEL_QA_STATUS_UNSPECIFIED = 0;
+  // Indicates the parcel is an extra parccel and its original batch is already QAed
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_QAED_BATCH = 1;
+  // Indicates the parcel is an extra parccel and its original batch is not QAed yet
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_NONQAED_BATCH = 2;
+  // Indicates the parcel is an extra parccel and its original batch is already dispatched
+  PARCEL_QA_STATUS_EXTRA_PARCEL_FOR_DISPATCHED_BATCH = 3;
+  // Indicates the parcel is correct parcel in the batch which is currently being QAed
+  PARCEL_QA_STATUS_CORRECT_PARCEL = 4;
+  // Indicates the parcel is already scanned in this QA process
+  PARCEL_QA_STATUS_ALREADY_SCANNED_PARCEL = 5;
+  // Indicates the scanned barcode is not a recognized in this QA process
+  PARCEL_QA_STATUS_NOT_FOUND_PARCEL = 6;
+  // Indicates the scanned barcode has no force_batch_id in this QA process
+  PARCEL_QA_STATUS_NOT_EXTRA_PARCEL_FOR_NO_BATCH = 7;
+}
+
+// Batch Qa Status
+enum BatchQaStatus {
+  // The default status that gets applied if this is not set. This is not expected to be used.
+  BATCH_QA_STATUS_UNSPECIFIED = 0;
+  // Indicates the batch qa process is not started yet
+  BATCH_QA_STATUS_NOT_STARTED = 1;
+  // Indicates the batch qa process is in progress
+  BATCH_QA_STATUS_IN_PROGRESS = 2;
+  // Indicates the batch qa process is complete
+  BATCH_QA_STATUS_COMPLETE = 3;
+}
+
+// Request for getting sortation sets for the given facility and time range
+message GetSortationSetsForFacilityRequest {
+  // facility id
+  int32 facility_id = 1;
+  // Look for distinct quoted_pickup_time between time range - [start_time and end_time]
+  google.protobuf.Timestamp start_time = 2;
+  // end_time indicates the end of this time range; included in search range
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response containing a list of sortation set time intervals
+message GetSortationSetsForFacilityResponse {
+  // List of details containing time intervals and dispatch times
+  repeated SortationSetDetail sortation_set_details = 1;
+}
+
+// Information about sortation set time range and dispatch time
+message SortationSetDetail {
+  // Start and end of the sortation set time range
+  TimeInterval sortation_set_interval = 1;
+  // Dispatch time / Quoted Pickup time of the sortation set
+  google.protobuf.Timestamp dispatch_time = 2;
+}
+
+// Request for ScanParcelForQa API
+message ScanParcelForQaRequest {
+  // facility id
+  int32 facility_id = 1;
+  // barcode
+  string barcode = 2;
+  // force batch id for QA
+  string force_batch_id = 3;
+  // start_time indicates the start time of this sortation window
+  google.protobuf.Timestamp start_time = 4;
+  // end_time indicates the start time of this sortation window
+  google.protobuf.Timestamp end_time = 5;
+}
+
+// Response for ScanParcelForQa API
+message ScanParcelForQaResponse {
+  // Parcel's Qa status
+  ParcelQaStatus parcel_qa_status = 1;
+  // The bin name of parcels original batch
+  google.protobuf.StringValue bin_name = 2;
+  // Parcel object
+  Parcel parcel = 3;
+}
+
+// Request for ScanParcel API
+message ScanParcelRequest {
+  // facility id
+  int32 facility_id = 1;
+  // barcode
+  string barcode = 2;
+  // Flag to indicate if hub_spoke is enabled
+  google.protobuf.BoolValue is_hub_spoke_enabled = 3;
+  // Facility for hub_spoke to avoid query facility_code by facility_id
+  google.protobuf.StringValue facility_code = 4;
+}
+
+// Response for ScanParcel API
+message ScanParcelResponse {
+  // indicates whether or not the parcel delivery can be fulfilled by a runner (returned to the frontend so that it can render a different UI depending on the result)
+  ParcelFulfillmentStatus fulfillment_status = 1;
+  // always set i.e. if the parcel is not found, we'll throw NOT_FOUND and we won't use this contract, so this is effectively always set
+  string customer_name = 2;
+  // parcel id in uuid format, always set for the same reason as customer_name
+  string parcel_id = 3;
+  // the name of the bin where the store associate is to place the parcel, only set if fulfillment_status is READY
+  google.protobuf.StringValue bin_name = 4;
+  // optionally return all the parcel data if necessary, e.g. webapp need parcel data for returned parcels
+  Parcel parcel = 5;
+  // optionally return facility_code if the found parcel doesn't match current facility
+  google.protobuf.StringValue assigned_facility_code = 6;
+  // Parcel drive order id
+  int64 drive_order_id = 7;
+  // Parcel stowed/QAed or not
+  bool is_parcel_stowed = 8;
+}
+
+// Request for CompleteBatchQa API
+message CompleteBatchQaRequest {
+  // facility id
+  int32 facility_id = 1;
+  // force_batch_id for the qa batch
+  string force_batch_id = 2;
+  // start_time indicates the start time of this sortation window
+  google.protobuf.Timestamp start_time = 3;
+  // end_time indicates the start time of this sortation window
+  google.protobuf.Timestamp end_time = 4;
+}
+
+// Response for CompleteBatchQa API
+message CompleteBatchQaResponse {}
+
+// Request for ResetQaStatusForBatch API
+message ResetQaStatusForBatchRequest {
+  // force batch id for QA
+  string force_batch_id = 1;
+  // batch Qa status
+  BatchQaStatus batch_qa_status = 2;
+  //facility id
+  int32 facility_id = 3;
+}
+
+// Response for ResetQaStatusForBatch API
+message ResetQaStatusForBatchResponse {}
+
+// Request for RestoreBatchMissingParcel API
+message RestoreBatchMissingParcelRequest {
+  // force batch id for QA
+  string force_batch_id = 1;
+  //Parcel's Qa status
+  ParcelQaStatus parcel_qa_status = 2;
+  // Parcel drive order id
+  int64 drive_order_id = 3;
+  //facility id
+  int32 facility_id = 4;
+}
+
+// Response for RestoreBatchMissingParcel API
+message RestoreBatchMissingParcelResponse {}
+
+// Request for GetBatchBinQaDetailsForFacility API
+message GetBatchBinQaDetailsForFacilityRequest {
+  // facility id
+  int32 facility_id = 1;
+  // start_time indicates the start of the time range where we should look for batches matching this range.
+  google.protobuf.Timestamp start_time = 2;
+  // end_time is similar to the above, this is just the end of the range
+  google.protobuf.Timestamp end_time = 3;
+  // Pagination offset. The frontend should set is to 0 if don't want to use it
+  int64 offset = 4;
+  // Pagination page size. The frontend should set is to a large value if don't want to use it
+  int64 page_size = 5;
+}
+
+// Response for GetBatchBinQaDetailsForFacility API
+message GetBatchBinQaDetailsForFacilityResponse {
+  // parcels list
+  repeated BatchBinQaDetail batch_bin_qa_details = 1;
+}
+
+// Request for GetParcelsForFacility API
+message GetParcelsForFacilityRequest {
+  reserved 2, 3; // deprecates the quoted_pickup_time_start, end columns
+  // facility id
+  int32 facility_id = 1;
+  // start_time indicates the start of the time range where we should look for orders that have *either* a quoted_pickup_time or last_scanned_at matching this range.
+  google.protobuf.Timestamp start_time = 4;
+  // end_time is similar to the above, this is just the end of the range
+  google.protobuf.Timestamp end_time = 5;
+  // Pagination offset. Limit controlled by the server
+  google.protobuf.StringValue next_token = 6;
+}
+
+// Response for GetParcelsForFacility API
+message GetParcelsForFacilityResponse {
+  // parcels
+  repeated Parcel parcels = 1;
+  // Next token offset. Limit controlled by the server
+  google.protobuf.StringValue next_token = 2;
+}
+
+// Request to get various parcel counts for a given time range and facility
+message GetParcelStatsForFacilityRequest {
+  // facility id
+  int32 facility_id = 1;
+  // Look for various parcel counts within the given search time range - [start_time, end_time]
+  // start_time marks the beginning of the search time range
+  google.protobuf.Timestamp start_time = 2;
+  // end_time marks the end of the search time range; included in time range
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response to get various parcel counts for a given time range and facility
+message GetParcelStatsForFacilityResponse {
+  // count of total scanned parcels that are expected to be delivered and ready within given time range
+  int32 total_scanned = 1;
+  // count of total missorted parcels that are not expected to be delivered within given time range but are last scanned in the time range
+  int32 total_missorted = 2;
+  // count of total remaining parcels expected to be delivered that are neither scanned nor noBatch
+  int32 total_remaining = 3;
+  // count of total parcels without a forceBatchId and expected to be delivered within given time range
+  int32 total_no_batch = 4;
+  // count of all parcels which are expected to be delivered during the given time range
+  int32 total_expected_to_be_delivered = 5;
+  // count of all parcels with either quoted pickup time or last scanned time within given time range
+  int32 total_parcel_count = 6;
+  // Earliest scan time of parcels in the facility within given time range
+  google.protobuf.Timestamp earliest_scan_time = 7;
+  // Latest scan time of parcels in the facility within given time range
+  google.protobuf.Timestamp latest_scan_time = 8;
+}
+
+// Batch Bin QA detail
+message BatchBinQaDetail {
+  // force batch id for the batch
+  string force_batch_id = 1;
+  // bin name for the batch
+  google.protobuf.StringValue bin_name = 2;
+  // qa start time
+  google.protobuf.Timestamp qa_start_time = 3;
+  // qa end time
+  google.protobuf.Timestamp qa_end_time = 4;
+  // batch size
+  int32 batch_size = 5;
+  // correct parcel scanned
+  int32 correct_parcel_scanned = 6;
+}
+
+// Request to get parcel batches for the given time range
+message GetParcelBatchesForFacilityRequest {
+  // facility id
+  int32 facility_id = 1;
+  // Look for various parcel batches within the given search time range - [start_time, end_time]
+  // start_time marks the beginning of the search time range
+  google.protobuf.Timestamp start_time = 2;
+  // end_time marks the end of the search time range; included in time range
+  google.protobuf.Timestamp end_time = 3;
+  // filter based on the batch_status_type
+  BatchStatusType batch_status_type = 4;
+  // Pagination offset
+  int32 pagination_offset = 5;
+  // Number of parcel batches to be displayed per page
+  int32 page_size = 6;
+}
+
+// Enum to indicate the status of parcel batch journey
+enum BatchStatusType {
+  // The default status that gets applied if this is not set. This is the expected state for search functionality.
+  BATCH_STATUS_TYPE_UNSPECIFIED = 0;
+
+  // A runner has left the geofence of the sortation center
+  BATCH_STATUS_TYPE_RUNNER_HANDOFF_COMPLETE = 1;
+  // A runner is not yet assigned; default status for parcels
+  BATCH_STATUS_TYPE_RUNNER_NOT_ASSIGNED = 2;
+  // A runner has confirmed to pick up a parcel batch
+  BATCH_STATUS_TYPE_RUNNER_ASSIGNED = 3;
+  // A runner has started scanning batch; this status is set after first parcel is scanned
+  BATCH_STATUS_TYPE_RUNNER_SCANNING_BATCH = 4;
+  // A runner has crossed into the geofence of a sortation center
+  BATCH_STATUS_TYPE_RUNNER_APPROACHING = 5;
+  // A runner has been checked in at sortation center by associate
+  BATCH_STATUS_TYPE_RUNNER_WAITING_FOR_BATCH = 6;
+}
+
+// Response to get parcel batches for the given time range
+message GetParcelBatchesForFacilityResponse {
+  // list of parcel batches
+  repeated ParcelBatch parcel_batches = 1;
+}
+
+// Details of a parcel batch
+message ParcelBatch {
+  // force_batch_id of the parcel batch
+  google.protobuf.StringValue force_batch_id = 1;
+  // Shift id of the runner associated with this parcel batch
+  google.protobuf.Int64Value shift_id = 2;
+  // Current status of the parcel batch
+  BatchStatusType batch_status_type = 3;
+  // display name of a bin
+  google.protobuf.StringValue bin_name = 4;
+  // First and Last names of the runner for the parcel batch
+  google.protobuf.StringValue dasher_name = 5;
+  // Error associated with this parcel batch if it exists
+  ParcelBatchErrorMessage parcel_batch_error_message = 6;
+  // Total number of parcels with the same force_batch_id
+  int32 total_parcels_count = 7;
+  // Total number of parcels with the same force_batch_id + dasher_shift_id
+  int32 partial_parcels_count = 8;
+  // Time at which the dasher has checked in for this parcel batch
+  google.protobuf.Timestamp dasher_check_in_time = 9;
+}
+
+// ParcelBatchErrorMessage
+message ParcelBatchErrorMessage {
+  // Error occurred
+  ParcelBatchError error = 1;
+  // Description of the specific error that occurred
+  string description = 2;
+}
+
+// Enum to indicate the error type associated with the parcel batch
+enum ParcelBatchError {
+  // Not to be used
+  PARCEL_BATCH_ERROR_UNSPECIFIED = 0;
+  // Multiple runners associated with a single parcel batch
+  PARCEL_BATCH_ERROR_MULTIPLE_RUNNERS = 1;
+}
+
+// Request to get parcel batches counts for the given time range
+message GetParcelBatchStatusCountsForFacilityRequest {
+  // facility id
+  int32 facility_id = 1;
+  // Look for various parcel batches within the given search time range - [start_time, end_time]
+  // start_time marks the beginning of the search time range
+  google.protobuf.Timestamp start_time = 2;
+  // end_time marks the end of the search time range; included in time range
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response to get various parcel batch counts for a given time range and facility
+message GetParcelBatchStatusCountsForFacilityResponse {
+  // count of all parcel batches which are not yet assigned to a runner
+  int32 total_unassigned = 1;
+  // count of all parcel batches for which a runner has confirmed but not near sortation center
+  int32 total_assigned = 2;
+  // count of all parcel batches for which a dasher has crossed into geofence of sortation center
+  int32 total_approaching = 3;
+  // count of all parcel batches for which a dasher has been checked in but not yet scanned any parcel
+  int32 total_waiting_for_batch = 4;
+  // count of all parcel batches for which a dasher has scanned first parcel
+  int32 total_scanning_batch = 5;
+  // count of all parcel batches for which dasher has left the geofence of sortation center
+  int32 total_handoff_complete = 6;
+}
+
+// Parcel
+message Parcel {
+  reserved 13; // removing/deprecating first_ingested_at field
+  // id
+  string id = 1; // id in uuid format
+  // drive_order_id
+  int64 drive_order_id = 2;
+  // hub_facility_id
+  int32 hub_facility_id = 3;
+  // hub_external_store_id
+  string hub_external_store_id = 4;
+  // business_name
+  string business_name = 5;
+  // force_batch_id
+  google.protobuf.StringValue force_batch_id = 6;
+  // delivery_id
+  google.protobuf.Int64Value delivery_id = 7;
+  // delivery_uuid
+  google.protobuf.StringValue delivery_uuid = 8;
+  // dasher_name
+  google.protobuf.StringValue dasher_name = 9;
+  // barcode
+  string barcode = 10;
+  // first_scanned_at
+  google.protobuf.Timestamp first_scanned_at = 11;
+  // last_scanned_at
+  google.protobuf.Timestamp last_scanned_at = 12;
+  // customer_name
+  google.protobuf.StringValue customer_name = 14;
+  // dasher_confirmed_time
+  google.protobuf.Timestamp dasher_confirmed_time = 15;
+  // cancelled_at
+  google.protobuf.Timestamp cancelled_at = 16;
+  // actual_pickup_time
+  google.protobuf.Timestamp actual_pickup_time = 17;
+  // actual_dropoff_time
+  google.protobuf.Timestamp actual_dropoff_time = 18;
+  // estimated_pickup_time
+  google.protobuf.Timestamp estimated_pickup_time = 19;
+  // quoted_pickup_time
+  google.protobuf.Timestamp quoted_pickup_time = 20;
+  // redelivery_attempts
+  int32 redelivery_attempts = 21;
+  // redelivery_requested_at
+  google.protobuf.Timestamp redelivery_requested_at = 22;
+  // created_at
+  google.protobuf.Timestamp created_at = 23;
+  // bin_name
+  google.protobuf.StringValue bin_name = 24;
+  // first_ready_at
+  google.protobuf.Timestamp first_ready_at = 25;
+  // last_ready_at
+  google.protobuf.Timestamp last_ready_at = 26;
+  // last_qa_time
+  google.protobuf.Timestamp last_qa_time = 27;
+  // last_qa_status
+  ParcelQaStatus last_qa_status = 28;
+  // last_qa_force_batch_id
+  google.protobuf.StringValue last_qa_force_batch_id = 29;
+}
+
+// Request for CompleteQualityCheck API
+message CompleteQualityCheckRequest {
+  reserved 4; // removing task_id field
+  // facility id
+  int32 facility_id = 1;
+  // start_time indicates the start time of a certain time period. We will use this property to filter out which parcels we want to reschedule
+  google.protobuf.Timestamp start_time = 2;
+  // end_time indicates the end time of a certain time period. We will use this property to filter out which parcels we want to reschedule
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// Response for CompleteQualityCheck API
+message CompleteQualityCheckResponse {
+  // tasd_id of the async reschedule task
+  google.protobuf.StringValue task_id = 1;
+}
+
+// ParcelRedeliveryReasonCode
+enum ParcelRedeliveryReasonCode {
+  // Should never be used. Reason code must be set
+  PARCEL_REDELIVERY_REASON_CODE_UNSPECIFIED = 0;
+  // Don't know
+  PARCEL_REDELIVERY_REASON_CODE_DO_NOT_KNOW = 1;
+  // No safe place to leave parcel
+  PARCEL_REDELIVERY_REASON_CODE_NO_SAFE_PLACE = 2;
+  // Delivery wrong address
+  PARCEL_REDELIVERY_REASON_CODE_WRONG_ADDRESS = 3;
+  // Customer unavailable to meet delivery
+  PARCEL_REDELIVERY_REASON_CODE_CUSTOMER_UNAVAILABLE = 4;
+  // App crashed
+  PARCEL_REDELIVERY_REASON_CODE_APP_CRASH = 5;
+  // Runner refused parcel for some reason
+  PARCEL_REDELIVERY_REASON_CODE_RUNNER_REFUSE = 6;
+  // Customer refused parcel for some reason
+  PARCEL_REDELIVERY_REASON_CODE_CUSTOMER_REFUSE = 7;
+  // Runner encountered family emergency
+  PARCEL_REDELIVERY_REASON_CODE_FAMILY_EMERGENCY = 8;
+  // Weather or safety concerns
+  PARCEL_REDELIVERY_REASON_CODE_WEATHER_OR_SAFETY = 9;
+  // NEW REASON CODES
+  // Access blocked
+  PARCEL_REDELIVERY_REASON_CODE_ACCESS_BLOCKED = 10;
+  // Route too long or late
+  PARCEL_REDELIVERY_REASON_CODE_ROUTE_TOO_LONG = 11;
+  // Emergency
+  PARCEL_REDELIVERY_REASON_CODE_EMERGENCY = 12;
+  // Business closed
+  PARCEL_REDELIVERY_REASON_CODE_BUSINESS_CLOSED = 13;
+  // Inaccessible destination
+  PARCEL_REDELIVERY_REASON_CODE_INACCESSIBLE_DESTINATION = 14;
+  // Language barrier
+  PARCEL_REDELIVERY_REASON_CODE_LANGUAGE_BARRIER = 15;
+  // Other
+  PARCEL_REDELIVERY_REASON_CODE_OTHER = 16;
+  // Late induction
+  PARCEL_REDELIVERY_REASON_CODE_LATE_INDUCTION = 17;
+}
+
+// Request for RequestParcelRedelivery API
+message RequestParcelRedeliveryRequest {
+  // facility id
+  int32 facility_id = 1;
+  // parcel_id
+  string parcel_id = 2;
+  // drive_order_id
+  int64 drive_order_id = 3;
+  // reason for redelivery
+  ParcelRedeliveryReasonCode reason_code = 4;
+  // optional comments about redelivery
+  google.protobuf.StringValue comments = 5;
+}
+
+// Response for RequestParcelRedelivery API
+message RequestParcelRedeliveryResponse {
+  // task_id of the async redeliver task
+  string task_id = 1;
+}
+
+// Request for SetParcelReturnedToMx
+message SetParcelReturnedToMxRequest {
+  // parcel_id
+  string parcel_id = 1;
+}
+
+// Response for SetParcelReturnedToMx
+message SetParcelReturnedToMxResponse {}
+
+// ParcelUnassignReasonCode
+enum ParcelUnassignReasonCode {
+  // Should never be used. Reason code must be set
+  PARCEL_UNASSIGN_REASON_CODE_UNSPECIFIED = 0;
+  // Vehicle trouble
+  PARCEL_UNASSIGN_REASON_CODE_VEHICLE_TROUBLE = 1;
+  // Parcel doesn't fit vehicle
+  PARCEL_UNASSIGN_REASON_CODE_PARCEL_NOT_FIT = 2;
+  // App crash or tech issue
+  PARCEL_UNASSIGN_REASON_CODE_APP_TECH_ISSUE = 3;
+  // Family emergency
+  PARCEL_UNASSIGN_REASON_CODE_FAMILY_EMERGENCY = 4;
+  // Weather or safety issue
+  PARCEL_UNASSIGN_REASON_CODE_WEATHER = 5;
+  // Damaged parcel
+  PARCEL_UNASSIGN_REASON_CODE_DAMAGED_PARCEL = 6;
+  // Driving distance too far
+  PARCEL_UNASSIGN_REASON_CODE_DISTANCE_TOO_FAR = 7;
+  // Languague barrier
+  PARCEL_UNASSIGN_REASON_CODE_LANGUAGE_BARRIER = 8;
+  // Other reason
+  PARCEL_UNASSIGN_REASON_CODE_OTHER = 9;
+  // NEW REASONS CODES
+  // Emergency
+  PARCEL_UNASSIGN_REASON_CODE_EMERGENCY = 10;
+  // Accidentally accepted parcels route
+  PARCEL_UNASSIGN_REASON_CODE_ACCIDENTALLY_ACCEPTED_ROUTE = 11;
+  // Suspected cherry picking
+  PARCEL_UNASSIGN_REASON_CODE_SUSPECTED_CHERRY_PICKING = 12;
+  // Bad/inaccessible address
+  PARCEL_UNASSIGN_REASON_CODE_BAD_ADDRESS_SUSPECTED = 13;
+}
+
+// Request for UnassignAndRescheduleSingleParcel
+message UnassignAndRescheduleSingleParcelRequest {
+  // Facility id
+  int32 facility_id = 1;
+  // Parcel drive order id
+  int64 drive_order_id = 2;
+  // Reason for unassign
+  ParcelUnassignReasonCode reason_code = 3;
+  // optional comments about unassign reason
+  google.protobuf.StringValue comments = 4;
+}
+
+// Response for UnassignAndRescheduleSingleParcel
+message UnassignAndRescheduleSingleParcelResponse {}
+
+// Information about sortation set dispatch time update
+message SetDispatchTimeUpdate {
+  // Current dispatch time of the sortation set
+  google.protobuf.Timestamp current_dispatch_time = 1;
+  // New dispatch time of the sortation set
+  google.protobuf.Timestamp new_dispatch_time = 2;
+  // Start and end of the sortation set time range
+  TimeInterval set_interval = 3;
+}
+
+// Request for UpdateSetsDispatchTime
+message UpdateSetsDispatchTimeRequest {
+  // Facility id
+  int32 facility_id = 1;
+  // List of set dispatch time updates
+  repeated SetDispatchTimeUpdate set_dispatch_times = 2;
+}
+
+// SetDispatchTimeUpdate status
+enum SetDispatchTimeUpdateStatus {
+  // Should never be used. Status must be set
+  SET_DISPATCH_TIME_UPDATE_STATUS_UNSPECIFIED = 0;
+  // Dispatch time update success
+  SET_DISPATCH_TIME_UPDATE_STATUS_SUCCESS = 1;
+  // Dispatch time update validation error
+  SET_DISPATCH_TIME_UPDATE_STATUS_VALIDATION_ERROR = 2;
+}
+
+// Response for UpdateSetsDispatchTime
+message UpdateSetsDispatchTimeResponse {
+  // Update result - If there is any validation failure, no update will happen for any set. Therefore one result for all sets.
+  SetDispatchTimeUpdateStatus result = 1;
+  // Optionally return error message if validaiton fails
+  google.protobuf.StringValue error_msg = 2;
+  // Optionally return the dispatch time of the first erroneous set
+  google.protobuf.Timestamp set_dispatch_time = 3;
+}
+
+// Request for UpdateAutomaticDispatchStatus
+message UpdateAutomaticDispatchStatusRequest {
+  // Facility id
+  int32 facility_id = 1;
+  // Auto dispatch status to set
+  bool automatic_dispatch_status = 2;
+  // Time interval - used to filter out the batches to update
+  TimeInterval interval = 3;
+}
+
+// Response for UpdateAutomaticDispatchStatus
+message UpdateAutomaticDispatchStatusResponse {}
+
+// Request for GetDispatchSummaryStats
+message GetDispatchSummaryStatsRequest {
+  // Facility id
+  int32 facility_id = 1;
+  // Time interval - used to filter result
+  TimeInterval interval = 2;
+}
+
+// Response for GetDispatchSummaryStats
+message GetDispatchSummaryStatsResponse {
+  // Auto dispatch status to return
+  bool automatic_dispatch_status = 1;
+  // Num of unsorted batches
+  int32 batch_unsorted_count = 2;
+  // Num of sorted batches
+  int32 batch_sorted_count = 3;
+  // Num of QAed batches
+  int32 batch_qaed_count = 4;
+  // Num of dispatching batches
+  int32 batch_dispatching_count = 5;
+  // Num of assigned batches
+  int32 batch_assigned_count = 6;
+}
+
+// Request for GetAvailableParcelRoutesCountByTime
+message GetAvailableParcelRoutesCountByTimeRequest {
+  // facility id
+  int32 facility_id = 1;
+  // quoted pickup time interval for the routes
+  TimeInterval quoted_pickup_time_interval = 2;
+}
+
+// Response for GetAvailableParcelRoutesCountByTime
+message GetAvailableParcelRoutesCountByTimeResponse {
+  // number of unassigned routes left in the time period for the facility
+  int64 num_available_routes = 1;
+}
+
+// Request for GetParcelsByForceBatchId
+message GetParcelsByForceBatchIdRequest {
+  // facility id
+  int32 facility_id = 1;
+  // force batch id for parcels
+  string force_batch_id = 2;
+}
+
+// Response for GetParcelsByForceBatchId
+message GetParcelsByForceBatchIdResponse {
+  // parcels
+  repeated Parcel parcels = 1;
+}

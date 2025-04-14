@@ -1,0 +1,610 @@
+syntax = "proto3";
+
+package kaizen_platform.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "kaizen_platform/action_override.proto";
+import "kaizen_platform/identity.proto";
+import "kaizen_platform/job.proto";
+import "kaizen_platform/jobv2.proto";
+import "kaizen_platform/workflow.proto";
+
+// go_package enabled for use in TAS go proxy
+option go_package = "github.com/doordash/services-protobuf/generated/kaizen_platform";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.kaizen_platform";
+
+// The Kaizen Gateway Service, the gRPC Service that serves as the entry point for the Kaizen Platform
+service KaizenGatewayService {
+  option (doordash.api.service) = {
+    name: "kaizen-platform-gateway"
+    url: "kaizen-platform-gateway.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["kaizen-platform-gateway"]
+    api_key_name: "KAIZEN_PLATFORM_API_KEY"
+    owner: {
+      name: "performance_platform"
+      id: "performance-platform"
+      slack_channel: "#ask-performance-platform"
+      email_alias: "eng-performance-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  // Asynchronously starts a new Kaizen Job Execution with given parameters
+  rpc StartJob(StartJobRequest) returns (StartJobResponse);
+
+  // Asynchronously starts a new Kaizen Parent Job Execution with given parameters,
+  // Note, this will spin up a parent job and all its children
+  rpc StartParentJob(StartParentJobRequest) returns (StartParentJobResponse);
+
+  // Asynchronously restarts an existing Kaizen Child Job Execution with given parameters,
+  // Note, one prerequisite is that the child job execution must be already stopped
+  // and that the corresponding job entry must exist in the DB and have a parent child relation
+  rpc RestartChildJob(RestartChildJobRequest) returns (RestartChildJobResponse);
+
+  // Asynchronously pauses rampup for an existing Kaizen Child Job Execution with given execution UUID.
+  // Note, this endpoint will succeed regardless if the child job execution is running or not
+  // The endpoint merely tags the child job for rampup pause
+  rpc PauseChildJobRampup(PauseChildJobRampupRequest) returns (PauseChildJobRampupResponse);
+
+  // Sister endpoint to PauseChildJobRampup, this endpoint will resume rampup for an existing child job execution
+  // Note, this endpoint will succeed regardless if the child job execution is running or not
+  // The endpoint merely tags the child job for rampup resume
+  rpc ResumeChildJobRampup(ResumeChildJobRampupRequest) returns (ResumeChildJobRampupResponse);
+
+  // Asynchronously stops a running Kaizen Child Job Execution with given execution UUID.
+  // Current implementation calls upstream controller and stamps estimated end time to now
+  rpc StopChildJob(StopChildJobRequest) returns (StopChildJobResponse);
+
+  // Synchronously stops a running Kaizen Job Execution.
+  // For running jobs, we also set estimatedEndTime to NOW in our DB (i.e. moving them to the COMPLETED state)
+  rpc StopJob(StopJobRequest) returns (StopJobResponse);
+
+  // Synchronously stops a running a collection of Kaizen Job.
+  // Current implementation calls upstream controller and stamps estimated end time to now
+  rpc StopParentJob(StopParentJobRequest) returns (StopParentJobResponse);
+
+  // Synchronously updates a running Kaizen Job Execution with new parameters
+  rpc UpdateRunningJobExecution(UpdateRunningJobExecutionRequest) returns (UpdateRunningJobExecutionResponse);
+
+  // Synchronously updates a running Parent Kaizen Job Execution with new parameters
+  rpc UpdateRunningParentJobExecution(UpdateRunningParentJobExecutionRequest) returns (UpdateRunningParentJobExecutionResponse);
+
+  // Synchronously updates a running Child Kaizen Job Execution with new parameters
+  rpc UpdateRunningChildJobExecution(UpdateRunningChildJobExecutionRequest) returns (UpdateRunningChildJobExecutionResponse);
+
+  // List Kaizen Job Executions
+  rpc ListJobExecutions(ListJobExecutionsRequest) returns (ListJobExecutionsResponse);
+
+  // List Kaizen Job Executions
+  rpc ListMultiJobExecutions(ListMultiJobExecutionsRequest) returns (ListMultiJobExecutionsResponse);
+
+  // List workflows that are available to execute
+  rpc ListAvailableJobs(ListAvailableJobsRequest) returns (ListAvailableJobsResponse);
+
+  // Creates a scheduled Kaizen job that's used to trigger an execution of a multi-workflow job at a future time
+  rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse);
+
+  // Updates a scheduled Kaizen job with new parameters
+  rpc UpdateScheduledJob(UpdateScheduledJobRequest) returns (UpdateScheduledJobResponse);
+
+  // Cancels a scheduled Kaizen job
+  // Any currently running jobs triggered by this scheduled job will be stopped as well
+  rpc CancelScheduledJob(CancelScheduledJobRequest) returns (CancelScheduledJobResponse);
+
+  // List active Scheduled Kaizen jobs
+  rpc ListScheduledJobs(ListScheduledJobsRequest) returns (ListScheduledJobsResponse);
+
+  // Returns a list of workflows that match all specified tags.
+  // If no tags are specified, returns all workflows.
+  rpc ListWorkflowsByTag(ListWorkflowsByTagRequest) returns (ListWorkflowsByTagResponse) {
+    option (google.api.http) = {
+      post: "/kaizen-platform-gateway/v1/list_workflows_by_tag"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Returns a list of all workflow tags.
+  rpc GetWorkflowTags(GetWorkflowTagsRequest) returns (GetWorkflowTagsResponse) {
+    option (google.api.http) = {get: "/kaizen-platform-gateway/v1/get_workflow_tags"};
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Returns a list of suggested action parameter overrides for a given workflow.
+  rpc GetSuggestedWorkflowActionParamOverrides(GetSuggestedWorkflowActionParamOverridesRequest) returns (GetSuggestedWorkflowActionParamOverridesResponse) {
+    option (google.api.http) = {
+      post: "/kaizen-platform-gateway/v1/suggested_action_param_overrides"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T3
+      lifecycle: DEV
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// KaizenScheduledJob represents an individual scheduled job
+message KaizenScheduledJob {
+  // Scheduled job event UUID, corresponds to the event_id for this event in Async Platform
+  string scheduled_job_event_id = 1;
+
+  // status of the scheduled job (scheduled, triggered, or canceled)
+  ScheduledJobStatus status = 2;
+
+  // Name of the parent job to execute triggered by this scheduled job
+  string parent_job_name = 3;
+
+  // The set of runtime parameters defining how a parent job triggered by the scheduled job should be executed
+  ParentJobExecutionParameters parent_execution_parameters = 4;
+
+  // The set of runtime parameters defining which child jobs to execute as part of the parent job triggered by this scheduled job
+  repeated StartChildJobRequest child_jobs = 5;
+
+  // Slack configuration for this parent job execution
+  SlackConfiguration slack_configuration = 6;
+
+  // Entity that's responsible for last updating this scheduled job
+  RequesterIdentity requester_identity = 7;
+
+  // UTC timestamp of when this job is scheduled to run
+  google.protobuf.Timestamp trigger_time = 8;
+
+  // UTC timestamp of when this scheduled job was last updated
+  google.protobuf.Timestamp last_updated = 9;
+}
+
+// Request object for the ScheduleJob gRPC method
+message ScheduleJobRequest {
+  // Required. This UUID needs to be generated on the client side to enable idempotency (we don't want to schedule events twice on accident).
+  string scheduled_job_event_id = 1;
+
+  // Name of the parent job to execute triggered by this scheduled job
+  string parent_job_name = 2;
+
+  // The set of runtime parameters defining how a parent job triggered by the scheduled job should be executed
+  ParentJobExecutionParameters parent_execution_parameters = 3;
+
+  // The set of runtime parameters defining which child jobs to execute as part of the parent job triggered by this scheduled job
+  repeated StartChildJobRequest child_jobs = 4;
+
+  // Slack configuration for this parent job execution
+  SlackConfiguration slack_configuration = 5;
+
+  // Entity that's responsible for creating this scheduled job
+  RequesterIdentity requester_identity = 6;
+
+  // Optional. The new UTC timestamp of when this job is scheduled to run.
+  // If not provided, the trigger time will not be updated.
+  // If the trigger time is the same as before, No call will be made
+  // to Async platform.
+  google.protobuf.Timestamp trigger_time = 7;
+}
+
+// Response object for the ScheduleJob gRPC method
+message ScheduleJobResponse {
+  // Job that was scheduled
+  KaizenScheduledJob scheduled_job = 1;
+}
+
+// Request object for the UpdateScheduledJob gRPC method
+message UpdateScheduledJobRequest {
+  // Event ID of the scheduled job to update
+  string scheduled_job_event_id = 1;
+
+  // Name of the parent job to execute triggered by this scheduled job
+  string parent_job_name = 2;
+
+  // The set of runtime parameters defining how a parent job triggered by the scheduled job should be executed
+  ParentJobExecutionParameters parent_execution_parameters = 3;
+
+  // The set of runtime parameters defining which child jobs to execute as part of the parent job triggered by this scheduled job
+  repeated StartChildJobRequest child_jobs = 4;
+
+  // Slack configuration for this parent job execution
+  SlackConfiguration slack_configuration = 5;
+
+  // Entity that's responsible for updating this scheduled job
+  RequesterIdentity requester_identity = 6;
+
+  // Optional. The new UTC timestamp of when this job is scheduled to run. If not provided, the trigger time will not be updated.
+  google.protobuf.Timestamp trigger_time = 7;
+}
+
+// Response object for the UpdateScheduledJob gRPC method
+message UpdateScheduledJobResponse {
+  // Updated scheduled job
+  KaizenScheduledJob scheduled_job = 1;
+}
+
+// Request object for the CancelScheduledJob gRPC method
+message CancelScheduledJobRequest {
+  // Scheduled event ID of the scheduled job to cancel
+  string scheduled_job_event_id = 1;
+}
+
+// Response object for the CancelScheduledJob gRPC method
+message CancelScheduledJobResponse {}
+
+// Request object for the ListScheduledJobs gRPC method
+// We can add to this later to support optional filtering parameters (e.g. only return scheduled jobs for a certain parent_job_name)
+message ListScheduledJobsRequest {}
+
+// Response object for the ListScheduledJobs gRPC method
+message ListScheduledJobsResponse {
+  // The list of scheduled job executions
+  repeated KaizenScheduledJob scheduled_jobs = 1;
+}
+
+// Request object for the StartJob gRPC method
+message StartJobRequest {
+  // Deprecated "requester", an old string field, use "requesterIdentity" instead
+  reserved 4;
+  reserved "requester";
+
+  // A predefined identifier used to uniquely identify the particular job to run. This is defined by a set of runtime files (configuration platform configs in the future) which represent configurations for each job, encapsulating job details that don't change on a per-execution basis, but that may want to be altered without code changes.
+  string job_id = 1;
+
+  // The set of runtime parameters defining how a job should be executed
+  // Leave this null if you're creating a pending job
+  JobExecutionParameters parameters = 2;
+
+  // test data pool id, would be used to determine the test data pool to use for this job
+  // required if you're creating a pending job
+  string test_data_pool_id = 3;
+
+  // Recommended: add your own UUID to enable idempotency (we don't want to start jobs twice on accident).
+  // If empty a UUID will be generated server-side.
+  string execution_uuid = 5;
+
+  // Entity that's responsible for starting this job execution.
+  // This acommodates heterogenous types of entity;
+  // for example this can be a DoorDash corp email or an ID from Async Platform
+  // for a scheduled job execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity requester_identity = 6;
+
+  // Set to true if this execution should be a pending execution, that is:
+  // an execution that's inserted into the DB but not started (instead waiting for
+  // pool provisioning, and after that, manual confirmation from a user).
+  bool is_pending = 7;
+}
+
+// Response object for the StartJob gRPC method
+message StartJobResponse {
+  // The job execution that was started
+  KaizenJobExecution job = 1;
+}
+
+// Request object for the StartParentJob gRPC method
+message StartParentJobRequest {
+  // an descriptive name for the parent job, not used for identification, for identification purpose
+  // please use the execution_uuid field.
+  string parent_job_name = 1;
+
+  // The set of runtime parameters defining how a parent job should be executed
+  ParentJobExecutionParameters parameters = 2;
+
+  // Recommended: add your own UUID to enable idempotency (we don't want to start jobs twice on accident).
+  // If empty a UUID will be generated server-side.
+  string execution_uuid = 3;
+
+  // Entity that's responsible for starting this job execution.
+  // This acommodates heterogenous types of entity;
+  // for example this can be a DoorDash corp email or an ID from Async Platform
+  // for a scheduled job execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity requester_identity = 4;
+
+  // The list of start requests associated with the parent, each of which will be started as a child job
+  repeated StartChildJobRequest child_jobs = 5;
+
+  // Slack configuration for this parent job execution
+  SlackConfiguration slack_configuration = 6;
+}
+
+// Slack configuration for a parent job execution
+message SlackConfiguration {
+  // Flag to post start and stop job events to #eng-oncall and #eng-load-testing.
+  bool notify_eng_channels = 1;
+
+  // List of IDs of existing Slack channels to post updates to.
+  repeated string slack_channels = 2;
+
+  // Flag to create a new Slack channel for updates.
+  bool create_new_channel = 3;
+
+  // Description of the test. Will be posted to Slack as part of the job start message.
+  string description = 4;
+}
+
+// Response object for the StartParentJob gRPC method
+message StartParentJobResponse {
+  // The job execution that was started
+  ParentKaizenJobExecution job = 1;
+
+  // The child jobs that was started
+  repeated ChildKaizenJobExecution child_jobs = 2;
+}
+
+// Request object for the associated StartParentJob gRPC method
+message StartChildJobRequest {
+  // A predefined identifier used to uniquely identify the particular job to run. This is defined by a set of runtime files (configuration platform configs in the future) which represent configurations for each job, encapsulating job details that don't change on a per-execution basis, but that may want to be altered without code changes.
+  string workflow_id = 1;
+
+  // The set of runtime parameters defining how a job should be executed
+  // Leave this null if you're creating a pending job
+  ChildJobExecutionParameters parameters = 2;
+
+  // test data pool id, would be used to determine the test data pool to use for this job
+  // required if you're creating a pending job
+  string test_data_pool_id = 3;
+
+  // Recommended: add your own UUID to enable idempotency (we don't want to start jobs twice on accident).
+  // If empty a UUID will be generated server-side.
+  string execution_uuid = 4;
+}
+
+// Request object for the RestartChildJob gRPC method
+message RestartChildJobRequest {
+  // The unique job execution identifier of the job execution to restart
+  string execution_uuid = 1;
+
+  // The parameters that the child should be resuming at
+  ChildJobExecutionParameters parameters = 2;
+
+  // Requester Information for resuming the workflow execution.
+  // This is passed here so we can perform the same QPS permission checks as we do for StartJob.
+  // NOTE: passing this value does not change the requester field in the job.
+  //
+  // This is optional, however anonymous requests will be subject
+  // to the same QPS restrictions as the lowest privileged user.
+  RequesterIdentity requester_identity = 3;
+}
+
+// Response object for the RestartChildJob gRPC method
+message RestartChildJobResponse {}
+
+// Request object for the PauseChildJobRampup gRPC method
+message PauseChildJobRampupRequest {
+  // The unique job execution identifier of the job execution to pause
+  string execution_uuid = 1;
+
+  // Requester Information for pausing the workflow execution
+  // This is used in tracking changes to the job
+  // Optional, not including the identity will not fail the request
+  RequesterIdentity requester_identity = 2;
+}
+
+// Request object for the PauseChildJobRampup gRPC method
+message PauseChildJobRampupResponse {}
+
+// Request object for the ResumeChildJobRampup gRPC method
+message ResumeChildJobRampupRequest {
+  // The unique job execution identifier of the job execution to resume
+  string execution_uuid = 1;
+
+  // Requester Information for unpausing the child job
+  // This is used in tracking changes to the job
+  // Optional, not including the identity will not fail the request
+  RequesterIdentity requester_identity = 2;
+}
+
+// Request object for the ResumeChildJobRampup gRPC method
+message ResumeChildJobRampupResponse {}
+
+// Request object for the StopChildJob gRPC method
+message StopChildJobRequest {
+  // The unique job execution identifier of the job execution to stop
+  string execution_uuid = 1;
+
+  // Requester Information for Stopping the workflow execution
+  // This is used to track changes to the job
+  // Optional, not including the identity will not fail the request
+  RequesterIdentity requester_identity = 2;
+}
+
+// Response object for the StopChildJob gRPC method
+message StopChildJobResponse {}
+
+// Request object for the StopJob gRPC method
+message StopJobRequest {
+  // The unique job execution identifier of the job execution to stop
+  string execution_uuid = 1;
+}
+
+// Response object for the StopJob gRPC method
+message StopJobResponse {}
+
+// Request object for the StopParentJob gRPC method
+message StopParentJobRequest {
+  // The unique job execution identifier of the job execution to stop
+  // note, the backend should be able to handle stopping a parent job and all its children
+  // by looking through child and identify all of its parent, so only passing parent uuid
+  // suffices, but redundancy could be warranted if there are any features needed
+  string execution_uuid = 1;
+
+  // Requester Information for Stopping the Job
+  // This is used in tracking changes to the job
+  // Optional, not including the identity will not fail the request
+  RequesterIdentity requester_identity = 2;
+}
+
+// Response object for the StopParentJob gRPC method
+message StopParentJobResponse {}
+
+// Request object for the UpdateRunningJobExecution gRPC method
+message UpdateRunningJobExecutionRequest {
+  // The unique job execution identifier of the job to edit
+  string execution_uuid = 1;
+
+  // The new job parameters to use
+  JobExecutionParameters parameters = 2;
+
+  // Entity that's responsible for updating this job execution.
+  // This is passed here so we can perform the same QPS permission checks as we do for StartJob.
+  // NOTE: passing this value does not change the requester field for the execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity updater_identity = 3;
+}
+
+// Response object for the UpdateRunningJobExecution gRPC method
+message UpdateRunningJobExecutionResponse {
+  // The updated job execution
+  KaizenJobExecution job = 1;
+}
+
+// Request object for the UpdateRunningParentJobExecution gRPC method
+message UpdateRunningParentJobExecutionRequest {
+  // The unique job execution identifier of the job to edit
+  string execution_uuid = 1;
+
+  // The new job parameters to use
+  ParentJobExecutionParameters parameters = 2;
+
+  // Entity that's responsible for updating this job execution.
+  // This is passed here so we can perform the same QPS permission checks as we do for StartJob.
+  // NOTE: passing this value does not change the requester field for the execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity updater_identity = 3;
+
+  // Optional: The caller can specify the end time of the job execution, this will
+  // set all of the workflows under this job to the same end time.
+  // This field defines the runtime in seconds to set for all workflows under this parent job
+  // if this field is not set, nothing will be done to workflows under this job
+  google.protobuf.Int64Value runtime_seconds = 4;
+}
+
+// Response object for the UpdateRunningParentJobExecution gRPC method
+message UpdateRunningParentJobExecutionResponse {
+  // The updated job execution
+  ParentKaizenJobExecution job = 1;
+}
+
+// Request object for the UpdateRunningChildJobExecution gRPC method
+message UpdateRunningChildJobExecutionRequest {
+  // The unique job execution identifier of the job to edit
+  string execution_uuid = 1;
+
+  // The new job parameters to use
+  ChildJobExecutionParameters parameters = 2;
+
+  // Entity that's responsible for updating this job execution.
+  // This is passed here so we can perform the same QPS permission checks as we do for StartJob.
+  // NOTE: passing this value does not change the requester field for the execution.
+  //
+  // This is optional, so our UI does not have hard dependencies
+  // on Catalog Service and Identity Service (which give us a user's email).
+  RequesterIdentity updater_identity = 3;
+}
+
+// Response object for the UpdateRunningChildJobExecution gRPC method
+message UpdateRunningChildJobExecutionResponse {
+  // The updated job execution
+  ChildKaizenJobExecution job = 1;
+}
+
+// Request object for the ListJobExecutions gRPC method
+message ListJobExecutionsRequest {}
+
+// Response object for the ListJobExecutions gRPC method
+message ListJobExecutionsResponse {
+  // The list of job executions
+  repeated KaizenJobExecution job_executions = 1;
+}
+
+// Request object for the ListMultiJobExecutions gRPC method
+message ListMultiJobExecutionsRequest {}
+
+// Response object for the ListMultiJobExecutions gRPC method
+message ListMultiJobExecutionsResponse {
+  // The list of parent job executions
+  repeated ParentKaizenJobExecution parent_job_executions = 1;
+
+  // The list of child job executions
+  repeated ChildKaizenJobExecution child_job_executions = 2;
+}
+
+// Request object for the ListAvailableJobs gRPC method
+// Currently empty - all requests will get a list of all job, unfiltered
+message ListAvailableJobsRequest {}
+
+// Response object for the ListAvailableJobs gRPC method
+message ListAvailableJobsResponse {
+  // List of available jobs
+  repeated KaizenJob available_jobs = 1;
+}
+
+// Request message for listing workflows by tag.
+message ListWorkflowsByTagRequest {
+  // List of tags to filter workflows. If not specified, returns all workflows.
+  // Tags are case-insensitive.
+  repeated string tags = 1;
+
+  // The number of the page to return.
+  int32 page_number = 2;
+
+  // The number of items on a page. If not specified, defaults to 50.
+  int32 page_size = 3;
+}
+
+// Response message for listing workflows by tag.
+message ListWorkflowsByTagResponse {
+  // List of metadata for workflows matching the specified tags.
+  repeated WorkflowMetadata workflows = 1;
+
+  // The total number of pages.
+  int32 total_pages = 2;
+}
+
+// Request message for listing all workflow tags.
+message GetWorkflowTagsRequest {}
+
+// Response message for listing all workflow tags.
+message GetWorkflowTagsResponse {
+  // List of all workflow tags. Tags are case-insensitive.
+  repeated string tags = 1;
+}
+
+// Request message for getting suggested action parameter overrides for a workflow.
+message GetSuggestedWorkflowActionParamOverridesRequest {
+  // Name of the workflow
+  string workflow_name = 1;
+}
+
+// Response message for getting suggested action parameter overrides for a workflow.
+message GetSuggestedWorkflowActionParamOverridesResponse {
+  // Suggested action parameter overrides for the workflow
+  repeated KaizenActionOverride suggested_action_overrides = 1;
+}

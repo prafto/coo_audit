@@ -1,0 +1,370 @@
+syntax = "proto3";
+
+package device.service.v1;
+
+import "device-service/common.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.device.service.v1";
+
+service DeviceService {
+  option (doordash.api.service) = {
+    name: "device-service"
+    url: "device-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["push-tokens"]
+    api_key_name: "DEVICE-SERVICE-API-KEY"
+    owner: {
+      name: "notification-foundation"
+      id: "cx-growth-device-service"
+      slack_channel: "#ask-comms-platform"
+      email_alias: "growth-notification-foundation-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  rpc UpdateDevice(UpdateDeviceRequest) returns (UpdateDeviceResponse);
+  rpc QueryDevice(DeviceQueryRequest) returns (DeviceQueryResponse);
+  rpc NotificationQuery(TokenQueryRequest) returns (TokenQueryResponse);
+  rpc UpdateDevicePreference(UpdateDevicePreferenceRequest) returns (UpdateDevicePreferenceResponse);
+  rpc UpdateWidgetToken(UpdateWidgetTokenRequest) returns (UpdateWidgetTokenResponse);
+  rpc QueryWidgetToken(QueryWidgetTokenRequest) returns (QueryWidgetTokenResponse);
+  rpc DeleteWidgetToken(DeleteWidgetTokenRequest) returns (DeleteWidgetTokenResponse) {
+    option (google.api.http) = {delete: "/push-tokens/v1/widget-token"};
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [CX_USER]
+      target_products: [CX]
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 100
+      }
+    };
+  }
+}
+
+message UpdateDeviceRequest {
+  google.protobuf.Int64Value user_id = 1;
+
+  // Different type of devices supported now are android, ios and browser
+  device.service.common.DeviceType type = 2;
+
+  google.protobuf.StringValue device_unique_id = 3;
+  google.protobuf.StringValue device_advertising_id = 4;
+  device.service.common.DeviceRoles device_role = 5;
+
+  google.protobuf.StringValue session_id = 6;
+  google.protobuf.StringValue login_id = 7;
+  google.protobuf.StringValue notification_token = 9;
+  google.protobuf.StringValue app_name = 10;
+  google.protobuf.StringValue app_version = 11;
+  google.protobuf.StringValue user_agent = 12;
+  google.protobuf.StringValue os_name = 13;
+  google.protobuf.StringValue os_version = 14;
+  google.protobuf.StringValue device_manufacturer = 15;
+  google.protobuf.StringValue device_model = 16;
+  google.protobuf.StringValue device_name = 17;
+  google.protobuf.Int32Value device_battery_level = 18;
+  device.service.common.EventType event_type = 19;
+  google.protobuf.StringValue ip_address = 20;
+  google.protobuf.StringValue cookie_id = 21;
+
+  google.protobuf.Int64Value order_id = 22;
+
+  repeated google.protobuf.Int64Value merchant_user_ids = 23;
+  google.protobuf.Int32Value apn_id = 24;
+  google.protobuf.StringValue caller_profile = 25; /* Optional caller identity (DSJ, MS...) */
+
+  google.protobuf.BoolValue token_expired = 26;
+}
+
+message UpdateDeviceResponse {
+  string result = 1;
+}
+
+/* ############### */
+/* Fraud query API */
+/* ############### */
+
+/**
+ * Device query semantics for DeviceQueryRequest:
+ * The DeviceQueryResponse is returned with a set of devices in device_info, populated as follows based on the
+ * parameters set in DeviceQueryRequest (not all combinations are spelled out):
+ *
+ * user_id order_id type unique_id adv_id operation              notes
+ * ------- -------- ---- --------- ------ ---------------------- --------------
+ * -       -        -    -         -      -                      Error.
+ * -       -        -    -         A      A                      All rows whose adv_id = A.
+ * -       -        -    U         -      U                      All rows whose unique_id = U.
+ * -       -        -    U         A      U ∪ A                  All rows whose adv_id = A as well as all rows whose unique_id = U.
+ * -       -        T    -         -      -                      Error.
+ * -       -        T    -         A      A ∩ T                  All rows whose adv_id = A and type = T.
+ * -       -        T    U         -      U ∩ T                  All rows whose unique_id = U and type = T.
+ * -       -        T    U         A      (A ∪ U) ∩ T            All rows whose adv_id = A and type = T as well as all rows whose unique_id = U and type = T.
+ * -       O        -    -         -      O                      All rows for order O.
+ * -       O        *    *         *      O ∩ (A ∪ U) ∩ T        All rows for order O that intersects with (A ∪ U) ∩ T.
+ * u       -        -    -         -      u                      All rows for user u.
+ * u       -        *    *         *      u ∩ (A ∪ U) ∩ T        All rows for user u that intersects with (A ∪ U) ∩ T.
+ * u       O        -    -         -      u ∪ O                  All rows that has user u or order O.
+ * u       O        *    *         *      (u ∪ O) ∩ T ∩ (U ∪ A)  All rows that has user u or order O (u ∪ O) that intersects with (A ∪ U) ∩ T.
+ *
+ * Note: type is treated as unset if match_device_type is false.
+ *
+ * The repeated field event_types has the following effect on the queries:
+ * 1. The base query is unaffected if no elements appear in event_types.
+ * 2. If a non-empty set of events are given, the query is intersected such that only
+ *    device rows which have an event in the set are returned. In addition, for all
+ *    matching rows, the payload is augmented with the data for the associated events.
+ *    Thus, the final set returned is (t1 ∪ t2 ∪ … tn) ∩ (u ∪ O) ∩ T ∩ (U ∪ A).
+ * Note: if the set of events given in event_types is “all events”, the resulting base
+ * query is also unaffected (since every device row always has at least one event) except
+ * that each device value is augmented with its event data.
+ */
+
+message DeviceQueryRequest {
+  google.protobuf.Int64Value user_id = 1;
+  google.protobuf.Int64Value order_id = 2;
+  bool is_store = 3; // Set to indicate that user_id denotes a store_id.
+  device.service.common.DeviceType type = 4;
+  bool match_device_type = 5; // Set to request matching on type.
+  google.protobuf.StringValue device_unique_id = 6;
+  google.protobuf.StringValue device_advertising_id = 7;
+  repeated device.service.common.EventType event_types = 8;
+  google.protobuf.Int32Value row_limit = 9; /* Max rows, default no limit   */
+}
+
+message DeviceMetaInfo {
+  device.service.common.DeviceType type = 1;
+  string device_unique_id = 2; // type and device_unique_id are always set, all other fields are optional and passed only if they have a non-null value.
+
+  google.protobuf.StringValue device_advertising_id = 3;
+  repeated device.service.common.DeviceRoles device_roles = 4;
+  google.protobuf.StringValue session_id = 5;
+  google.protobuf.StringValue login_id = 6;
+  google.protobuf.StringValue notification_token = 7;
+  google.protobuf.StringValue app_name = 8;
+  google.protobuf.StringValue app_version = 9;
+  google.protobuf.StringValue user_agent = 10;
+  google.protobuf.StringValue os_name = 11;
+  google.protobuf.StringValue os_version = 12;
+  google.protobuf.StringValue device_manufacturer = 13;
+  google.protobuf.StringValue device_model = 14;
+  google.protobuf.StringValue device_name = 15;
+  google.protobuf.Int32Value device_battery_level = 16;
+  google.protobuf.StringValue cookie_id = 17;
+  int64 last_update = 18;
+  int32 num_updates = 19;
+  double avg_period = 20;
+}
+
+message DeviceEventInfo {
+  int64 user_id = 1;
+  bool is_store = 2;
+  google.protobuf.StringValue ip_address = 3;
+  device.service.common.EventType event_type = 4;
+  int64 timestamp = 5;
+  int64 event_count = 7;
+}
+
+message DeviceInfo {
+  oneof association {
+    int64 user_id = 1; /* Device data is associated with the given user id */
+    int64 order_id = 2; /* Device data is associated with the given order id */
+    bool none = 3; /* Device data is not associated with a user or order */
+  }
+  DeviceMetaInfo device_meta_info = 4;
+  repeated DeviceEventInfo device_event_info = 5;
+}
+
+enum Status {
+  OK = 0;
+  INVALID_PARAMETERS = 1;
+  MISSING_PARAMETERS = 2;
+  QUERY_ERROR = 3;
+  INTERNAL_ERROR = 4;
+}
+
+message DeviceQueryResponse {
+  repeated DeviceInfo device_info = 1;
+  Status status = 2;
+}
+
+/* ######################## */
+/* Notification service API */
+/* ######################## */
+
+enum LoginState {
+  ACTIVE = 0; /* Default if not specified */
+  INACTIVE = 1;
+  ANY = 2;
+}
+
+message Identifier {
+  oneof identifier {
+    int64 user_id = 1;
+    int64 store_id = 2;
+    int64 order_id = 3;
+  }
+}
+
+message TokenQueryRequest {
+  repeated Identifier identifier = 1;
+  LoginState login_state = 2;
+  repeated device.service.common.DeviceRoles device_role = 3; /* Cx, Mx, Dx or Caviar-Cx      */
+  repeated device.service.common.DeviceType type = 4; /* Android, iOS, web            */
+  google.protobuf.Int64Value not_before = 5; /* Time limit, default no limit */
+  google.protobuf.Int32Value row_limit = 6; /* Max rows, default no limit   */
+  bool filter_expired_tokens = 7;
+  bool filter_system_opt_out_tokens = 8;
+  string message_type = 9;
+}
+
+message DeviceTokenData {
+  Identifier identifier = 1;
+  device.service.common.DeviceType type = 2;
+  google.protobuf.StringValue device_unique_id = 3;
+  repeated device.service.common.DeviceRoles device_role = 4;
+  google.protobuf.StringValue push_token = 5;
+  int64 last_activity = 6;
+  google.protobuf.Int64Value last_login = 7; /* Time of last login, or not set if missing  */
+  google.protobuf.Int64Value last_logout = 8; /* Time of last logout, or not set if missing */
+  google.protobuf.StringValue device_advertising_id = 9;
+}
+
+message TokenQueryResponse {
+  repeated DeviceTokenData device_data = 1;
+  Status status = 2;
+}
+
+message UpdateDevicePreferenceRequest {
+  // user id
+  int64 user_id = 1;
+
+  // IOS or Android
+  device.service.common.DeviceType device_type = 2;
+
+  // IOS IDFV or Android device id
+  string device_unique_id = 3;
+
+  // device role: consumer, dasher..
+  device.service.common.DeviceRoles device_role = 4;
+
+  // general system opt in
+  bool general_system_opt_in = 5;
+
+  // general system badge enabled
+  device.service.common.OptedIn general_system_notification_badge_opt_in = 6;
+
+  // general system sound enabled
+  device.service.common.OptedIn general_system_notification_sound_opt_in = 7;
+
+  // system notification channel preference
+  map<string, bool> system_notification_channels_opt_in = 8;
+
+  // system notification channel badge enabled
+  map<string, bool> system_notification_channels_badge_opt_in = 9;
+
+  // system notification channel sound enabled
+  map<string, bool> system_notification_channels_sound_opt_in = 10;
+
+  // uniquely identify an update, should be an UUID
+  google.protobuf.StringValue event_id = 11;
+
+  // track the timestamps update request is sent
+  google.protobuf.Timestamp sent_at = 12;
+}
+
+message UpdateDevicePreferenceResponse {
+  string result = 1;
+}
+
+message UpdateWidgetTokenRequest {
+  // user id
+  int64 user_id = 1;
+
+  // id of the user's device
+  string device_id = 2;
+
+  // app type of the widget, e.g. Cx app
+  device.service.common.DeviceRoles app_type = 3;
+
+  // feature type of the widget, e.g. order_status
+  device.service.common.WidgetType widget_type = 4;
+
+  // the id needed to identify the widget, which may be different for different widget types
+  device.service.common.IdType id_type = 5;
+
+  // id in the format of id type defined above
+  string id = 6;
+
+  // token of the live activity widget, which is unique for
+  // user_id, device_id, app_type, widget_type, id_type, id
+  string token = 7;
+}
+
+message UpdateWidgetTokenResponse {
+  string result = 1;
+}
+
+message QueryWidgetTokenRequest {
+  // feature type of the widget, e.g. order_status
+  device.service.common.WidgetType widget_type = 1;
+
+  // the id needed to identify the widget, which may be different for different widget types
+  device.service.common.IdType id_type = 2;
+
+  // id in the format of id type
+  string id = 3;
+
+  // optional
+  // For specific use case, please consult device team first
+  google.protobuf.Int64Value user_id = 4;
+
+  // optional
+  repeated device.service.common.DeviceRoles app_type = 5;
+}
+
+message QueryWidgetTokenResponse {
+  // all live activity widget tokens in the query result
+  // for example, a user can have multiple devices
+  repeated DeviceTokenData token = 1;
+}
+
+/**
+ * DeleteWidgetTokenRequest is used to delete a live activity widget token.
+ */
+message DeleteWidgetTokenRequest {
+  // The id of the user
+  int64 user_id = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The id of the user's device
+  string device_id = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The type of DoorDash app. For example Cx app, Dx app, Caviar-Cx app
+  device.service.common.DeviceRoles app_type = 3 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The type of live activity widget. For example order_status
+  device.service.common.WidgetType widget_type = 4 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The id needed to identify the widget, which may be different for different widget types
+  device.service.common.IdType id_type = 5 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // The id in the format of id type defined above
+  string id = 6 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}
+
+message DeleteWidgetTokenResponse {
+  // Initially this will be hardcoded to "OK". If the call fails, we will return grpc status INTERNAL instead
+  // of setting the result field.
+  string result = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+}

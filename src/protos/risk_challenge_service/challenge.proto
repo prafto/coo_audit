@@ -1,0 +1,284 @@
+syntax = "proto3";
+
+package risk_challenge_service.v1;
+
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+import "risk_challenge_service/common.proto";
+import "risk_challenge_service/demo_challenge.proto";
+import "risk_challenge_service/fraud_warning_lego_page.proto";
+import "risk_challenge_service/otp.proto";
+import "risk_challenge_service/redirect_secure_payment.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/risk_challenge_service/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.risk_challenge_service.rpc.api";
+
+// Service for risk challenges
+service RiskChallengeService {
+  option (doordash.api.service) = {
+    name: "risk-challenge-service"
+    url: "risk-challenge-service-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: [
+      "risk",
+      "challenges"
+    ]
+    api_key_name: "RISK_CHALLENGE_SERVICE_UG_API_KEY"
+    owner: {
+      name: "fraud"
+      id: "fraud"
+      slack_channel: "#payment-fraud-alerts"
+      email_alias: "payment_fraud_engineering@doordash.com"
+    }
+    target_products: [
+      CX,
+      DX,
+      MX
+    ]
+  };
+
+  // Initialize challenge request
+  rpc InitChallenge(InitChallengeRequest) returns (InitChallengeResponse);
+
+  // Get Challenge status
+  rpc GetChallengeStatus(GetChallengeStatusRequest) returns (GetChallengeStatusResponse);
+
+  // Gets challenge metadata
+  rpc GetChallengeMetadata(GetChallengeMetadataRequest) returns (GetChallengeMetadataResponse) {
+    option (google.api.http) = {get: "/risk/v1/challenges/{challenge_id}/metadata"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"}]
+    };
+  }
+
+  // RPC method to filter eligible challenges based on the request.
+  // Callers can provide a list of challenges to filter; if none are provided,
+  // the response returns all eligible challenges. Eligibility is determined
+  // using criteria like user agent, app version, bank identification number (BIN), and country depending on the challenge
+  rpc ListEligibleChallenges(ListEligibleChallengesRequest) returns (ListEligibleChallengesResponse);
+
+  // Verify demo challenge request
+  rpc VerifyDemoChallenge(VerifyDemoChallengeRequest) returns (VerifyDemoChallengeResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/challenges/demo/{challenge_id}/verify"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+
+  // Verify otp challenge request
+  rpc VerifyOTPChallenge(VerifyOTPChallengeRequest) returns (VerifyOTPChallengeResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/challenges/otp/{challenge_id}/verify"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+
+  // Send otp challenge request
+  rpc SendOTP(SendOTPRequest) returns (SendOTPResponse) {
+    option (google.api.http) = {
+      post: "/risk/v1/challenges/otp/{challenge_id}/send"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [
+        CX,
+        DX,
+        MX
+      ]
+    };
+  }
+}
+
+// Initialize challenge request
+message InitChallengeRequest {
+  // Type of challenge issued
+  ChallengeType type = 1;
+
+  // A set of identifiers that uniquely defines an entry in the challenge session table.
+  // See more details about Identifiers in common.proto
+  repeated Identifier identifiers = 2;
+  // Challenge details contain information about the challenge metadata.
+  oneof challenge_data {
+    // OTP Init data
+    OTPInitdata otp_data = 3;
+    // FraudWarningLegoPage Initdata
+    FraudWarningLegoPageInitdata fraud_data = 4;
+    // RedirectSecurePayment Initdata
+    RedirectSecurePaymentInitdata redirect_secure_payment_data = 5;
+  }
+}
+
+// Response for init challenge response
+message InitChallengeResponse {
+  // Key for the challenge session, generated from the identifiers provided in the init challenge request.
+  string challenge_id = 1;
+}
+
+// Get challenge status request
+message GetChallengeStatusRequest {
+  /* The getChallengeStatus request takes a list of identifiers. Since a challenge can have multiple identifier sets,
+     the request must be made separately for each identifier set.
+     Example: Possible values for a card scan are consumer ID, card fingerprint, or a combination of consumer ID and card fingerprint.
+  */
+  // See more details about Identifiers in common.proto
+  // Todo: Link to the document listing identifiers for each challenge
+  repeated Identifier identifiers = 1;
+  // Type of challenge
+  ChallengeType type = 2;
+}
+
+// Get challenge status response
+message GetChallengeStatusResponse {
+  // Challenge status
+  ChallengeStatus status = 1;
+}
+
+// Request for get challenge metadata
+message GetChallengeMetadataRequest {
+  // Key for the challenge session, generated from the identifiers provided in the init challenge request.
+  google.protobuf.StringValue challenge_id = 1;
+
+  // Id of the user receiving the challenge
+  string user_id = 2 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Response for get challenge metadata
+message GetChallengeMetadataResponse {
+  // Challenge type
+  ChallengeType challenge_type = 1 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+  // Url for fallback webview challenge. If url is NOT empty, it means that the challenge type is not supported natively,
+  // therefore mobile will launch the fallback webview and pass ddx-risk-challenge-id to webview.
+  // Webview will use challenge type to render the challenge
+  google.protobuf.StringValue webview_url = 2;
+  // Challenge Metadata
+  oneof metadata {
+    // OTP Metadata
+    OTPMetadata otp_data = 3;
+    // FraudWarningLegoPage Metadata
+    FraudWarningLegoPageMetadata fraud_warning_lego_page_data = 5;
+    // Demo challenge Metadata
+    DemoChallengeMetadata demo_challenge_data = 6;
+    // RedirectSecurePayment Metadata
+    RedirectSecurePaymentMetadata redirect_secure_payment_data = 7;
+  }
+  // User action for which challenge is issued
+  string action = 4;
+}
+
+// Request message for checking eligible challenges.
+message ListEligibleChallengesRequest {
+  // List of challenges for which eligibility should be determined.
+  // If empty, eligibility of all existing challenges will be determined.
+  repeated ChallengeType challenge_types = 1;
+  // The user agent string representing the device making the request.
+  // This field can provide information about the browser, operating system, and device type,
+  // which may be relevant for determining eligibility for certain challenges.
+  google.protobuf.StringValue user_agent = 2;
+}
+
+// Response message containing the eligible challenges.
+message ListEligibleChallengesResponse {
+  // A list of challenge types that are eligible based on the request.
+  repeated ChallengeType eligible_challenges = 1;
+}
+
+// Verify OTP challenge request
+message VerifyOTPChallengeRequest {
+  // Key for the challenge session, generated from the identifiers provided in the init challenge request.
+  string challenge_id = 1;
+  // OTP entered by the user
+  string verification_code = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Id of user to verify the challenge
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Verify otp challenge response. Empty response means verification is success
+message VerifyOTPChallengeResponse {}
+
+// Request for sending OTP
+message SendOTPRequest {
+  // Key for the challenge session, generated from the identifiers provided in the init challenge request.
+  google.protobuf.StringValue challenge_id = 1;
+  // OTP channel preferred by the user. Code is sent to SMS by default
+  Channel preferred_channel = 2;
+
+  // Id of the user receiving the one time password
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+
+  // By default, a mfa-send response is cached for 5 minutes. That prevents MFA UIs that call
+  // send() immediately upon displaying from causing new codes to be generated constantly. Set
+  // this field to true to invalidate the cache and force a new code to be generated.
+  bool force_new_code = 4;
+
+  // Relevant when force_new_code is false and MfaDebounceCache is a hit
+  // Resends same code and extends debounce and code caches ttl
+  bool force_send_code = 5;
+}
+
+// Response for sending OTP
+message SendOTPResponse {
+  // This is an optional field. Warning is sent when phone number is a voip number
+  Warning warning = 1;
+  // User message when OTP code is sent successfully
+  google.protobuf.StringValue message = 2;
+  // session_id
+  string session_id = 3;
+}
+
+// Verify demo challenge request
+message VerifyDemoChallengeRequest {
+  // Key for the challenge session, generated from the identifiers provided in the init challenge request.
+  string challenge_id = 1;
+  // Sum entered by the user
+  string verify_sum = 2 [(doordash.api.validate.rules).missing_value = {action: FAIL}];
+
+  // Id of user to verify the challenge
+  string user_id = 3 [(doordash.api.inject_id) = USER_ID];
+}
+
+// Verify demo challenge response. Empty response means verification is success
+message VerifyDemoChallengeResponse {}

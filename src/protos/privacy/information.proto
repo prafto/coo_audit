@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package privacy.information;
+
+import "common/authorization.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "privacy/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.privacy.information";
+
+service InformationService {
+  option (service_client.client_config).service_name = "privacy-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  rpc Request(InformationRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "can_create_request";
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+  }
+  rpc ListRequests(ListInformationRequest) returns (ListInformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "can_get_request";
+  }
+  rpc GetStatus(ProfileRequest) returns (StatusResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "can_get_request";
+  }
+  rpc Retry(ProfileRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "is_privacy_admin";
+  }
+  rpc GetDownload(ProfileRequest) returns (DownloadResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "can_get_download";
+  }
+  rpc Cancel(ProfileRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "is_privacy_admin";
+  }
+  rpc UpdateRestriction(RestrictionRequest) returns (RestrictionResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "is_privacy_admin";
+  }
+  rpc GetRestriction(GetRestrictionRequest) returns (RestrictionResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_AUTHZ;
+    option (authorization.v1.method_config).rule_name = "can_get_request";
+  }
+  rpc MerchantContractRequest(InformationRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_NONE;
+  }
+  rpc DrivePharmaMerchantRedaction(InformationRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_NONE;
+  }
+  rpc VoiceAiConsumerRequest(InformationRequest) returns (InformationResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_NONE;
+  }
+}
+
+enum RequestType {
+  UNKNOWN = 0;
+  GET = 1;
+  DELETE = 2;
+  CANCEL_DELETE = 3;
+  DENIED_DELETE = 4;
+}
+
+enum RestrictActionType {
+  RESTRICT_ACTION_NONE = 0;
+  RESTRICT_ACTION_DEACTIVATE = 1;
+  RESTRICT_ACTION_DENY = 2;
+}
+
+message InformationRequest {
+  RequestType request_type = 1;
+
+  privacy.common.ProfileType profile_type = 2;
+
+  int64 profile_id = 3;
+
+  int64 user_id = 4;
+
+  repeated privacy.common.ProfileType user_profiles = 5 [deprecated = true];
+
+  string country_code = 6;
+
+  /*
+   * indicates a first-order civil entity below the country level. Within the United States, these
+   * subdivisions are states. Not all nations exhibit these subdivisions. In most cases,
+   * subdivision short names will closely match ISO 3166-2 subdivisions and other widely
+   * circulated lists
+   */
+  string subdivision = 7;
+
+  string comments = 8;
+}
+
+message InformationResponse {
+  /*
+   * Unique identifier for the current information request
+   */
+  string request_id = 1;
+
+  RequestType request_type = 2;
+
+  privacy.common.ProfileType profile_type = 3;
+
+  int64 profile_id = 4;
+
+  google.protobuf.Timestamp created_at = 5;
+
+  google.protobuf.Timestamp completed_at = 6;
+
+  google.protobuf.Timestamp expires_at = 7;
+
+  privacy.common.StatusCode status = 8;
+
+  string comments = 9;
+}
+
+message ListInformationRequest {
+  privacy.common.ProfileType profile_type = 1;
+
+  int64 profile_id = 2;
+
+  /*
+   * indicates whether to include completed + expired and cancelled requests
+   */
+  bool include_inactive = 3;
+}
+
+message ListInformationResponse {
+  repeated InformationResponse requests = 1;
+
+  int32 count = 2;
+}
+
+message InformationAction {
+  string id = 1;
+
+  google.protobuf.Timestamp created_at = 2;
+
+  google.protobuf.Timestamp sent_at = 3;
+
+  google.protobuf.Timestamp updated_at = 4;
+
+  privacy.common.StatusCode status = 5;
+
+  string response = 6;
+
+  int32 tries = 7;
+}
+
+message StatusResponse {
+  InformationResponse request = 1;
+  repeated InformationAction actions = 2;
+}
+
+message ProfileRequest {
+  string request_id = 1;
+
+  privacy.common.ProfileType profile_type = 2;
+
+  int64 profile_id = 3;
+
+  string comments = 4;
+}
+
+message DownloadResponse {
+  string url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message RestrictionRequest {
+  int64 user_id = 1;
+
+  RequestType request_type = 2;
+
+  RestrictActionType restrict_action = 3;
+}
+
+message GetRestrictionRequest {
+  int64 user_id = 1;
+
+  RequestType request_type = 2;
+}
+
+message RestrictionResponse {
+  int64 user_id = 1;
+
+  RequestType request_type = 2;
+
+  RestrictActionType restrict_action = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+
+  google.protobuf.Timestamp updated_at = 5;
+}

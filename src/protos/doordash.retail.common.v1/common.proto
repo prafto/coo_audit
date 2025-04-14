@@ -1,0 +1,313 @@
+syntax = "proto3";
+
+package doordash.retail.common.v1;
+
+import "common/common.proto";
+import "common/marketplace_purchase.proto";
+import "common/money.proto";
+import "doordash.retail.catalog.v1/fulfillment.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/wrappers.proto";
+
+// common fields associated with an item in retail
+message ItemMetadata {
+  // identifier of merchant supplied id
+  Identifier merchant_supplied_identifier = 1;
+  // identifier of order items
+  Identifier order_item_identifier = 2;
+  // identifier of store items
+  Identifier store_item_identifier = 3;
+  // identifier of menu items
+  Identifier menu_item_identifier = 4;
+  // identifier of segmented pick instance id
+  Identifier segmented_pick_identifier = 5;
+  // name
+  google.protobuf.StringValue name = 6;
+  // category
+  google.protobuf.StringValue category = 7;
+  // image url
+  google.protobuf.StringValue image_url = 8;
+  // purchase type
+  .common.marketplace_purchase.v1.PurchaseType purchase_type = 9;
+  // unit price
+  ItemPrice unit_price = 10;
+  // measurement price
+  ItemPrice measurement_price = 11;
+  // unit of item
+  ItemUnit unit = 12;
+  // approximate sold as quantity
+  .common.Decimal approximate_sold_as_quantity = 13;
+  // scan strategy
+  doordash.retail.catalog.v1.ScanStrategy scan_strategy = 14;
+}
+
+// common fields for item price
+message ItemPrice {
+  // listed price
+  money.MonetaryFields amount = 1;
+  // non discounted price
+  money.MonetaryFields non_discounted_amount = 2;
+  // loyalty price
+  money.MonetaryFields loyalty_amount = 3;
+}
+
+// common fields associated with item fulfillment (e.g. Dx or Sx)
+message ItemFxMetadata {
+  // represent quantity_requested or quantity_picked
+  QuantityInfo quantity = 1;
+  // Unit for Fulfillment entity to determine pick type
+  FulfillmentUnit unit_requested = 2;
+  // Unit for Fulfillment entity to determine pick type
+  FulfillmentUnit unit_fulfilled = 3;
+  // Price per unit_fulfilled,
+  // it can be unit price or measurement price depending on PurchaseType
+  ItemPrice unit_fulfilled_price = 4;
+  // approximate fulfill quantity
+  .common.Decimal approximate_fulfilled_quantity = 5;
+  // Item pick status
+  PickStatus pick_status = 6;
+}
+
+// QuantityInfo with support for loose/fixed weighted item packaging
+message QuantityInfo {
+  // quantity info
+  oneof info {
+    // QUANTITY_INFO_TYPE_QUANTITY for buying an integer number of items.
+    Unit unit = 1;
+    // QUANTITY_INFO_TYPE_MEASUREMENT for buying weighted items.
+    Measurement measurement = 2;
+    // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING
+    // for buying an integer number of items but paid by total weight. (e.g. banana case)
+    UnitToMeasurementLoosePackaging unit_to_measurement_loose_packaging = 3;
+    // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING
+    // for buying multiple prepackaged weighted items.
+    UnitToMeasurementFixedPackaging unit_to_measurement_fixed_packaging = 4;
+  }
+  // QUANTITY_INFO_TYPE_QUANTITY for buying an integer number of items.
+  message Unit {
+    option (quantity_info_type) = QUANTITY_INFO_TYPE_QUANTITY;
+    // quantity
+    Quantity count = 1;
+  }
+  // QUANTITY_INFO_TYPE_MEASUREMENT for buying items picked by weight. (e.g. 1.25 lbs of green beans)
+  message Measurement {
+    option (quantity_info_type) = QUANTITY_INFO_TYPE_MEASUREMENT;
+    // quantity
+    Quantity weight = 1;
+  }
+  // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING for buying an integer number of items but paid by weight.
+  message UnitToMeasurementLoosePackaging {
+    option (quantity_info_type) = QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING;
+    // quantity
+    UnitToMeasurementQuantity quantity = 1;
+  }
+  // QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING for buying multiple prepackaged weighted items.
+  message UnitToMeasurementFixedPackaging {
+    option (quantity_info_type) = QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING;
+    // quantities
+    UnitToMeasurementQuantities quantities = 1;
+  }
+}
+
+// quantity info config message options
+extend google.protobuf.MessageOptions {
+  // quantity info type
+  QuantityInfoType quantity_info_type = 55001;
+}
+
+// enumerations of QuantityInfo
+enum QuantityInfoType {
+  // unsupported
+  QUANTITY_INFO_TYPE_UNSPECIFIED = 0;
+  // sold and fulfilled by unit (ea)
+  QUANTITY_INFO_TYPE_QUANTITY = 1;
+  // sold and fulfilled by weight Ex: $1.00/lbs
+  QUANTITY_INFO_TYPE_MEASUREMENT = 2;
+  // sold by unit, but fulfilled by weight and loosely packed (e.g.bananas).
+  QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_LOOSE_PACKAGING = 3;
+  // sold by unit, but fulfilled by weight and come in fixed packaging (e.g. packaged beef)
+  QUANTITY_INFO_TYPE_UNIT_TO_MEASUREMENT_FIXED_PACKAGING = 4;
+}
+
+// UnitToMeasurementQuantity
+message UnitToMeasurementQuantity {
+  // Number of items
+  Quantity count = 1;
+  // Total weight
+  Quantity weight = 2;
+}
+
+// UnitToMeasurementQuantities
+message UnitToMeasurementQuantities {
+  // list of UnitToMeasurementQuantity
+  repeated UnitToMeasurementQuantity entries = 1;
+  // Min total quantities allowed
+  .common.Decimal minimum_sum = 2;
+  // Max total quantities allowed
+  .common.Decimal maximum_sum = 3;
+}
+
+// Item quantity
+message Quantity {
+  // quantity - discrete or continuous
+  .common.Decimal value = 1;
+  // Unit
+  ItemUnit item_unit = 2;
+  // Min value allowed
+  .common.Decimal minimum_value = 3;
+  // Max value allowed
+  .common.Decimal maximum_value = 4;
+}
+
+// Unit for item
+enum ItemUnit {
+  // unspecified
+  ITEM_UNIT_UNSPECIFIED = 0;
+  // quantity
+  ITEM_UNIT_QTY = 1;
+  // each
+  ITEM_UNIT_EA = 2;
+  // lb
+  ITEM_UNIT_LB = 3;
+  // oz
+  ITEM_UNIT_OZ = 4;
+  // kg
+  ITEM_UNIT_KG = 5;
+  // g
+  ITEM_UNIT_G = 6;
+  // package
+  ITEM_UNIT_PACKAGE = 7;
+  // bag
+  ITEM_UNIT_BAG = 8;
+  // bunch
+  ITEM_UNIT_BUNCH = 9;
+  // box
+  ITEM_UNIT_BOX = 10;
+  // tray
+  ITEM_UNIT_TRAY = 11;
+  // bouquet
+  ITEM_UNIT_BOUQUET = 12;
+  // pot
+  ITEM_UNIT_POT = 13;
+}
+
+// Fulfillment Unit to determine pick type
+enum FulfillmentUnit {
+  // UNSPECIFIED
+  FULFILLMENT_UNIT_FIXED_PACKAGE_UNSPECIFIED = 0;
+  // each
+  FULFILLMENT_UNIT_FIXED_PACKAGE_EACH = 1;
+  // package
+  FULFILLMENT_UNIT_FIXED_PACKAGE_PACKAGE = 2;
+  // loose package Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_LBS = 10;
+  // loose package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_OZ = 11;
+  // loose package Measurement by KG (kg)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_KG = 12;
+  // loose package Measurement by Gram (g)
+  FULFILLMENT_UNIT_LOOSE_PACKAGE_MEASUREMENT_GRAM = 13;
+  // pre-packaged Measurement by pounds (lbs)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_LBS = 20;
+  // pre-package Measurement by Ounces (oz)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_OZ = 21;
+  // pre-package Measurement by KG (kg)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_KG = 22;
+  // pre-package Measurement by Gram (g)
+  FULFILLMENT_UNIT_FIXED_PACKAGE_MEASUREMENT_GRAM = 23;
+}
+
+// Item pick status
+enum PickStatus {
+  // not supported
+  PICK_STATUS_UNSPECIFIED = 0;
+  // mark item as picked
+  PICK_STATUS_PICKED = 1;
+  // mark item as refunded
+  PICK_STATUS_REFUNDED = 2;
+  // marks item as substituted.
+  PICK_STATUS_SUBSTITUTED = 3;
+  // notifies the Cx to select a sub/refund
+  PICK_STATUS_REVIEW_SUBS = 4;
+}
+
+// item identifier
+message Identifier {
+  // id
+  google.protobuf.StringValue id = 1;
+  // uuid
+  google.protobuf.StringValue uuid = 2;
+}
+
+// Monetary incentive/fee
+message MonetaryGroup {
+  // Monetary Type
+  enum MonetaryType {
+    // PLEASE SPECIFY MonetaryType
+    MONETARY_TYPE_UNSPECIFIED = 0;
+    // Incentive
+    MONETARY_TYPE_INCENTIVE = 1;
+    // Fee
+    MONETARY_TYPE_FEE = 2;
+  }
+  // Monetary Strategy
+  enum MonetaryStrategy {
+    // PLEASE SPECIFY MonetaryStrategy
+    MONETARY_STRATEGY_UNSPECIFIED = 0;
+    // Incentive
+    MONETARY_STRATEGY_FLAT = 1;
+    // Fee
+    MONETARY_STRATEGY_PERCENTAGE = 2;
+  }
+  // Monetary value
+  double monetary_value = 1;
+  // Incentive or fee
+  MonetaryType monetary_type = 2;
+  // Flat or percentage
+  MonetaryStrategy monetary_strategy = 3;
+}
+
+// retail delivery option type
+enum RetailDeliveryOptionType {
+  // retail delivery option type is unspecified
+  RETAIL_DELIVERY_OPTION_TYPE_UNSPECIFIED = 0;
+  // retail delivery option type is EXPRESS
+  RETAIL_DELIVERY_OPTION_TYPE_EXPRESS = 1;
+  // retail delivery option type is STANDARD
+  RETAIL_DELIVERY_OPTION_TYPE_STANDARD = 2;
+  // retail delivery option type is FREE_SAME_DAY
+  RETAIL_DELIVERY_OPTION_TYPE_FREE_SAME_DAY = 3;
+  // retail delivery option type is SCHEDULED
+  RETAIL_DELIVERY_OPTION_TYPE_SCHEDULED = 4;
+  // retail delivery option type is GROCERY PRO
+  RETAIL_DELIVERY_OPTION_TYPE_GROCERY_PRO = 5;
+  // retail delivery option type is FAST
+  RETAIL_DELIVERY_OPTION_TYPE_FAST = 6;
+  // retail delivery option type is DEFERRED
+  RETAIL_DELIVERY_OPTION_TYPE_DEFERRED = 7;
+}
+
+// Store info
+message Store {
+  // dd store_id
+  string dd_store_id = 1;
+  // dd business_id
+  string dd_business_id = 2;
+  // povider_name
+  string provider_name = 3;
+}
+
+// Enum to specify fire and forget events
+enum FireAndForgetEventName {
+  // Unspecified
+  FIRE_AND_FORGET_EVENT_NAME_UNSPECIFIED = 0;
+  // close dyf window
+  FIRE_AND_FORGET_EVENT_NAME_DYF_WINDOW_CLOSE = 1;
+  // store item scan OCR data
+  FIRE_AND_FORGET_EVENT_NAME_SCAN_OCR_READ = 2;
+  // store photo data of perishable items
+  FIRE_AND_FORGET_EVENT_NAME_PERISHABLE_PHOTO = 3;
+}
+
+// Info for prescription delivery. If exists, the order is a prescription delivery
+message PrescriptionDeliveryInfo {}

@@ -1,0 +1,179 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+package doordash.retail.catalog.v2;
+
+import "doordash.retail.catalog.crdb.v1/global_product_item.proto";
+import "doordash.retail.catalog.crdb.v1/product_item.proto";
+import "doordash.retail.catalog.crdb.v1/urpc_curated_information.proto";
+import "doordash.retail.catalog.crdb.v1/urpc_external_information.proto";
+import "doordash.retail.catalog.v2/denormalized_product_item.proto";
+import "doordash.retail.catalog.v2/metadata.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/doordash/retail/catalog/v2";
+
+// content type
+enum ContentType {
+  // Unknown source
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  // Urpc Based
+  CONTENT_TYPE_URPC = 1;
+  // Ump Based
+  CONTENT_TYPE_UMP = 2;
+  // TPD Based
+  CONTENT_TYPE_TPD = 3;
+}
+
+// ugp status
+enum UgpStatus {
+  // Unknown source
+  UGP_STATUS_UNSPECIFIED = 0;
+  // approved, ready to serve
+  UGP_STATUS_ACTIVE = 1;
+  // inactive, the ugp is de-duped
+  UGP_STATUS_INACTIVE = 2;
+  reserved 3;
+  reserved "UGP_STATUS_SINGLETON_FOR_UMP";
+  // orphan, a placeholder UGP for unlinked URPCs
+  UGP_STATUS_SINGLETON_FOR_URPC = 4;
+  // intentional singleton ump. All UMP attributes are verified even if it is only sold by 1 store.
+  UGP_STATUS_SINGLETON_FOR_UMP_ACTIVE = 5;
+  // orphan, a placeholder UGP for unlinked UMP
+  UGP_STATUS_SINGLETON_FOR_UMP_INACTIVE = 6;
+}
+
+// Unique Global Product Sku Content Identifier
+message ContentRepresentativeIdentifier {
+  // content type
+  ContentType content_type = 1;
+  reserved 2;
+  reserved "dd_sic";
+  // dd_business_id, part of the identifier of UMP
+  google.protobuf.Int64Value business_id = 3;
+  // ump id, part of the identifier of UMP
+  google.protobuf.StringValue ump_id = 4;
+  // version
+  google.protobuf.Int64Value version = 5;
+  // the externally faced id
+  google.protobuf.StringValue global_catalog_id = 6;
+  // 3pd id
+  google.protobuf.StringValue tpd_id = 7;
+}
+
+// structured sku content
+message SkuContent {
+  reserved 1;
+  reserved "content_type";
+  reserved 2;
+  reserved "product_item";
+  reserved 3;
+  reserved "global_product_item";
+  // sku content identifier.
+  ContentRepresentativeIdentifier content_representative_identifier = 4;
+  // DoorDash internal information
+  doordash.retail.catalog.crdb.v1.CuratedInformation curated_information = 5;
+  // Externally sourced attributes
+  doordash.retail.catalog.crdb.v1.ExternalInformation external_information = 6;
+  // gtin14 list
+  // Use the top level field only to represent the gtin14 for UGP.
+  // The field inside of sku_content is to represent the gtin14 for UGP's content (i.e. URPC, UMP, or 3PD)
+  repeated string gtin_14 = 7;
+  // original creator
+  google.protobuf.StringValue created_by = 8;
+  // created timestamp
+  google.protobuf.Timestamp created_at = 9;
+  // most recent updater
+  google.protobuf.StringValue updated_by = 10;
+  // most recent update timestamp
+  google.protobuf.Timestamp updated_at = 11;
+  // product item
+  doordash.retail.catalog.crdb.v1.ProductItem sku_content = 12;
+  // upc list
+  // Use the top level field only to represent the upc for UGP.
+  // The field inside of sku_content is to represent the upc for UGP's content (i.e. URPC, UMP or 3PD)
+  repeated string upc = 13;
+}
+
+// unique product global product content data model
+message UniqueGlobalProductContent {
+  // ugp id
+  google.protobuf.StringValue ugp_id = 1;
+  // ugp version
+  google.protobuf.Int64Value ugp_version = 2;
+  // ugp metadata
+  UGPMetadata metadata = 3;
+  // sku content
+  SkuContent sku_content = 4;
+  // ugp content creation timestamp
+  google.protobuf.Timestamp created_at = 5;
+  // The global_catalog_id is the final/primary global catalog id that will be used for serving. If it is from created from URPC, it is equal to dd_sic in GlobalProductItem proto.
+  google.protobuf.StringValue global_catalog_id = 6;
+  // ugp status
+  UgpStatus ugp_status = 7;
+  reserved 8;
+  reserved "merged_ugp_id";
+  // All other URPC's dd_sic that get mapped to this UGP node. This field is non-empty when more than one previously existing URPCs or UGPs are considered the same product in the latest run of entity resolution.
+  repeated string other_global_catalog_ids = 9;
+  // merged to ugp id, this will be the UGP that the current UGP get merged to.
+  google.protobuf.StringValue merged_to_ugp_id = 10;
+}
+
+// denormalized global content
+message DenormalizedGlobalContent {
+  // sku content
+  SkuContent sku_content = 1;
+  // product category info
+  ProductCategoryInfo product_category_info = 2;
+  // brand info
+  BrandInfo brand_info = 3;
+  // manufacturer_info
+  ManufacturerInfo manufacturer_info = 4;
+  // surfaced and deserialized unique global product item fields
+  SurfacedFields surfaced_fields = 5;
+}
+
+// upc
+message Upc {
+  // upc value
+  string upc = 1;
+}
+
+// gtin14
+message Gtin14 {
+  // gtin value
+  string gtin14 = 1;
+}
+
+// denormalized unique product global product content data model
+message DenormalizedUniqueGlobalProductContent {
+  // ugp id
+  google.protobuf.StringValue ugp_id = 1;
+  // ugp version
+  google.protobuf.Int64Value ugp_version = 2;
+  // ugp metadata
+  UGPMetadata metadata = 3;
+  // The content can be MPC based or converted from URPC.
+  DenormalizedProductItem denormalized_sku_content = 4;
+  // ugp content creation timestamp
+  google.protobuf.Timestamp created_at = 5;
+  // The global_catalog_id is the final/primary global catalog id that will be used for serving. If it is from created from URPC, it is equal to dd_sic in GlobalProductItem proto.
+  google.protobuf.StringValue global_catalog_id = 6;
+  // ugp status
+  UgpStatus ugp_status = 7;
+  // All other URPC's dd_sic that get mapped to this UGP node. This field is non-empty when more than one previously existing URPCs or UGPs are considered the same product in the latest run of entity resolution.
+  repeated string other_global_catalog_ids = 8;
+  // merged to ugp id, this will be the UGP that the current UGP get merged to.
+  google.protobuf.StringValue merged_to_ugp_id = 9;
+  reserved 10;
+  reserved "upcs";
+  reserved 11;
+  reserved "gtin14s";
+  // content type
+  ContentType content_type = 12;
+  // raw barcode list which is a union of content representative(URPC/UMP)’s upc list and other URPCs upc list.
+  repeated string upc = 13;
+  // normalized barcode list which is a union of content representative(URPC/UMP)’s gtin14 list and other URPCs gtin14 list.
+  repeated string gtin14 = 14;
+}

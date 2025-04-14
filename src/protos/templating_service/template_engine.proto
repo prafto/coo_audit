@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package templating_service.v1;
+
+import "common/notification.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "growth/notification_platform/notification_platform_service.proto";
+import "janus_service/preferences.proto";
+import "templating_service/templating_service_common.proto";
+import "templating_service/templating_service_enums.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.templating_service";
+
+/**
+   Template Engine App hosted in Templating-Service for content hydration per notification channel
+*/
+service TemplateEngineService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Endpoint to provide hydrated notification content for requested template which is either Email, Push or Hub template
+  rpc GetNotificationHydratedContent(GetNotificationHydratedContentRequest) returns (GetNotificationHydratedContentResponse) {
+    // This is an exceptionally slow RPC, so we will set its timeout to 5 seconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+  }
+
+  // V2 Endpoint to provide hydrated notification content for requested template
+  // which is either Email, Push or Hub template
+  rpc GetHydratedNotificationContentV2(GetHydratedNotificationContentV2Request) returns (GetHydratedNotificationContentV2Response) {
+    // This is an exceptionally slow RPC, so we will set its timeout to 5
+    // seconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 200;
+  }
+}
+
+// GetNotificationHydratedContent endpoint request
+// can be invoked using templateId or campaignId
+message GetNotificationHydratedContentRequest {
+  // templateId
+  string template_id = 1;
+  // channelType(Email, Push, Hub, SMS)
+  doordash.growth.notification_platform.v1.ChannelType channel = 2;
+  // locale (ie., en-us, en-ca, es-pr, fr-ca)
+  Locale locale = 3;
+  // optional: userEntityId (cxId, dxId) to fetch user profile from data cache or UPSS
+  google.protobuf.StringValue user_entity_id = 4;
+  // optional: UserEntityType
+  doordash.growth.notification_platform.v1.UserEntityType user_entity_type = 5;
+  // optional: Email
+  google.protobuf.StringValue email = 6;
+  // data_fields/template_fields to provide value for placeholders used in template
+  google.protobuf.Struct template_fields = 7;
+  // email_provider
+  janus_service.v1.EmailProvider email_provider = 8;
+  // optional versionId
+  google.protobuf.Int32Value version_id = 9;
+  // campaignId
+  google.protobuf.StringValue campaign_id = 10;
+  // optional: ddEventId
+  google.protobuf.StringValue dd_event_id = 11;
+}
+
+// GetNotificationHydratedContent endpoint response
+message GetNotificationHydratedContentResponse {
+  // notification Hydrated content
+  NotificationHydratedContent content = 1;
+  // send_skip flag to skip sending notification or not
+  google.protobuf.BoolValue send_skip = 2;
+}
+
+// hydrate content of notification
+message NotificationHydratedContent {
+  // hydrated content for Push, Hub, Email
+  oneof hydrated_content {
+    // the hydrated content of Push Notification
+    PushNotificationHydratedContent push_hydrated_content = 1;
+    // the hydrated content of Hub Notification
+    HubNotificationHydratedContent hub_hydrated_content = 2;
+    // the hydrated content of Email Notification
+    EmailNotificationHydratedContent email_hydrated_content = 3;
+  }
+}
+
+// the hydrated content of Push Notification
+message PushNotificationHydratedContent {
+  // title
+  google.protobuf.StringValue title = 1;
+  // body
+  google.protobuf.StringValue body = 2;
+}
+
+// the hydrated content of Hub Notification
+message HubNotificationHydratedContent {
+  // body
+  string body = 1;
+}
+
+// the hydrated content of Email Notification
+message EmailNotificationHydratedContent {
+  // subject
+  google.protobuf.StringValue subject = 1 [deprecated = true];
+  // pre_header
+  google.protobuf.StringValue pre_header = 2 [deprecated = true];
+  // html-body
+  google.protobuf.StringValue html_body = 3 [deprecated = true];
+  // plain-text body
+  google.protobuf.StringValue text_body = 4 [deprecated = true];
+  // Reusing the email template model to be consistent across APIs
+  EmailTemplate email_template = 5;
+}
+
+// GetNotificationHydratedContent endpoint request
+// can be invoked using templateId or campaignId
+message GetHydratedNotificationContentV2Request {
+  // templateId
+  google.protobuf.StringValue template_id = 1;
+  // channelType(Email, Push, Hub, SMS)
+  common.notification.v1.NotificationChannelType notification_channel = 2;
+  // locale (in LANG_REGION format, e.g. EN_US)
+  google.protobuf.StringValue locale = 3;
+  // userEntityId (cxId, dxId) to fetch user profile from data cache
+  // or UPSS
+  google.protobuf.StringValue user_entity_id = 4;
+  // audience type
+  common.notification.v1.NotificationAudienceType notification_audience_type = 5;
+  // hydration config
+  HydrationConfig hydration_config = 6;
+  // template_fields to provide value for placeholders used in
+  // template
+  google.protobuf.Struct template_fields = 7;
+  // versionId
+  google.protobuf.Int32Value version_id = 8;
+  // campaignId
+  google.protobuf.StringValue campaign_id = 9;
+}
+
+// hydration config
+message HydrationConfig {
+  // config
+  oneof config {
+    // email hydration config
+    EmailHydrationConfig email_hydration_config = 1;
+    // push hydration config
+    PushHydrationConfig push_hydration_config = 2;
+  }
+}
+
+// email hydration config
+message EmailHydrationConfig {
+  // to email
+  google.protobuf.StringValue to_email = 1;
+  // email_provider
+  janus_service.v1.EmailProvider email_provider = 2;
+}
+
+// push hydration config
+message PushHydrationConfig {}
+
+// GetNotificationHydratedV2Content endpoint response
+message GetHydratedNotificationContentV2Response {
+  // hydrated content
+  oneof hydrated_content {
+    // the hydrated Push Notification
+    HydratedPush hydrated_push = 11;
+    // the hydrated Email Notification
+    HydratedEmail hydrated_email = 12;
+  }
+  // send_skip flag to skip sending notification or not
+  google.protobuf.BoolValue send_skip = 2;
+}
+
+// the hydrated content and config for Email Notification
+message HydratedEmail {
+  // email config
+  EmailConfig email_config = 1;
+  // email content
+  EmailContent email_content = 2;
+}
+
+// the hydrated content and config for Push Notification
+message HydratedPush {
+  // push config
+  PushConfig push_config = 1;
+  // push content
+  PushContent push_content = 2;
+}

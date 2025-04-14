@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+package privacy.action;
+
+import "common/authorization.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "privacy/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.privacy.action";
+
+service ActionService {
+  option (service_client.client_config).service_name = "privacy-service";
+  option (service_client.client_config).response_attempt_timeout_millis = 1000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+
+  rpc Request(ActionRequest) returns (ActionResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_NONE;
+
+    option (google.api.http) = {
+      post: "/privacy/v1/request"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      // https://github.com/doordash/alerts/blob/62b40fbe0c5768d2f3dec6a9fcab990505207928/identity/identity-service-slos/slos.tf#L82
+      tier: T0
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 1600
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+        availability_objective: 99.9
+        runbook: "https://doordash.atlassian.net/wiki/spaces/Eng/pages/1252362176/Privacy+Service+Runbook"
+        ddrn: "ddrn::software::01075bce-5fe5-4665-9373-0ca7b0a8c358"
+      }
+
+      // TODO: Change to PROD once we want to receive external or wider employee traffic
+      lifecycle: TEST
+      authorization: [DD_USER]
+      role_based_authorization: {
+        mode: ALL,
+        roles: [
+          "perm_privacy_tool_delete_marketplace_cx",
+          "perm_privacy_create"
+        ]
+      }
+      target_products: [INTERNAL]
+    };
+
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 100;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 20000;
+  }
+
+  rpc Acknowledge(ActionResponse) returns (AcknowledgeResponse) {
+    option (authorization.v1.method_config).type = AUTHORIZATION_TYPE_NONE;
+  }
+
+  option (doordash.api.service) = {
+    name: "privacy-service"
+    url: "privacy-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["privacy"]
+    api_key_name: "PRIVACY-SERVICE-API-KEY"
+    owner: {
+      name: "privacy-service"
+      id: "privacy-service"
+      slack_channel: "#ask-privacy"
+      email_alias: "identity-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+}
+
+enum ActionId {
+  UNKNOWN = 0;
+
+  CONSUMER_DATA_INFRA_GET = 1;
+  CONSUMER_DATA_INFRA_FORGET = 2;
+  DATA_INFRA_GET = 3;
+  DATA_INFRA_FORGET = 4;
+
+  USER_IDENTITY_CREATE_OBFUSCATE = 11;
+  USER_IDENTITY_DEACTIVATE = 12;
+  USER_IDENTITY_OBFUSCATE = 13;
+  USER_IDENTITY_REACTIVATE = 14;
+
+  // All the CONSUMER_* actions are deprecated and should not be used.
+  CONSUMER_COMMUNICATIONS_UNSUBSCRIBE = 21;
+  CONSUMER_COMMUNICATIONS_FORGET = 22;
+  CONSUMER_COMMUNICATIONS_DELIVERY_FORGET = 23;
+  CONSUMER_COMMUNICATIONS_RESUBSCRIBE = 24;
+  COMMUNICATIONS_UNSUBSCRIBE = 25;
+  COMMUNICATIONS_FORGET = 26;
+  COMMUNICATIONS_DELIVERY_FORGET = 27;
+  COMMUNICATIONS_RESUBSCRIBE = 28;
+  NOTIFICATION_FORGET = 29;
+
+  CONSUMER_DEVICES_FORGET = 31;
+  DEVICES_FORGET = 32;
+  DELIVERIES_FORGET = 33;
+  DELIVERIES_DELINK_USER = 34;
+
+  CONSUMER_PAYMENTS_FORGET = 41;
+  PAYMENTS_FORGET = 42;
+
+  CONSUMER_ACTIVE_ORDERS = 51;
+  CONSUMER_FORGET = 52;
+  CONSUMER_DELINK_USER = 53;
+  CONSUMER_PROFILE_FORGET = 54;
+  CONSUMER_PROFILE_DELINK_USER = 55;
+  CONSUMER_FUTURE_ORDERS = 56;
+  CONSUMER_FORGET_VOICE_PROFILE = 57;
+
+  USER_MARKETING_UNSUBSCRIBE = 61;
+  UNSUBSCRIBE_SUBSCRIPTIONS = 62;
+
+  DELIVERY_FORGET = 71;
+  DELIVERY_RATINGS_FORGET = 72;
+
+  RATINGS_FORGET = 73;
+
+  // mule integrations
+  BIZAPPS_FORGET = 75;
+  BIZAPPS_AWSCONNECT_FORGET = 76;
+
+  CHAT_FORGET = 81;
+
+  GROUP_FORGET = 82;
+
+  PREFERENCE_RESUBSCRIBE = 91;
+
+  PRIVACY_FORGET_WAIT = 101;
+
+  RISK_DENIAL_CHECK_MAIN = 105;
+  RISK_DENIAL_CHECK_OPT = 106;
+  RISK_FORGET = 107;
+
+  DRIVE_FORGET = 111;
+
+  DASHER_ACTIVE_SHIFT_DELIVERIES = 115;
+  DASHER_FORGET = 116; // Includes DASHER_DELIVERIES_FORGET
+  DASHER_DELINK_USER = 117;
+
+  ORDER_FORGET = 121;
+
+  DELIVERY_EVENT_FORGET = 131;
+
+  PHARMA_DRIVE_FORGET = 135;
+  PHARMA_DELIVERIES_FORGET = 136;
+
+  PHARMA_TASKS_FORGET = 137;
+  TASKS_DELINK_USER = 138;
+  TASKS_FORGET = 139;
+
+  SOCIAL_FORGET = 140;
+
+  BUSINESS_PROFILE_FORGET = 141;
+
+  MULTI_VENDOR_PLATFORM_FORGET = 142;
+  SYSTEM_OF_RECORDS_FORGET = 143;
+  RDF_PERSONA_INQUIRY_FORGET = 144;
+
+  TEAM_MEMBER_FORGET = 145;
+}
+
+enum ActionSource {
+  LEGAL_POLICY = 0; // Default source if not specified is a legal policy
+  MERCHANT_POLICY = 1;
+  DRIVE_PHARMA_POLICY = 2;
+}
+
+message ActionRequest {
+  string request_id = 1;
+
+  ActionId action_id = 2;
+
+  privacy.common.ProfileType profile_type = 3;
+
+  int64 profile_id = 4;
+
+  int64 user_id = 5;
+
+  ActionSource source = 6;
+}
+
+message ActionResponse {
+  string request_id = 1;
+
+  ActionId action_id = 2;
+
+  privacy.common.StatusCode status = 3;
+
+  string response = 4;
+}
+
+message AcknowledgeResponse {}

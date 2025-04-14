@@ -1,0 +1,304 @@
+syntax = "proto3";
+
+package merchant_integrations;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.merchant_integrations";
+
+// Grpc service to create and update entries in provider, provider extension and subscription tables
+service SubscriptionService {
+  // Endpoint to upsert to Aurora POS Provider table
+  rpc UpsertProvider(UpsertProviderRequest) returns (UpsertProviderResponse);
+  // Endpoint to upsert to Crdb POS Provider table
+  rpc UpsertCrdbProvider(UpsertCrdbProviderRequest) returns (UpsertCrdbProviderResponse) {
+    // default circuit breaker config
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+  // Endpoint to upsert to Crdb POS ProviderExtension table
+  rpc UpsertCrdbProviderExtension(UpsertCrdbProviderExtensionRequest) returns (UpsertCrdbProviderExtensionResponse) {
+    // default circuit breaker config
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+  // Endpoint to upsert to Aurora POS Subscription table
+  rpc UpsertSubscription(UpsertSubscriptionRequest) returns (UpsertSubscriptionResponse) {
+    // default circuit breaker config
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+
+  // Endpoint to get provider by developerUuid
+  rpc GetProvidersByDeveloper(GetProvidersByDeveloperRequest) returns (GetProvidersByDeveloperResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+
+  // Endpoint to get to Aurora POS Subscriptions by developerUuid
+  rpc GetSubscriptionsByDeveloper(GetSubscriptionsByDeveloperRequest) returns (GetSubscriptionsByDeveloperResponse) {
+    // default circuit breaker config
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+
+  // Endpoint to get Subscriptions by provider
+  rpc GetSubscriptionsByProvider(GetSubscriptionsByProviderRequest) returns (GetSubscriptionsByProviderResponse) {
+    // default circuit breaker config
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+  }
+}
+
+// Request to update Crdb Provider table
+message UpsertCrdbProviderRequest {
+  // provider
+  Provider provider = 1;
+}
+
+// Provider
+message Provider {
+  // provider name
+  google.protobuf.StringValue name = 1;
+  // developer UUID for the provider, should be passed for provider created through developer portal
+  google.protobuf.StringValue developer_uuid = 2;
+  // environment for the provider
+  Environment environment = 3;
+  // developer MDS organization id, can span multiple providers
+  google.protobuf.Int64Value developer_organization_id = 4;
+  // Provider mds organization id
+  // specific mds org id for this provider
+  google.protobuf.Int64Value provider_organization_id = 5;
+}
+
+// environment for provider
+enum Environment {
+  // unspecified environment
+  ENVIRONMENT_UNSPECIFIED = 0;
+  // sandbox
+  ENVIRONMENT_SANDBOX = 1;
+  // production
+  ENVIRONMENT_PRODUCTION = 2;
+}
+
+// Response after updating or creating a row on Crdb Provider table
+message UpsertCrdbProviderResponse {
+  // Provider Response
+  ProviderResponse response = 1;
+}
+
+// Provider Response
+message ProviderResponse {
+  // provider name
+  google.protobuf.StringValue name = 1;
+  // result representing success or failure
+  google.protobuf.StringValue result = 2;
+}
+
+// Request to update Provider table base on provider name
+message UpsertProviderRequest {
+  // Provider
+  Provider provider = 1;
+  // upsert mode
+  UpsertMode upsert_mode = 2;
+}
+
+// Response after updating or creating a row on Provider table
+message UpsertProviderResponse {
+  // Provider Response
+  ProviderResponse response = 1;
+}
+
+// Request to update ProviderExtension table
+message UpsertCrdbProviderExtensionRequest {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // name of the provider
+  google.protobuf.StringValue provider_type = 2;
+  // integration type - for example: curbside
+  google.protobuf.StringValue integration_type = 3;
+}
+
+// Response after updating or creating a row on Crdb Provider Extension table
+message UpsertCrdbProviderExtensionResponse {
+  // store id
+  google.protobuf.StringValue store_id = 1;
+  // result representing success or failure
+  google.protobuf.StringValue result = 2;
+}
+
+// Request to update Subscription table
+// provider name and subscription type combo will be used to identify a subscription record
+message UpsertSubscriptionRequest {
+  // subscription to be upsert
+  Subscription subscription = 1;
+  // optional: developer uuid for verification purpose
+  google.protobuf.StringValue developer_uuid = 2;
+}
+
+// Response after updating or creating a row on Subscription table
+message UpsertSubscriptionResponse {
+  // result representing success or failure
+  google.protobuf.StringValue result = 1;
+}
+
+// upsert mode for subscription service
+enum UpsertMode {
+  // default allow both creation and update
+  UPSERT_MODE_UNSPECIFIED = 0;
+  // creation only
+  UPSERT_MODE_CREATION_ONLY = 1;
+}
+
+// request to get providers by developer uuid
+message GetProvidersByDeveloperRequest {
+  // developer uuid used to query providers
+  google.protobuf.StringValue developer_uuid = 1;
+}
+
+// get provider by developer uuid
+message GetProvidersByDeveloperResponse {
+  // list of providers belong to the developer
+  repeated Provider provider = 1;
+}
+
+// Request to get all Subscriptions for a developer
+message GetSubscriptionsByDeveloperRequest {
+  // developer Uuid
+  google.protobuf.StringValue developer_uuid = 1;
+}
+
+// Response get all Subscriptions for a developer, return a list of subscriptions
+message GetSubscriptionsByDeveloperResponse {
+  // list of subscriptions
+  repeated Subscription subscriptions = 1;
+}
+
+// Request to get all Subscriptions for a provider
+message GetSubscriptionsByProviderRequest {
+  // provider name
+  google.protobuf.StringValue provider_name = 1;
+}
+
+// Response get all Subscriptions for a provider, return a list of subscriptions
+message GetSubscriptionsByProviderResponse {
+  // list of subscriptions
+  repeated Subscription subscriptions = 1;
+}
+
+// subscription(webhook) used to route merchant events
+message Subscription {
+  // provider associated with this subscription
+  google.protobuf.StringValue provider_name = 1;
+  // optional: subscription token, used as authentication header
+  google.protobuf.StringValue token = 2;
+  // subscription url
+  google.protobuf.StringValue url = 3;
+  // type of subscription
+  SubscriptionType subscription_type = 4;
+  // subscription destination
+  SubscriptionDestination subscription_destination = 5;
+  // optional: authentication type for subscription, supported values OAUTH, BASIC
+  google.protobuf.StringValue auth_type = 6;
+}
+
+// enum for subscription type
+enum SubscriptionType {
+  // unspecified
+  SUBSCRIPTION_TYPE_UNSPECIFIED = 0;
+  // default, if no specific subscription type is setup, this subscription will be used
+  SUBSCRIPTION_TYPE_DEFAULT = 1;
+  // menu ingestion
+  SUBSCRIPTION_TYPE_MENU = 2;
+  // order submission
+  SUBSCRIPTION_TYPE_ORDER = 3;
+  // auto order release
+  SUBSCRIPTION_TYPE_ORDER_RELEASE = 4;
+  // order cancellation
+  SUBSCRIPTION_TYPE_ORDER_CANCEL = 5;
+  // pull menu
+  SUBSCRIPTION_TYPE_PULL_MENU = 6;
+  // pull merchant item stock info
+  SUBSCRIPTION_TYPE_PULL_STOCK_INFORMATION = 7;
+  // order event pickup
+  SUBSCRIPTION_TYPE_ORDER_EVENT_PICKUP = 8;
+  // loyalty
+  SUBSCRIPTION_TYPE_LOYALTY = 9;
+  // loyalty user info
+  SUBSCRIPTION_TYPE_LOYALTY_USER = 10;
+  // get loyalty user
+  SUBSCRIPTION_TYPE_LOYALTY_USER_GET = 11;
+  // get loyalty account
+  SUBSCRIPTION_TYPE_LOYALTY_ACCOUNT_GET = 12;
+  // loyalty user authentication
+  SUBSCRIPTION_TYPE_LOYALTY_USER_AUTHENTICATE = 13;
+  // loyalty user accrue rewards
+  SUBSCRIPTION_TYPE_LOYALTY_USER_ACCRUE_REWARDS = 14;
+  // loyalty user redeem rewards
+  SUBSCRIPTION_TYPE_LOYALTY_USER_REDEEM_REWARDS = 15;
+  // loyalty reverse order transaction
+  SUBSCRIPTION_TYPE_LOYALTY_REVERSE_ORDER_TRANSACTION = 16;
+  // loyalty user get rewards
+  SUBSCRIPTION_TYPE_LOYALTY_USER_GET_REWARDS = 17;
+  // dashser status update
+  SUBSCRIPTION_TYPE_DASHER_STATUS_UPDATE = 18;
+  // dashser status update to MAS
+  SUBSCRIPTION_TYPE_DASHER_STATUS_UPDATE_TO_MAS = 19;
+  // get external gift card balance
+  SUBSCRIPTION_TYPE_EXTERNAL_GIFT_CARD_GET_BALANCE = 20;
+  // redeem external gift card
+  SUBSCRIPTION_TYPE_EXTERNAL_GIFT_CARD_REDEEM = 21;
+  // refund external gift card
+  SUBSCRIPTION_TYPE_EXTERNAL_GIFT_CARD_REFUND = 22;
+  // validate order
+  SUBSCRIPTION_TYPE_VALIDATE_ORDER = 23;
+  // store temporary deactivation notifications
+  SUBSCRIPTION_TYPE_STORE_TEMPORARY_DEACTIVATION_NOTIFICATIONS = 24;
+  // store onboarding status update
+  SUBSCRIPTION_TYPE_ONBOARDING_STATUS = 25;
+  // loyalty user offers
+  SUBSCRIPTION_TYPE_LOYALTY_USER_OFFERS = 26;
+  // loyalty send transaction
+  SUBSCRIPTION_TYPE_LOYALTY_SEND_TRANSACTION = 27;
+  // loyalty redeem offer
+  SUBSCRIPTION_TYPE_LOYALTY_REDEEM_OFFER = 28;
+  // loyalty reinstate offer
+  SUBSCRIPTION_TYPE_LOYALTY_REINSTATE_OFFER = 29;
+  // pull store item full
+  SUBSCRIPTION_TYPE_PULL_STORE_ITEM_FULL = 30;
+  // pull store item partial
+  SUBSCRIPTION_TYPE_PULL_STORE_ITEM_PARTIAL = 31;
+  // oauth auth token
+  SUBSCRIPTION_TYPE_OAUTH_AUTH_TOKEN = 32;
+  // subscription for open api v2 request level submission status
+  SUBSCRIPTION_TYPE_OPEN_API_V2_OPERATION_STATUS = 33;
+  // post-order tip adjustment
+  SUBSCRIPTION_TYPE_TIP_ADJUSTMENT = 34;
+  // order-adjustment notification
+  SUBSCRIPTION_TYPE_ORDER_ADJUSTMENT = 35;
+  // retail update notification
+  SUBSCRIPTION_TYPE_RETAIL_MX_FEEDBACK = 36;
+  // user revoke consent
+  SUBSCRIPTION_TYPE_USER_REVOKE_CONSENT = 37;
+  // dashpass status update
+  SUBSCRIPTION_TYPE_DASHPASS_STATUS_UPDATE = 38;
+  // pull store hours
+  SUBSCRIPTION_TYPE_PULL_STORE_HOURS = 39;
+  // pull retail catalog
+  SUBSCRIPTION_TYPE_PULL_RETAIL_CATALOG = 40;
+}
+
+// enum for Subscription Destination
+enum SubscriptionDestination {
+  // unspecified subscription destination
+  SUBSCRIPTION_DESTINATION_UNSPECIFIED = 0;
+  // CIS custom integrations subscription destination
+  SUBSCRIPTION_DESTINATION_CIS = 1;
+  // OpenAPI mx subscription destination
+  SUBSCRIPTION_DESTINATION_HTTP = 2;
+}

@@ -1,0 +1,291 @@
+syntax = "proto3";
+
+package upss.v1;
+
+import "common/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "upss/attribute.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/upss/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.upss.rpc.api";
+
+// Targeting expression is a boolean expression consisting of terms
+// the disjunction, conjunction, and negation operations are all available to be defined within an expression
+// this structure allows us to define any targeting rules for any object that imports this proto message
+message Segment {
+  // unique identifier for targeted_by_id
+  // used to track subexpressions for updating and pre-computation
+  google.protobuf.StringValue id = 1;
+
+  // name of this targeted segment
+  google.protobuf.StringValue name = 2;
+
+  // detailed description of this targeted segment
+  google.protobuf.StringValue description = 3;
+
+  // who created this segment
+  common.Creator created_by = 4;
+
+  //when was this segment created
+  google.protobuf.Timestamp created_at = 5;
+
+  // who updated this segment
+  common.Creator updated_by = 6;
+
+  // timestamp of update
+  google.protobuf.Timestamp updated_at = 7;
+
+  // expressions
+  SegmentExpression expression = 8;
+
+  // segment type
+  SegmentType type = 9;
+
+  // based id used to get variants
+  google.protobuf.StringValue base_segment_id = 10;
+
+  // exclusions
+  repeated Exclusion exclusions = 11;
+
+  // split
+  Split split = 12;
+
+  // campaign metadata
+  CampaignMetadata campaign_metadata = 13;
+}
+
+// Preset or custom segment
+enum SegmentType {
+  // unset
+  SEGMENT_TYPE_UNSPECIFIED = 0;
+  // preset audiences / segments
+  SEGMENT_TYPE_PRESET = 1;
+  // custom audiences / segments
+  SEGMENT_TYPE_CUSTOM = 2;
+}
+
+// Any exclusions that are added to the audience
+message Exclusion {
+  // id of the exclusion
+  google.protobuf.StringValue id = 1;
+  // type of the exclusion
+  ExclusionType type = 2;
+}
+
+// What type of exclusion is being added
+enum ExclusionType {
+  // unset
+  EXCLUSION_TYPE_UNSPECIFIED = 0;
+  // experiment based exclusion
+  EXCLUSION_TYPE_EXPERIMENT = 1;
+  // evergreen campaigns exclusion
+  EXCLUSION_TYPE_EVERGREEN_CAMPAIGN = 2;
+  // static list exclusion
+  EXCLUSION_TYPE_STATIC_LIST = 3;
+  // global suppression exclusion
+  EXCLUSION_TYPE_GLOBAL_SUPPRESSION = 4;
+}
+
+// Config for the DV attached to the audience
+message Split {
+  // name of the experiment
+  google.protobuf.StringValue experiment_name = 1;
+  // name of the split bucket
+  google.protobuf.StringValue bucket_name = 2;
+  // percentage of the split
+  google.protobuf.UInt32Value percentage = 3;
+}
+
+// Metadata about the campaign for this audience
+message CampaignMetadata {
+  // name of campaign the segment will be used in; to be populated by user
+  google.protobuf.StringValue campaign_name = 1;
+  // campaign start date
+  google.protobuf.Timestamp start_date = 2;
+  // campaign end date
+  google.protobuf.Timestamp end_date = 3;
+  // audience type
+  CampaignAudienceType audience_type = 4;
+}
+
+// Metadata about audience type for the campaign this will be used in
+enum CampaignAudienceType {
+  // unset
+  CAMPAIGN_AUDIENCE_TYPE_UNSPECIFIED = 0;
+  // dynamic
+  CAMPAIGN_AUDIENCE_TYPE_DYNAMIC = 1;
+  // static
+  CAMPAIGN_AUDIENCE_TYPE_STATIC = 2;
+}
+
+// expression of the segment
+message SegmentExpression {
+  // negate the term being evaluated
+  google.protobuf.BoolValue negate_term = 1;
+
+  // term is evaluated as boolean
+  oneof term {
+    // logical OR: if one of these evaluates to TRUE then this expression is TRUE
+    SegmentSubexpression disjunction = 2;
+
+    // logical AND: All of these must evaluate to TRUE for this expression to be TRUE
+    SegmentSubexpression conjunction = 3;
+
+    // existed segment id that we can reuse
+    google.protobuf.StringValue segment_id = 4;
+
+    // single term expression for a boolean metadata property
+    BoolTerm bool_term = 6;
+
+    // single term expression for comparing a numeric metadata property
+    NumericTerm numeric_term = 7;
+
+    // single term expression for comparing a string metadata property
+    StringTerm string_term = 8;
+
+    // date term expression for comparing a date metadata property.
+    DateTerm date_term = 9;
+
+    // term expression for comparing a numeric vector metadata property
+    NumericVectorTerm numeric_vector_term = 11;
+  }
+  // The primary entity type this segment is being evaluated against
+  EntityType primary_entity_type = 10;
+}
+
+// this wrapper object is only necessary because oneof blocks cannot contain a repeated object
+message SegmentSubexpression {
+  // list of expressions
+  repeated SegmentExpression expressions = 1;
+}
+
+// term expression for a boolean metadata property
+message BoolTerm {
+  // string name of the attribute
+  google.protobuf.StringValue attribute = 1;
+  // the default value to use if the attribute is not found; defaults to null
+  google.protobuf.BoolValue default = 2;
+  // secondary entities that we should evaluate this term against. All entities should be of the same type
+  repeated Entity secondary_entities = 3;
+  // How the secondary entity should be evaluated
+  EntityOperation secondary_entity_operation = 4;
+}
+
+// term expression for comparing a numeric metadata property
+message NumericTerm {
+  // the name of the metadata property for the entity
+  google.protobuf.StringValue attribute = 1;
+
+  // the boolean operation to be performed between the property and the configured operand
+  // <, "is less than"
+  Operation operation = 2;
+
+  // the operand to be compared with the property value
+  google.protobuf.FloatValue operand = 3;
+
+  // the default value to use if the attribute is not found; defaults to null
+  google.protobuf.FloatValue default = 4;
+
+  // secondary entities that we should evaluate this term against. All entities should be of the same type
+  repeated Entity secondary_entities = 5;
+
+  // How the secondary entity should be evaluated
+  EntityOperation secondary_entity_operation = 6;
+}
+
+// term expression for comparing a Date property
+message DateTerm {
+  // the name of the date attribute
+  google.protobuf.StringValue attribute = 1;
+
+  // the boolean operation to be performed between the property and the configured operand
+  // <, "is less than"
+  Operation operation = 2;
+
+  // the date to be compared using YYYY-MM-DD format.
+  google.protobuf.StringValue date = 3;
+
+  // the default value to use if the attribute is not found; defaults to null
+  google.protobuf.StringValue default = 4;
+
+  // secondary entities that we should evaluate this term against. All entities should be of the same type
+  repeated Entity secondary_entities = 5;
+
+  // How the secondary entity should be evaluated
+  EntityOperation secondary_entity_operation = 6;
+
+  // represents the last (current - num_lookback_days) days
+  google.protobuf.Int32Value num_lookback_days = 7;
+}
+
+// operation type
+enum Operation {
+  // unset
+  OPERATION_UNSPECIFIED = 0;
+  // equal to
+  OPERATION_EQUAL_TO = 1;
+  // less than
+  OPERATION_LESS_THAN = 2;
+  // less than or equal to
+  OPERATION_LESS_THAN_OR_EQUAL_TO = 3;
+  // greater than
+  OPERATION_GREATER_THAN = 4;
+  // greater than or equal to
+  OPERATION_GREATER_THAN_OR_EQUAL_TO = 5;
+}
+
+// term expression for comparing a string metadata property
+message StringTerm {
+  // the name of the metadata property for the entity
+  google.protobuf.StringValue attribute = 1;
+
+  // list of strings that we are looking for the property value to be
+  repeated google.protobuf.StringValue possible_values = 2;
+
+  // the default value to use if the attribute is not found; defaults to null
+  google.protobuf.StringValue default = 3;
+
+  // secondary entities that we should evaluate this term against. All entities should be of the same type
+  repeated Entity secondary_entities = 4;
+
+  // How the secondary entity should be evaluated
+  EntityOperation secondary_entity_operation = 5;
+}
+
+// Struct defining an entity
+message Entity {
+  // id for the entity
+  google.protobuf.StringValue id = 1;
+  // type of the entity
+  EntityType type = 2;
+}
+
+// Enum for how secondary entities should be evaluated
+enum EntityOperation {
+  // no operation set
+  ENTITY_OPERATION_UNSPECIFIED = 0;
+  // evaluate all the secondary entities together where at least one meets the requirements
+  ENTITY_OPERATION_ANY = 1;
+  // evaluate all the secondary entities together where all meets the requirements
+  ENTITY_OPERATION_ALL = 2;
+  // evaluate the term with each secondary entity being evaluated individually based on the context passed in
+  ENTITY_OPERATION_INDIVIDUAL = 3;
+}
+
+// term expression for comparing a numeric vector metadata property
+message NumericVectorTerm {
+  // String name of the numeric vector attribute
+  google.protobuf.StringValue attribute = 1;
+
+  // name of the key within the numeric vector
+  google.protobuf.StringValue name = 2;
+
+  // The boolean operation to be performed between the property and the configured operand
+  Operation operation = 3;
+
+  // The operand to be compared with the property value
+  google.protobuf.FloatValue operand = 4;
+}

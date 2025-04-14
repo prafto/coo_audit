@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+package dashmart.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "dashmart_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashmart.v1";
+
+// APIs for task management(data attribution) in DashMart
+service TaskManagementService {
+  // Unified gateway config, comment out if using kreya for local testing
+  option (doordash.api.service) = {
+    port: 50051
+    name: "dashmart-service-web"
+    url: "dashmart-service-web.service.prod.ddsd"
+    name_spaces: ["dashmart"]
+    api_key_name: "DASHMART-API-KEY"
+    owner: {
+      name: "dashmart"
+      id: "dashmart"
+      slack_channel: "#dashmart-eng"
+      email_alias: "dashmart-eng@doordash.com",
+    }
+    target_products: [INTERNAL]
+  };
+
+  // API to check a task in
+  rpc CheckInTask(CheckInTaskRequest) returns (CheckInTaskResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/tasks/check-in",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"},
+        {field: "facility-id"}]
+    };
+  }
+
+  // API to check a task out
+  rpc CheckOutTask(CheckOutTaskRequest) returns (CheckOutTaskResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/tasks/check-out",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"},
+        {field: "facility-id"}]
+    };
+  }
+
+  // API to list all the task sessions that belong to a user within a date range
+  // Note: GetTaskHistory is supposed to be a get request but
+  // However, path parameter is not supported by client side monitoring
+  // Request body is generally not recommended for get request
+  // and lint also blocks that must not set request body when http method is GET: GetTaskHistory
+  // that's why we are using post method here
+  rpc GetTaskHistory(GetTaskHistoryRequest) returns (GetTaskHistoryResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/tasks/task-history",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"},
+        {field: "facility-id"}]
+    };
+  }
+
+  // API to get all the task types that belong to a facility
+  rpc GetTaskTypesForFacility(GetTaskTypesForFacilityRequest) returns (GetTaskTypesForFacilityResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/tasks/get-task-types",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [CX_USER]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "DD-OBO-User-ID"},
+        {field: "facility-id"}]
+    };
+  }
+}
+
+// Request for the CheckInTask endpoint
+message CheckInTaskRequest {
+  // task type id for the task that user is checking in
+  string task_type_id = 1;
+}
+
+// Response for the CheckInTask endpoint
+message CheckInTaskResponse {
+  // returns the checked-in task session
+  TaskSession task_session = 1;
+}
+
+// Request for the CheckOutTask endpoint
+message CheckOutTaskRequest {
+  // task session id for the task that user is checking out
+  string task_session_id = 1;
+}
+
+// Response for the CheckOutTask endpoint
+message CheckOutTaskResponse {
+  // returns the checked-out task session
+  TaskSession task_session = 1;
+}
+
+// Request for the GetTaskHistory endpoint, user id will be in the metadata
+message GetTaskHistoryRequest {
+  // start time of the date range that task sessions belong to
+  google.protobuf.Timestamp start_time = 1;
+  // end time of the date range that task sessions belong to
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// Response for the GetTaskHistoryRequest endpoint
+message GetTaskHistoryResponse {
+  // returns the previous task sessions that belong to the user within the date range
+  repeated TaskSession task_sessions = 1;
+}
+
+// Request for GetTaskTypesForFacility, facility id & user id are in the header
+message GetTaskTypesForFacilityRequest {}
+
+// Response for GetTaskTypesForFacility
+message GetTaskTypesForFacilityResponse {
+  // returns all the task types that belong to the facility
+  repeated TaskTypeForFacility task_types_for_facility = 1;
+}
+
+// Task type information for a facility
+message TaskTypeForFacility {
+  // task type id for the task
+  string task_type_id = 1;
+  // task type name
+  string task_type_name = 2;
+  // facility id that the task type belongs to
+  int32 facility_id = 3;
+  // auto check out default minutes for the task type in the facility
+  int32 auto_check_out_default_minutes = 4;
+}
+
+// Information for a specific task session
+message TaskSession {
+  // unique task session id that is checked in
+  string task_session_id = 1;
+  // user id of the user who checked in the task
+  string user_id = 2;
+  // task type id for the task that user is checking in
+  string task_type_id = 3;
+  // task type name for the task that user is checking in
+  string task_type_name = 4;
+  // check in time of the task session
+  google.protobuf.Timestamp check_in_time = 5;
+  // check out time of the task session
+  google.protobuf.Timestamp check_out_time = 6;
+  // we need that information so that DMC can mark the task as auto checked out
+  bool is_auto_checked_out = 8;
+}

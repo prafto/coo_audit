@@ -1,0 +1,1175 @@
+syntax = "proto3";
+package cart_service.v1;
+
+import "common/bundle_order_info.proto";
+import "common/common.proto";
+import "common/datatypes.proto";
+import "common/money.proto";
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "cart_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.cart_service";
+
+// Grpc endpoint for cart
+service CartService {
+  // Timeout after 2000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 2000;
+  option (service_client.client_config).service_name = "order-service-cart";
+  option (service_client.client_config).service_app = "grpc";
+
+  // Get cart information
+  rpc GetCart(GetCartRequest) returns (GetCartResponse);
+  // Create cart
+  rpc CreateCart(CreateCartRequest) returns (CreateCartResponse);
+  // DEPRECATED. Reorder cart
+  rpc Reorder(ReorderRequest) returns (ReorderResponse);
+  // DEPRECATED. Reorder items
+  rpc ReorderItems(ReorderItemsRequest) returns (ReorderItemsResponse);
+  // Move cart from one consumer to another
+  rpc MoveCart(MoveCartRequest) returns (MoveCartResponse);
+  // Get all carts
+  rpc GetCarts(GetCartsRequest) returns (GetCartsResponse);
+  // Update cart
+  rpc UpdateCart(UpdateCartRequest) returns (UpdateCartResponse);
+  // Delete Cart
+  rpc DeleteCart(DeleteCartRequest) returns (DeleteCartResponse);
+  // Add Item
+  rpc AddItem(AddItemRequest) returns (AddItemResponse);
+  // Update Item
+  rpc UpdateItem(UpdateItemRequest) returns (UpdateItemResponse);
+  // Delete Item
+  rpc DeleteItem(DeleteItemRequest) returns (DeleteItemResponse);
+  // Move Items
+  rpc MoveItems(MoveItemsRequest) returns (MoveItemsResponse);
+  // Get all open carts count
+  rpc GetOpenCartsCount(GetOpenCartsCountRequest) returns (GetOpenCartsCountResponse);
+  // DEPRECATED. Update substitution preference
+  rpc UpdateSubstitutionPreference(UpdateSubstitutionPreferenceRequest) returns (UpdateSubstitutionPreferenceResponse);
+
+  // V2 Multi-Cart
+  // Get cart information V2
+  rpc GetCartV2(GetCartV2Request) returns (GetCartV2Response);
+  // Create cart V2
+  rpc CreateCartV2(CreateCartV2Request) returns (CreateCartV2Response);
+  // Delete Cart V2
+  rpc DeleteCartV2(DeleteCartV2Request) returns (DeleteCartV2Response);
+  // Add item V2
+  rpc AddItemV2(AddItemV2Request) returns (AddItemV2Response);
+  // List cart summaries
+  rpc ListCarts(ListCartsRequest) returns (ListCartsResponse);
+}
+
+// V1 context cart
+// Currently, we only support one context which is grocery store
+enum CartContextType {
+  // default type
+  CART_CONTEXT_TYPE_UNSPECIFIED = 0;
+  // Grocery store context
+  CART_CONTEXT_TYPE_GROCERY_STORE = 1;
+  // Saved cart per store
+  CART_CONTEXT_TYPE_SAVED_CART_STORE = 2;
+}
+
+// group cart types
+enum GroupCartType {
+  // default
+  GROUP_CART_TYPE_UNSPECIFIED = 0;
+  // creator pays all
+  GROUP_CART_TYPE_CREATOR_PAYS_ALL = 1;
+  // split bill
+  GROUP_CART_TYPE_SPLIT_BILL = 2;
+}
+
+// group cart source {
+enum GroupCartSource {
+  // default
+  GROUP_CART_SOURCE_UNSPECIFIED = 0;
+  // work recurring group cart
+  GROUP_CART_SOURCE_WORK_RECURRING_GO = 1;
+}
+
+// cart status types
+enum CartStatusType {
+  // unknown
+  CART_STATUS_TYPE_UNSPECIFIED = 0;
+  // active cart, creator has not submitted cart yet
+  CART_STATUS_TYPE_ACTIVE = 1;
+  // initial submitted cart open to changes, for DSD orders
+  CART_STATUS_TYPE_SUBMITTED = 2;
+  // submitted cart, item limit has been met and Cx cannot add more items, for DSD orders
+  CART_STATUS_TYPE_SUBMITTED_ITEM_LIMIT_MET = 3;
+  // submitted cart closed to remove items, but still open to add items, for DSD orders
+  CART_STATUS_TYPE_SUBMITTED_DELETE_ITEM_BLOCKED = 6;
+  // submitted cart closed to changes, for DSD orders,
+  CART_STATUS_TYPE_CLOSED = 4;
+  // submitted cart, for non-DSD orders
+  CART_STATUS_TYPE_UNAVAILABLE = 5;
+}
+
+// cart item status types
+enum CartItemStatusType {
+  // unknown
+  CART_ITEM_STATUS_TYPE_UNSPECIFIED = 0;
+  // newly added cart item, pending Cx submit items to add
+  CART_ITEM_STATUS_TYPE_PENDING_SUBMIT = 1;
+  // newly removed cart item, pending Cx submit items to remove
+  CART_ITEM_STATUS_TYPE_PENDING_REMOVE = 4;
+  // submitted cart item, part of original order
+  CART_ITEM_STATUS_TYPE_SUBMITTED = 2;
+  // submitted cart item, after original order
+  CART_ITEM_STATUS_TYPE_SUBMITTED_AS_UPDATE = 3;
+}
+
+// Cart Context
+message ConsumerCartContext {
+  // context type
+  CartContextType context_type = 1;
+  // context value, mostly the id of the property
+  google.protobuf.StringValue context_value = 2;
+}
+
+// V2 Multi-Cart
+// MultiCart experience
+message MultiCartExperienceContext {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// GroupCart experience
+message GroupCartExperienceContext {
+  // ShortUrl code for group cart link
+  google.protobuf.StringValue short_code = 1;
+}
+
+// Meal Train experience
+message MealTrainExperienceContext {
+  // uuid of the meal train
+  google.protobuf.StringValue meal_train_uuid = 1;
+}
+
+// Buy It Now experience
+message BuyItNowExperienceContext {
+  // Store id
+  google.protobuf.StringValue store_id = 1;
+}
+
+// DashParty experience
+message DashPartyExperienceContext {
+  // DashParty id
+  google.protobuf.StringValue dashparty_id = 1;
+}
+
+// Cart Context for Multi-Cart
+message CartContextV2 {
+  // Consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // Type of cart experience
+  oneof experience {
+    // MultiCart
+    MultiCartExperienceContext multi_cart_experience_context = 2;
+    // GroupCart
+    GroupCartExperienceContext group_cart_experience_context = 3;
+    // MealTrainCart
+    MealTrainExperienceContext meal_train_experience_context = 4;
+    // BuyItNow
+    BuyItNowExperienceContext buy_it_now_experience_context = 5;
+    // DashParty
+    DashPartyExperienceContext dashparty_experience_context = 6;
+  }
+}
+
+// Consumer Cart Identifier
+message ConsumerCartIdentifier {
+  // cart identifier
+  oneof id {
+    // cart uuid
+    google.protobuf.StringValue cart_uuid = 1;
+    // cart alias, default or shortcode. In V2 requests this would only be group cart short_code/alias in practice
+    google.protobuf.StringValue alias = 2;
+    // cart context
+    ConsumerCartContext cart_context = 3;
+  }
+}
+
+// Request to get all open carts for the context
+message GetOpenCartsCountRequest {
+  // Cart context
+  CartContextV2 cart_context_filter = 1;
+}
+
+// Response to get all open carts for the context
+message GetOpenCartsCountResponse {
+  // Cart counts
+  google.protobuf.Int32Value count = 1;
+}
+
+// Request to get cart information
+message GetCartRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // if true, read up-to-date info from dynamodb
+  google.protobuf.StringValue read_consistency = 2;
+  // creator_id
+  google.protobuf.StringValue user_id = 3;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 4;
+  // should_skip_group_owner_check
+  bool should_skip_group_owner_check = 5;
+  // is_submitting
+  bool is_submitting = 6;
+  // call from GET carts/id/annotations
+  bool should_fetch_annotations = 7;
+  // whether to validate items in the cart, and update invalid items with MSIDs
+  bool should_refresh_items_in_cart = 8;
+  // inputted cart filter
+  CartFilter cart_filter = 9;
+  // should include pre checkout details
+  google.protobuf.BoolValue should_include_pre_checkout_details = 10;
+}
+
+// Response for cart information
+message GetCartResponse {
+  // Carnival cart
+  ConsumerCart cart = 1;
+}
+
+// Request for create cart
+message CreateCartRequest {
+  // these are deleted fields, do not reuse
+  reserved 22, 23;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // user id -- to be deprecated
+  google.protobuf.StringValue user_id = 2;
+  // consumer first name
+  google.protobuf.StringValue consumer_first_name = 3;
+  // consumer last name
+  google.protobuf.StringValue consumer_last_name = 4;
+  // is group cart
+  bool is_group = 5;
+  // is reorder
+  bool is_reorder = 6;
+  // limit for group cart
+  google.protobuf.Int32Value max_individual_cost_for_group_order = 7;
+  // store id
+  google.protobuf.StringValue store_id = 8;
+  // menu id
+  google.protobuf.StringValue menu_id = 9;
+  // fulfillment type
+  google.protobuf.StringValue fulfillment_type = 10;
+  // store name
+  google.protobuf.StringValue store_name = 11;
+  // store max order size
+  google.protobuf.Int32Value store_max_order_size = 12;
+  // can exceed the group order limit
+  bool can_exceed_max_individual_cost = 13;
+  // requires team permission check
+  bool requires_team_permission_check = 14;
+  // user id to override with
+  google.protobuf.StringValue override_user_id = 15;
+  // list of user roles
+  repeated string user_roles = 16;
+  // should create from json
+  bool should_create_from_json = 17;
+  // not null if creating cart from json
+  ConsumerCart cart = 18;
+  // id (mostly for group cart)
+  ConsumerCartIdentifier cart_identifier = 19;
+  // for multicart
+  google.protobuf.StringValue context = 20;
+  // group cart types
+  GroupCartType group_cart_type = 21;
+  // group cart source
+  GroupCartSource group_cart_source = 24;
+  // domain info
+  map<string, string> domain = 25;
+}
+
+// Response for create cart
+message CreateCartResponse {
+  // Carnival cart
+  ConsumerCart cart = 1;
+}
+
+// Request for reorder
+message ReorderRequest {
+  // user id
+  google.protobuf.StringValue user_id = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // order cart id to reorder from
+  google.protobuf.StringValue order_cart_id = 3;
+  // order uuid to reorder from
+  google.protobuf.StringValue order_uuid = 4;
+}
+
+// Response for reorder
+message ReorderResponse {
+  // Carnival cart
+  ConsumerCart cart = 1;
+}
+
+// DEPRECATED. Request for reordering items
+message ReorderItemsRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // order item id
+  google.protobuf.StringValue order_item_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // user id
+  google.protobuf.StringValue user_id = 4;
+  // order cart id
+  google.protobuf.StringValue order_cart_id = 5;
+  // order uuid
+  google.protobuf.StringValue order_uuid = 6;
+  // item quantity
+  int32 quantity = 7;
+  // item unit price
+  int64 unit_price = 8;
+  // currency -- can deprecate with currency library later
+  google.protobuf.StringValue currency = 9;
+}
+
+// DEPRECATED. Response for reordering items
+message ReorderItemsResponse {
+  // item metadata
+  CartItem item = 1;
+}
+
+// Request to move cart from guest consumer to logged in consumer
+message MoveCartRequest {
+  // user id to move from
+  google.protobuf.StringValue from_user_id = 1;
+  // consumer id to move from
+  google.protobuf.StringValue from_consumer_id = 2;
+  // user id to move to
+  google.protobuf.StringValue to_user_id = 3;
+  // consumer id to move to
+  google.protobuf.StringValue to_consumer_id = 4;
+  // consumer experience (e.g. doordash, caviar...)
+  google.protobuf.StringValue experience = 5;
+}
+
+// Status response for move cart
+message MoveCartResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+}
+
+// Get carts request
+message GetCartsRequest {
+  // user id
+  google.protobuf.StringValue user_id = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // should get group carts only
+  bool should_get_group_carts_only = 3;
+  // limit for pagination
+  int32 limit = 4;
+  // offset for pagination
+  int32 offset = 5;
+}
+
+// Get carts response
+message GetCartsResponse {
+  // list of carts
+  repeated ConsumerCart carts = 1;
+}
+
+// Update cart request
+message UpdateCartRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // user id
+  google.protobuf.StringValue user_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // is group cart
+  google.protobuf.BoolValue is_group = 4;
+  // is subcart in group order
+  google.protobuf.BoolValue is_subcart = 5;
+  // is reorder cart
+  google.protobuf.BoolValue is_reorder = 6;
+  // limit for group order
+  google.protobuf.Int64Value max_individual_cost_for_group_order = 7;
+  // fulfillment type
+  google.protobuf.StringValue fulfillment_type = 8;
+  // promotion ids - To be deprecated. Use AttemptedPromotion instead for anything new.
+  repeated string promotion_ids = 9;
+  // removed auto redeemed promotion ids - To be deprecated. Use AttemptedPromotion.Promotion.is_removed instead for anything new.
+  repeated string removed_auto_redeemed_promotion_ids = 10;
+  // original bundle cart (submitted) id
+  google.protobuf.StringValue original_bundle_order_cart_id = 11;
+  // original bundle cart (submitted) created at
+  google.protobuf.Int64Value original_bundle_order_cart_created_at = 12;
+  // gifting info
+  map<string, string> domain = 13;
+  // for cart topper
+  google.protobuf.BoolValue can_exceed_max_individual_cost = 14;
+  // for subcarts
+  google.protobuf.BoolValue is_subcart_finalized = 15;
+  // if user adds loyalty rewards to the cart
+  money.LoyaltyRewardDetails applied_loyalty_rewards = 16;
+  // external gift cards to be applied in cart
+  money.ExternalGiftCardDetails external_gift_card_details = 17;
+  // group cart types
+  GroupCartType group_cart_type = 18;
+  // cart status type to update to
+  CartStatusType cart_status_type = 19;
+  // cart revision to update to
+  google.protobuf.Int32Value cart_revision = 20;
+  // whether cart can be reversed backward
+  google.protobuf.BoolValue is_reversible = 21;
+  // attempted promotion
+  repeated AttemptedPromotion promotions = 22;
+
+  // when provided, update the delivery option selected by Cx.
+  SelectedDeliveryOption selected_delivery_option = 23;
+
+  // payment profile selected on the cart. If business payment method is selected on the cart, the payment profile type will be updated to business
+  common.PaymentProfileType payment_profile_type = 24;
+  // store id
+  google.protobuf.StringValue store_id = 25;
+  // menu id
+  google.protobuf.StringValue menu_id = 26;
+  // update cart type
+  UpdateCartType update_cart_type = 27;
+  // cart_items
+  repeated CartItem items = 28;
+  // pre-checkout details
+  PreCheckoutDetails pre_checkout_details = 29;
+  // types of updateCart
+  enum UpdateCartType {
+    // unknown
+    UPDATE_CART_TYPE_UNSPECIFIED = 0;
+    // update store and (items) for cart
+    UPDATE_CART_TYPE_UPDATE_STORE = 1;
+  }
+  // Context key for cart
+  CartContextV2 cart_context_key = 30;
+  // DashParty details
+  DashPartyDetails dashparty_details = 31;
+  // loyalty program id
+  google.protobuf.StringValue loyalty_program_id = 32;
+}
+
+// attempted promotions applicable to the cart
+message AttemptedPromotion {
+  // promotion code or promotion
+  oneof value {
+    // validated promo code
+    google.protobuf.StringValue code = 1;
+    // validated promotion
+    Promotion promotion = 2;
+  }
+  // flag indicating if the promotion is stackable
+  bool is_stackable = 3;
+  // promotion details
+  message Promotion {
+    // campaign id
+    google.protobuf.StringValue campaign_id = 1;
+    // promotion id
+    google.protobuf.StringValue ad_id = 2;
+    // membership id
+    google.protobuf.StringValue ad_group_id = 3;
+    // a flag to indicate the promotion has been removed manually
+    google.protobuf.BoolValue is_removed = 4;
+  }
+}
+
+// Status response for UpdateCart
+message UpdateCartResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+  // cart
+  ConsumerCart cart = 2;
+}
+
+// Request for delete cart
+message DeleteCartRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // user id
+  google.protobuf.StringValue user_id = 2;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 3;
+  // is submitting
+  bool is_submit = 4;
+  // delete bundle cart only
+  bool bundle_cart_only = 5;
+  // need to know when caller is cx order service
+  bool is_from_order_service = 6;
+}
+
+// Status response for DeleteCart
+message DeleteCartResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+}
+
+// Request to add an item
+message AddItemRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // item
+  CartItem item = 2;
+  // requires item validation
+  bool should_require_validation = 3;
+  // used for multicart
+  google.protobuf.StringValue fallback_context = 4;
+}
+
+// Response for adding an item
+message AddItemResponse {
+  // item metadata
+  CartItem item = 1;
+}
+
+// Request to update an item
+message UpdateItemRequest {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // item
+  CartItem item = 2;
+  // requires item validation
+  bool should_require_validation = 3;
+}
+
+// Response for updating an item
+message UpdateItemResponse {
+  // item
+  CartItem item = 1;
+}
+
+// Request to delete an item
+message DeleteItemRequest {
+  // creator id
+  google.protobuf.StringValue user_id = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // DEPRECATED item id
+  google.protobuf.StringValue item_id = 3;
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 4;
+  // this is in use instead of item_id
+  google.protobuf.StringValue cart_item_id = 5;
+  // keeps cart when last item deleted
+  google.protobuf.BoolValue should_keep_cart_when_empty = 6;
+}
+
+// Response for deleting an item
+message DeleteItemResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+}
+
+// Request to move items
+message MoveItemsRequest {
+  // consumer id
+  google.protobuf.StringValue consumer_id = 1;
+  // user id
+  google.protobuf.StringValue user_id = 2;
+  // from cart id (the cart that items should be moved from)
+  google.protobuf.StringValue from_cart_id = 3;
+  // to cart id (the cart that items should be moved to)
+  google.protobuf.StringValue to_cart_id = 4;
+  // fallback context
+  google.protobuf.StringValue fallback_context = 5;
+}
+
+// Response for moving items
+message MoveItemsResponse {
+  // number of items moved successfully
+  int32 num_items_moved = 1;
+  // number of items that fail to move
+  int32 num_items_failed = 2;
+}
+
+// DEPRECATED. Request to update substitution preference
+message UpdateSubstitutionPreferenceRequest {
+  // substitution preference
+  google.protobuf.StringValue substitution_preference = 1;
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 2;
+  // creator id
+  google.protobuf.StringValue user_id = 3;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 4;
+}
+
+// DEPRECATED. Response for updating substitution preference
+message UpdateSubstitutionPreferenceResponse {
+  // status
+  google.protobuf.StringValue status = 1;
+}
+
+// Filter used to specify which type(s) of carts are visible or accessible
+message CartFilter {
+  // should include submitted/DYF carts
+  google.protobuf.BoolValue should_include_submitted = 1;
+  reserved 2; // deprecated should_include_pre_checkout_details 2 since it is now in the GetCartV2Request
+  reserved "should_include_pre_checkout_details";
+}
+
+// Request for listing cart summaries
+message ListCartsRequest {
+  // Cart context
+  CartContextV2 cart_context_filter = 1;
+  // Offset for pagination
+  google.protobuf.Int32Value offset = 2;
+  // Limit for pagination
+  google.protobuf.Int32Value limit = 3;
+  // inputted cart filter
+  CartFilter cart_filter = 4;
+  // should include pre checkout details
+  google.protobuf.BoolValue should_include_pre_checkout_details = 5;
+}
+
+// Response for listing cart summaries
+message ListCartsResponse {
+  // List of carts
+  repeated ConsumerCart carts = 1;
+}
+
+// V2 Multi-Cart endpoint contracts
+// Request to get cart information
+message GetCartV2Request {
+  // cart identifier
+  ConsumerCartIdentifier cart_identifier = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // is_submitting
+  google.protobuf.BoolValue is_submitting = 3;
+  // call from GET carts/id/annotations
+  google.protobuf.BoolValue should_fetch_annotations = 4;
+  // inputted cart filter
+  CartFilter cart_filter = 5;
+  // should include pre checkout details
+  google.protobuf.BoolValue should_include_pre_checkout_details = 6;
+}
+
+// Response for cart information V2
+message GetCartV2Response {
+  // Cart
+  ConsumerCart cart = 1;
+}
+
+// Request for CreateCartV2 Multi-Cart
+message CreateCartV2Request {
+  // Context key for Multi-Cart
+  CartContextV2 cart_context_key = 1;
+  // consumer first name
+  google.protobuf.StringValue consumer_first_name = 2;
+  // consumer last name
+  google.protobuf.StringValue consumer_last_name = 3;
+  // cost limit for group cart
+  google.protobuf.Int32Value max_individual_cost_for_group_order = 4;
+  // can exceed the group order limit
+  google.protobuf.BoolValue can_exceed_max_individual_cost = 5;
+  // store id
+  google.protobuf.StringValue store_id = 6;
+  // menu id
+  google.protobuf.StringValue menu_id = 7;
+  // fulfillment type
+  google.protobuf.StringValue fulfillment_type = 8;
+  // store name
+  google.protobuf.StringValue store_name = 9;
+  // store max order size
+  google.protobuf.Int32Value store_max_order_size = 10;
+  // group cart types
+  GroupCartType group_cart_type = 11;
+  reserved 12; // deprecated meal_train_uuid 12 since it is now in the cart_context_key
+  reserved "meal_train_uuid";
+  reserved 13; // deprecated meal_train_name 13 for same reason above
+  reserved "meal_train_name";
+  // group cart source
+  GroupCartSource group_cart_source = 14;
+  // cart filter to determine if the cart is visible
+  CartFilter cart_filter = 15;
+  // create cart with cart_items
+  repeated CartItem items = 16;
+  // domain info
+  map<string, string> domain = 17;
+
+  // When adding items to or creating a cart, we would like to also capture Cx intention by recording the selected
+  // delivery option (ASAP/Schedule/etc) and persist it on the cart.
+  SelectedDeliveryOption selected_delivery_option = 18;
+
+  // When enabled a consumer will always have one cart after CreateCartV2 or AddItemV2 calls.
+  // If the code detects more than one cart, it will delete the oldest active carts to reduce the total number of carts to just one cart.
+  // This is needed for storefront since they don’t have a UI to manage multi-carts and they potentially could have more than one cart from different stores within one business.
+  google.protobuf.BoolValue should_keep_only_one_active_cart = 19;
+
+  // If the caller provides a cart_uuid, this endpoint will directly use it instead of generating a random new one internally.
+  // Note: If you try to create a cart using a predefined cart_uuid for a store that already has an existing cart,
+  // the existing cart with its cart_uuid will be returned.
+  google.protobuf.StringValue cart_uuid = 20;
+
+  // pre-checkout details
+  PreCheckoutDetails pre_checkout_details = 21;
+
+  // DashParty details
+  DashPartyDetails dashparty_details = 22;
+}
+
+// DashParty details
+message DashPartyDetails {
+  // DashParty expiration date
+  google.protobuf.StringValue expired_at = 1;
+}
+
+// Response for CreateCartV2 Multi-Cart
+message CreateCartV2Response {
+  // Consumer cart
+  ConsumerCart cart = 1;
+}
+
+// Request for DeleteCartV2
+message DeleteCartV2Request {
+  // cart UUID
+  google.protobuf.StringValue cart_uuid = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+// Status response for DeleteCartV2
+message DeleteCartV2Response {
+  // status
+  google.protobuf.StringValue status = 1;
+}
+
+// Request for adding an item for Multi-Cart
+message AddItemV2Request {
+  // item
+  CartItem item = 1;
+  // Cart identifier that signifies which cart to add an item to
+  // The identifier can either be a cart_uuid or if the cart didn't exist we create the cart for you before adding an item.
+  // If we are creating the cart we need to be able to accept all create cart params, hence using CreateCartV2Request
+  oneof cart_identifier {
+    // Param used when we need to potentially create the cart
+    CreateCartV2Request create_cart_params = 2;
+    // cart uuid
+    google.protobuf.StringValue cart_uuid = 3;
+  }
+  // A filter used along with create_cart_params to determine if the cart is visible
+  CartFilter cart_filter = 4;
+  // A flag used to add item to the same cart_item_uuid(if existed), without creating two separate records of the same kind of item
+  google.protobuf.BoolValue should_add_to_same_cart_item_uuid = 5;
+}
+
+// Response for adding an item for Multi-Cart
+message AddItemV2Response {
+  // CartItem metadata
+  CartItem item = 1;
+  // cart uuid
+  google.protobuf.StringValue cart_uuid = 2 [deprecated = true];
+  //cart
+  ConsumerCart cart = 3;
+}
+
+// The window that Cx selected for scheduled delivery/pickup.
+message ScheduleWindow {
+  // The start of scheduled time window.
+  google.protobuf.Timestamp range_min_utc = 1;
+  // The end of scheduled time window.
+  google.protobuf.Timestamp range_max_utc = 2;
+}
+
+// The delivery option the Cx selected for their delivery or pickup. See common.DeliveryOptionType for a list of
+// available delivery types.
+message SelectedDeliveryOption {
+  // The selected delivery option: STANDARD (ASAP), PRIORITY (Express), SCHEDULE, etc.
+  common.DeliveryOptionType delivery_option_type = 1;
+
+  // Populated when the delivery_option_type == SCHEDULE
+  ScheduleWindow scheduled_window = 2;
+
+  // The time a selected delivery option should expire. Over time, Cx can forget what they previously selected and
+  // their behavior falls back to standard delivery option.
+  google.protobuf.Timestamp option_expire_time = 3;
+}
+
+// while cart service works as a proxy to carnival, this will map exactly to carnival cart response
+message ConsumerCart {
+  // these are deleted fields, do not reuse
+  reserved 55;
+
+  // cart uuid
+  google.protobuf.StringValue cart_uuid = 1;
+  // if cart is a group cart
+  bool is_group = 2;
+  // user_id
+  google.protobuf.StringValue user_id = 3;
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 4;
+  // group cart's creator first name
+  google.protobuf.StringValue group_creator_first_name = 5;
+  // group cart's creator last name
+  google.protobuf.StringValue group_creator_last_name = 6;
+  // group cart's creator user id
+  google.protobuf.StringValue group_user_id = 7;
+  // group cart's creator consumer id
+  google.protobuf.StringValue group_consumer_id = 8;
+  // when cart is created at
+  int64 created_at = 9;
+  // when cart is updated_at
+  int64 updated_at = 10;
+  // max limit for group orders
+  int64 max_individual_cost_for_group_order = 11;
+  // alias for the cart
+  google.protobuf.StringValue alias = 12;
+  // items in the cart
+  repeated CartItem items = 13;
+  // subcarts for the group cart
+  repeated ConsumerCart subcarts = 14;
+  // fulfillment type
+  google.protobuf.StringValue fulfillment_type = 15;
+  // promotions applied to the cart
+  repeated google.protobuf.StringValue promotion_ids = 16;
+  // manually removed auto redeemed promotions
+  repeated google.protobuf.StringValue removed_auto_redeemed_promotion_ids = 17;
+  // store name
+  google.protobuf.StringValue store_name = 18;
+  // store id
+  google.protobuf.StringValue store_id = 19;
+  // menu id
+  google.protobuf.StringValue menu_id = 20;
+  // shortened url
+  google.protobuf.StringValue short_url = 21;
+  // will update soon
+  repeated StoreDisclaimer store_disclaimers = 22;
+  // store address
+  google.protobuf.StringValue store_street_address = 23;
+  // store lat
+  google.protobuf.StringValue store_lat_address = 24;
+  // store lng
+  google.protobuf.StringValue store_lng_address = 25;
+  // store slug
+  google.protobuf.StringValue store_slug = 26;
+  // menu min order size
+  int32 menu_min_order_size = 27;
+  // menu enabled
+  bool menu_business_enabled = 28;
+  // is menu for catering
+  bool menu_catering = 29;
+  // total number of items added
+  int32 total_items_count = 30;
+  // total number of participants
+  int32 participants_count = 31;
+  // for cart topper
+  bool can_exceed_max_individual_cost = 32;
+  // requires team permission check
+  bool requires_team_permission_check = 33;
+  // submitted cart id for bundle
+  google.protobuf.StringValue original_bundle_order_cart_id = 34;
+  // original bundle cart created at
+  int64 original_bundle_cart_created_at = 35;
+  // if it's a reorder cart
+  bool is_reorder = 36;
+  // mostly for gifting info
+  map<string, string> domain = 37;
+  // max order size a consumer can order from a store
+  int32 store_max_order_size = 38;
+  // bundle carts
+  repeated ConsumerCart bundle_carts = 39;
+  // is item for pre-checkout bundle cart (To be deprecated, will be replaced by bundle_details)
+  bool is_bundle = 40;
+  // summed subtotal
+  int32 total_item_cost = 41;
+  // business vertical id
+  google.protobuf.StringValue business_vertical_id = 42;
+  // subcart finalized
+  bool is_subcart_finalized = 43;
+  // localized names
+  map<string, string> localized_names = 44;
+  // cart creator consumer's first name
+  google.protobuf.StringValue creator_first_name = 45;
+  // cart creator consumer's last name
+  google.protobuf.StringValue creator_last_name = 46;
+  // cart submitting status - deprecate after using cart_submitting_status
+  google.protobuf.StringValue cart_status = 47;
+  // used for catering info
+  google.protobuf.Int32Value menu_order_in_advance_in_seconds = 48;
+  // used for catering info
+  google.protobuf.Int32Value menu_cancel_order_in_advance_in_seconds = 49;
+  // catering menu max order size
+  google.protobuf.Int32Value menu_max_order_size = 50;
+  // loyalty rewards in cart
+  money.LoyaltyRewardDetails applied_loyalty_rewards = 51;
+  // external gift cards applied in cart
+  money.ExternalGiftCardDetails external_gift_card_details = 52;
+  // group cart types
+  GroupCartType group_cart_type = 53;
+  // Multi-Cart context
+  CartContextV2 cart_context_key = 54;
+  // business id for a chain store (e.g. all Sprout stores have the same business id)
+  google.protobuf.StringValue business_id = 56;
+  // cart status type
+  CartStatusType cart_status_type = 57;
+  // bundle related info
+  BundleDetails bundle_details = 58;
+  // cart revision
+  google.protobuf.Int32Value cart_revision = 59;
+  // cart submitting status
+  google.protobuf.StringValue cart_submitting_status = 60;
+  // group cart source
+  GroupCartSource group_cart_source = 61;
+  // attempted promotion
+  repeated AttemptedPromotion promotions = 62;
+
+  // The delivery option that Cx selected when adding items to this cart. If not specified, then default to
+  // standard delivery (aka ASAP).
+  SelectedDeliveryOption selected_delivery_option = 63;
+
+  // payment profile selected on the cart. If business payment method is selected on the cart, the payment profile type will be updated to business
+  common.PaymentProfileType payment_profile_type = 64;
+
+  // Determines if a cart is a "packages" order
+  google.protobuf.BoolValue is_packages_order = 65;
+
+  // pre-checkout details
+  PreCheckoutDetails pre_checkout_details = 66;
+
+  // determines if a cart is an ss catering order
+  google.protobuf.BoolValue is_ss_catering = 67;
+
+  // Determines if a cart is a "prescription delivery" order
+  google.protobuf.BoolValue is_prescription_delivery = 68;
+}
+
+// store disclaimer object
+message StoreDisclaimer {
+  // disclaimer id
+  google.protobuf.StringValue id = 1;
+  // disclaimer text
+  google.protobuf.StringValue disclaimer_text = 2;
+  // details link
+  google.protobuf.StringValue disclaimer_details_link = 3;
+  // sort order
+  int32 sort_order = 4;
+  // disclaimer link substring
+  google.protobuf.StringValue disclaimer_link_substring = 5;
+  // display treatment
+  google.protobuf.StringValue display_treatment = 6;
+}
+
+// cart item object
+message CartItem {
+  // creator id
+  google.protobuf.StringValue user_id = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+  // currency
+  google.protobuf.StringValue currency = 3;
+  // quantity
+  google.protobuf.Int32Value quantity = 4;
+  //unit price
+  google.protobuf.Int64Value unit_price = 5;
+  // store id
+  google.protobuf.StringValue store_id = 6;
+  // menu id
+  google.protobuf.StringValue menu_id = 7;
+  // store name
+  google.protobuf.StringValue store_name = 8;
+  // item id
+  google.protobuf.StringValue item_id = 9;
+  // item name
+  google.protobuf.StringValue item_name = 10;
+  // item description
+  google.protobuf.StringValue item_description = 11;
+  // item category name
+  google.protobuf.StringValue item_category_name = 12;
+  // substitution preference
+  google.protobuf.StringValue substitution_preference = 13;
+  // nested options
+  google.protobuf.StringValue nested_options = 14;
+  // special instructions
+  google.protobuf.StringValue special_instructions = 15;
+  // store max order size -- deprecate later
+  google.protobuf.Int32Value store_max_order_size = 16;
+  // is bundle
+  google.protobuf.BoolValue is_bundle = 17;
+  // client provided id
+  google.protobuf.StringValue id = 18;
+  // continuous quantity for weighted item
+  common.datatypes.v1.BigDecimal continuous_quantity = 19;
+  // estimated pricing description
+  google.protobuf.StringValue estimated_pricing_description = 20;
+  // purchase type
+  google.protobuf.StringValue purchase_type = 21;
+  // item unit
+  google.protobuf.StringValue unit = 22;
+  // domain
+  map<string, string> domain = 23;
+  // updated at
+  int64 updated_at = 24;
+  // created at
+  int64 created_at = 25;
+  // is ads item
+  google.protobuf.BoolValue is_ads_item = 26;
+  // is lunchpass item
+  google.protobuf.BoolValue is_lunchpass_item = 27;
+  // photo url
+  google.protobuf.StringValue image_url = 28;
+  // merchant supplied item id
+  google.protobuf.StringValue merchant_supplied_item_id = 29;
+  // cart item status
+  CartItemStatusType cart_item_status_type = 30;
+  // bundle related info about the item added
+  BundleDetails bundle_details = 31;
+  // schedule and save item
+  google.protobuf.BoolValue should_default_to_schedule = 32;
+  // item revision
+  google.protobuf.Int32Value revision = 33;
+  // item revisions list
+  repeated Revision revisions = 34;
+  // item infomation fetched from menu service
+  MenuItemInfo menu_item_info = 35;
+  // determines if a cart item is an ss catering item
+  google.protobuf.BoolValue is_ss_catering = 36;
+  // determines if cart item is request a sku item
+  google.protobuf.BoolValue is_request_a_sku_item = 37;
+  // Context for an item's original store prior to menu consolidation
+  VirtualStoreContext virtual_store_context = 38;
+}
+
+// Revision obj in revisions list
+message Revision {
+  //// keep the record for item action in DYF V2
+  enum Action {
+    // unknown
+    ACTION_UNSPECIFIED = 0;
+    // ADD operation
+    ACTION_ADD = 1;
+    // REMOVE operation
+    ACTION_REMOVE = 2;
+  }
+  // item quantity
+  google.protobuf.Int32Value quantity = 1;
+  // item continuousQuantity
+  common.datatypes.v1.BigDecimal continuous_quantity = 2;
+  // action
+  Action action = 3;
+  // item revision value
+  google.protobuf.Int32Value value = 4;
+  // cartUuid: wrong naming, DO NOT USE
+  google.protobuf.StringValue cart_uuid = 5;
+  // cartItemUuid
+  google.protobuf.StringValue cart_item_uuid = 6;
+}
+
+// general proto class to host the infomation fetched from menu service
+// current use case: fetch menu item price for pricing calculation on store page
+message MenuItemInfo {
+  // This is the item price fetched from menu service. The other unit_price in CartItem is the item price calculated from the client.
+  google.protobuf.Int64Value menu_item_price = 1;
+  // menu item price for pickup
+  google.protobuf.Int64Value menu_item_base_price = 2;
+}
+
+// Bundle related info about the cart item.
+message BundleDetails {
+  // The bundle type this item was added from.
+  common.bundle_order_info.v1.BundleType bundle_type = 1;
+
+  // There are two concepts in the DoubleDash context:
+  // 1. Primary store: represents the store for the primary cart/order (O1).
+  // 2. Anchor store: represents the origin store that displayed the bundle opportunities.
+  google.protobuf.StringValue anchor_store_id = 2;
+}
+
+// Historically, cart has persisted these vals without a proto contract so downstream services
+// defined weak contracts by effectively creating their own enums
+// Moving forward it'd be better to use this proto contract
+enum OrderCartPaymentMethodId {
+  // default
+  ORDER_CART_PAYMENT_METHOD_ID_UNSPECIFIED = 0;
+  // credit card
+  ORDER_CART_PAYMENT_METHOD_ID_CREDIT_CARD_PAYMENT_METHOD_ID = 1;
+  // debit bank account
+  ORDER_CART_PAYMENT_METHOD_ID_DEBIT_BANK_ACCOUNT_PAYMENT_METHOD_ID = 2;
+  // withholding
+  ORDER_CART_PAYMENT_METHOD_ID_PAYMENT_WITHHOLDING_PAYMENT_METHOD_ID = 3;
+  // invoice
+  ORDER_CART_PAYMENT_METHOD_ID_INVOICE_PAYMENT_METHOD_ID = 4;
+  // note: there isn't currently a payment method id '5' according to order service
+  // cash
+  ORDER_CART_PAYMENT_METHOD_ID_CASH_PAYMENT_METHOD_ID = 6;
+  // dd pos cash
+  ORDER_CART_PAYMENT_METHOD_ID_DD_POS_CASH_PAYMENT_METHOD_ID = 7;
+  // dd pos credit card
+  ORDER_CART_PAYMENT_METHOD_ID_DD_POS_CREDIT_CARD_PAYMENT_METHOD_ID = 8;
+  // dd pos external
+  ORDER_CART_PAYMENT_METHOD_ID_DD_POS_EXTERNAL_PAYMENT_METHOD_ID = 9;
+  // dd pos split payment
+  ORDER_CART_PAYMENT_METHOD_ID_DD_POS_SPLIT_PAYMENT_METHOD_ID = 10;
+}
+
+// pre-checkout details
+message PreCheckoutDetails {
+  // selected payment method
+  google.protobuf.StringValue selected_payment_method_id = 1;
+  // delivery address id
+  google.protobuf.Int32Value delivery_address_id = 2;
+  // dasher instruction
+  google.protobuf.StringValue dasher_instruction = 3;
+  // expensed budget id
+  google.protobuf.StringValue budget_id = 4;
+  // expensed budget code
+  google.protobuf.StringValue expense_code = 5;
+  // expensed budget notes
+  google.protobuf.StringValue expense_notes = 6;
+  // dasher tip percentage (0-100)
+  google.protobuf.StringValue dasher_tip_amount = 7;
+  // auto-checkout configurations
+  AutoCheckoutConfig auto_checkout_config = 8;
+  // scheduled window start time
+  google.protobuf.Timestamp scheduled_window_start = 9;
+  // scheduled window end time
+  google.protobuf.Timestamp scheduled_window_end = 10;
+  // auto checkout cart stage
+  AutoCheckoutCartStage auto_checkout_cart_stage = 11;
+  // auto checkout cart stage
+  enum AutoCheckoutCartStage {
+    // by default all autocheckout carts are finalized unless specified otherwise by clients
+    AUTO_CHECKOUT_CART_STAGE_UNSPECIFIED = 0;
+    // stub cart created but not finalized
+    AUTO_CHECKOUT_CART_STAGE_STUB = 1;
+  }
+}
+
+// auto-checkout configurations
+message AutoCheckoutConfig {
+  // async platform event trigger time
+  google.protobuf.Timestamp ap_event_trigger_time = 1;
+  // async platform event callback task
+  APCallbackTask ap_callback_task = 2;
+}
+
+// auto-checkout async platform event callback task
+enum APCallbackTask {
+  // unspecified task
+  AP_CALLBACK_TASK_UNSPECIFIED = 0;
+  // callback task to checkout the cart
+  AP_CALLBACK_TASK_CHECKOUT = 1;
+  // callback task to send reminder to cart creator
+  AP_CALLBACK_TASK_REMINDER = 2;
+}
+
+// Context for an item's original store prior to menu consolidation
+// i.e. Info for a sandwich listed under Safeway Grocery, but originally from Safeway Deli
+// Reference HnP brief: https://docs.google.com/document/d/1H5FHwcUhmUDT-sgBKHtxeIpBVMj76BEMQxPOcOsNviM/edit?usp=sharing
+message VirtualStoreContext {
+  // home store id for item in virtual store
+  google.protobuf.StringValue home_store_id = 1;
+  // home item id for item in virtual store
+  google.protobuf.StringValue home_item_id = 2;
+  // home menu id for item in virtual store
+  google.protobuf.StringValue home_menu_id = 3;
+}

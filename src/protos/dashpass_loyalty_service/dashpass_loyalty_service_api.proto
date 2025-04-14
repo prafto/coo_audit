@@ -1,0 +1,323 @@
+syntax = "proto3";
+
+package dashpass_loyalty_service.v1;
+
+import "common/common.proto";
+import "common/date.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "common/time.proto";
+import "dashpass_loyalty_service/service_management_api.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashpass_loyalty_service.api";
+
+// DashPass Loyalty Service
+service DashPassLoyaltyService {
+  option (service_client.client_config).service_name = "dashpass-loyalty-service";
+  option (service_client.client_config).service_app = "api";
+
+  // Get the annual credit back for a customer
+  rpc GetAnnualCreditBackSummary(GetAnnualCreditBackSummaryRequest) returns (GetAnnualCreditBackSummaryResponse);
+
+  // Get the summary of DashPass benefits for fulfilled consumer orders
+  rpc GetDashPassOrderBenefitsSummary(GetDashPassOrderBenefitsSummaryRequest) returns (GetDashPassOrderBenefitsSummaryResponse);
+
+  // Back fills the annual credit back for a customer
+  rpc BackFillAnnualCreditBack(BackFillAnnualCreditBackRequest) returns (BackFillAnnualCreditBackResponse);
+
+  // Run a script
+  rpc RunScript(RunScriptRequest) returns (RunScriptResponse) {
+    // 1 day in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 86400000;
+  }
+
+  // Notify the bucketing
+  rpc NotifyTestSetupData(NotifyTestSetupDataRequest) returns (NotifyTestSetupDataResponse) {
+    // 1 day in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 86400000;
+  }
+
+  // Check the subscription refund is available for the customer
+  rpc GetCreditBackStatusForConsumer(GetCreditBackStatusForConsumerRequest) returns (GetCreditBackStatusForConsumerResponse);
+
+  // Get the history of credit earnings for the customer
+  rpc GetCreditEarningsHistory(GetCreditEarningsHistoryRequest) returns (GetCreditEarningsHistoryResponse) {
+    // Max 10 minutes timeout in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Get the history of credit earnings for the customer
+  rpc GetCreditWaitingForDeposit(GetCreditWaitingForDepositRequest) returns (GetCreditWaitingForDepositResponse) {
+    // Max 10 minutes timeout in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Get the audit log for the customer
+  rpc GetAuditLogForConsumer(GetAuditLogForConsumerRequest) returns (GetAuditLogForConsumerResponse) {
+    // Max 10 minutes timeout in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+
+  // Get the history of credit earnings for the specified consumer order
+  rpc GetCreditEarningsForConsumerOrder(GetCreditEarningsForConsumerOrderRequest) returns (GetCreditEarningsForConsumerOrderResponse) {
+    // Max 10 minutes timeout in milliseconds.
+    option (service_client.client_method_config).response_attempt_timeout_millis = 600000;
+  }
+}
+
+// Request to get the annual credit back summary for a customer
+message GetAnnualCreditBackSummaryRequest {
+  reserved 2;
+  reserved "subscription_start_date";
+
+  // The customer id
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+// Response providing the annual credit back summary for a customer
+message GetAnnualCreditBackSummaryResponse {
+  reserved 1 to 6;
+  reserved "annual_credit_amount", "projected_annual_credit_amount", "savings_amount", "credit_back_percentage", "reward_date", "start_date";
+
+  // summary of the annual credit back for the customer.
+  AnnualCreditBackSummary summary = 7;
+}
+
+// The annual credit back summary for a customer
+message AnnualCreditBackSummary {
+  reserved 2, 3;
+  reserved "projected_annual_credit_amount", "savings_amount";
+  // The accumulated annual credit amount
+  google.protobuf.Int32Value annual_credit_amount = 1;
+  // The credit back percentage applied for the current customer.
+  google.protobuf.Int32Value credit_back_percentage = 4;
+  // The reward date for the current reward period with MM/dd/YYYY format.
+  google.protobuf.StringValue reward_date = 5;
+  // The start date for the current reward period with MM/dd/YYYY format.
+  google.protobuf.StringValue start_date = 6;
+  // The amount deposited last time.
+  google.protobuf.Int32Value last_deposit_amount = 7;
+  // The last deposit date with MM/dd/YYYY format.
+  google.protobuf.StringValue deposit_date = 8;
+  // The flag to indicate if the max cap reached for annual credit accumulation.
+  google.protobuf.BoolValue is_cap_limit_reached = 9;
+}
+
+// Request to get the list of DashPass benefits summary for fulfilled consumer orders
+message GetDashPassOrderBenefitsSummaryRequest {
+  reserved 2 to 3;
+  reserved "start_time", "end_time";
+
+  // The customer id
+  google.protobuf.StringValue consumer_id = 1;
+
+  // Start time to query with UTC epoch milli seconds (inclusive).
+  // If not provided, the default value is 30 days before the current time.
+  google.protobuf.Int64Value query_start_time = 4;
+  // End time to query with UTC epoch milli seconds (inclusive).
+  // If not provided, the default value is the current time.
+  google.protobuf.Int64Value query_end_time = 5;
+}
+
+// Response providing a list of DashPass benefits summary for fulfilled consumer orders
+message GetDashPassOrderBenefitsSummaryResponse {
+  // List of DashPass benefits for the customer
+  repeated DashPassOrderBenefits benefits = 1;
+}
+
+// DashPass benefits summary for a consumer order
+message DashPassOrderBenefits {
+  reserved 2 to 7;
+  reserved "submitted_at", "subtotal", "total_savings", "service_fee_savings", "delivery_fee_savings", "promotion_savings";
+
+  // UUID of the consumer order.
+  google.protobuf.StringValue order_uuid = 1;
+
+  // Total applied savings time in milli-seconds for the express delivery.
+  google.protobuf.Int64Value express_time_savings = 8;
+  // The id of the store where the order was put in.
+  google.protobuf.Int64Value store_id = 9;
+
+  // The UTC epoch time when this order was submitted.
+  google.protobuf.Timestamp submitted_epoch_time = 10;
+  // The subtotal amount of the order.
+  google.protobuf.Int32Value subtotal_amount = 11;
+  // Total applied total savings amount.
+  google.protobuf.Int32Value total_savings_amount = 12;
+  // Total applied service fee savings amount.
+  google.protobuf.Int32Value service_fee_savings_amount = 13;
+  // Total applied delivery fee savings amount.
+  google.protobuf.Int32Value delivery_fee_savings_amount = 14;
+  // Total applied DashPass promotion savings amount.
+  google.protobuf.Int32Value promotion_savings_amount = 15;
+}
+
+// Request to back fill the annual credit back for a customer
+message BackFillAnnualCreditBackRequest {
+  reserved 1, 2;
+  reserved "consumer_id", "caller";
+  // The list of consumer id to back fill the annual credit back.
+  repeated google.protobuf.StringValue consumer_ids = 3;
+}
+
+// Response providing the result of the back fill request.
+message BackFillAnnualCreditBackResponse {
+  reserved 1, 2;
+  reserved "is_success", "error_message";
+  // Empty response
+}
+
+// Enum for the credit back tag name
+enum CreditBackTagName {
+  // Unspecified
+  CREDIT_BACK_TAG_NAME_UNSPECIFIED = 0;
+  // Treatment 1A
+  CREDIT_BACK_TAG_NAME_1A = 1;
+  // Treatment 1B
+  CREDIT_BACK_TAG_NAME_1B = 2;
+  // Treatment 2A
+  CREDIT_BACK_TAG_NAME_2A = 3;
+  // Treatment 2A waiting for back fills.
+  CREDIT_BACK_TAG_NAME_2A_WAIT = 4;
+  // Treatment 2B
+  CREDIT_BACK_TAG_NAME_2B = 5;
+  // Treatment 2B waiting for back fills.
+  CREDIT_BACK_TAG_NAME_2B_WAIT = 6;
+  // Cap limit reached for the credit back.
+  CREDIT_BACK_TAG_NAME_CAP_LIMIT = 7;
+  // Deposit is done for the credit back.
+  CREDIT_BACK_TAG_NAME_DEPOSIT = 8;
+  // Cx is in control group
+  CREDIT_BACK_TAG_NAME_CONTROL = 9;
+  // Cx is moved to subscription renewal status.
+  CREDIT_BACK_TAG_NAME_IN_RENEWAL = 10;
+  // Cx is upgraded AP subscriber from class or monthly subscription.
+  CREDIT_BACK_TAG_NAME_AP_UPGRADE = 11;
+}
+
+// Request to run a script
+message RunScriptRequest {
+  // name of script to run
+  google.protobuf.StringValue script_name = 1;
+  // arguments to pass to the script
+  google.protobuf.StringValue json_args = 2;
+}
+
+// Response to run a script
+message RunScriptResponse {
+  // output of the script
+  google.protobuf.StringValue data = 1;
+}
+
+// Type of test actions
+enum CreditBackTestActionType {
+  // Unspecified
+  CREDIT_BACK_TEST_ACTION_TYPE_UNSPECIFIED = 0;
+  // Add an audience tag
+  CREDIT_BACK_TEST_ACTION_TYPE_ADD_TAG = 1;
+  // Remove audience tag
+  CREDIT_BACK_TEST_ACTION_TYPE_REMOVE_TAG = 2;
+}
+
+// Request to notify the bucketing
+message NotifyTestSetupDataRequest {
+  // The list of consumer ids.
+  repeated google.protobuf.StringValue consumer_ids = 1;
+  // The test action type
+  CreditBackTestActionType action_type = 2;
+  // The data associated with given test action.
+  google.protobuf.StringValue action_data = 3;
+}
+
+// Response to notify the bucketing
+message NotifyTestSetupDataResponse {
+  reserved 1;
+  reserved "is_success";
+  // The error message if the request was failed.
+  google.protobuf.StringValue error_message = 2;
+}
+
+// Request to credit back status check for the consumer
+message GetCreditBackStatusForConsumerRequest {
+  // The Id of consumer to check.
+  google.protobuf.StringValue consumer_id = 1;
+}
+
+// Response for the credit back status checking for the consumer
+message GetCreditBackStatusForConsumerResponse {
+  // Enrolled to the credit back or not.
+  google.protobuf.BoolValue is_enrolled = 1;
+  // Having a credit waiting for deposit or not.
+  google.protobuf.BoolValue has_wait_for_deposit = 2;
+  // Had deposit history or not.
+  google.protobuf.BoolValue has_deposited = 3;
+  // Can allow refund for the subscription or not.
+  google.protobuf.BoolValue is_refund_allowed = 4;
+  // The annual credit back summary for the customer.
+  AnnualCreditBackSummary summary = 5;
+}
+
+// Request to get the history of credit earnings for the customer
+message GetCreditEarningsHistoryRequest {
+  // The Id of consumer to check.
+  google.protobuf.StringValue consumer_id = 1;
+  // The offset for the paged query.
+  google.protobuf.Int32Value offset = 2;
+  // The number of items per single query.
+  google.protobuf.Int32Value limit = 3;
+}
+
+// Response of the history of credit earnings for the customer
+message GetCreditEarningsHistoryResponse {
+  // The list of earned credit back for the customer.
+  repeated CreditEarningRecord earned_credits = 1;
+}
+
+// Request the list of records waiting for deposit.
+message GetCreditWaitingForDepositRequest {
+  // The offset for the paged query.
+  google.protobuf.Int32Value offset = 1;
+  // The number of items per single query.
+  google.protobuf.Int32Value limit = 2;
+}
+
+// Response of the list of records waiting for deposit.
+message GetCreditWaitingForDepositResponse {
+  // The list of records waiting for deposit.
+  repeated CreditRedeemRecord records = 1;
+}
+
+// Request to get the audit log for the customer
+message GetAuditLogForConsumerRequest {
+  // The Id of consumer to check.
+  google.protobuf.StringValue consumer_id = 1;
+  // The offset for the paged query.
+  google.protobuf.Int32Value offset = 2;
+  // The number of items per single query.
+  google.protobuf.Int32Value limit = 3;
+}
+
+// Response of the audit log for the customer
+message GetAuditLogForConsumerResponse {
+  // The list of audit logs.
+  repeated AuditTableRecord logs = 1;
+}
+
+// Request to get the credit earnings history for the specified consumer order
+message GetCreditEarningsForConsumerOrderRequest {
+  // The Id of consumer order to check.
+  google.protobuf.StringValue order_uuid = 1;
+  // The Id of consumer to check.
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+// Response of the credit earnings history for the specified consumer order
+message GetCreditEarningsForConsumerOrderResponse {
+  // The list of audit logs.
+  repeated CreditEarningRecord records = 1;
+}

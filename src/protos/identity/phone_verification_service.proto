@@ -1,0 +1,97 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+/*
+ * Request payload for Send OTP
+ */
+message SendOTPRequest {
+  // User's phone number
+  google.protobuf.StringValue phone_number = 1;
+  // Whether user pressed resend code (meaning generate new code) or not
+  google.protobuf.BoolValue force_new_code = 2;
+  // Identity client id of Storefront Mx used in LwDD
+  google.protobuf.StringValue client_id = 3;
+}
+
+/*
+ * Response payload for Send OTP
+ */
+message SendOTPResponse {
+  // Any errors that might have occured during processing.
+  // For all intents and purposes use HTTP status code for identifying error type, and `error_reason`
+  // for detailed logging on what happened. We **highly recommend** preparing your own payload for clients.
+  // This string might be null in case HTTP verb or status code is enough to describe any errors.
+  google.protobuf.StringValue error_reason = 2;
+
+  // The generated MFA code.
+  // This will only be returned for test users to support pulse testing
+  google.protobuf.StringValue code = 3;
+}
+
+/*
+ * Request payload for Verify OTP
+ */
+message VerifyOTPRequest {
+  // User's email
+  google.protobuf.StringValue email = 1;
+  // User's phone number
+  google.protobuf.StringValue phone_number = 2;
+  // OTP code sent to phone
+  google.protobuf.StringValue code = 3;
+  // Identity client id of Storefront Mx used in LwDD
+  google.protobuf.StringValue client_id = 4;
+}
+
+/*
+ * Response payload for Verify OTP
+ */
+message VerifyOTPResponse {
+  // UUID to retrieve user state
+  google.protobuf.StringValue user_state_token = 1;
+}
+
+/*
+ * PhoneVerification service contains storefront requests
+ * which are based on phone number (which OTP will be sent to)
+ * All of the requests should contain the following header:
+ * `Tenant-Id` representing business id to support multi-tenancy
+ */
+service PhoneVerificationService {
+  /*
+   * Send OTP to user
+   *
+   * This endpoint has migrated to identity bff. Please configure properly
+   * to point to identity bff instead of identity service as identity service will
+   * disallow access for this endpoint.
+   * Given a phone number, client id, tenant id: send OTP to user.
+   */
+  rpc SendOTP(SendOTPRequest) returns (SendOTPResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 100;
+    option (service_client.client_method_config).retry_config.max_attempts = 3;
+    option (service_client.client_method_config).retry_config.initial_wait_millis = 10;
+    option (service_client.client_method_config).retry_config.wait_multiplier = 2.0;
+    option (service_client.client_method_config).retry_config.do_retry_grpc_code = 4;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.3;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 10;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+    option (service_client.client_method_config).circuit_breaker_config.trial_request_interval_millis = 1000;
+  }
+
+  /*
+   *Verifies the OTP sent via SendOTP rpc
+   *
+   * This endpoint has migrated to identity bff. Please configure properly
+   * to point to identity bff instead of identity service as identity service will
+   * disallow access for this endpoint.
+   */
+  rpc VerifyOTP(VerifyOTPRequest) returns (VerifyOTPResponse);
+}

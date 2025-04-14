@@ -1,0 +1,284 @@
+syntax = "proto3";
+
+package identityinsights.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identityinsights";
+
+// The value of an Attribute.
+message AttributeValue {
+  // The type of the value.
+  oneof type {
+    // A string value
+    string string_value = 1;
+    // A 32-but signed integer
+    int32 int_value = 2;
+    // A 64-bit signed integer.
+    int64 long_value = 3;
+    // A Boolean value represented by `true` or `false`.
+    bool bool_value = 4;
+    // A double value.
+    double double_value = 5;
+  }
+}
+
+/*
+   supported vertex types:
+   User
+   Device
+   Phone
+   ...
+*/
+// VertexId defines Vertex in the graph
+message VertexId {
+  // Vertex id, i.e. user_id
+  string id = 1;
+  // Vertex type i.e. User, Device...
+  string type = 2;
+}
+
+// Vertex of the graph
+message Vertex {
+  // VertexId is the vertex identifier
+  VertexId id = 1;
+  // Vertex attributes
+  map<string, AttributeValue> attributes = 2;
+  // tags placed on vertex
+  repeated string tags = 3;
+  // facts associated with vertex.
+  map<string, string> facts = 4;
+}
+
+// Edge connects 2 vertices
+message Edge {
+  // label of the edge (optional)
+  string label = 1;
+  // vertex id 1, in if directional
+  VertexId in_vertex_id = 2;
+  // vertex id 2, out if directional
+  VertexId out_vertex_id = 3;
+  // Edge attributes
+  map<string, AttributeValue> attributes = 4;
+}
+
+// Graph definition
+message Graph {
+  // list of vertices in the graph
+  repeated Vertex vertices = 1;
+  // list of edges in the graph
+  repeated Edge edges = 2;
+}
+
+// Identity Graph Service
+service IdentityGraphService {
+  // Timeout after 700 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 700;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // GetVertex fetches single vertex from vertex id
+  rpc GetVertex(GetVertexRequest) returns (GetVertexResponse);
+
+  // GetGraph returns a subgraph from one starting vertex
+  rpc GetGraph(GetGraphRequest) returns (GetGraphResponse);
+
+  // GetConnectedPath returns a path from start vertex to end vertex if exist
+  rpc GetConnectedPath(GetConnectedPathRequest) returns (GetConnectedPathResponse);
+
+  // GetEdges returns edges given two nodes
+  rpc GetEdges(GetEdgesRequest) returns (GetEdgesResponse);
+
+  // GetVertices fetches number of vertices from list of vertex ids
+  rpc GetVertices(GetVerticesRequest) returns (GetVerticesResponse);
+
+  // Upsert User Connection
+  rpc UpsertUserConnection(UpsertUserConnectionRequest) returns (UpsertUserConnectionResponse);
+}
+
+// GetVertexRequest
+message GetVertexRequest {
+  // vertex id
+  VertexId vertex_id = 1;
+}
+
+// GetVertexResponse returns single vertex
+message GetVertexResponse {
+  // vertex
+  Vertex vertex = 1;
+}
+
+// GetGraphRequest with vertex id and number of hops
+message GetGraphRequest {
+  // starting vertex id
+  VertexId vertex_id = 1;
+  // number of hops to return in the graph, (capped internally)
+  int32 hops = 2;
+  // limit vertex types in the graph, User (and starting vertex) type will always be included
+  // default is all types
+  repeated string vertex_types = 3;
+  // If set to true returns vertexIds only without vertex attributes, better query performance
+  bool vertex_ids_only = 4;
+  // If set to true returns facts associated with vertices in the graph.
+  // Deprecated
+  bool include_facts = 5;
+  // Fact types and categories to filter facts.
+  repeated FactFilter fact_filters = 6;
+  // limit edge types in the graph
+  // default is all types
+  repeated string edge_labels = 7;
+  // limit number of edges per vertex
+  // if not specified service will use a default value
+  int32 num_edges_per_vertex = 8;
+}
+
+// GetGraphResponse
+message GetGraphResponse {
+  // graph
+  Graph graph = 1;
+}
+
+// GetConnectedPathRequest
+message GetConnectedPathRequest {
+  // start vertex
+  VertexId start_vertex_id = 1;
+  // end vertex
+  VertexId end_vertex_id = 2;
+  // max number of hops to return in graph, (capped internally)
+  int32 max_hops = 3;
+  // limit vertex types in the graph, User (and starting vertex) type will always be included
+  // default is all types
+  repeated string vertex_types = 4;
+  // limit edge types in the graph
+  // default is all types
+  repeated string edge_labels = 5;
+}
+
+// GetConnectedPathResponse
+message GetConnectedPathResponse {
+  // graph
+  Graph graph = 1;
+}
+
+// GetEdgeRequest
+message GetEdgesRequest {
+  // beginning point
+  VertexId from_vertex_id = 1;
+  // ending point
+  VertexId to_vertex_id = 2;
+  // limit edge types in the graph
+  // default is all types
+  repeated string edge_labels = 3;
+}
+
+// GetEdgesResponse
+message GetEdgesResponse {
+  // Edges
+  repeated Edge edges = 1;
+}
+
+// VertexIdsByType defines number of vertex ids for one given type
+message VertexIdsByType {
+  // Vertex ids, i.e. user_ids
+  repeated string id = 1;
+  // Vertex type i.e. User, Device...
+  string type = 2;
+}
+
+// GetVertexRequest
+message GetVerticesRequest {
+  // Group of vertex ids by type
+  repeated VertexIdsByType vertex_ids_by_type = 1;
+}
+
+// GetVertexResponse returns single vertex
+message GetVerticesResponse {
+  // list of vertices
+  repeated Vertex vertices = 1;
+}
+
+// UpsertUserConnectionRequest
+message UpsertUserConnectionRequest {
+  // the vertex to be linked to the user
+  VertexId id = 1;
+  // the user id
+  string user_id = 2;
+  // the event type
+  EventType event_type = 3;
+}
+
+// UpsertUserConnectionResponse
+message UpsertUserConnectionResponse {}
+
+// Fact Category
+enum FactCategory {
+  // Unknown value
+  FACT_CATEGORY_UNSPECIFIED = 0;
+  // CB
+  FACT_CATEGORY_CB = 1;
+  // CNR
+  FACT_CATEGORY_CNR = 2;
+  // PROMO
+  FACT_CATEGORY_PROMO = 3;
+  // Dx
+  FACT_CATEGORY_DX = 4;
+}
+
+// Fact category filter
+message FactCategoryFilter {
+  // Fact category
+  FactCategory category = 1;
+  // Fact name to filter
+  repeated string fact_names = 2;
+}
+
+// Facts filters
+message FactFilter {
+  // User, Device, Address etc... i.e. same as vertex type
+  string type = 1;
+
+  // Additional filtering for the facts
+  repeated FactCategoryFilter fact_category_filters = 2;
+}
+
+// UserClusterUpdateEvent: meant to mirror the UserCluster object in IdentityGraph
+message UserClusterUpdateEvent {
+  // user_id
+  string user_id = 1;
+  // cluster_id
+  string cluster_id = 2;
+  // The cluster type
+  string cluster_type = 3;
+  // created_at
+  google.protobuf.Timestamp created_at = 4;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// Event type
+enum EventType {
+  // unspecified
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // mfa
+  EVENT_TYPE_MFA = 1;
+  // checkout
+  EVENT_TYPE_CHECKOUT = 2;
+  // profile update
+  EVENT_TYPE_PROFILE_UPDATE = 3;
+  // sign up
+  EVENT_TYPE_SIGNUP = 4;
+  // login
+  EVENT_TYPE_LOGIN = 5;
+  // unknown
+  EVENT_TYPE_UNKNOWN = 6;
+}

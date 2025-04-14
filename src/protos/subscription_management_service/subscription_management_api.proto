@@ -1,0 +1,617 @@
+syntax = "proto3";
+
+package doordash_subscription_management_service.subscription.v1;
+
+import "doordash.api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.subscription_management_service.subscription";
+
+// Generic Subscription Management Service Definition
+service SubscriptionManagementService {
+  option (doordash.api.service) = {
+    name: "subscription-management-service-web"
+    url: "subscription-management-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["subscriptions"] /* an area of the project, will be a part of URL */
+    owner: {
+      name: "subscription-service"
+      id: "subscription-service"
+      slack_channel: "#eng-dashpass"
+      email_alias: "eng-dashpass@doordash.com"
+    }
+    target_products: [CX]
+    vertical_domains: [CX]
+  };
+
+  // This endpoint is used to create a subscription
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse);
+  // This endpoint is used to activate a user's subscription (kick off recurring billing, etc.)
+  rpc ActivateSubscription(ActivateSubscriptionRequest) returns (ActivateSubscriptionResponse);
+  // This endpoint is used to retrieve a subscription using the subscription id
+  rpc GetSubscription(GetSubscriptionRequest) returns (GetSubscriptionResponse);
+  // This endpoint is used to update a user's subscription
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (UpdateSubscriptionResponse);
+  // This endpoint is used to attach subscribers to a subscription
+  rpc AttachSubscribers(AttachSubscribersRequest) returns (AttachSubscribersResponse);
+  // This endpoint is used to detach subscribers to a subscription.
+  // If they are the owner of a subscription, that subscription will be orphaned.
+  rpc DetachSubscribers(DetachSubscribersRequest) returns (DetachSubscribersResponse);
+  // This endpoint is used to update subscriber information
+  rpc UpdateSubscriber(UpdateSubscriberRequest) returns (UpdateSubscriberResponse);
+  // This endpoint is used to find a user's subscription
+  rpc FindSubscription(FindSubscriptionRequest) returns (FindSubscriptionResponse);
+  // This endpoint is used to retrieve an invoice by invoice id
+  rpc GetSubscriptionInvoice(GetSubscriptionInvoiceRequest) returns (GetSubscriptionInvoiceResponse);
+  // This endpoint is used to refund invoice
+  rpc RefundSubscriptionInvoice(RefundSubscriptionInvoiceRequest) returns (RefundSubscriptionInvoiceResponse);
+  // These three endpoints are used to query subsciption invoices
+  // List invoices by subscription id, the invoices are guaranteed to be in reverse-chronological order
+  rpc ListSubscriptionInvoicesBySubscriptionId(ListSubscriptionInvoicesBySubscriptionIdRequest) returns (ListSubscriptionInvoicesBySubscriptionIdResponse);
+  // List invoices by subscription owner, the invoices are guaranteed to be in reverse-chronological order
+  rpc ListSubscriptionInvoicesByOwner(ListSubscriptionInvoicesByOwnerRequest) returns (ListSubscriptionInvoicesByOwnerResponse);
+  // Get next page of invoices; to be called after ListSubscriptionInvoicesBySubscriptionId, ListSubscriptionInvoicesByOwner,
+  // or ListSubscriptionInvoicesNextPage with next_page_token from the previous response
+  rpc ListSubscriptionInvoicesNextPage(ListSubscriptionInvoicesNextPageRequest) returns (ListSubscriptionInvoicesNextPageResponse);
+  // This endpoint is used to upgrade a Subscription. It is intended to be used for charging a customer before making changes to the subscription
+  // This endpoint is asynchronous and returns a response before the payment has gone through.
+  // Note: This endpoint is destructive. It will replace the existing payment schedule and business context with the new ones.
+  // Whatever time is left in the current payment schedule will be lost. It is up to the Subscription providers to handle this by either refunding
+  // the customer or providing free period of time.
+  rpc UpgradeSubscription(UpgradeSubscriptionRequest) returns (UpgradeSubscriptionResponse);
+  // This endpoint is used to create a backfill invoice for a subscription
+  // This endpoint is initially meant to be called only for backfilling legacy invoices into GSM
+  rpc CreateBackfillInvoiceForSubscription(CreateBackfillInvoiceForSubscriptionRequest) returns (CreateBackfillInvoiceForSubscriptionResponse);
+  // This endpoint is used to update a backfill invoice for a subscription
+  rpc UpdateBackfillInvoiceForSubscription(UpdateBackfillInvoiceForSubscriptionRequest) returns (UpdateBackfillInvoiceForSubscriptionResponse);
+  // List all subscriptions by user id owner, the subscriptions are guaranteed to be in reverse-chronological order
+  rpc GetAllUserSubscriptionsByOwner(GetAllUserSubscriptionsByOwnerRequest) returns (GetAllUserSubscriptionsByOwnerResponse);
+  // Get next page of subscriptions; to be called after GetAllUserSubscriptionsByOwner
+  // or GetAllUserSubscriptionsNextPage with next_page_token from the previous response
+  rpc GetAllUserSubscriptionsNextPage(GetAllUserSubscriptionsNextPageRequest) returns (GetAllUserSubscriptionsNextPageResponse);
+  // This endpoint is used to void an invoice by invoice id
+  rpc VoidSubscriptionInvoice(VoidSubscriptionInvoiceRequest) returns (VoidSubscriptionInvoiceResponse);
+}
+
+// Request for BackfillInvoiceForSubscription endpoint
+message CreateBackfillInvoiceForSubscriptionRequest {
+  // Backfill invoice model
+  BackfillInvoice invoice = 1;
+}
+
+// Response for BackfillInvoiceForSubscription endpoint
+message CreateBackfillInvoiceForSubscriptionResponse {
+  // Invoice model
+  Invoice invoice = 1;
+}
+
+// Request for UpdateBackfillInvoiceForSubscription endpoint
+message UpdateBackfillInvoiceForSubscriptionRequest {
+  // id of the backfill invoice (UUID) to be updated
+  string invoice_id = 1;
+  // Backfill invoice model
+  BackfillInvoice invoice = 2;
+}
+
+// Response for UpdateBackfillInvoiceForSubscription endpoint
+message UpdateBackfillInvoiceForSubscriptionResponse {
+  // Invoice model
+  Invoice invoice = 1;
+}
+
+// Request for GetSubscriptionInvoice endpoint
+message GetSubscriptionInvoiceRequest {
+  // id of the invoice (UUID)
+  string invoice_id = 1;
+}
+
+// Response for GetSubscriptionInvoice endpoint
+message GetSubscriptionInvoiceResponse {
+  // Invoice model
+  Invoice invoice = 1;
+}
+
+// Request for VoidSubscriptionInvoice endpoint
+message VoidSubscriptionInvoiceRequest {
+  // id of the invoice (UUID)
+  string invoice_id = 1;
+}
+
+// Response for VoidSubscriptionInvoice endpoint
+message VoidSubscriptionInvoiceResponse {
+  // workflow run id
+  string request_id = 1;
+}
+
+// Request for ListSubscriptionInvoicesNextPage endpoint
+message ListSubscriptionInvoicesNextPageRequest {
+  // Next page token
+  string next_page_token = 1;
+}
+
+// Response for ListSubscriptionInvoicesNextPage endpoint
+message ListSubscriptionInvoicesNextPageResponse {
+  // List of invoices
+  repeated Invoice invoices = 1;
+  // Next page token. Can be quite long. Omited if there are no more pages.
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Request for ListSubscriptionInvoicesBySubscriptionId endpoint
+message ListSubscriptionInvoicesBySubscriptionIdRequest {
+  // id of the subscription
+  string subscription_id = 1;
+  // Page size (default is used if omitted)
+  google.protobuf.Int32Value page_size = 2;
+}
+
+// Response for ListSubscriptionInvoicesBySubscriptionId endpoint
+message ListSubscriptionInvoicesBySubscriptionIdResponse {
+  // List of invoices
+  repeated Invoice invoices = 1;
+  // Next page token. Can be quite long. Omited if there are no more pages.
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Request for ListSubscriptionInvoicesByOwner endpoint
+message ListSubscriptionInvoicesByOwnerRequest {
+  // user id of the subscription owner
+  string user_id = 1;
+  // Optional provider ID to filter invoices by provider
+  google.protobuf.StringValue provider_id = 2;
+  // Page size (default is used if omitted)
+  google.protobuf.Int32Value page_size = 3;
+}
+
+// Response for ListSubscriptionInvoicesByOwner endpoint
+message ListSubscriptionInvoicesByOwnerResponse {
+  // List of invoices
+  repeated Invoice invoices = 1;
+  // Next page token. Omited if there are no more pages.
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Request for RefundSubscriptionInvoice endpoint
+message RefundSubscriptionInvoiceRequest {
+  // Invoice id to be refunded
+  string invoice_id = 1;
+  // Amount to be refunded (before tax)
+  int32 refund_amount = 2;
+}
+
+// Response for RefundSubscriptionInvoice endpoint
+message RefundSubscriptionInvoiceResponse {
+  // Amount refunded
+  InvoiceAmount amount_refunded = 1;
+  // Updated invoice model
+  Invoice updated_invoice = 2;
+}
+
+// Request for FindSubscription endpoint
+message FindSubscriptionRequest {
+  // provider of the subscription - Dashpass, Caviar, etc
+  string provider = 1;
+  // user id of the subscriber
+  string user_id = 2;
+  // Type of subscriber - Optional
+  UserType user_type = 3;
+  // field mask to define what fields to return; if not present, all fileds should return
+  google.protobuf.FieldMask field_mask = 4;
+}
+
+// Response for FindSubscription endpoint
+message FindSubscriptionResponse {
+  // Subscription model
+  Subscription subscription = 1;
+}
+
+// Request for AttachSubscribers endpoint
+message AttachSubscribersRequest {
+  // id of the subscription (UUID)
+  string subscription_id = 1;
+  // Subscribers to be attached to a subscription
+  repeated Subscriber subscribers = 2;
+}
+
+// Response for AttachSubscribers endpoint
+message AttachSubscribersResponse {}
+
+// Request for DetachSubscribers endpoint
+message DetachSubscribersRequest {
+  // UUID of the subscription
+  string subscription_id = 1;
+  // List of user ids to be detached from a subscription
+  repeated string user_ids = 2;
+}
+
+// Response for DetachSubscribers endpoint
+message DetachSubscribersResponse {}
+
+// Request for UpdateSubscriber endpoint
+message UpdateSubscriberRequest {
+  // Provider of the subscription. This is a required field.
+  string provider = 1;
+  // User id of the subscriber. This is a required field.
+  string user_id = 2;
+  // Preferred payment method id to be updated
+  string preferred_payment_method_id = 3;
+  // Payer id to be updated
+  google.protobuf.StringValue payer_id = 4;
+}
+
+// Response for UpdateSubscriber endpoint
+message UpdateSubscriberResponse {}
+
+// Request for GetSubscription endpoint
+message GetSubscriptionRequest {
+  // id of the subscription (UUID)
+  string subscription_id = 1;
+
+  // field mask to define what fields to return; if not present, all fileds should return
+  google.protobuf.FieldMask field_mask = 2;
+}
+
+// Response for GetSubscription endpoint
+message GetSubscriptionResponse {
+  // Subscription model
+  Subscription subscription = 1;
+}
+
+// Request for UpgradeSubscription endpoint
+message UpgradeSubscriptionRequest {
+  // id of the subscription (UUID)
+  string subscription_id = 1;
+  // Payment method id to be used for upgrade. Replaces the preferred payment method if payment is successful
+  string payment_method_id = 2;
+  // Payment schedule to be applied to the subscription if upgrade is successful
+  repeated PaymentSchedulePhase payment_schedule = 3;
+  // Business context to be applied to the subscription if upgrade is successful. This is a plain text json string.
+  // Only business context fields that need to be replaced must be provided. Other existing fields in business context will remain the same
+  google.protobuf.StringValue business_context_json = 4;
+  // Payment Schedule phase to be used for the upgrade charge
+  // upgrade_payment_schedule_phase's cost field will be the cost of upgrade invoice. This is the amount that will be charged before upgrading the subscription
+  // upgrade_payment_schedule_phase's period field will be the period for the upgrade invoice
+  // upgrade_payment_schedule_phase's grace period will be the grace period for the upgrade invoice
+  PaymentSchedulePhase upgrade_payment_schedule_phase = 5;
+  // Payment method id to be used for upgrade. Replaces the preferred payment method if payment is successful
+  google.protobuf.StringValue payment_method_uuid = 6;
+}
+
+// Response for UpgradeSubscription endpoint
+message UpgradeSubscriptionResponse {
+  // Upgrade invoice
+  Invoice invoice = 1;
+}
+
+// Model representing a subscription
+message Subscription {
+  // id of the subscription (UUID)
+  string subscription_id = 1;
+  // Dashpass, Caverar, etc
+  string provider = 2;
+  // Time when subscription was created
+  google.protobuf.Timestamp created_at = 3;
+  // Time when subscription was last modified
+  google.protobuf.Timestamp last_modified_at = 4;
+  // Status of the subscription
+  Status status = 5;
+  // Time the subscription ends
+  google.protobuf.Timestamp active_until = 6;
+  // Indicates whether the subscription should be renewed automatically or not
+  bool auto_renew = 7;
+  // Subscribers attached to this subscription
+  repeated Subscriber subscribers = 8;
+  // When payment should be collected for this subscription
+  repeated PaymentSchedulePhase payment_schedule = 9;
+  // Current Schedule within PaymentSchedulePhase
+  int32 payment_schedule_index = 10;
+  // Time when next payment for this subscription will be collected
+  google.protobuf.Timestamp next_payment_scheduled_at = 11;
+  // Indicates whether changes to payment_schedule will be allowed
+  bool payment_schedule_locked = 12;
+  // Status of last payment
+  PaymentStatus last_payment_status = 13;
+  // Business context associated with subscription. This is a plain text json string.
+  google.protobuf.StringValue business_context_json = 14;
+  // Endpoint that GSM will call to fetch additional information
+  google.protobuf.StringValue callback_endpoint = 15;
+}
+
+// Request for CreateSubscription endpoint
+message CreateSubscriptionRequest {
+  // Dashpass, Caviar, etc.
+  string provider = 1;
+  // When payment should be collected for this subscription
+  repeated PaymentSchedulePhase payment_schedule = 2;
+  // Business context associated with subscription. This is a plain text json string.
+  google.protobuf.StringValue business_context_json = 3;
+  // Endpoint that GSM will call to fetch additional information
+  google.protobuf.StringValue callback_endpoint = 4;
+  // Indicates whether the subscription should be renewed automatically or not
+  bool auto_renew = 5;
+}
+
+// Response for CreateSubscription endpoint
+message CreateSubscriptionResponse {
+  // id of the subscription (UUID)
+  string subscription_id = 1;
+}
+
+// Request for ActivateSubscription endpoint
+message ActivateSubscriptionRequest {
+  // UUID of the subscription
+  string subscription_id = 1;
+  // Date when the subscription will start being billed.
+  // If provided, the subscription will be considered active until billing begins.
+  // If not provided, billing will begin immediately.
+  //
+  // This is intended to be used for migration scenarios, where the customer has already paid for
+  // their subscription in the legacy system, and needs to start paying for the subscription in
+  // this system on a particular date.
+  //
+  // If you want to add free periods to a subscription, that's always been maintained in this
+  // system, it's better to incorporate that into the payment schedule, so that there's an invoice
+  // to track the transaction.
+  google.protobuf.Timestamp start_billing_at = 2;
+}
+
+// Response for ActivateSubscription endpoint
+message ActivateSubscriptionResponse {}
+
+// Request for UpdateSubscription endpoint
+message UpdateSubscriptionRequest {
+  // UUID of the subscription
+  string subscription_id = 1;
+  // Dashpass, Caviar, etc.
+  string provider = 2;
+  // When payment should be collected for this subscription
+  repeated PaymentSchedulePhase payment_schedule = 3;
+  // Business context associated with subscription. This is a plain text json string.
+  google.protobuf.StringValue business_context_json = 4;
+  // Endpoint that GSM will call to fetch additional information
+  google.protobuf.StringValue callback_endpoint = 5;
+  // Indicates whether the subscription should be renewed automatically or not
+  google.protobuf.BoolValue auto_renew = 6;
+}
+
+// Response for UpdateSubscription endpoint
+message UpdateSubscriptionResponse {
+  // The updated subscription entity
+  Subscription subscription = 1;
+}
+
+// Request for GetAllUserSubscriptionsByOwner endpoint
+message GetAllUserSubscriptionsByOwnerRequest {
+  // user id of the subscription owner
+  string user_id = 1;
+  // Optional provider ID to filter subscriptions by provider
+  google.protobuf.StringValue provider_id = 2;
+  // Page size (default is used if omitted)
+  google.protobuf.Int32Value page_size = 3;
+
+  // if field mask present, we would only return fileds defined in the mask;
+  // if not present, we assume we return all fields
+  google.protobuf.FieldMask subscription_field_mask = 4;
+}
+
+// Response for GetAllUserSubscriptionsByOwner endpoint
+message GetAllUserSubscriptionsByOwnerResponse {
+  // List of subscriptions
+  repeated Subscription subscriptions = 1;
+  // Next page token. Omited if there are no more pages.
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Request for GetAllUserSubscriptionsNextPage endpoint
+message GetAllUserSubscriptionsNextPageRequest {
+  // Next page token
+  string next_page_token = 1;
+
+  // if field mask present, we would only return fileds defined in the mask;
+  // if not present, we assume we return all fields
+  google.protobuf.FieldMask subscription_field_mask = 2;
+}
+
+// Response for GetAllUserSubscriptionsNextPage endpoint
+message GetAllUserSubscriptionsNextPageResponse {
+  // List of subscriptions
+  repeated Subscription subscriptions = 1;
+  // Next page token. Omited if there are no more pages.
+  google.protobuf.StringValue next_page_token = 2;
+}
+
+// Defines the amount of an invoice
+message InvoiceAmount {
+  // Total amount of the invoice before taxes
+  int32 subtotal = 1;
+  // Tax amount on the invoice
+  int32 tax = 2;
+  // Total amount of the invoice after taxes
+  int32 total = 3;
+}
+
+// Defines invoice timespan
+message InvoiceTimespan {
+  // Time when invoice period starts
+  google.protobuf.Timestamp start = 1;
+  // Time when invoice period ends
+  google.protobuf.Timestamp end = 2;
+}
+
+// Defines an invoice
+message Invoice {
+  // id of the invoice
+  string invoice_id = 1;
+  // id of the subscription
+  string subscription_id = 2;
+  // id of the user
+  string user_id = 3;
+  // Time when invoice was created
+  google.protobuf.Timestamp created_at = 4;
+  // Time when invoice was last updated
+  google.protobuf.Timestamp updated_at = 5;
+  // The date range of subscription covered by this invoice, can be null if not started yet (e.g., gift periods)
+  InvoiceTimespan timespan = 6;
+  // The amount of the invoice at the time of creation
+  InvoiceAmount original_amount = 7;
+  // The amount of the invoice after any refunds
+  InvoiceAmount current_amount = 8;
+  // Currency of the invoice
+  string currency = 9;
+  // Status of the invoice
+  PaymentStatus status = 10;
+  // DEPRECATED: use the cart_payment_id field to look up detailed payment info. One cart_payment_id maps to one
+  // payment method, or multiple in the case of a split payment.
+  // Payment method used to pay the invoice
+  google.protobuf.StringValue payment_method_id = 11;
+  // Metadata of the payment schedule phase this invoice refers to
+  google.protobuf.StringValue payment_schedule_phase_metadata = 12;
+  // Invoice scenario of the invoice
+  InvoiceScenario invoice_scenario = 13;
+  // Cart payment id used to pay the invoice
+  google.protobuf.StringValue cart_payment_id = 14;
+  // business context json associated with invoice
+  google.protobuf.StringValue business_context_json = 15;
+}
+
+// Defines the scenario of an invoice
+enum InvoiceScenario {
+  // Unspecified InvoiceScenario. Lint requires this enum
+  INVOICE_SCENARIO_UNSPECIFIED = 0;
+  // Represents a Standard recurring Invoice
+  INVOICE_SCENARIO_STANDARD = 1;
+  // Represents an Upgrade Invoice
+  INVOICE_SCENARIO_UPGRADE = 2;
+  // Represents an invoice backfilled from legacy system
+  INVOICE_SCENARIO_BACKFILL = 3;
+}
+
+// Defines the payment schedule for a subscription
+message PaymentSchedulePhase {
+  // Metadata of the payment schedule phase, determined by the provider
+  google.protobuf.StringValue metadata = 1;
+  // Cost of the subscription for a period of time
+  Cost cost = 2;
+  // Amount of time to add to the activeUntil field
+  Period period = 3;
+  // When the next payment is due
+  Period next_payment_due_in = 4;
+  // Prevent the payment schedule from being manipulated beyond this point
+  // to preserve promises made to the customer about the payment schedule
+  google.protobuf.BoolValue lock_payment_schedule = 5;
+  // Time period within which Payment can be collected and benefits are active beyond the end date of subscription
+  Period grace_period = 6;
+}
+
+// Defines the cost of a payment schedule
+message Cost {
+  // Base price for the payment schedule
+  int32 base_price = 1;
+  // Optionally collect added tax
+  google.protobuf.BoolValue plus_tax = 2;
+  // Currency of the price
+  string currency = 3;
+}
+
+// Defines the period of a payment schedule
+message Period {
+  // Amount of time to add to the activeUntil field
+  int32 count = 1;
+  // Unit of Period (Day/month/Year)
+  Unit unit = 2;
+}
+
+// Defines a Subscriber
+message Subscriber {
+  // UserId of the subscriber
+  string user_id = 1;
+  // Type of subscriber
+  UserType user_type = 2;
+  // Preferred Payment Method Id - Applies only to owner of subscription
+  google.protobuf.StringValue preferred_payment_method_id = 3;
+  // Payer id - Applies only to owner of subscription
+  google.protobuf.StringValue payer_id = 4;
+}
+
+// Defines a backfill invoice that must be created or updated
+message BackfillInvoice {
+  // id of the subscription
+  string subscription_id = 1;
+  // user id of the subscriber
+  string user_id = 2;
+  // The amount of the invoice at the time of creation
+  InvoiceAmount original_amount = 3;
+  // The amount of the invoice after any refunds
+  InvoiceAmount current_amount = 4;
+  // Currency of the invoice
+  string currency = 5;
+  // Status of the invoice
+  PaymentStatus status = 6;
+  // Timespan of the invoice
+  InvoiceTimespan timespan = 7;
+  // Payment Schedule Phase Metadata
+  google.protobuf.StringValue payment_schedule_phase_metadata = 8;
+  // Business context associated with invoice. This is a plain text json string.
+  google.protobuf.StringValue business_context_json = 9;
+  // Cart Payment Id of the invoice
+  google.protobuf.StringValue cart_payment_id = 10;
+}
+
+// Defines the type of user associated with the subscription
+enum UserType {
+  // Unspecified UserType. Lint requires this enum
+  USER_TYPE_UNSPECIFIED = 0;
+  // Represents Owner of the subscription
+  USER_TYPE_OWNER = 1;
+  // Represents recipient of the subscription
+  USER_TYPE_RECIPIENT = 2;
+}
+
+// Defines Period of time
+enum Unit {
+  // Unspecified Unit. Lint requires this enum
+  UNIT_UNSPECIFIED = 0;
+  // Represents seconds
+  UNIT_SECOND = 1;
+  // Represents Minutes
+  UNIT_MINUTE = 2;
+  // Represents Hours
+  UNIT_HOUR = 3;
+  // Represents Day
+  UNIT_DAY = 4;
+  // Represents Month
+  UNIT_MONTH = 5;
+  // Represents Year
+  UNIT_YEAR = 6;
+  // Represents Week
+  UNIT_WEEK = 7;
+}
+
+// Defines status of the subscription
+enum Status {
+  // Unspecified Status. Lint requires this enum
+  STATUS_UNSPECIFIED = 0;
+  // Represents Active status
+  STATUS_ACTIVE = 1;
+  // Represents Inactive status
+  STATUS_INACTIVE = 2;
+  // Represents Activation Required status
+  STATUS_ACTIVATION_REQUIRED = 3;
+}
+
+// Defines status of Payment
+enum PaymentStatus {
+  // Unspecified PaymentStatus. Lint requires this enum
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  // Represents Success
+  PAYMENT_STATUS_SUCCESS = 1;
+  // Represents Failure
+  PAYMENT_STATUS_FAILURE = 2;
+  // Represents Pending Payment
+  PAYMENT_STATUS_PENDING = 3;
+}

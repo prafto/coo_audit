@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "common/service_client_config.proto";
+
+package event_service.audit;
+option java_package = "com.doordash.rpc.event_service.audit";
+
+enum ActionType {
+  ACTION_UNKNOWN = 0;
+  ACTION_CREATE = 1;
+  ACTION_READ = 2;
+  ACTION_UPDATE = 3;
+  ACTION_DELETE = 4;
+}
+
+enum ClassificationType {
+  CLASSIFICATION_UNKNOWN = 0;
+  CLASSIFICATION_DATA = 1;
+  CLASSIFICATION_PII = 2;
+  CLASSIFICATION_SENSITIVE = 3;
+  CLASSIFICATION_FINANCIAL = 4;
+}
+
+service AuditService {
+  rpc Query(QueryRequest) returns (QueryResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+    option (service_client.client_method_config).circuit_breaker_config.failure_rate_threshold = 0.2;
+    option (service_client.client_method_config).circuit_breaker_config.minimum_request_threshold = 50;
+    option (service_client.client_method_config).circuit_breaker_config.counter_sliding_window_millis = 60000;
+    option (service_client.client_method_config).circuit_breaker_config.circuit_open_window_millis = 30000;
+  }
+}
+
+message QueryRequest {
+  Actor actor = 1;
+  Target target = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+  uint32 limit = 5;
+}
+
+message QueryResponse {
+  repeated AuditEvent events = 1;
+  int32 count = 2;
+}
+
+message Actor {
+  int64 actor_id = 1;
+  google.protobuf.StringValue session_id = 2;
+  google.protobuf.StringValue token_id = 3;
+  google.protobuf.StringValue ip = 4;
+  google.protobuf.StringValue device_id = 5;
+  google.protobuf.StringValue user_agent = 6;
+  google.protobuf.StringValue request_id = 7;
+  google.protobuf.StringValue service_name = 8;
+}
+
+message Target {
+  google.protobuf.StringValue target_namespace = 1;
+  google.protobuf.StringValue target_class = 2;
+  google.protobuf.StringValue key = 3;
+}
+
+message AuditEvent {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  Actor actor = 3;
+  Target target = 4;
+  ActionType action = 5;
+  repeated AuditField fields = 6;
+  google.protobuf.StringValue status = 7;
+}
+
+message AuditField {
+  string name = 1;
+  ClassificationType classification = 2;
+  google.protobuf.StringValue old_value = 3;
+  google.protobuf.StringValue new_value = 4;
+}

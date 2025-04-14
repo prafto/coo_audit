@@ -1,0 +1,74 @@
+syntax = "proto3";
+package identity_service;
+
+import "common/common.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/identity";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.identity";
+
+// Use magic link configuration managed by Identity
+enum MagicLinkConfig {
+  // Invalid feature config will default to "login"
+  MAGIC_LINK_CONFIG_UNSPECIFIED = 0;
+  // Login/signup UX: magic links for login, signup, password reset
+  MAGIC_LINK_CONFIG_LOGIN = 1;
+  // Promotional email embedded magic links
+  MAGIC_LINK_CONFIG_PROMO_EMAIL = 2;
+  // MFA OTC embedded magic links
+  MAGIC_LINK_CONFIG_OTC = 3;
+}
+
+// Request to create a magic link for a user
+message CreateMagicLinkRequest {
+  // The user ID for which the magic link will be created
+  int64 user_id = 1;
+
+  // URL to which the client will redirect to after authentication
+  string redirect_url = 2;
+
+  // Magic link feature configuration, managed in Identity
+  MagicLinkConfig config = 3;
+
+  // Specify Caviar, DoorDash, etc. to update magic link domain
+  common.Experience experience = 4;
+}
+
+// Response containing a magic link for a user
+message CreateMagicLinkResponse {
+  // Magic link URL
+  string magic_link = 1;
+
+  // Seconds until expiration
+  int32 expire_seconds = 2;
+
+  // Seconds until magic link nonce is removed from Identity
+  int32 ttl_seconds = 3;
+}
+
+/*
+ * MagicLinkService service contains requests for managing magic link authentication
+ * All of the responses contains following additional headers:
+ *
+ * This endpoint has migrated to identity bff. Please configure properly
+ * to point to identity bff instead of identity service as identity service will
+ * disallow access for this endpoint.
+ * - `X-REQUEST-ID` a unique request ID assigned to this request on Identity Service (for tracing purposes).
+ * - `X-TIME-ELAPSED` (if > 100ms) total time in consumed (milliseconds) while processing request on server.
+ */
+service MagicLinkService {
+  /* This API returns magic links to authenticate a given user ID.
+   * Identity WRITE API token is required to create a magic link. This endpoint must also be enabled in the client configuration.
+   * Errors:
+   *  - 200 SUCCESS: magic link successfully created
+   *  - 400 BAD_REQUEST
+   *  - 401 UNAUTHENTICATED: Invalid API token or no WRITE permissions
+   *  - 403 PERMISSION_DENIED: Create magic link not enabled for this Identity client
+   *  - 404 NOT_FOUND: User ID does not exist
+   *  - 429 RESOURCE_EXHAUSTED: Client consumed rate limit
+   *  - 503 INTERNAL
+   *  - 504 DEADLINE_EXCEEDED: Timeout creating a magic link
+   */
+  rpc CreateMagicLink(CreateMagicLinkRequest) returns (CreateMagicLinkResponse) {}
+}

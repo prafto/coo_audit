@@ -1,0 +1,386 @@
+syntax = "proto3";
+
+package ordering_intelligence.v1;
+
+import "common/common.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/common.proto";
+import "feed_service/item_page.proto";
+import "feed_service/menu.proto";
+import "feed_service/store_page.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/ordering_intelligence/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ordering_intelligence.rpc.api";
+
+// Service for AI personalization
+service OrderingIntelligenceService {
+  option (doordash.api.service) = {
+    name: "ordering-intelligence"
+    port: 50051
+    url: "ordering-intelligence-api.service.prod.ddsd"
+    name_spaces: ["dashi"]
+    owner: {
+      name: "ordering-experience"
+      id: "ordering-experience-alerts"
+      slack_channel: "#ordering-experience-oncall"
+      email_alias: "ordering-experience@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).response_attempt_timeout_millis = 20000;
+  option (doordash.api.service_inject_headers) = {
+    inject: [
+      {field: "platform"},
+      {field: "is_employee"},
+      {field: "cx_id"},
+      {field: "is_guest"},
+      {field: "cx_geo_submarket_id"},
+      {field: "cx_geo_lng"},
+      {field: "cx_geo_lat"},
+      {field: "cx_geo_district_id"},
+      {field: "cx_geo_time_zone"}]
+  };
+
+  // Personalized item accelerator preset
+  rpc GetItemCustomizer(GetItemCustomizerRequest) returns (GetItemCustomizerResponse) {
+    option (google.api.http) = {get: "/dashi/v1/item/customizers"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Personalized taste match item badges
+  rpc GetTasteMatchBadges(GetTasteMatchBadgesRequest) returns (GetTasteMatchBadgesResponse) {
+    option (google.api.http) = {get: "/dashi/v1/store/badges"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // Cached taste match on item page
+  rpc GetItemPageTasteMatch(GetItemPageTasteMatchRequest) returns (GetItemPageTasteMatchResponse);
+
+  // Cached taste match for a store
+  rpc GetStorePageTasteMatch(GetStorePageTasteMatchRequest) returns (GetStorePageTasteMatchResponse) {
+    option (google.api.http) = {get: "/dashi/v1/store/tastematch"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+
+  // AI check a review if certain keywords have been fulfilled
+  rpc ReviewsSuggestionKeywords(ReviewsSuggestionKeywordsRequest) returns (ReviewsSuggestionKeywordsResponse) {
+    option (google.api.http) = {post: "/dashi/v1/reviews/suggestion-keywords"};
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      target_products: [CX]
+    };
+  }
+}
+
+// Request for GetItemCustomizer
+message GetItemCustomizerRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // item_id
+  google.protobuf.StringValue item_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+
+  // Base64 encoded list of existing preset options. Should be formatted as a 2d array
+  // e.g [[123, 456], [789, 101]]
+  optional google.protobuf.StringValue preset_options_encoded = 4;
+}
+
+// Response for GetItemCustomizer
+message GetItemCustomizerResponse {
+  // Title of the card
+  google.protobuf.StringValue name = 1;
+
+  reserved 2;
+
+  // Special instructions
+  google.protobuf.StringValue special_instructions = 3;
+
+  // Description body text
+  google.protobuf.StringValue description = 4;
+
+  // Displayed price
+  google.protobuf.StringValue display_price = 5;
+
+  // Confidence level of the recommendation
+  PresetConfidence preset_confidence = 6;
+
+  // Subtitle of the card
+  google.protobuf.StringValue subtitle = 7;
+
+  // List of options
+  repeated OptionListDMDataCopy selected_item_option_lists = 8;
+}
+
+// Confidence level of the recommendation. Scored form 0.0 to 1.0 by the LLM
+// Higher confidence should mean the recommendation is more aligned with
+// the consumer's preferences
+enum PresetConfidence {
+  // Default value
+  PRESET_CONFIDENCE_UNSPECIFIED = 0;
+  // Medium confidence
+  PRESET_CONFIDENCE_MEDIUM = 1;
+  // High confidence
+  PRESET_CONFIDENCE_HIGH = 2;
+}
+
+// Request for GetTasteMatchBadges
+message GetTasteMatchBadgesRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // menu_id
+  google.protobuf.StringValue menu_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  reserved 4;
+  reserved "item_badge_map";
+  reserved 5;
+  reserved "item_badge_type_map";
+  // Base64 encoded list of existing item_id,badge_type. Should be formatted as a 2d array
+  // e.g [[item_id, badge_type], ["123", "promo"]]
+  google.protobuf.StringValue item_id_to_badge_type_encoded = 6;
+}
+
+// Response for GetTasteMatchBadges
+message GetTasteMatchBadgesResponse {
+  // item_id -> Badge
+  map<string, feed_service.Badge> item_badge_map = 1;
+}
+
+// Request for GetCachedTasteMatch
+message GetItemPageTasteMatchRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1;
+  // menu_id
+  google.protobuf.StringValue menu_id = 2;
+  // store_id
+  google.protobuf.StringValue store_id = 3;
+  // item_id
+  google.protobuf.StringValue item_id = 4;
+}
+
+// Response for GetCachedTasteMatch
+message GetItemPageTasteMatchResponse {
+  // normalized taste match score (i.e. 0.96)
+  float normalized_taste_match_score = 1;
+  // raw taste match score (i.e. 0.4)
+  float raw_taste_match_score = 2;
+  // Reason string, i.e. "Because you like shrimp."
+  google.protobuf.StringValue reason = 3;
+  // Title string i.e. "96% Taste Match"
+  google.protobuf.StringValue title = 4;
+}
+
+// Request for GetStorePageTasteMatch
+message GetStorePageTasteMatchRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+  // store_id
+  google.protobuf.StringValue store_id = 2;
+  // Optional menu_id if available
+  optional google.protobuf.StringValue menu_id = 3;
+}
+
+// Response for GetStorePageTasteMatch
+message GetStorePageTasteMatchResponse {
+  // Title string i.e. "87% Taste Match"
+  google.protobuf.StringValue title = 1;
+  // Reason string, i.e. "Because you like Italian food."
+  google.protobuf.StringValue reason = 2;
+}
+
+// Request for ReviewsSuggestionKeywords
+message ReviewsSuggestionKeywordsRequest {
+  // consumer_id
+  google.protobuf.StringValue consumer_id = 1 [(doordash.api.inject_id) = CX_ID];
+
+  // store_id
+  google.protobuf.StringValue store_id = 2;
+
+  // order_id
+  optional google.protobuf.StringValue order_id = 3;
+
+  // review_text
+  google.protobuf.StringValue review_text = 4;
+
+  // suggestion tags
+  repeated google.protobuf.StringValue suggestion_tags = 5;
+}
+
+// Response for ReviewsSuggestionKeywords
+message ReviewsSuggestionKeywordsResponse {
+  // Helpfulness title string
+  google.protobuf.StringValue helpfulness_display_string = 1;
+
+  // If a tag was fulfilled or not
+  message SuggestionTagCheck {
+    // Text of tag
+    google.protobuf.StringValue suggestion_tag = 1;
+
+    // If the tag passed or not
+    google.protobuf.BoolValue passed = 2;
+  }
+  // Map of if a suggestion tag was fulfilled or not
+  repeated SuggestionTagCheck suggestion_tag_checks = 2;
+}
+
+// Copied from item_page.proto. This should be a temporary solution until we have a
+// better way of handling option.id getting serialized as a string in bff vs int in UG
+message OptionListDMDataCopy {
+  // name
+  google.protobuf.StringValue name = 1;
+  // subtitle
+  google.protobuf.StringValue subtitle = 2;
+  // selection_mode
+  google.protobuf.StringValue selection_mode = 3;
+  // min_num_options
+  google.protobuf.UInt32Value min_num_options = 4;
+  // max_num_options
+  google.protobuf.UInt32Value max_num_options = 5;
+  // min_aggregate_options_quantity
+  google.protobuf.UInt32Value min_aggregate_options_quantity = 6;
+  // max_aggregate_options_quantity
+  google.protobuf.UInt32Value max_aggregate_options_quantity = 7;
+  // min_option_choice_quantity
+  google.protobuf.UInt32Value min_option_choice_quantity = 8;
+  // max_option_choice_quantity
+  google.protobuf.UInt32Value max_option_choice_quantity = 9;
+  // num_free_options
+  google.protobuf.UInt32Value num_free_options = 10;
+  // default_options
+  repeated OptionCopy default_options = 11;
+  // content
+  repeated OptionCopy content = 12;
+  // is_optional
+  google.protobuf.BoolValue is_optional = 13;
+  // id
+  google.protobuf.StringValue id = 14;
+  // type
+  google.protobuf.StringValue type = 15;
+  // title_layout
+  feed_service.MessageLayout title_layout = 16;
+  // buttons
+  repeated feed_service.Button buttons = 17;
+  // store_id
+  google.protobuf.StringValue store_id = 18;
+  // validation_type
+  feed_service.OptionListValidationType validation_type = 19;
+  // collapse_display_count
+  google.protobuf.UInt32Value collapse_display_count = 20;
+  // selection_mode_display_type
+  feed_service.OptionListDM.SelectionModeDisplayType selection_mode_display_type = 21;
+  // layout_type
+  feed_service.OptionListDM.OptionListLayoutType layout_type = 22;
+  // option_list_collection_id
+  google.protobuf.StringValue option_list_collection_id = 23;
+}
+
+// Copied from item_page.proto. This should be a temporary solution until we have a
+// better way of handling option.id getting serialized as a string in bff vs int in UG
+message OptionCopy {
+  // This value needs to be a string
+  // id
+  google.protobuf.StringValue id = 1;
+  // name
+  google.protobuf.StringValue name = 2;
+  // price
+  money.MonetaryFields price = 3;
+  // next_cursor
+  DMNext next_cursor = 4;
+  // sort_order
+  google.protobuf.UInt32Value sort_order = 5;
+  reserved 6; // do not use
+  // default_option_lists
+  repeated OptionListDMDataCopy default_option_lists = 7;
+  // Explicitly sets quantity of option to specific value (i.e. reorder presets). Overrides default_quantity
+  // selected_quantity
+  google.protobuf.UInt32Value selected_quantity = 8;
+  // Metadata attribute of option. Indicates what the mx-provided default quantity for option is
+  // default_quantity
+  google.protobuf.UInt32Value default_quantity = 13;
+  // img_url
+  feed_service.Image img_url = 9;
+  // image_display_type
+  feed_service.OptionListDM.ImageDisplayType image_display_type = 18;
+  // caloric_info_display_string
+  google.protobuf.StringValue caloric_info_display_string = 10;
+  // dietary_tags
+  repeated common.DietaryTag dietary_tags = 11;
+  // quantity of the specified option, and overrides num_free_options when present
+  // charge_above
+  google.protobuf.Int32Value charge_above = 12;
+  // display string that discloses incremental cost of the option when quantity is charge_above units
+  // charge_above_display_string
+  google.protobuf.StringValue charge_above_display_string = 14;
+
+  // option_tags
+  repeated feed_service.OptionTag option_tags = 15;
+
+  // minimum required quantity for an option
+  // min_option_choice_quantity
+  google.protobuf.UInt32Value min_option_choice_quantity = 16;
+
+  // maximum required quantity for an option
+  // max_option_choice_quantity
+  google.protobuf.UInt32Value max_option_choice_quantity = 17;
+
+  // identifier used to identify the same options across different extras, e.g. merchant_supplied_id
+  // external_id
+  google.protobuf.StringValue external_id = 19;
+
+  // nested extras to display all levels of extras and options living within an item in the item page
+  // nested_extras
+  repeated OptionListDMDataCopy nested_extras = 20;
+
+  reserved 21;
+  reserved "display_strikethrough_price";
+  // rating_display_string
+  google.protobuf.StringValue rating_display_string = 22;
+  // logging
+  google.protobuf.Struct logging = 23;
+  // display option strikethrough price behind the display_price
+  // strikethrough_price
+  money.MonetaryFields strikethrough_price = 24;
+
+  // display string for combo value upsell
+  // value_upsell_string
+  google.protobuf.StringValue value_upsell_string = 25;
+
+  // is_required_for_option_promo
+  google.protobuf.BoolValue is_required_for_option_promo = 26;
+
+  // DMNext
+  message DMNext {
+    // cursor
+    google.protobuf.StringValue cursor = 1;
+  }
+}

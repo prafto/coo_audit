@@ -1,0 +1,131 @@
+syntax = "proto3";
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package feed_service;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "feed_service/common.proto";
+import "feed_service/store_page.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_MULTIPLE_FILES
+option java_multiple_files = true;
+option java_outer_classname = "StorePageSearchFeedApi";
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.feed_service.store_page_search";
+
+// Serving store page menu filters
+service StorePageSearchFeedService {
+  option (doordash.api.service) = {
+    port: 50051,
+    url: "feed-service-web.service.prod.ddsd",
+    name: "StorePageSearchFeedService"
+    name_spaces: ["feed"]
+    owner: {
+      id: "ordering-experience"
+      name: "feed-service"
+      slack_channel: "#ask-ox"
+      email_alias: "store-exp-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+  option (service_client.client_config).service_name = "feed-service";
+  option (service_client.client_config).service_app = "web";
+
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 1000;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 20000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 1000;
+  option (service_client.client_config).response_attempt_timeout_millis = 5000;
+
+  // Generate item list display modules based on consumer query customizations
+  rpc GetStorePageSearchFeed(GetStorePageSearchFeedRequest) returns (GetStorePageSearchFeedResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (google.api.http) = {get: "/cx/v2/stores/{store_id}/search"};
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "cx_id"},
+        {field: "cx_geo_submarket_id"},
+        {field: "is_employee"}]
+    };
+  }
+}
+
+// Display modules response for store page item search API
+message GetStorePageSearchFeedResponse {
+  // List of item list display modules
+  repeated ItemListDM item_lists = 1;
+  // Null display module in case of empty search results
+  NullItemCollectionDM null_item_collection = 2;
+  // Top level logging for search
+  google.protobuf.Struct logging = 3;
+  // Top level metadata
+  google.protobuf.Struct metadata = 4;
+  // List of item carousel display modules
+  repeated MixedGridCarouselDM mixed_grid_carousels = 5;
+}
+
+// Request for store page item search API
+message GetStorePageSearchFeedRequest {
+  // lat/lng should be the delivery location because that is used to determine
+  // delivery ETA and delivery availability
+  // Lat should be cx's delivery location
+  google.protobuf.DoubleValue lat = 1; // Required
+  // Lng should be cx's delivery location
+  google.protobuf.DoubleValue lng = 2; // Required
+  // Consumer ID
+  google.protobuf.Int64Value consumer_id = 3; // Required
+  // Store ID of engaged store
+  google.protobuf.Int64Value store_id = 4; // Required
+  // Menu ID of engaged menu
+  google.protobuf.Int64Value menu_id = 5; // Required
+  // Submarket ID of consumer location
+  google.protobuf.Int64Value submarket_id = 6;
+  // District ID of consumer location
+  google.protobuf.Int64Value district_id = 7;
+  // Pickup or delivery
+  common.FulfillmentType fulfillment_type = 8;
+  // device lat should be cx's actual live location to determine travel time
+  google.protobuf.DoubleValue device_lat = 9;
+  // device lng should be cx's actual live location to determine travel time
+  google.protobuf.DoubleValue device_lng = 10;
+  // surface which endpoint is being used for
+  Surface surface = 11;
+  // customizers to be applied on to filter or sort menu items
+  repeated ItemFilter filters = 12;
+  // encoding metadata from prior surface required for items
+  google.protobuf.StringValue cursor = 13;
+}
+
+// Use case for endpoint request
+enum Surface {
+  // no surface specified
+  SURFACE_UNSPECIFIED = 0;
+  // store page menu item customization
+  SURFACE_MENU_CUSTOMIZER = 1;
+  // bottom sheet to show item offers, etc
+  SURFACE_BOTTOM_SHEET = 2;
+  // store page accelerators
+  SURFACE_STORE_ACCELERATOR = 3;
+}
+
+// Filters to store page items e.g. dietary: vegetarian, dairy_free
+message ItemFilter {
+  // filter category e.g. dietary
+  google.protobuf.StringValue filter_id = 1;
+  // tags on which to filter on e.g. vegetarian, dairy_free
+  repeated google.protobuf.StringValue values = 2;
+}

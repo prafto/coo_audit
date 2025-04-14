@@ -1,0 +1,103 @@
+syntax = "proto3";
+package common.subscription.v1;
+
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/common";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.common";
+
+// Package for shared subscription related structs, enums, etc. across services
+
+// Shared struct that represents some kind of subscription benefit, along with identifier(s)
+// for the entity for this benefit (eg item id, store id, etc.). Usually, users of this struct
+// will make this a list (repeated) value so that they can fetch multiple benefits
+message SubscriptionBenefitInfo {
+  // We use a oneof field so that consumers of this struct can request multiple types of benefits
+  oneof info {
+    // See comment on ExclusiveItemBenefitInfo for more details
+    ExclusiveItemBenefitInfo item_info = 1;
+    // See comment on GatedStoreBenefitInfo for more details
+    GatedStoreBenefitInfo store_info = 2;
+    // See comment on ExclusivePromotionBenefitInfo for more details
+    ExclusivePromotionBenefitInfo promotion_info = 3;
+    // See comment on FeeDiscountBenefitInfo for more details
+    StandardFeeDiscountBenefitInfo standard_fee_discount_info = 4;
+  }
+}
+
+// This represents the classical DashPass benefit: a discount on delivery fees and/or service fees.
+message StandardFeeDiscountBenefitInfo {
+  // ID of the store
+  google.protobuf.Int64Value store_id = 1;
+
+  // The payment method used for the order. If consumers signed up through partnership, benefits are only available
+  // when using certain payment methods, e.g. Chase Sapphire credit card.
+  google.protobuf.StringValue payment_method_id = 2;
+}
+
+// Exclusive Item benefit represents an item that can only be added for "subscribers"
+// IMPORTANT: We need to keep this payload small, due to large # of items in the request
+message ExclusiveItemBenefitInfo {
+  // ID of the exclusive item
+  google.protobuf.Int64Value item_id = 1;
+
+  // TODO: Exclusive items have a list of "subscription types" (example: DashPass, Wolt+, etc.) that
+  // they are exclusive to. For now, we can assume DashPass or query menu service for this info, but
+  // eventually, we should try to pass this in
+}
+
+// Gated Store benefit represents a store that can be only accessed by "subscribers"
+// IMPORTANT: We need to keep this payload small, due to large # of stores in the request
+message GatedStoreBenefitInfo {
+  // ID of the gated store
+  google.protobuf.Int64Value store_id = 1;
+}
+
+// Benefit for promotions exclusive to this subscription type
+message ExclusivePromotionBenefitInfo {
+  // Whether or not the payment method is a card, as opposed to venmo/paypal/etc.
+  google.protobuf.BoolValue is_card_payment = 1;
+  // The type of subscription exclusive promotion the we are checking benefit eligibility for
+  ExclusivePromotionBenefitType benefit_type = 2;
+}
+
+// Enum that identifies the type of exclusive promotion benefit. This is usually a campaign
+// manager or DaC served promotion campaign
+enum ExclusivePromotionBenefitType {
+  // Promotion benefit was unspecified
+  EXCLUSIVE_PROMOTION_BENEFIT_TYPE_UNSPECIFIED = 0;
+  // Promotion benefit for the chase monthly credit benefit
+  EXCLUSIVE_PROMOTION_BENEFIT_TYPE_CHASE_MONTHLY_CREDIT = 1;
+}
+
+// Map of all the requested benefit info to whether or not the user is eligible for that benefit
+// Usually, consumers of this struct will receive it in a list (repeated) format so they can process
+// multiple "benefit eligibilities" at once
+message SubscriptionBenefitEligibility {
+  // The benefit that we need to evaluate for eligibility
+  SubscriptionBenefitInfo requested_benefit_info = 1;
+  // Is the user eligible for the benefit?
+  google.protobuf.BoolValue is_eligible = 2;
+  // Reason why user was ineligible, if applicable
+  SubscriptionBenefitIneligibilityReason ineligibility_reason = 3;
+}
+
+// Enum for whether or not the user is eligible for a benefit, and if they are not, why they are not
+enum SubscriptionBenefitIneligibilityReason {
+  // No specified eligibility reason, or a failure in determining ineligibility reason
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_UNSPECIFIED = 0;
+  // User is ineligible for benefit in question due to an inactive subscription status
+  // (no subscription found, canceled, etc.)
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_INACTIVE_STATUS = 1;
+  // User is ineligible for benefit in question due to a paused subscription
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_PAUSED_STATUS = 2;
+  // User is ineligible for benefit in question due to using the wrong payment method
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_INCORRECT_PAYMENT_METHOD = 3;
+  // User is ineligible due to some kind of max enrollment limit (example: Chase subscription plans have enrollment
+  // limit)
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_ENROLLMENT_LIMIT_REACHED = 4;
+  // Store is not enrolled in the subscription program
+  SUBSCRIPTION_BENEFIT_INELIGIBILITY_REASON_STORE_NOT_ENROLLED = 5;
+}

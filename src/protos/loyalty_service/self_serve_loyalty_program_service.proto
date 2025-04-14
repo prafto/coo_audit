@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package loyalty_serivce;
+
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "loyalty_service/loyalty_program.proto";
+import "loyalty_service/self_serve_loyalty_program.proto";
+import "merchant_analytics_service/common.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.loyalty.doordash";
+
+// Self serve loyalty program service
+service SelfServeLoyaltyProgramService {
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 50;
+  // Gets the loyalty program metadata for reporting purposes
+  rpc GetProgramMetadata(GetProgramMetadataRequest) returns (GetProgramMetadataResponse);
+  // Gets the enrollment status for given business or store
+  rpc GetEnrollmentStatus(GetEnrollmentStatusRequest) returns (GetEnrollmentStatusResponse);
+  // creates a self serve loyalty program
+  rpc CreateSelfServeLoyaltyProgram(CreateSelfServeLoyaltyProgramRequest) returns (CreateSelfServeLoyaltyProgramResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 10000;
+    option (service_client.client_method_config).retry_config.max_attempts = 1;
+  }
+}
+
+// Request to get Loyalty program metadata
+message GetProgramMetadataRequest {
+  // Business id to fetch metadata for (always required)
+  google.protobuf.StringValue business_id = 1;
+  // Optional store id to fetch metadata for
+  google.protobuf.StringValue store_id = 2;
+  // Optional channel (Marketplace, Storefront, etc)
+  doordash.merchant_analytics.service.v1.Channel channel = 3;
+  // Optional list of channels when program is applicable for more than one channel - e.g. Omnichannel
+  repeated doordash.merchant_analytics.service.v1.Channel applicable_channels = 4;
+}
+
+// Response to get Loyalty program metadata
+message GetProgramMetadataResponse {
+  // Program metadata for requested business or store
+  MerchantLoyaltyProgramMetadata program_metadata = 1;
+}
+
+// Request to get enrollment status of given business or store
+message GetEnrollmentStatusRequest {
+  // Business id to fetch enrollment status for (always required)
+  google.protobuf.StringValue business_id = 1;
+  // Optional store id to fetch enrollment status for
+  google.protobuf.StringValue store_id = 2;
+}
+
+// Response to get enrollment status of given business or store
+message GetEnrollmentStatusResponse {
+  // Enrollment status of the given ids in an array
+  repeated MerchantLoyaltyEnrollmentStatus enrollment_status = 1;
+}
+
+// Request to create self-serve loyalty program
+message CreateSelfServeLoyaltyProgramRequest {
+  // self serve loyalty program
+  SelfServeLoyaltyProgram self_serve_loyalty_program = 1;
+}
+
+// Response to create self-serve loyalty program
+message CreateSelfServeLoyaltyProgramResponse {
+  // program id of the created self serve loyalty program
+  google.protobuf.StringValue program_id = 1;
+}
+
+// Reward structure type enum
+enum RewardStructure {
+  // Unspecified reward structure
+  REWARD_STRUCTURE_UNSPECIFIED = 0;
+  // Spend based reward structure
+  REWARD_STRUCTURE_SPEND_BASED = 1;
+  // Visit based reward structure
+  REWARD_STRUCTURE_VISIT_BASED = 2;
+  // Rule based reward structure
+  REWARD_STRUCTURE_RULE_BASED = 3;
+}
+
+// Loyalty provider type enum
+enum ProviderType {
+  // Unspecified provider type
+  PROVIDER_TYPE_UNSPECIFIED = 0;
+  // Homegrown loyalty program
+  PROVIDER_TYPE_HOMEGROWN = 1;
+  // Enterprise loyalty program
+  PROVIDER_TYPE_ENTERPRISE = 2;
+}
+
+// Program metadata for loyalty reporting
+message MerchantLoyaltyProgramMetadata {
+  // Store(s), ex: 50
+  google.protobuf.UInt32Value num_of_stores = 1;
+  // Start date, ex: 2021-12-01, value will be in UTC, FE to parse it to the right format
+  google.protobuf.Timestamp start_date = 2;
+  // Channel (Marketplace, Storefront, etc)
+  doordash.merchant_analytics.service.v1.Channel channel = 3;
+  // Reward structure, ex: Spend-based, Visit-based
+  RewardStructure reward_structure = 4;
+  // Reward threshold for spend based loyalty program, ex: $80.00
+  money.MonetaryFields reward_threshold_for_spend = 5;
+  // Reward threshold for visit based loyalty program, ex: $10.00 in "5 visits over $10"
+  money.MonetaryFields reward_threshold_for_single_visit = 6;
+  // Reward threshold for visit based loyalty program, ex: 5 visits in "5 visits over $10"
+  google.protobuf.UInt32Value reward_threshold_for_number_of_visits = 7;
+  // Reward value, ex: $8.00
+  money.MonetaryFields reward_value = 8;
+  // Reward name, ex: Garlic Fries
+  google.protobuf.StringValue reward_name = 9;
+  // Is the program enabled on business level, a.k.a. applicable to all stores
+  google.protobuf.BoolValue is_enabled_for_all_stores = 10;
+  // Optional list of channels when program is applicable for more than one channel - e.g. Omnichannel
+  repeated doordash.merchant_analytics.service.v1.Channel applicable_channels = 11;
+}
+
+// Enrollment status for single business or store
+message MerchantLoyaltyEnrollmentStatus {
+  // Including type (e.g. Store/Business), experience and id
+  MerchantMembership merchant_id = 1;
+  // If the given merchant has enrolled in loyalty programs
+  google.protobuf.BoolValue is_enrolled = 2;
+  // If the loyalty program had expired, the duration of the expired time
+  google.protobuf.Duration expired_time = 3;
+  // Indicating the provider type of the loyalty enrollment, e.g. Homegrown or enterprise
+  ProviderType provider_type = 4;
+}

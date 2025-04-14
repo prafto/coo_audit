@@ -1,0 +1,884 @@
+syntax = "proto3";
+
+package dashmart.v1;
+
+import "common/date.proto";
+import "dashmart/common.proto";
+import "dashmart/dashmart.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "dashmart_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dashmart.v1";
+
+// API's related to master data management in DashMart
+service MasterDataManagementService {
+  // Unified gateway config, comment out if using kreya for local testing
+  option (doordash.api.service) = {
+    port: 50051
+    name: "dashmart-service-web"
+    url: "dashmart-service-web.service.prod.ddsd"
+    name_spaces: ["dashmart"]
+    api_key_name: "DASHMART-API-KEY"
+    owner: {
+      name: "dashmart"
+      id: "dashmart"
+      slack_channel: "#dashmart-eng"
+      email_alias: "dashmart-eng@doordash.com",
+    }
+    target_products: [INTERNAL]
+  };
+
+  // Search for a facility by facility name
+  rpc SearchFacilitiesByName(SearchFacilitiesByNameRequest) returns (SearchFacilitiesByNameResponse);
+  // Search for a vendor by vendor name
+  rpc SearchVendorsByName(SearchVendorsByNameRequest) returns (SearchVendorsByNameResponse);
+  // Create Payment Model for consigned vendor
+  rpc CreateVendorPaymentModel(CreateVendorPaymentModelRequest) returns (CreateVendorPaymentModelResponse);
+  // Update Vendor Payment Contract for consigned vendor
+  rpc UpdateVendorPaymentContract(UpdateVendorPaymentContractRequest) returns (UpdateVendorPaymentContractResponse) {
+    option (google.api.http) = {
+      post: "/dashmart/v1/consignment/update_vendor_payment_contract",
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: TEST
+      authorization: [DD_EMPLOYEE]
+      target_products: [INTERNAL]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "country"},
+        {field: "mx_code"}]
+    };
+  }
+  // Get Payment Model for consigned vendor
+  rpc GetVendorPaymentModel(GetVendorPaymentModelRequest) returns (GetVendorPaymentModelResponse);
+  // Get item-vendor-facility configs by the item, vendor and facility filters
+  rpc GetItemVendorFacilityConfigs(GetItemVendorFacilityConfigsRequest) returns (GetItemVendorFacilityConfigsResponse);
+  // Create new Item-Vendor-Facility configuration record(s)
+  rpc CreateItemVendorFacilityConfigs(CreateItemVendorFacilityConfigsRequest) returns (CreateItemVendorFacilityConfigsResponse);
+  // Delete Item-Vendor-Facility configuration records
+  rpc DeleteItemVendorFacilityConfigs(DeleteItemVendorFacilityConfigsRequest) returns (DeleteItemVendorFacilityConfigsResponse);
+  // Get Vendor-Routes records
+  rpc GetVendorRoutes(GetVendorRoutesRequest) returns (GetVendorRoutesResponse);
+  // Get item-facility configs by item and facility filters
+  rpc GetItemFacilityConfigs(GetItemFacilityConfigsRequest) returns (GetItemFacilityConfigsResponse);
+  // Delete Vendor-Routes records
+  rpc DeleteVendorRoutes(DeleteVendorRoutesRequest) returns (DeleteVendorRoutesResponse);
+  // Delete item-facility config records
+  rpc DeleteItemFacilityConfigs(DeleteItemFacilityConfigsRequest) returns (DeleteItemFacilityConfigsResponse);
+  // Update Item-Vendor-Facility configuration records
+  rpc UpdateItemVendorFacilityConfig(UpdateItemVendorFacilityConfigRequest) returns (UpdateItemVendorFacilityConfigResponse);
+  // Update Item-Facility configuration records
+  rpc UpdateItemFacilityConfig(UpdateItemFacilityConfigRequest) returns (UpdateItemFacilityConfigResponse);
+  // Update Vendor-Route records
+  rpc UpdateVendorRoute(UpdateVendorRouteRequest) returns (UpdateVendorRouteResponse);
+  // Get item-vendor-suppression configs
+  rpc GetItemVendorSuppressionConfigs(GetItemVendorSuppressionConfigsRequest) returns (GetItemVendorSuppressionConfigsResponse);
+  // Delete item-vendor-suppression configs
+  rpc DeleteItemVendorSuppressionConfigs(DeleteItemVendorSuppressionConfigsRequest) returns (DeleteItemVendorSuppressionConfigsResponse);
+  // Update item-vendor-suppression config
+  rpc UpdateItemVendorSuppressionConfig(UpdateItemVendorSuppressionConfigRequest) returns (UpdateItemVendorSuppressionConfigResponse);
+  // Get item-vendor-facility config history by the item, vendor and facility filter
+  rpc GetItemVendorFacilityConfigHistory(GetItemVendorFacilityConfigHistoryRequest) returns (GetItemVendorFacilityConfigHistoryResponse);
+  // Get item-vendor-suppression config history by the item and vendor filter
+  rpc GetItemVendorSuppressionConfigHistory(GetItemVendorSuppressionConfigHistoryRequest) returns (GetItemVendorSuppressionConfigHistoryResponse);
+  // Get item-facility config history by the item and facility filter
+  rpc GetItemFacilityConfigHistory(GetItemFacilityConfigHistoryRequest) returns (GetItemFacilityConfigHistoryResponse);
+  // Get VendorRoute config history by the vendor, rank and facility filter
+  rpc GetVendorRouteConfigHistory(GetVendorRouteConfigHistoryRequest) returns (GetVendorRouteConfigHistoryResponse);
+  // Update Partially Vendor Routes
+  rpc UpdatePartialVendorRoute(UpdatePartialVendorRouteRequest) returns (UpdatePartialVendorRouteResponse);
+}
+
+// Request for SearchFacilitiesByName
+message SearchFacilitiesByNameRequest {
+  // Term to search for in the facility name
+  string search_term = 1;
+}
+
+// Response for SearchFacilitiesByName
+message SearchFacilitiesByNameResponse {
+  // list of facilities, limiting to 5 max
+  repeated dashmart.v1.Facility facilities = 1;
+}
+
+// Request for SearchVendorsByName
+message SearchVendorsByNameRequest {
+  // Term to search for in the vendor name
+  string search_term = 1;
+  // True if searching for consigned vendors, false if searching for non-consigned vendors.
+  // Null if searching for both consigned and non-consigned vendors
+  google.protobuf.BoolValue is_consigned = 2;
+}
+
+// Response for SearchVendorsByName
+message SearchVendorsByNameResponse {
+  // list of vendors, limiting to 5 max
+  repeated dashmart.v1.Vendor vendors = 1;
+}
+
+// Request for the CreateVendorPaymentModel endpoint
+message CreateVendorPaymentModelRequest {
+  // payment model that will be created
+  PaymentModel payment_model = 1;
+  // mx code associated with the payment model
+  MxCode mx_code = 2;
+}
+
+// Response for the CreateVendorPaymentModel endpoint
+message CreateVendorPaymentModelResponse {}
+
+// Request for the UpdateVendorPaymentContract endpoint
+message UpdateVendorPaymentContractRequest {
+  // new payment model that vendor payment contract will be updated with
+  PaymentModel payment_model = 1;
+  // mx code associated with the payment model
+  MxCode mx_code = 2;
+}
+
+// Response for the UpdateVendorPaymentContract endpoint
+message UpdateVendorPaymentContractResponse {}
+
+// Payment model object. At least one field must non-zero.
+message PaymentModel {
+  // commission rate percentage (value between 0-100 inclusive)
+  int32 commission_rate_percentage = 1;
+  // fix amount per order in cents
+  int32 fix_amount_per_order_in_cents = 2;
+  // storage fee in cents
+  int32 storage_fee_in_cents = 3;
+  // host commission rate percentage (value between 0-100 inclusive)
+  int32 host_commission_rate_percentage = 4;
+}
+
+// Request for the GetVendorPaymentModel endpoint
+message GetVendorPaymentModelRequest {
+  // mx code associated with the payment model
+  MxCode mx_code = 1;
+}
+
+// Payment model object. Will return empty if theres no paymentModel created. If present at least one field must non-zero.
+message GetVendorPaymentModelResponse {
+  // payment model for vendor contract
+  PaymentModel payment_model = 1;
+}
+
+// Request for getItemVendorFacilityConfigs
+message GetItemVendorFacilityConfigsRequest {
+  reserved 6, 7;
+  reserved "availability_check", "updated_at";
+  // List of item ids
+  repeated string item_ids = 1;
+  // List of vendor ids, use the vendor_internal_id value for now
+  repeated string vendor_ids = 2;
+  // List of facility ids
+  repeated int32 facility_ids = 3;
+  // Pagination token
+  string pagination = 4;
+  // Page size
+  int32 page_size = 5;
+}
+
+// Request for getItemVendorFacilityConfigHistory
+message GetItemVendorFacilityConfigHistoryRequest {
+  // Item id
+  string item_id = 1;
+  // Vendor id
+  string vendor_id = 2;
+  // Facility id
+  int32 facility_id = 3;
+  // Pagination UUID token
+  string pagination_id = 4;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 5;
+  // Page size
+  int32 page_size = 6;
+  // change dates
+  date.DateRange change_dates = 7;
+}
+
+// Response for getItemVendorFacilityConfigHistory
+message GetItemVendorFacilityConfigHistoryResponse {
+  // List of item-vendor-facility configs
+  repeated ItemVendorFacilityConfigHistory item_vendor_facility_configs = 1;
+  // Pagination UUID token
+  string pagination_id = 4;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 5;
+}
+
+// Request for getVendorRouteConfigHistory
+message GetVendorRouteConfigHistoryRequest {
+  // Vendor id
+  string vendor_id = 1;
+  // Facility id
+  int32 facility_id = 2;
+  // Rank
+  int32 rank = 3;
+  // Pagination UUID token
+  string pagination_id = 4;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 5;
+  // Page size
+  int32 page_size = 6;
+  // change dates
+  date.DateRange change_dates = 7;
+}
+
+// Response for getVendorRouteConfigHistory
+message GetVendorRouteConfigHistoryResponse {
+  // List of vendor_route configs
+  repeated VendorRouteConfigHistory vendor_route_configs = 1;
+  // Pagination UUID token
+  string pagination_id = 4;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 5;
+}
+
+// Response for getItemVendorFacilityConfigs
+message GetItemVendorFacilityConfigsResponse {
+  // List of item-vendor-facility configs
+  repeated ItemVendorFacilityConfig item_vendor_facility_configs = 1;
+  // Pagination token
+  string pagination = 2;
+}
+
+// Item-vendor-facility config
+message ItemVendorFacilityConfig {
+  // Intentionally don't use field numbers from other refs.
+  reserved 5, 6, 7, 9, 10, 11;
+  reserved "suppression_date_range", "suppression_reason", "is_available", "uom", "purchase_uom_price", "purchase_each_price";
+  // Item
+  dashmart.v1.Item item = 1;
+  // Vendor
+  dashmart.v1.Vendor vendor = 2;
+  // Facility
+  dashmart.v1.Facility facility = 3;
+  // Vendor sku
+  string vendor_sku = 4;
+  // Vendor case UPC
+  string vendor_case_upc = 8;
+  // Return the IVFC id as well so the UI can send it for update/delete requests
+  string item_vendor_facility_config_id = 12;
+  // Suppression
+  Suppression suppression = 13;
+  // Landed cost in cents
+  int32 landed_cost = 14;
+  // Vendor Unit of measure
+  dashmart.v1.UnitOfMeasure vendor_uom = 15;
+  // Minimum order quanitity
+  int32 min_order_qty = 16;
+  // sellable units
+  int32 sellable_units = 17;
+  // Vendor uom price in cents
+  int32 vendor_uom_price = 18;
+}
+
+// Item-vendor-facility-history config history
+message ItemVendorFacilityConfigHistory {
+  reserved 5, 6, 7, 9;
+  reserved "is_available", "uom", "purchase_uom_price", "purchase_each_price";
+  // Item id
+  string item_id = 1;
+  // Vendor id
+  string vendor_id = 2;
+  // Facility id
+  int32 facility_id = 3;
+  // Vendor sku
+  string vendor_sku = 4;
+  // Vendor case UPC
+  string vendor_case_upc = 8;
+  // IVFC id
+  string item_vendor_facility_config_id = 10;
+  // Suppression
+  Suppression suppression = 11;
+  // Landed cost in cents
+  int32 landed_cost = 12;
+  // Audit detail
+  MdmChangeAuditDetailResponse audit_detail = 13;
+  // Updated at timestamp
+  google.protobuf.Timestamp updated_at = 14;
+  // Is config deleted
+  bool is_deleted = 15;
+  // Vendor Unit of measure
+  dashmart.v1.UnitOfMeasure vendor_uom = 16;
+  // Minimum order quanitity
+  int32 min_order_qty = 17;
+  // sellable units
+  int32 sellable_units = 18;
+  // Vendor uom price in cents
+  int32 vendor_uom_price = 19;
+}
+
+// vendor minimum order type
+enum OrderMinimumType {
+  //unspecified
+  ORDER_MINIMUM_TYPE_UNSPECIFIED = 0;
+  // cost
+  ORDER_MINIMUM_TYPE_COST = 1;
+  // case
+  ORDER_MINIMUM_TYPE_CS = 2;
+  // each
+  ORDER_MINIMUM_TYPE_EA = 3;
+}
+
+// how we place our orders: email, portal, edi, ns_email. useful for metrics
+enum OrderMethodType {
+  //unspecified
+  ORDER_METHOD_TYPE_UNSPECIFIED = 0;
+  // email
+  ORDER_METHOD_TYPE_EMAIL = 1;
+  // portal
+  ORDER_METHOD_TYPE_PORTAL = 2;
+  // EDI
+  ORDER_METHOD_TYPE_EDI = 3;
+  // NS Email
+  ORDER_METHOD_TYPE_NS_EMAIL = 4;
+}
+
+// supplier type to differentiate between external vendor and internal dc
+enum SupplierType {
+  //unspecified
+  SUPPLIER_TYPE_UNSPECIFIED = 0;
+  // external vendor
+  SUPPLIER_TYPE_EXTERNAL_VENDOR = 1;
+  // internal DC
+  SUPPLIER_TYPE_INTERNAL_DC = 2;
+}
+
+// VendorRoute config history
+message VendorRouteConfigHistory {
+  reserved 1;
+  reserved "route_history_id";
+  // Vendor id
+  string vendor_id = 2;
+  // Facility id
+  int32 facility_id = 3;
+  // Rank
+  int32 rank = 4;
+  // Order day of week
+  int32 order_dow = 5;
+  // Delivery day of week
+  int32 deliver_dow = 6;
+  // Days between this delivery and next delivery from this vendor to this site
+  int32 st_days = 7;
+  // For items we can receive from multiple vendors, which do we order that item from? Vendor 1 pref'd above vendor 2
+  int32 priority = 8;
+  // Ordered every X weeks i.e., 1 = Weekly, 2 = every other week, 4 = every 4 weeks
+  int32 week_frequency = 9;
+  // If it's active, this route will be considered by the replenishment process. Default is true
+  bool is_active = 10;
+  // Week frequency type
+  string week_frequency_type = 11;
+  // Order owner name
+  string order_owner_name = 12;
+  // It's a "special" route for temporary purposes (like for holidays). The expectation is that this will be deleted after its used
+  bool is_onetime = 13;
+  // Vendor will still deliver this to the warehouse even if no explicit PO has been placed. Default is false
+  bool is_standing = 14;
+  // Is credit card
+  bool is_credit_card = 15;
+  // Audit detail
+  MdmChangeAuditDetailResponse audit_detail = 16;
+  // Updated at timestamp
+  google.protobuf.Timestamp updated_at = 17;
+  // Is config deleted
+  bool is_deleted = 18;
+  // day of week deadline to place order
+  int64 cutoff_dow = 19;
+  // time deadline to place order
+  string cutoff_time = 20;
+  // start time for the vendor to deliver
+  string delivery_window_start_time = 21;
+  // end time for the vendor to deliver
+  string delivery_window_end_time = 22;
+  // vendor minimum order quantity / cost value
+  int64 order_minimum_value = 23;
+  // vendor minimum order quantity / cost
+  OrderMinimumType order_minimum_type = 24;
+  //how we place our orders
+  OrderMethodType order_method_type = 25;
+  // important for netsuite
+  string order_method_metadata = 26;
+  // determines our key vendors (also the vendors we need at every "launch")
+  bool is_key_vendor = 27;
+  // doordash vendor account number
+  string dd_account_number = 28;
+  // vendor account rep phone number
+  string vendor_account_rep_phone_number = 29;
+  // vendor account rep email
+  string vendor_account_rep_email = 30;
+  // vendor customer service_rep phone number
+  string vendor_customer_service_rep_phone_number = 31;
+  // vendor customer service_rep email
+  string vendor_customer_service_rep_email = 32;
+  // vendor central contact phone number
+  string vendor_central_contact_phone_number = 33;
+  // vendor central contact email
+  string vendor_central_contact_email = 34;
+  // route primary contact phone number
+  string route_primary_contact_phone_number = 35;
+  // route primary contact email
+  string route_primary_contact_email = 36;
+  // differentiate between external vendor and internal dc
+  SupplierType supplier_type = 37;
+  // vendor route active start date
+  date.Date vendor_route_active_start_date = 38;
+  // vendor route active end date
+  date.Date vendor_route_active_end_date = 39;
+  // vendor dc id
+  int64 vendor_dc_id = 40;
+  // vendor dc name
+  string vendor_dc_name = 41;
+  // whether it's direct delivery
+  bool is_direct_delivery = 42;
+  // Return route_id, so the UI could send it for update/delete requests
+  string route_id = 43;
+}
+
+// Request for CreateItemVendorFacilityConfigs
+message CreateItemVendorFacilityConfigsRequest {
+  // Intentionally don't use field numbers from other refs.
+  reserved 5, 6, 7, 9, 10, 11, 12;
+  reserved "suppression_start_date", "suppression_end_date", "suppression_reason", "is_available", "uom", "purchase_uom_price", "purchase_each_price";
+  // Item id
+  string item_id = 1;
+  // Vendor id, use the vendor_internal_id value for now
+  string vendor_id = 2;
+  // Facility id
+  int32 facility_id = 3;
+  // Vendor sku
+  string vendor_sku = 4;
+  // Vendor upc case
+  string vendor_upc_case = 8;
+  // Suppression
+  Suppression suppression = 13;
+}
+
+// Response for CreateItemVendorFacilityConfigs
+message CreateItemVendorFacilityConfigsResponse {}
+
+// Request for the DeleteItemVendorFacilityConfigs API
+message DeleteItemVendorFacilityConfigsRequest {
+  // item-vendor-facility-configuration ids to delete
+  repeated string item_vendor_facility_config_ids = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the DeleteItemVendorFacilityConfigs API
+message DeleteItemVendorFacilityConfigsResponse {}
+
+// Request for the GetVendorRoutes API
+message GetVendorRoutesRequest {
+  // List of facility ids
+  repeated int32 facility_ids = 1;
+  // List of vendor ids, use the vendor_internal_id value for now
+  repeated string vendor_ids = 2;
+  // Rank
+  int32 rank = 3;
+  // Pagination token, this is based on the route_id
+  string pagination = 4;
+  // Page size
+  int32 page_size = 5;
+  // Is one time
+  bool is_onetime = 6;
+}
+
+// Response for the GetVendorRoutes API
+message GetVendorRoutesResponse {
+  // List of vendor-routes
+  repeated VendorRoute vendor_routes = 1;
+  // Pagination token, this is based on the route_id
+  string pagination = 2;
+}
+
+// Vendor-Route
+message VendorRoute {
+  // Return route_id, so the UI could send it for update/delete requests
+  string route_id = 1;
+  // Vendor
+  dashmart.v1.Vendor vendor = 2;
+  // Facility
+  dashmart.v1.Facility facility = 3;
+  // Rank
+  int32 rank = 4;
+  // Order day of week
+  int32 order_dow = 5;
+  // Delivery day of week
+  int32 deliver_dow = 6;
+  // Days between this delivery and next delivery from this vendor to this site
+  int32 st_days = 7;
+  // (to be deprecated) For items we can receive from multiple vendors, which do we order that item from? Vendor 1 pref'd above vendor 2
+  int32 priority = 8;
+  // Ordered every X weeks i.e., 1 = Weekly, 2 = every other week, 4 = every 4 weeks
+  int32 week_frequency = 9;
+  // If it's active, this route will be considered by the replenishment process. Default is true
+  bool is_active = 10;
+  // Week frequency type
+  string week_frequency_type = 11;
+  // Order owner name
+  string order_owner_name = 12;
+  // It's a "special" route for temporary purposes (like for holidays). The expectation is that this will be deleted after its used
+  bool is_onetime = 13;
+  // Vendor will still deliver this to the warehouse even if no explicit PO has been placed. Default is false
+  bool is_standing = 14;
+  // Is credit card
+  bool is_credit_card = 15;
+  // day of week deadline to place order
+  int64 cutoff_dow = 16;
+  // time deadline to place order
+  string cutoff_time = 17;
+  // start time for the vendor to deliver
+  string delivery_window_start_time = 18;
+  // end time for the vendor to deliver
+  string delivery_window_end_time = 19;
+  // vendor minimum order quantity / cost value
+  int64 order_minimum_value = 20;
+  // vendor minimum order quantity / cost
+  OrderMinimumType order_minimum_type = 21;
+  //how we place our orders
+  OrderMethodType order_method_type = 22;
+  // important for netsuite
+  string order_method_metadata = 23;
+  // determines our key vendors (also the vendors we need at every "launch")
+  bool is_key_vendor = 24;
+  // doordash vendor account number
+  string dd_account_number = 25;
+  // vendor account rep phone number
+  string vendor_account_rep_phone_number = 26;
+  // vendor account rep email
+  string vendor_account_rep_email = 27;
+  // vendor customer service_rep phone number
+  string vendor_customer_service_rep_phone_number = 28;
+  // vendor customer service_rep email
+  string vendor_customer_service_rep_email = 29;
+  // vendor central contact phone number
+  string vendor_central_contact_phone_number = 30;
+  // vendor central contact email
+  string vendor_central_contact_email = 31;
+  // route primary contact phone number
+  string route_primary_contact_phone_number = 32;
+  // route primary contact email
+  string route_primary_contact_email = 33;
+  // differentiate between external vendor and internal dc
+  SupplierType supplier_type = 34;
+  // vendor route active start date
+  date.Date vendor_route_active_start_date = 35;
+  // vendor route active end date
+  date.Date vendor_route_active_end_date = 36;
+  // vendor dc id
+  int64 vendor_dc_id = 37;
+  // vendor dc name
+  string vendor_dc_name = 38;
+  // whether it's direct delivery
+  bool is_direct_delivery = 39;
+  // For items we can receive from multiple vendors, which do we order that item from? Vendor 1 pref'd above vendor 2
+  int32 safety_stock_days_default = 40;
+}
+
+// Request for GetItemFacilityConfigs API
+message GetItemFacilityConfigsRequest {
+  // List of item ids
+  repeated string item_ids = 1;
+  // List of facility ids
+  repeated int32 facility_ids = 2;
+  // Pagination token
+  string pagination = 3;
+  // Page size
+  int32 page_size = 4;
+}
+
+// Response for GetItemFacilityConfigs API
+message GetItemFacilityConfigsResponse {
+  // List of item-facility configs
+  repeated ItemFacilityConfig item_facility_configs = 1;
+  // Pagination token, this is based on item_id and facility_id
+  string pagination = 2;
+}
+
+// Request for getItemFacilityConfigHistory
+message GetItemFacilityConfigHistoryRequest {
+  // Item id
+  string item_id = 1;
+  // Facility id
+  int32 facility_id = 2;
+  // Pagination UUID token
+  string pagination_id = 3;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 4;
+  // Page size
+  int32 page_size = 5;
+  // change dates
+  date.DateRange change_dates = 6;
+}
+
+// Response for getItemFacilityConfigHistory
+message GetItemFacilityConfigHistoryResponse {
+  // List of item-facility configs
+  repeated ItemFacilityConfigHistory item_facility_configs = 1;
+  // Pagination UUID token
+  string pagination_id = 2;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 3;
+}
+
+// Item-facility config history
+message ItemFacilityConfigHistory {
+  reserved 11;
+  reserved "last_updated_by";
+  // Item id
+  string item_id = 1;
+  // Facility id
+  int32 facility_id = 2;
+  // In stock target
+  int32 in_stock_target = 3;
+  // Inventory min
+  int32 inv_min = 4;
+  // Inventory max
+  int32 inv_max = 5;
+  // Suppression
+  Suppression suppression = 6;
+  // Shelf life
+  int32 shelf_life = 7;
+  // Item facility config id. This is an UUID
+  string item_facility_config_id = 8;
+  // Audit detail
+  MdmChangeAuditDetailResponse audit_detail = 9;
+  // Updated at timestamp
+  google.protobuf.Timestamp updated_at = 10;
+  // Is config deleted
+  bool is_deleted = 12;
+}
+
+// Item Facility Config
+message ItemFacilityConfig {
+  // Item
+  dashmart.v1.Item item = 1;
+  // Facility
+  dashmart.v1.Facility facility = 2;
+  // In stock target
+  int32 in_stock_target = 3;
+  // Inventory min
+  int32 inv_min = 4;
+  // Inventory max
+  int32 inv_max = 5;
+  // Suppression
+  Suppression suppression = 6;
+  // Shelf life
+  int32 shelf_life = 7;
+  // Item facility config id. This is an UUID
+  string item_facility_config_id = 8;
+}
+
+// Suppression
+message Suppression {
+  // Suppression date range
+  date.DateRange suppression_date_range = 1;
+  // Suppression reason
+  string suppression_reason = 2;
+}
+
+// Request for the DeleteVendorRoutes API
+message DeleteVendorRoutesRequest {
+  // route ids to delete
+  repeated string route_ids = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the DeleteVendorRoutes API
+message DeleteVendorRoutesResponse {}
+
+// Request for the DeleteItemFacilityConfigs API
+message DeleteItemFacilityConfigsRequest {
+  // item-facility-configuration ids to delete
+  repeated string item_facility_config_ids = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the DeleteItemFacilityConfigs API
+message DeleteItemFacilityConfigsResponse {}
+
+// Request for the UpdateItemVendorFacilityConfig API
+message UpdateItemVendorFacilityConfigRequest {
+  // item to modify.
+  ItemVendorFacilityConfig config = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the UpdateItemVendorFacilityConfig API
+message UpdateItemVendorFacilityConfigResponse {}
+
+// Request for the UpdateItemFacilityConfig API
+message UpdateItemFacilityConfigRequest {
+  // config to modify.
+  ItemFacilityConfig config = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the UpdateItemFacilityConfig API
+message UpdateItemFacilityConfigResponse {}
+
+// Request for the UpdateVendorRoute API
+message UpdateVendorRouteRequest {
+  // Vendor route to modify
+  VendorRoute vendor_route = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the UpdateVendorRoute API
+message UpdateVendorRouteResponse {}
+
+// Request for getItemVendorSuppressionConfigs
+message GetItemVendorSuppressionConfigsRequest {
+  // List of item ids
+  repeated string item_ids = 1;
+  // List of vendor ids, use the vendor_internal_id value for now
+  repeated string vendor_ids = 2;
+  // Pagination token
+  string pagination = 3;
+  // Page size
+  int32 page_size = 4;
+}
+
+// Response for getItemVendorSuppressionConfigs
+message GetItemVendorSuppressionConfigsResponse {
+  // List of item-vendor-suppression configs
+  repeated ItemVendorSuppressionConfig item_vendor_suppression_configs = 1;
+  // Pagination token
+  string pagination = 2;
+}
+
+// Request for getItemVendorSuppressionConfigHistory
+message GetItemVendorSuppressionConfigHistoryRequest {
+  // Item id
+  string item_id = 1;
+  // Vendor id
+  string vendor_id = 2;
+  // Pagination UUID token
+  string pagination_id = 3;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 4;
+  // Page size
+  int32 page_size = 5;
+  // change dates
+  date.DateRange change_dates = 6;
+}
+
+// Response for getItemVendorSuppressionConfigHistory
+message GetItemVendorSuppressionConfigHistoryResponse {
+  // List of item-vendor-suppression configs
+  repeated ItemVendorSuppressionConfigHistory item_vendor_suppression_configs = 1;
+  // Pagination UUID token
+  string pagination_id = 2;
+  // Pagination timestamp
+  google.protobuf.Timestamp pagination_timestamp = 3;
+}
+
+// Item-vendor-suppression config history
+message ItemVendorSuppressionConfigHistory {
+  reserved 7;
+  reserved "last_updated_by";
+  // Item id
+  string item_id = 1;
+  // Vendor id
+  string vendor_id = 2;
+  // Suppression
+  Suppression suppression = 3;
+  // Item vendor suppression config id. This is an UUID
+  string item_vendor_suppression_config_id = 4;
+  // Audit detail
+  MdmChangeAuditDetailResponse audit_detail = 5;
+  // Updated at timestamp
+  google.protobuf.Timestamp updated_at = 6;
+  // Is config deleted
+  bool is_deleted = 8;
+}
+
+// item-vendor-suppression config
+message ItemVendorSuppressionConfig {
+  // Item
+  dashmart.v1.Item item = 1;
+  // Vendor
+  dashmart.v1.Vendor vendor = 2;
+  // Suppression
+  Suppression suppression = 3;
+  // Item vendor suppression config id. This is an UUID
+  string item_vendor_suppression_config_id = 4;
+}
+
+// Request for the DeleteItemVendorSuppressionConfigs API
+message DeleteItemVendorSuppressionConfigsRequest {
+  // item-vendor-suppression ids to delete
+  repeated string item_vendor_suppression_config_ids = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the DeleteItemVendorSuppressionConfigs API
+message DeleteItemVendorSuppressionConfigsResponse {}
+
+// Request for the UpdateItemVendorSuppressionConfig API
+message UpdateItemVendorSuppressionConfigRequest {
+  // Vendor route to modify
+  ItemVendorSuppressionConfig config = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+}
+
+// Response for the UpdateItemVendorSuppressionConfig API
+message UpdateItemVendorSuppressionConfigResponse {}
+
+// Audit detail for MDM field update
+message MdmChangeAuditDetail {
+  // change reason for mdm field update
+  string change_reason = 1;
+  // change evidence for mdm field update
+  string change_evidence = 2;
+  // requestor email for mdm field update
+  string requestor_email = 3;
+  // [optional] user id to capture who triggered updated
+  google.protobuf.StringValue action_user_id = 4;
+}
+
+// Audit detail for MDM field update response
+message MdmChangeAuditDetailResponse {
+  // change reason for mdm field update
+  string change_reason = 1;
+  // change evidence for mdm field update
+  string change_evidence = 2;
+  // requestor user name for mdm field update
+  string requestor_user_name = 3;
+  // updated user name for mdm field update
+  string updated_user_name = 4;
+  // action type
+  string action_type = 5;
+}
+
+// Request for Partially update Vendor Route API
+message UpdatePartialVendorRouteRequest {
+  reserved 4;
+  reserved "action_user_id";
+  // Vendor route to modify
+  VendorRoute vendor_route = 1;
+  // audit detail for MDM field update
+  MdmChangeAuditDetail audit_detail = 2;
+  // FieldMask to indicate which fields are being changed
+  google.protobuf.FieldMask mask = 3;
+}
+
+// Reponse for Partially update Vendor Route API
+message UpdatePartialVendorRouteResponse {}

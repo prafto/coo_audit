@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package lattice_config_manager.v1;
+
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "lattice_config_manager/common_graph_config_v1.proto";
+import "lattice_config_manager/common_prompt_template_v1.proto";
+import "lattice_config_manager/common_simplified_model_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/lattice_config_manager/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "lattice_config_manager.v1";
+
+/**
+   AgentGraphService is a service that allows CRU operations on agent graphs.
+   An agent graph is a simplified model of graph_config.
+   RFC: https://docs.google.com/document/d/1Fs2UV0mmQyET_5pBnO92EIxbQUn8PUEpThKpp0F4xxE/edit?tab=t.0#heading=h.wfkjvk8z3kpp
+*/
+service AgentGraphService {
+  option (doordash.api.service) = {
+    name: "lattice-config-manager"
+    url: "lattice-config-manager-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["lattice-config-manager"]
+    api_key_name: "LATTICE_CONFIG_MANAGER_UG_API_KEY"
+    owner: {
+      id: "lattice-config-manager"
+      name: "lattice-config-manager"
+      slack_channel: "#ask-lattice-platform-eng"
+      email_alias: "team-customer-experience-platform@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+  option (service_client.client_config).service_name = "lattice-config-manager";
+
+  // Create an agent graph.
+  rpc CreateAgentGraph(CreateAgentGraphRequest) returns (CreateAgentGraphResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      post: "/lattice-config-manager/v1/graphs/agent"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  /**
+     The update api will have similar fields from create api.
+     Only the fields passed in the payload will be updated
+     Entities will be matched via their names, and if there's a match, those entities will be updated.
+     If there are no matching entities (e.g. new Tool being added), the system will add it.
+  */
+  rpc UpdateAgentGraph(UpdateAgentGraphRequest) returns (UpdateAgentGraphResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      put: "/lattice-config-manager/v1/graphs/{graph_config_uuid}/agent"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+
+  /**
+     Get an agent graph.
+  */
+  rpc GetAgentGraph(GetAgentGraphRequest) returns (GetAgentGraphResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2000;
+    option (google.api.http) = {
+      post: "/lattice-config-manager/v1/graphs/agent/filtered"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: DEV
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+    };
+  }
+}
+
+/**
+   Request to create an agent graph.
+*/
+message CreateAgentGraphRequest {
+  // Name of the agent.
+  google.protobuf.StringValue agent_name = 1;
+  // Initial tools that will be executed when the graph execution starts.
+  repeated lattice_config_manager.v1.SimplifiedTool initial_tools = 2;
+  // LLM configuration.
+  lattice_config_manager.v1.LLM llm = 5;
+  // User prompt template.
+  lattice_config_manager.v1.SimplifiedPromptTemplate user_prompt_template = 6;
+  // System prompt template.
+  lattice_config_manager.v1.SimplifiedPromptTemplate system_prompt_template = 7;
+  // Tools that can be used by the LLM.
+  repeated lattice_config_manager.v1.SimplifiedTool agent_tools = 8;
+  // Defines how the messages will be returned to the client.
+  repeated lattice_config_manager.v1.MessageWithReturnType messages_with_return_type = 9;
+  // Description of the agent graph.
+  google.protobuf.StringValue description = 10;
+}
+
+// Response to create an agent graph.
+message CreateAgentGraphResponse {
+  // agent graph
+  lattice_config_manager.v1.AgentGraph agent_graph = 1;
+}
+
+/**
+   Request to update an agent graph.
+   Will always update from the latest version of the graph.
+   Only fields that are present will be updated, unless is_hard_update is set to true.
+   For SimplifiedTool, tool_name will be used to match the tool.
+   For SimplifiedGuardrail, guardrail_name will be used to match the guardrail.
+   If there is no matching entities for tools and guardrails, the system will add them.
+*/
+message UpdateAgentGraphRequest {
+  // required graph_uuid
+  google.protobuf.StringValue graph_config_uuid = 1;
+  // optional: If present, will 'activate' this graph with the given tag
+  google.protobuf.StringValue tag = 2;
+  // Name of the agent.
+  google.protobuf.StringValue agent_name = 3;
+  // Initial tools that will be executed when the graph execution starts.
+  repeated lattice_config_manager.v1.SimplifiedTool initial_tools = 4;
+  // LLM configuration.
+  lattice_config_manager.v1.LLM llm = 7;
+  // User prompt template.
+  lattice_config_manager.v1.SimplifiedPromptTemplate user_prompt_template = 8;
+  // System prompt template.
+  lattice_config_manager.v1.SimplifiedPromptTemplate system_prompt_template = 9;
+  // Tools that can be used by the LLM.
+  repeated lattice_config_manager.v1.SimplifiedTool agent_tools = 10;
+  // Defines how the messages will be returned to the client.
+  repeated lattice_config_manager.v1.MessageWithReturnType messages_with_return_type = 11;
+  // Specifies if the request is a hard update.
+  google.protobuf.BoolValue is_hard_update = 12;
+}
+
+// Response to update an agent graph.
+message UpdateAgentGraphResponse {
+  // agent graph
+  lattice_config_manager.v1.AgentGraph agent_graph = 1;
+}
+
+// Request to get an agent graph.
+message GetAgentGraphRequest {
+  reserved 2;
+  reserved "graph_config_version";
+  // if only graph_uuid is present, this api will return the latest version.
+  google.protobuf.StringValue graph_config_uuid = 1;
+  // optional
+  google.protobuf.StringValue tag = 3;
+  // optional: version of the graph
+  google.protobuf.Int64Value version = 4;
+}
+
+// Response to get an agent graph.
+message GetAgentGraphResponse {
+  // agent graph
+  lattice_config_manager.v1.AgentGraph agent_graph = 1;
+}

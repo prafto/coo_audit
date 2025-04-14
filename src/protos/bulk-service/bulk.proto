@@ -1,0 +1,435 @@
+syntax = "proto3";
+
+package doordash.bulk.service.v1;
+
+option java_multiple_files = true;
+option java_generic_services = true;
+option java_package = "com.doordash.rpc.bulk.v1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+service BulkService {
+    rpc CreateJob (CreateJobRequest) returns (CreateJobResponse);
+    rpc GetJob (GetJobRequest) returns (GetJobResponse);
+    rpc GetJobs (GetJobsRequest) returns (GetJobsResponse);
+    rpc GetJobsByCategory (GetJobsByCategoryRequest) returns (GetJobsByCategoryResponse);
+    rpc StopJob (StopJobRequest) returns (StopJobResponse);
+    rpc StopJobs (StopJobsRequest) returns (StopJobsResponse);
+    rpc GetJobResult(GetJobResultRequest) returns (GetJobResultResponse);
+    rpc GetCategories(GetCategoriesRequest) returns (GetCategoryResponse);
+    rpc GetOperations(GetOperationsRequest) returns (GetOperationsResponse);
+    rpc GetOperationMetadata(GetOperationMetadataRequest) returns (GetOperationMetadataResponse);
+    rpc MockDownstreamEndpoint(MockDownstreamEndpointRequest) returns (MockDownstreamEndpointResponse);
+    rpc GetS3PutUrl(GetS3PutUrlRequest) returns (GetS3PutUrlResponse);
+    rpc GetS3GetUrl(GetS3GetUrlRequest) returns (GetS3GetUrlResponse);
+
+    // Endpoints for external usage.
+    rpc GetS3PutUrlForExternalUser(GetS3PutUrlForExternalUserRequest) returns (GetS3PutUrlForExternalUserResponse);
+    rpc CreateJobForExternalUser(CreateJobForExternalUserRequest) returns (CreateJobForExternalUserResponse);
+}
+
+message JobSummary {
+    string id = 1;
+
+    User user = 2;
+
+    // Domain of operation.
+    // Example: 'POS', 'Campaign'
+    string category_label = 3;
+
+    // Example: 'Pull Square Info', 'Create Campaign'
+    string operation_label = 4;
+
+    // Time when bulk service received CreateJobRequest.
+    google.protobuf.Timestamp created_at = 5;
+
+    // Time when first task started.
+    google.protobuf.Timestamp started_at = 6;
+
+    // Time when the job was completed, aborted, terminated, or timed out.
+    google.protobuf.Timestamp resolved_at = 7;
+
+    JobStatus status = 8;
+
+    JobResult result = 9;
+
+    // Arbitrary parameters that aren't ready to be fields yet.
+    map<string, string> extra_params = 10;
+}
+
+message CreateJobRequest {
+    // This serves as the job ID and the idempotency key of the request.
+    string id = 1;
+
+    // Domain of operation. Should be in upper snake case.
+    // Example: 'POS', 'CAMPAIGN'
+    string category_id = 2;
+
+    // Should be in lower snake case.
+    // Example: 'pull_square_info', 'create_campaign'
+    string operation_id = 3;
+
+    // bucket name for S3 upload.
+    string csv_bucket = 4;
+
+    // key for retreiving the file from S3
+    string csv_key = 5;
+
+    // rows in csv
+    int32 csv_row_count = 6;
+
+    // Arbitrary parameters that aren't ready to be fields yet.
+    map<string, string> extra_params = 7;
+
+    // Specifies where the create job request is called from.
+    Source source = 8;
+}
+
+message CreateJobResponse {
+    Job job = 1;
+}
+
+message GetJobRequest {
+    string id = 1;
+
+    // If set to true, we will skip authorizing that the Job was created by the given user.
+    bool skip_authorization = 2;
+}
+
+message GetJobResponse {
+    Job job = 1;
+}
+
+message GetJobsRequest {
+    // Optional user id. If absent, response will contain jobs from all users.
+    google.protobuf.StringValue user_id = 1;
+
+    // 1-indexed page number. If this value is set, the results will be split into pages of size `limit` and page number `page` will be returned. If this value is not set, all results will be returned.
+    google.protobuf.Int32Value page = 2;
+
+    // The maximum number of results to return per page. If empty, the service will use a default page size.
+    google.protobuf.Int32Value limit = 3;
+}
+
+message GetJobsResponse {
+    repeated JobSummary summaries = 1;
+}
+
+message GetJobsByCategoryRequest {
+    // ID of the category to retrieve jobs from.
+    google.protobuf.StringValue category_id = 1;
+
+    // 1-indexed page number. If this value is set, the results will be split into pages of size `limit` and page number `page` will be returned. If this value is not set, all results will be returned.
+    google.protobuf.Int32Value page = 2;
+
+    // The maximum number of results to return per page. If empty, the service will use a default page size.
+    google.protobuf.Int32Value limit = 3;
+}
+
+message GetJobsByCategoryResponse {
+    repeated JobSummary summaries = 1;
+}
+
+message StopJobRequest {
+    string id = 1;
+}
+
+message StopJobResponse {
+}
+
+message StopJobsRequest {
+    // WARNING: If ids is omitted, ALL jobs will be stopped.
+    repeated google.protobuf.StringValue ids = 1;
+}
+
+message StopJobsResponse {
+    message StopResult {
+        string id = 1;
+        bool successfully_stopped = 2;
+        string error_message = 3;
+    }
+
+    repeated StopResult stop_result = 1;
+}
+
+message GetJobResultRequest {
+    string id = 1;
+}
+
+message GetJobResultResponse {
+    string id = 1;
+
+    JobDetailedResult detailed_result = 2;
+
+}
+
+// TODO: Write interface
+message GetCategoriesRequest {
+}
+
+message GetCategoryResponse {
+}
+
+// TODO: Write interface
+message GetOperationMetadataRequest {
+    string category_id = 1;
+    string operation_id = 2;
+}
+
+message GetOperationMetadataResponse {
+    string json_string = 1;
+}
+
+message GetOperationsRequest {
+    string category_id = 1;
+}
+
+message GetOperationsResponse {
+    string category_id = 1;
+    repeated OperationInfo operations = 2;
+}
+
+message OperationInfo {
+    // String as unique id, eg: activate_campaigns
+    string id = 1;
+    string label = 2;
+    string description = 3;
+    string group = 4;
+}
+
+message Job {
+    string id = 1;
+
+    User user = 2;
+
+    string cadence_job_id = 3;
+
+    string cadence_job_url = 4;
+    // this indicates which cadence workflow was used for the job
+    string cadence_workflow = 5;
+
+    // Domain of operation.
+    // Example: 'POS', 'Campaign'
+    string category_label = 6;
+
+    // Example: 'Pull Square Info', 'Create Campaign'
+    string operation_label = 7;
+
+    // URL of originally uploaded CSV in S3.
+    string csv_url = 8;
+
+    // Time when bulk service received CreateJobRequest.
+    google.protobuf.Timestamp created_at = 9;
+
+    JobConfig job_config = 10;
+
+    JobDetailedResult detailed_result = 11;
+
+    // Arbitrary parameters that aren't ready to be fields yet.
+    map<string, string> extra_params = 12;
+}
+
+message JobConfig {
+    int32 job_timeout_seconds = 1;
+
+    int32 task_timeout_seconds = 2;
+
+    int32 request_timeout_seconds = 3;
+
+    int32 parallel_request_limit = 4;
+
+    // Whether or not to log response.
+    bool log_response = 5;
+}
+
+message JobDetailedResult {
+    JobStatus status = 1;
+
+    JobResult result = 2;
+
+    // Link to successful task run response.
+    string result_csv_url = 3;
+
+    // Link to CSV containing only rows that failed.
+    string error_csv_url = 4;
+
+    // Link to error log.
+    string error_info_text_file_url = 5;
+
+    int64 total_rows = 6;
+
+    int64 rows_processed = 7;
+
+    int64 rows_failed = 8;
+
+    // Used for debugging jobs.
+    JobTimingInfo timing_info = 9;
+
+    // when a job failed, human readable error message
+    string error_message = 10;
+
+    // bucket and key for future purpose so that UI can request the link on its own
+    // also helpful to re-enqueue the job with just error row csv info
+    string error_csv_bucket = 11;
+
+    string error_csv_key = 12;
+
+    string result_csv_bucket = 13;
+
+    string result_csv_key = 14;
+
+    // field to send any additional csv urls to the UI post job completion
+    repeated AdditionalCsv additional_csv = 15;
+}
+
+message AdditionalCsv {
+    // name of the csv file to show on the UI
+    string name =  1;
+    // url of the csv file
+    string url = 2;
+
+    string additional_csv_bucket = 3;
+
+    string additional_csv_key = 4;
+}
+
+enum JobResult {
+    JOB_RESULT_UNSET = 0;
+    JOB_RESULT_INVALID = 1;
+    // All tasks completed successfully.
+    JOB_RESULT_SUCCESSFUL = 2;
+    // One or more tasks had issues.
+    JOB_RESULT_ERROR = 3;
+}
+
+// Life of a job:
+// (Created) => Enqueued => Dequeued => Started => Resolved
+// Resolved = Aborted | Terminated | Timed out | Completed
+enum JobStatus {
+    JOB_STATUS_UNSET = 0;
+    JOB_STATUS_INVALID = 1;
+    // Service enqueued the job.
+    JOB_STATUS_ENQUEUED = 2;
+    // Job Dequeued and started
+    JOB_STATUS_DEQUEUED = 3;
+    // Downloading files from S3
+    JOB_STATUS_DOWNLOADING_FILES = 4;
+    // Actual execution of downstream calls (grpc/http)
+    JOB_STATUS_EXECUTING_DOWNSTREAM_CALLS = 5;
+    // Uploading results to S3
+    JOB_STATUS_UPLOADING_RESULTS = 6;
+    // User stopped the job.
+    JOB_STATUS_USER_ABORTED = 7;
+    // System stopped the job for reason other than timeout
+    // (ex. Admin executes StopJobsRequest ahead of planned maintenance.)
+    JOB_STATUS_SYSTEM_TERMINATED = 8;
+    // Job timed out while executing.
+    JOB_STATUS_TIMED_OUT = 9;
+    // All tasks attempted.
+    JOB_STATUS_COMPLETED = 10;
+}
+
+// Most of these timestamps correspond with JobStatus transitions.
+message JobTimingInfo {
+    google.protobuf.Timestamp enqueued_at = 1;
+    google.protobuf.Timestamp dequeued_at = 2;
+    google.protobuf.Timestamp started_at = 3;
+    // Time when the job was completed, aborted, terminated, or timed out.
+    google.protobuf.Timestamp resolved_at = 4;
+}
+
+message User {
+    string id = 1;
+    string name = 2;
+    string email = 3;
+}
+
+
+message MockDownstreamEndpointRequest {
+    int32 id = 1;
+    string category = 2;
+    string operation = 3;
+    int32  count = 4;
+    map<string, string> extra_params = 5;
+}
+
+message MockDownstreamEndpointResponse {
+    int32 id = 1;
+    string category = 2;
+    string operation = 3;
+    int32  count = 4;
+    map<string, string> extra_params = 5;
+    bool ack = 6;
+    google.protobuf.Timestamp received_at = 7;
+}
+
+message GetS3GetUrlRequest {
+    string bucket = 1;
+    string key = 2;
+    string category_id = 3;
+    string operation_id = 4;
+}
+
+message GetS3GetUrlResponse {
+    string url = 1;
+}
+
+message GetS3PutUrlRequest {
+    string bucket = 1;
+    string key = 2;
+    string category_id = 3;
+    string operation_id = 4;
+}
+
+message GetS3PutUrlResponse {
+    string url = 1;
+    string fields = 2;
+}
+
+// Categories that are supported to be used by external users.
+enum ExternalCategory {
+    EXTERNAL_CATEGORY_UNSPECIFIED = 0;
+    EXTERNAL_CATEGORY_DRIVE_FINANCE = 1;
+}
+
+// Operations that are supported to be used by external users.
+enum ExternalOperation {
+    EXTERNAL_OPERATION_UNSPECIFIED = 0;
+    EXTERNAL_OPERATION_PROCESS_DELIVERY_LEVEL_REFUND_RX = 1;
+    EXTERNAL_OPERATION_PROCESS_DELIVERY_LEVEL_REFUND_NON_RX = 2;
+}
+
+// Where the given request is coming from
+enum Source {
+    SOURCE_UNSPECIFIED = 0;
+    SOURCE_MX_PORTAL = 1;
+    SOURCE_ADMIN_GATEWAY = 2;
+}
+
+message GetS3PutUrlForExternalUserRequest {
+    // Unique identifier (uuid) used for the file name.
+    string key = 1;
+    ExternalCategory category_id = 2;
+    ExternalOperation operation_id = 3;
+}
+
+message GetS3PutUrlForExternalUserResponse {
+    string url = 1;
+    string fields = 2;
+}
+
+message CreateJobForExternalUserRequest {
+    // Same identifier used to generate the S3 Put url.
+    // Also serves as job ID and idempotency key of the request.
+    string key = 1;
+    ExternalCategory category_id = 2;
+    ExternalOperation operation_id = 3;
+    int32 csv_row_count = 4;
+    // Specifies where the create job request is called from.
+    Source source = 5;
+}
+
+message CreateJobForExternalUserResponse {
+    Job job = 1;
+}

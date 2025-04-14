@@ -1,0 +1,1083 @@
+syntax = "proto3";
+package storefront_service;
+
+import "consumer_pricing/pricing.proto";
+import "eta_service/eta.proto";
+import "geo-intelligence/address.proto";
+import "geo-intelligence/region.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "menu/menu.proto";
+import "merchant_data_service_store_service/store_closures.proto";
+import "order/consumer_order_gateway.proto";
+import "store_availability.v2/store_availability.proto";
+import "store_availability/store_availability.proto";
+
+option java_generic_services = true;
+option java_outer_classname = "StorefrontIntegrationProtos";
+option java_package = "com.doordash.service.storefront";
+
+// A service that handle storefront integrations with 3rd parties
+service StorefrontIntegrationService {
+  // triggers incremental update to temp deactivate store on GFO
+  rpc UpdateStoreTemporaryDeactivation(UpdateStoreTemporaryDeactivationRequest) returns (UpdateStoreTemporaryDeactivationResponse) {}
+}
+
+/**
+   The canonical store object that we build for every storefront
+   store, which includes all necessary information needed for
+   external ordering integration.
+*/
+message CanonicalStore {
+  // basic store properties
+
+  // id of the store
+  string store_id = 1;
+  // id of the business
+  string business_id = 2;
+  // internal store name
+  string store_name = 3;
+  // external displayed name
+  string business_name = 4;
+  // timezone in string, e.g. US/Eastern
+  string timezone = 5;
+  // the store's phone number, some stores don't have this
+  google.protobuf.StringValue phone_number = 6;
+  // the business url of this store
+  google.protobuf.StringValue merchant_url = 7;
+  // address of the store
+  AddressResponse address = 8;
+  // whether the store offers delivery service
+  bool offers_delivery = 9;
+  // whether the store offers pickup service
+  bool offers_pickup = 10;
+  // the delivery radius of the store
+  google.protobuf.Int32Value delivery_radius_in_meters = 11;
+  // list of lat/lng pairs with first pair equal to the last pair forming a closed loop
+  repeated Coordinate delivery_polygon_points = 12;
+  // whether the store enabled tips to staff for pickup
+  google.protobuf.BoolValue merchant_tips_enabled = 13;
+
+  // store related data
+
+  // list of menus associated with the store, only active ones are attached
+  repeated menu.Menu menus = 32;
+  // DEPRECATED - use store_availability_hours (42) instead
+  storeavailability.StoreHours regular_hours = 33 [deprecated = true];
+  // DEPRECATED - use store_availability_hours (42) instead
+  repeated storeavailability.StoreSpecialHours special_hours = 34 [deprecated = true];
+  // current temporary deactivation end time, null means store is not temp deactivated
+  // DEPRECATED - use store_status (39) instead
+  google.protobuf.Timestamp paused_until = 35 [deprecated = true];
+  // add consumer fee
+  repeated consumer_pricing.ConsumerFee consumer_fees = 36;
+  // menu entities that have been deactivated
+  repeated SuspendedEntity suspended_entities = 37;
+  // DEPRECATED!! -- Store closures dates -- DO NOT USE!!
+  repeated store_service.v1.StoreClosure store_closures = 38;
+  // store status like temporary deactivation
+  storeavailability.StoreStatus store_status = 39;
+  // static ETA for the store at current time
+  eta_service.StaticTimeResponse.StaticETA static_eta = 40;
+  // Store special hours data including store closures
+  repeated menu.HoursException special_hour = 41;
+  // store hours
+  repeated store_availability.v2.StoreAvailabilityHours store_availability_hours = 42;
+
+  // metadata
+
+  // the utc time at which the basic store properties are fetched
+  google.protobuf.Timestamp store_properties_created_at = 64;
+  // the utc time at which the menus are fetched
+  google.protobuf.Timestamp menus_created_at = 65;
+  // the utc time at which the store hours are fetched
+  google.protobuf.Timestamp store_hours_created_at = 66;
+}
+
+/**
+   The target output of the build.
+*/
+enum Target {
+  // default
+  TARGET_UNSPECIFIED = 0;
+  // prod
+  TARGET_PRODUCTION = 1;
+  // sandbox
+  TARGET_SANDBOX = 2;
+  // dev
+  TARGET_DEV = 3;
+  // staging
+  TARGET_STAGING = 4;
+}
+
+// Input schema for the Canonical flink pipeline
+message BusinessSource {
+  // A version number for this input, version number should be the same for the same run
+  // and different for different runs of the pipeline
+  string version = 1;
+  // business id
+  string business_id = 2;
+  // indicates output target
+  Target target = 3;
+}
+
+// Input schema for the Canonical flink pipeline
+message StoreSource {
+  // A version number for this input, version number should be the same for the same run
+  // and different for different runs of the pipeline
+  string version = 1;
+  // store id
+  string store_id = 2;
+  // business name which is the displayed store name
+  string business_name = 3;
+  // business website url
+  google.protobuf.StringValue business_url = 4;
+  // indicates output target
+  Target target = 5;
+  // Allows for batching of store ids
+  repeated string store = 6;
+  // Id used for debugging purposes.
+  string message_id = 7;
+}
+
+// Output schema for the Canonical flink pipeline
+message CanonicalOutput {
+  // The same version number as the input
+  string version = 1;
+  // Actual canonical data
+  CanonicalStore data = 2;
+  // indicates output target
+  Target target = 3;
+  // Allows for batching of store data
+  repeated CanonicalStore store = 4;
+  // Id used for debugging purposes.
+  string message_id = 5;
+}
+
+// Object that contains item suspension information
+message SuspendedEntity {
+  // id of the entity
+  string entity_id = 1;
+  // type of the entity
+  menu.EntityType entity_type = 2;
+}
+
+////////////////////////////////////
+// Google Integration
+///////////////////////////////////
+
+// Order and ETA updates sent to Google after consumers submit their order.
+message AsyncOrderUpdateRequestMessage {
+  // Indicates that the order for which this update was sent is a sandbox payment.
+  bool is_in_sandbox = 1;
+  // Contains the OrderUpdate for the request.
+  CustomPushMessage custom_push_message = 2;
+}
+
+// Custom push message with the updated order status or ETA.
+message CustomPushMessage {
+  // Updated information for the order.
+  OrderUpdate order_update = 1;
+}
+
+// Order update info to display to user.
+message OrderUpdate {
+  // Unique ID of the order for which the update is sent, i.e. order_uuid.
+  string action_order_id = 1;
+  // The new state of the order.
+  OrderState order_state = 2;
+  // The time at which the order was updated.
+  google.protobuf.Timestamp update_time = 3;
+  // Post-order actions such as contacting support and viewing order details.
+  repeated OrderManagementAction order_management_actions = 4;
+  // Required when orderState.state = "REJECTED".
+  RejectionInfo rejection_info = 5;
+  // Required when orderState.state = "CANCELLED".
+  CancellationInfo cancellation_info = 6;
+  // Required when orderState.state = "IN_TRANSIT".
+  InTransitInfo in_transit_info = 7;
+  // Required when orderState.state = "FULFILLED".
+  FulfillmentInfo fulfillment_info = 8;
+  // Provide the user-visible order ID in a receipt. Required when orderState.state = "CONFIRMED", "IN_PREPARATION",
+  // "READY_FOR_PICKUP", "IN_TRANSIT", or "FULFILLED".
+  Receipt receipt = 9;
+  // Total price of the order.
+  Price total_price = 10;
+  // Defines more details of the order update, such as the interval for estimated delivery or pickup.
+  FoodOrderUpdateExtension info_extension = 11;
+}
+
+// Order state info to display to user.
+message OrderState {
+  // Order states supported by Google.
+  order_service.GoogleOrderUpdate.GoogleOrderState state = 1;
+  // The user-visible display string for the state. Use sentence case.
+  string label = 2;
+}
+
+// Post-order action such as contacting support and viewing order details.
+message OrderManagementAction {
+  // Type of post-order support enabled to the consumer
+  order_service.GoogleOrderManagementAction.GoogleActionType type = 1;
+  // Defines a user interface element that you can add to provide user interaction.
+  Button button = 2;
+}
+
+// User interface element that can be added for user interaction.
+message Button {
+  // The display label. Use sentence case with 30 characters or less to ensure proper rendering.
+  string title = 1;
+  // The action triggered by clicking or touching the button.
+  OpenUrlAction open_url_action = 2;
+}
+
+// Action that is triggered by the button
+message OpenUrlAction {
+  // The url called when clicking or touching the button.
+  string url = 1;
+}
+
+// Info used to notify consumer about rejection.
+message RejectionInfo {
+  // Rejection category for order.
+  order_service.GoogleRejectionInfo.GoogleRejectionType type = 1;
+  // Reason for the rejection used for internal logging. This field is not visible to users.
+  google.protobuf.StringValue reason = 2;
+}
+
+// Info used to notify consumer about cancellation.
+message CancellationInfo {
+  // Displayable text reason for the rejection when OrderState.state is "CANCELLED".
+  string reason = 1;
+}
+
+// Info used to notify consumer about in transit orders.
+message InTransitInfo {
+  // Time that the order was marked as in transit.
+  google.protobuf.Timestamp updated_time = 1;
+}
+
+// Info used to notify consumer about fulfilled orders.
+message FulfillmentInfo {
+  // Actual delivery time for the order.
+  google.protobuf.Timestamp delivery_time = 1;
+  // Actual pickup time for the order.
+  google.protobuf.Timestamp pickup_time = 2;
+}
+
+// Order identification used by consumers to share with customer support.
+message Receipt {
+  // Required if the order is "CONFIRMED", "IN_TRANSIT", or "FULFILLED". This field is DoorDash's delivery public id,
+  // the single user-facing ID for this order. Consumers use the id to reference their order for customer service.
+  string user_visible_order_id = 1;
+}
+
+// Google's price format.
+message Price {
+  // Defines whether price is estimated or actual.
+  order_service.GooglePrice.PriceType type = 1;
+  // Price amount.
+  Money amount = 2;
+}
+
+// Google's money format.
+message Money {
+  // A 3-letter currency code in ISO 4217 format.
+  string currency_code = 1;
+  // The whole units of the amount. For example, if currencyCode is "USD", then "1" unit is one US dollar.
+  google.protobuf.StringValue units = 2;
+  // Number of nano (10^-9) units of the amount. For example $-1.75 is represented as units = -1 and nanos =
+  // -750,000,000.
+  google.protobuf.Int64Value nanos = 3;
+}
+
+// More details about the order update.
+message FoodOrderUpdateExtension {
+  // Type of this extension. This field is always set to
+  // "type.googleapis.com/google.actions.v2.orders.FoodOrderUpdateExtension".
+  string type = 1 [json_name = "@type"];
+  // The estimated time when the order will be delivered or be ready for pickup. The string must be in ISO 8601 format
+  // and must correspond to an interval rather than a single fixed time.
+  google.protobuf.StringValue estimated_fulfillment_time_iso8601 = 2;
+  // Describes the errors that occurred post-order. Recommend one error per cart or per item. Use
+  // FoodOrderUpdateExtension.FoodOrderErrors for any errors not covered by RejectionInfo.
+  repeated FoodOrderError food_order_errors = 3;
+}
+
+// Error that occurred with the order post-sent that is sent to Google.
+message FoodOrderError {
+  // Types of errors supported by Google.
+  order_service.GoogleOrderUpdate.GoogleOrderState error = 1;
+  // Required when error = "AVAILABILITY_CHANGED", "INCORRECT_PRICE", "PRICE_CHANGED", "INVALID", or "NOT_FOUND".
+  // This field is required for item-level errors. It is the Google-assigned LineItem.id for menu items or
+  // FoodItemOption.id for add-ons.
+  google.protobuf.StringValue id = 2;
+  // Description of the error. This description is for internal logging and is not visible to users.
+  google.protobuf.StringValue description = 3;
+  // New price of an item that caused the error. This is required only when error is "PRICE_CHANGED".
+  Money updated_price = 4;
+  // New available quantity of the item that caused the error. This is required only when error is "INVALID" or
+  // "NOT_FOUND". The value should be zero for "INVALID" and "NOT_FOUND".
+  google.protobuf.Int64Value available_quantity = 5;
+}
+
+// updates store's temporary deactivation status
+message UpdateStoreTemporaryDeactivationRequest {
+  // id of the store
+  string store_id = 1;
+  // temp deactivation end time in UTC
+  google.protobuf.Timestamp deactivated_until = 2;
+}
+
+// response for update store temp deactivation
+message UpdateStoreTemporaryDeactivationResponse {
+  // true if update sent successfully
+  bool success = 1;
+  // carries the failure reason if success is false
+  string failure_reason = 2;
+}
+
+/**
+ * GFO native redirect integration
+ */
+
+// The uploaded descriptor file serves to inform Google of the feed type being uploaded.
+message FilesetDescriptor {
+  // The timestamp at which this feed was generated, in Unix time format (seconds since the epoch).
+  // Required.
+  int64 generation_timestamp = 1;
+
+  // Identifies the name of this feed.
+  // Required.
+  string name = 2;
+
+  // Paths (relative to the dropbox root) specifying data files included in this feed.
+  // Required.
+  repeated string data_file = 3;
+}
+
+// This feed describes Mx entities.
+message EntityFeed {
+  // List of Mx entities.
+  repeated Entity data = 1;
+}
+
+// Information about a Mx entity.
+message Entity {
+  // A string that uniquely identifies an Entity.
+  // Strongly recommended to only include URL-safe characters. (required)
+  string entity_id = 1;
+
+  // If present, the name, telephone, url and location are used to support
+  // matching partner inventory with entities already present on Google. This
+  // information will not be displayed.
+
+  // The name of the Entity. (required)
+  string name = 2;
+
+  // The contact telephone number of the Entity including its country and area
+  // codes, e.g. +14567891234. Highly recommended. (optional)
+  string telephone = 3;
+
+  // The url of the Entity's public website. Highly recommended. (optional)
+  string url = 4;
+
+  // The location of the Entity (required)
+  GeoCoordinates location = 5;
+}
+
+// The Geo data of a location, including latitude, longitude, and address.
+// At least one of [lat/lng or address] should be provided (or both).
+message GeoCoordinates {
+  // Latitude for location.
+  double latitude = 1; // In degrees. (optional)
+  // Longitude for location.
+  double longitude = 2; // In degrees. (optional)
+
+  // Address for a location, could either be structured or unstructured.
+  oneof addresses {
+    // Postal address of the location, preferred.
+    PostalAddress address = 3;
+    // An unstructured address could also be provided as a fallback.
+    // E.g. "1600 amphitheatre parkway mountain view, ca 94043"
+    string unstructured_address = 4;
+  }
+}
+
+// The postal address for a merchant.
+message PostalAddress {
+  // The country, using ISO 3166-1 alpha-2 country code, e.g. "US" (required)
+  string country = 1;
+  // The locality/city, e.g. "Mountain View". (required)
+  string locality = 2;
+  // The region/state/province, e.g. "CA". This field is only required in
+  // countries where region is commonly a part of the address. (optional)
+  string region = 3;
+  // The postal code, e.g. "94043". (required)
+  string postal_code = 4;
+  // The street address, e.g. "1600 Amphitheatre Pkwy". (required)
+  string street_address = 5;
+}
+
+// This feed describes deep links associated with Mx entities.
+message ActionFeed {
+  // Details about food ordering actions.
+  repeated ActionDetail data = 1;
+}
+
+// Details about food ordering actions.
+message ActionDetail {
+  // List of actions which could be performed.
+  repeated Action actions = 1;
+  // A string that uniquely identifies the Entity.
+  string entity_id = 2;
+  // A string that identifies the action url.
+  string link_id = 3;
+
+  // Deep link for action detail
+  string url = 4;
+}
+
+// Information about an Action which could be performed.
+message Action {
+  // Deprecated fields not to be reused.
+  reserved 1;
+
+  // Action metadata, only includes food ordering info currently.
+  oneof action_info {
+    // Food ordering info for the action.
+    FoodOrderingInfo food_ordering_info = 3;
+  }
+}
+
+// Service type enum.
+enum ServiceType {
+  // Service type is unspecified.
+  SERVICE_TYPE_UNSPECIFIED = 0;
+  // Service type is delivery.
+  SERVICE_TYPE_DELIVERY = 1;
+  // Service type is takeout.
+  SERVICE_TYPE_TAKEOUT = 2;
+}
+
+// Food ordering info for the action.
+message FoodOrderingInfo {
+  // Service type for food ordering action.
+  ServiceType service_type = 1;
+}
+
+// Service feed.
+message FoodServiceFeed {
+  // Service feed entity data.
+  repeated ServiceData data = 1;
+}
+
+// Service feed entity data.
+message ServiceData {
+  // Service data type
+  oneof type {
+    // Food ordering service data.
+    FoodOrderingService service = 1;
+    // Service hours data.
+    ServiceHours service_hours = 2;
+    // Service area data.
+    ServiceArea service_area = 3;
+    // Fees data.
+    Fee fee = 4;
+  }
+}
+
+// Food ordering service data.
+message FoodOrderingService {
+  // Unique identifier of the provided service.
+  // Required.
+  string service_id = 1;
+
+  // The type of the service.
+  // Required and cannot be SERVICE_TYPE_UNKNOWN.
+  ServiceType service_type = 2;
+
+  // The parent entity’s ID.
+  // Required.
+  string parent_entity_id = 3;
+
+  // Indicates if the entity is disabled.
+  // Optional.
+  bool disabled = 4;
+
+  // The lead time given in the service entity will apply to all
+  // the service hours unless an overridden property is set in the
+  // service hours entity.
+  // Required.
+  ETA lead_time = 5;
+
+  // Parent action detail's link ID.
+  // Required.
+  string action_link_id = 6;
+}
+
+// Lead time range [min, max). At least one of min or max needs to be provided.
+// A fixed value can be provided by setting both min and max to the same value.
+message ETA {
+  // Indicates a range of ETA duration.
+  // Min lead time duration.
+  google.protobuf.Duration min_lead_time_duration = 1;
+  // Max lead time duration.
+  google.protobuf.Duration max_lead_time_duration = 2;
+}
+
+// Service hours entity for ASAP/Advance orders.
+message ServiceHours {
+  // Unique identifier of the provided service hours.
+  // Required.
+  string hours_id = 1;
+
+  // The unique identifier of the Service entity correlated to this ServiceHours entity.
+  // Required.
+  repeated string service_ids = 2;
+
+  // The hours the orders can be fulfilled. For ASAP services, this is also orderable time.
+  // One of the fields (asap_hours/advance_hours) is required to be set.
+  // ASAP service hours.
+  repeated AsapTimeWindow asap_hours = 3;
+  // Advance service hours.
+  repeated AdvanceTimeWindow advance_hours = 4;
+
+  // For advance ordering services, this is the time windows the orders can be placed.
+  // Required when advance_hours is given. Invalid when asap_hours is given.
+  repeated TimeOfDayWindow orderable_time = 5;
+
+  // Indicates if the service hours are for special occasions (e.g. Thanksgiving).
+  // Optional.
+  bool special_hour = 6;
+  // A timestamp window indicating the validity of the special hours.
+  // Optional. Required if it's special hours.
+  ValidityRange validity_range = 7;
+}
+
+// The fulfillment time window for ASAP orders.
+message AsapTimeWindow {
+  // A time window the ASAP order can be placed and fulfilled.
+  // Required.
+  TimeOfDayWindow time_windows = 1;
+
+  // Indicates the lead time, specific to service_time, the service can be fulfilled.
+  // Optional.
+  ETA lead_time = 2;
+}
+
+// The fulfillment time window for advance orders.
+message AdvanceTimeWindow {
+  // A time window the advance order can be fulfilled.
+  // Required.
+  TimeOfDayWindow time_windows = 1;
+
+  // A window that an advance order can be placed. For example, an advance
+  // order must be placed at least 60 minutes ahead and not exceeding 2
+  // days, the interval would be [PT60M, P2D).
+  // Optional.
+  DurationInterval advance_booking_interval = 2;
+}
+
+// The TimeWindow object is a composite entity that describes a list
+// of windows the user's order can be either placed or fulfilled.
+message TimeOfDayWindow {
+  // Represents a day of the week.
+  enum DayOfWeek {
+    // The day of the week is unspecified.
+    DAY_OF_WEEK_UNSPECIFIED = 0;
+
+    // Monday
+    DAY_OF_WEEK_MONDAY = 1;
+
+    // Tuesday
+    DAY_OF_WEEK_TUESDAY = 2;
+
+    // Wednesday
+    DAY_OF_WEEK_WEDNESDAY = 3;
+
+    // Thursday
+    DAY_OF_WEEK_THURSDAY = 4;
+
+    // Friday
+    DAY_OF_WEEK_FRIDAY = 5;
+
+    // Saturday
+    DAY_OF_WEEK_SATURDAY = 6;
+
+    // Sunday
+    DAY_OF_WEEK_SUNDAY = 7;
+  }
+
+  // The time window the order can be placed/fulfilled.
+  // Required.
+  TimeOfDayRange time_windows = 1;
+
+  // The list of days in a week the windows are applied.
+  // Required. If not given, assumed 7 days a week.
+  repeated DayOfWeek day_of_week = 2;
+}
+
+// A closed-open timestamp range.
+message ValidityRange {
+  // The beginning time of the range (inclusive).
+  // Optional.
+  google.protobuf.Timestamp valid_from_time = 1;
+  // The ending time of the range (exclusive).
+  // Optional.
+  google.protobuf.Timestamp valid_through_time = 2;
+}
+
+// A closed-open duration range.
+message DurationInterval {
+  // The minimum duration (inclusive).
+  // Required.
+  google.protobuf.Duration min_offset = 1;
+
+  // The maximum duration (exclusive).
+  // Required.
+  google.protobuf.Duration max_offset = 2;
+}
+
+// A closed-open time range.
+message TimeOfDayRange {
+  // A Time indicating the beginning time of the day of the range (inclusive).
+  // Required. If not given, we assume 00:00:00.
+  TimeOfDay open_time = 1;
+  // A Time indicating the ending time of the day of the range (exclusive).
+  // Required. If not given, we assume 23:59:59.
+  TimeOfDay close_time = 2;
+}
+
+// Represents a time of day. The date and time zone are either not significant
+// or are specified elsewhere. An API may choose to allow leap seconds. Related
+// types are [google.type.Date][google.type.Date] and
+// `google.protobuf.Timestamp`.
+message TimeOfDay {
+  // Hours of day in 24 hour format. Should be from 0 to 23. An API may choose
+  // to allow the value "24:00:00" for scenarios like business closing time.
+  int32 hours = 1;
+
+  // Minutes of hour of day. Must be from 0 to 59.
+  int32 minutes = 2;
+
+  // Seconds of minutes of the time. Must normally be from 0 to 59. An API may
+  // allow the value 60 if it allows leap-seconds.
+  int32 seconds = 3;
+
+  // Fractions of seconds in nanoseconds. Must be from 0 to 999,999,999.
+  int32 nanos = 4;
+}
+
+// Service area data.
+message ServiceArea {
+  // Unique identifier.
+  // Required.
+  string area_id = 1;
+
+  // Identifier to the parent service entity.
+  // Required.
+  repeated string service_ids = 2;
+
+  // One of the following needs to be provided to define the service area.
+  // Required.
+  oneof region {
+    // Geographical circular area described by a point and radius.
+    GeoCircle circle = 3;
+    // Geolocation of interests.
+    Locality locality = 4;
+    // Represents a polygon shaped region.
+    Polygon polygon = 5;
+  }
+
+  // Set to true if the assigned area is excluded from serving.
+  // Optional.
+  bool excluded_area = 6;
+}
+
+// Geographical circular area described by a point and radius.
+message GeoCircle {
+  // Geographical center of the area.
+  // Required.
+  LatLng center = 1;
+
+  // Radius for the circular area, in meters. Must be greater than 0.
+  // Required.
+  double radius = 2;
+}
+
+// An object that represents a latitude/longitude pair. This is expressed as a
+// pair of doubles to represent degrees latitude and degrees longitude. Unless
+// specified otherwise, this must conform to the
+// <a href="http://www.unoosa.org/pdf/icg/2012/template/WGS_84.pdf">WGS84
+// standard</a>. Values must be within normalized ranges.
+message LatLng {
+  // The latitude in degrees. It must be in the range [-90.0, +90.0].
+  double latitude = 1;
+
+  // The longitude in degrees. It must be in the range [-180.0, +180.0].
+  double longitude = 2;
+}
+
+// Geolocation of interests.
+message Locality {
+  // Country code.
+  string country_code = 1;
+
+  // Postal code in the country's local format in string.
+  string postal_code = 2;
+}
+
+// Represents a polygon shaped region.
+message Polygon {
+  reserved 1;
+
+  // List of S2Loops which defines a polygon. A point is considered in the
+  // polygon if it is contained in odd number of loops.
+  repeated Loop loops = 2;
+}
+
+// Represents a loop of geo coordinates. This should be a valid S2Loop.
+message Loop {
+  // Points making the boundary of loop.
+  repeated LatLng point = 1;
+}
+
+// Fees data.
+message Fee {
+  // Unique identifier to the Fee entity.
+  // Required.
+  string fee_id = 1;
+
+  // Fee type enum.
+  enum FeeType {
+    // Fee type is unspecified.
+    FEE_TYPE_UNSPECIFIED = 0;
+    // Fee type is delivery fee.
+    FEE_TYPE_DELIVERY = 1;
+    // Fee type is service fee.
+    FEE_TYPE_SERVICE = 2;
+  }
+  // Indicates the nature of the service, e.g. delivery fee/service fee.
+  // Required.
+  FeeType fee_type = 2;
+
+  // Fee amount.
+  oneof amount {
+    // A fixed amount of fees to be collected.
+    MoneyV2 fixed_amount = 3;
+    // A range of fees that could be collected. Will mirror
+    // madden.ingestion.MoneyRange for the starting point.
+    MoneyRange range_amount = 4;
+    // Fees in terms of amount percentage. Will mirror
+    // madden.ingestion.QuantitativeValue for the starter.
+    PercentageBasedFee cart_percentage = 5;
+  }
+
+  // Service association needs to be provided.
+  // Required.
+  repeated string service_ids = 6;
+
+  // Service area can be provided to further restrict eligibility of the fee.
+  // Optional.
+  repeated string area_ids = 7;
+}
+
+// Represents an amount of money with its currency type.
+message MoneyV2 {
+  // The three-letter currency code defined in ISO 4217.
+  string currency_code = 1;
+
+  // The whole units of the amount.
+  // For example if `currencyCode` is `"USD"`, then 1 unit is one US dollar.
+  int64 units = 2;
+
+  // Number of nano (10^-9) units of the amount.
+  // The value must be between -999,999,999 and +999,999,999 inclusive.
+  // If `units` is positive, `nanos` must be positive or zero.
+  // If `units` is zero, `nanos` can be positive, zero, or negative.
+  // If `units` is negative, `nanos` must be negative or zero.
+  // For example $-1.75 is represented as `units`=-1 and `nanos`=-750,000,000.
+  int32 nanos = 3;
+}
+
+// Wrapper for a range of monetary amount that could be bounded or unbounded.
+// At least one of min_amount or max_amount is required.
+message MoneyRange {
+  // Minimum amount.
+  MoneyV2 min_amount = 1;
+
+  // Maximum amount.
+  MoneyV2 max_amount = 2;
+}
+
+// Variable fee which changes based on the price of the order.
+message PercentageBasedFee {
+  // Optional, base fee not including the variable percentage based fee.
+  MoneyV2 base_value = 1;
+
+  // Optional, overall range of possible values of the PercentageBasedFee.
+  MoneyRange range = 2;
+
+  // Optional, percentage representing an additional variable fee based on
+  // the cart subtotal. E.g. 15.0 represents a fee of 15% of the cart.
+  double percentage_of_cart_value = 3;
+}
+
+// Menu feed.
+message FoodMenuFeed {
+  // Menu component data.
+  repeated MenuComponent data = 1;
+}
+
+// Menu components.
+message MenuComponent {
+  // Menu component type.
+  oneof type {
+    // Menu entity.
+    MenuV2 menu = 1;
+    // Menu section entity.
+    MenuSection section = 2;
+    // Menu item entity.
+    MenuItem item = 3;
+    // Menu item option entity.
+    MenuItemOption option = 4;
+  }
+}
+
+// Top-level catalog of food items offered.
+// Menu contains a list of merchant ids and the menu that apply to those merchants.
+// A Menu can be used to represent a single merchant, or multiple
+// merchants (typically chain restaurants).
+message MenuV2 {
+  // A string from a partner which uniquely identifies the Menu within the partner feed.
+  // Required.
+  string menu_id = 1;
+
+  // The merchants to whom the menu apply.
+  // Note: This field is repeated so chain restaurants can share the same menu
+  // across multiple locations, each of which is a separate merchant.
+  // Required.
+  repeated string merchant_ids = 2;
+
+  // The name that can identify the Menu when a user is browsing the menu.
+  // Optional.
+  TextField display_name = 3;
+
+  // The default language code associated with the text labels contained in the
+  // menu. Expects BCP-47 language code, such as "en-US" or "fr-CA".
+  // Optional.
+  string language = 4;
+
+  // Disclaimer to be shown to the user for the menu. For example, nutritional
+  // information disclosure and allergen disclosure.
+  // Optional.
+  Disclaimer disclaimer = 5;
+
+  // IDs of items contained within this menu. Expects first-level menu items only.
+  // Optional.
+  repeated string menu_item_ids = 6;
+
+  // IDs of sections contained within this menu. Expects first-level menu sections only.
+  // Optional.
+  repeated string menu_section_ids = 7;
+
+  // Timestamp when this Menu or any of its contents was last updated by the restaurant;
+  // i.e. a date to be associated with the phrase “accurate as of date".
+  // Optional.
+  google.protobuf.Timestamp last_merchant_update_time = 8;
+}
+
+// A menu section is a grouping of items on a menu. Separate MenuSections are
+// created for each logical grouping of items on a menu.
+message MenuSection {
+  // A string from a partner that uniquely identifies the MenuSection within the partner feed.
+  // Required.
+  string menu_section_id = 1;
+
+  // The name that can identify the MenuSection when a user is browsing the menu.
+  // Required.
+  TextField display_name = 2;
+
+  // A description of the menu section.
+  // Optional.
+  TextField description = 3;
+
+  // Image(s) of the menu section.
+  // Optional.
+  repeated Image images = 4;
+
+  // IDs of MenuItem entities that correspond to this MenuSection entity.
+  // A section is expected to have at least 1 item if it does not contain any sub-sections.
+  // Optional.
+  repeated string menu_item_ids = 6;
+
+  // Child MenuSections (sub-sections) that correspond to this MenuSection entity.
+  // Optional.
+  repeated string menu_section_ids = 7;
+}
+
+// Represents a single food or drink item offered.
+message MenuItem {
+  // A string from a partner that uniquely identifies the MenuItem within the partner feed.
+  // Required.
+  string menu_item_id = 1;
+
+  // The name that can identify the MenuItem when a user is browsing the menu.
+  // Required.
+  TextField display_name = 2;
+
+  // A description of the menu item.
+  // Optional.
+  TextField description = 3;
+
+  // Image(s) of the menu item.
+  // Optional.
+  repeated Image images = 4;
+
+  // Container that specifies a list of options available on an item.
+  message MenuItemOptionSet {
+    // IDs of menu item options that are applicable to this menu item.
+    // Required.
+    repeated string menu_item_option_ids = 1;
+  }
+
+  // The menu item must either have a price, or a set of menu item options.
+  // Required.
+  oneof pricing {
+    // Available offers to purchase this food item.
+    OfferSet offer_set = 6;
+
+    // Available options for this menu item.
+    MenuItemOptionSet menu_item_option_set = 7;
+  }
+}
+
+// Describes choices that a user would be required to make when selecting an item.
+// The user must select an option, otherwise the order is considered invalid
+// (e.g. the user must choose small, medium, or large for a pizza).
+message MenuItemOption {
+  // A string from a partner that uniquely identifies the MenuItemOption within the partner feed.
+  // Required.
+  string menu_item_option_id = 9;
+
+  // Option property and value e.g. Size: Small.
+  // Required.
+  MenuItemOptionProperty value = 2;
+
+  // Available offers to purchase this menu item option.
+  // Required.
+  OfferSet offer_set = 4;
+}
+
+// Container for a list of offers available on a menu item / option.
+// Only one offer should be applicable/valid at one particular time.
+// For example, a drink can have 2 offers where one is applicable in the morning
+// while the other is applicable in the evening during happy hours.
+message OfferSet {
+  // List of possible offers.
+  // Required.
+  repeated Offer offers = 1;
+}
+
+// Represents pricing and availability information for MenuItems and MenuItemOptions.
+message Offer {
+  // Monetary value of the menu item/option on sale. Can be 0 to represent free.
+  // Required.
+  MoneyV2 price = 1;
+}
+
+// A text payload that contains one or more localized values.
+message TextField {
+  // Per-locale text values.
+  //
+  // If there is only one desired locale support, then the language_code within
+  // each text is not required to be set and the language will be inferred from
+  // the default language of the menu.
+  //
+  // If there are multiple texts across different locales, then the
+  // language_code must be set for each text. The first text in the list is
+  // considered the preferred representation.
+  // Required.
+  repeated LocalizedText text = 1;
+}
+
+// Localized variant of a text in a particular language.
+message LocalizedText {
+  // Localized string in the language corresponding to `language_code' below.
+  string text = 1;
+
+  // The text's BCP-47 language code, such as "en-US" or "sr-Latn".
+  //
+  // For more information, see
+  // http://www.unicode.org/reports/tr35/#Unicode_locale_identifier.
+  string language_code = 2;
+}
+
+// Partner provided disclaimer shown to the user. Contains a text disclaimer
+// along with an optional URL for more information.
+// Some example include: associated medical risks/warnings, any additional
+// fees/gratuity, etc.
+message Disclaimer {
+  // Body of the disclaimer text to be shown to the user.
+  // Required.
+  TextField text = 1;
+
+  // URL containing more information about the disclaimer.
+  // Optional.
+  string uri = 2;
+}
+
+// Represents an image associated with a menu entity.
+message Image {
+  // URL containing the raw pixels of the image.
+  // Required.
+  string uri = 1;
+}
+
+// Describes the property of a menu item option and its value.
+message MenuItemOptionProperty {
+  // Types of property that the option is for.
+  enum PropertyType {
+    // Do not use. The property type is not explicitly specified.
+    PROPERTY_TYPE_UNSPECIFIED = 0;
+    // A generic menu item option property, which is not one of the more
+    // specific types below. Use this if the property is not of type
+    // SIZE or PIZZA_SIDE.
+    PROPERTY_TYPE_OPTION = 1;
+    // Denotes the menu item option property of size (e.g. small, medium, or large).
+    PROPERTY_TYPE_SIZE = 2;
+    // Property specific to pizzas. For example: this MenuItemOption is only
+    // valid for a portion/whole pizza, such as mushroom toppings on the left
+    // side, right side, or whole pizza).
+    PROPERTY_TYPE_PIZZA_SIDE = 3;
+  }
+
+  // Well-defined values for the option property.
+  enum PropertyValue {
+    // Do not use. The property value is not explicitly specified.
+    PROPERTY_VALUE_UNSPECIFIED = 0;
+    // The MenuItemOption applies only to the left side of a pizza.
+    PROPERTY_VALUE_PIZZA_SIDE_LEFT = 1;
+    // The MenuItemOption applies only to the right side of a pizza.
+    PROPERTY_VALUE_PIZZA_SIDE_RIGHT = 2;
+    // The MenuItemOption applies to the entire pizza.
+    PROPERTY_VALUE_PIZZA_SIDE_WHOLE = 3;
+  }
+
+  // The type of this option property.
+  // Required.
+  PropertyType property_type = 1;
+
+  // Required.
+  oneof value {
+    // A well-defined value for the option property. Currently only expected
+    // if the property_type is PIZZA_SIDE.
+    PropertyValue property_val = 2;
+
+    // A free-form text for the value of the property. Expected for
+    // property_type OPTION and SIZE.
+    TextField text_val = 3;
+  }
+}

@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package parcel_service.v1;
+
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "drive_parcel_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.parcel";
+
+// service for all lx related operations within parcel sort app
+service ParcelSortAppLxOperationService {
+  option (doordash.api.service) = {
+    name: "parcel-sort-app-lx-operation"
+    url: "parcel-service-web.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_FOR_PARCEL_SERVICE"
+    owner: {
+      id: "drive-parcels"
+      name: "parcel"
+      slack_channel: "#drive-parcels-alerts"
+      email_alias: "drive-eng-parcel-plus@doordash.com"
+    }
+    name_spaces: ["parcel"]
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "X-Application-Name"}]
+  };
+
+  // Roll over parcels for faclility, keep the force batch id and bin assignment but move them to tomorrow
+  rpc RollOverParcelsForFaclility(RollOverParcelsForFaclilityRequest) returns (RollOverParcelsForFaclilityResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/roll-over-parcels-for-faclility"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_operator"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // Break batch then we can replan them, site need to rescan the parcels
+  rpc BreakBatch(BreakBatchRequest) returns (BreakBatchResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/break-batch"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_operator"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // Pull and fix batch issue
+  rpc BatchLxDoctor(BatchLxDoctorRequest) returns (BatchLxDoctorResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/batch-lx-doctor"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_operator"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+}
+
+// Roll over parcels for facility, keep the force batch id and bin assignment but move them to tomorrow rollover set(instead of defualt set)
+message RollOverParcelsForFaclilityRequest {
+  // facility id
+  int32 facility_id = 1;
+}
+
+// the cadence workflow id for the roll over operation
+message RollOverParcelsForFaclilityResponse {
+  // the cadence workflow id
+  string cadence_workflow_id = 1;
+}
+
+// the batch we want to break
+message BreakBatchRequest {
+  // force_batch_uuid
+  string force_batch_uuid = 1;
+}
+
+// empty for now, 200 for success and 4/5xx for failure
+message BreakBatchResponse {}
+
+// the batch or drive order we want to fix
+message BatchLxDoctorRequest {
+  // force batch uuid, null if we want to fix a drive order
+  google.protobuf.StringValue force_batch_uuid = 1;
+  // the drive order id, will be ignored if force_batch_uuid is set
+  google.protobuf.Int64Value drive_order_id = 2;
+}
+
+// the issue type
+enum LxDoctorIssueType {
+  // unspecified issue
+  LX_DOCTOR_ISSUE_TYPE_UNSPECIFIED = 0;
+  // the ready time is not set
+  LX_DOCTOR_ISSUE_TYPE_ORDER_REDAY_TIME_NOT_SET = 1;
+  // the pick up window start time is different
+  LX_DOCTOR_ISSUE_TYPE_BATCH_INCONSISTENT_PICKUP_WINDOW_START_TIME = 2;
+  // the max batch size is missing
+  LX_DOCTOR_ISSUE_TYPE_MAX_BATCH_SIZE_MISSING = 3;
+}
+
+// the status of the batch after the doctor operation
+// ISSUE_RESOVED: all issues are resolved atutomaticlly
+// ISSUE_NOT_RESOLVED: some issues are not resolved, needs oncall to fix
+enum BatchLxDoctorStatus {
+  // unspecified status
+  BATCH_LX_DOCTOR_STATUS_UNSPECIFIED = 0;
+  // all issues are resolved
+  BATCH_LX_DOCTOR_STATUS_ISSUE_RESOVED = 1;
+  // some issues are not resolved
+  BATCH_LX_DOCTOR_STATUS_ISSUE_NOT_RESOLVED = 2;
+}
+
+// issue detaials
+message LxDoctorIssue {
+  // the issue type
+  LxDoctorIssueType issue = 1;
+  // the resolution applied
+  string resolution = 2;
+  // the drive order ids that are affected
+  repeated int32 drive_order_ids = 3;
+}
+
+// issue and resolutions
+message BatchLxDoctorResponse {
+  // the status of the batch after the doctor operation
+  BatchLxDoctorStatus status = 1;
+  // the issues and resolutions
+  repeated LxDoctorIssue issues = 2;
+}

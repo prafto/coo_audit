@@ -1,0 +1,392 @@
+syntax = "proto3";
+
+package dasher_service.dasher_onboarding_platform;
+
+import "common/service_client_config.proto";
+import "dasher_service/dasher_common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.dasher.dasher_onboarding_platform";
+
+service DasherOnboardingPlatformService {
+  option (service_client.client_config).service_name = "dasher-onboarding-platform-service";
+
+  rpc CreateOnboarding(CreateOnboardingRequest) returns (CreateOnboardingResponse);
+  rpc CreateDasherApplicant(CreateDasherApplicantRequest) returns (CreateDasherApplicantResponse);
+  rpc GetOnboarding(GetOnboardingRequest) returns (GetOnboardingResponse);
+  rpc UpdateOnboarding(UpdateOnboardingRequest) returns (UpdateOnboardingResponse);
+  rpc UpdateBackgroundCheck(UpdateBackgroundCheckRequest) returns (UpdateBackgroundCheckResponse);
+  rpc CreateOnboardingWorkflow(CreateOnboardingWorkflowRequest) returns (CreateOnboardingWorkflowResponse);
+  rpc UpdateOnboardingWorkflowTemplate(UpdateOnboardingWorkflowTemplateRequest) returns (UpdateOnboardingWorkflowTemplateResponse);
+  rpc UpsertOnboardingWorkflowMapping(UpsertOnboardingWorkflowMappingRequest) returns (UpsertOnboardingWorkflowMappingResponse);
+  // ClearOnboardingData
+  rpc ClearOnboardingData(ClearOnboardingDataRequest) returns (ClearOnboardingDataResponse);
+  rpc CreateNonce(CreateNonceRequest) returns (CreateNonceResponse);
+  rpc TriggerDropShippingOrInstantDash(TriggerDropShippingOrInstantDashRequest) returns (TriggerDropShippingOrInstantDashResponse);
+  rpc GetBackgroundCheckFromApplicantId(GetBackgroundCheckFromApplicantIdRequest) returns (GetBackgroundCheckFromApplicantIdResponse);
+  rpc TriggerDownloadAppSMS(TriggerDownloadAppSMSRequest) returns (TriggerDownloadAppSMSResponse);
+}
+
+message GetBackgroundCheckFromApplicantIdRequest {
+  google.protobuf.StringValue applicant_id = 1;
+}
+
+message GetBackgroundCheckFromApplicantIdResponse {
+  BackgroundCheckReport background_check = 1;
+}
+
+message BackgroundCheckReport {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue applicant_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp completion_date = 4;
+  google.protobuf.Timestamp due_date = 5;
+  google.protobuf.Timestamp last_updated_date = 6;
+  google.protobuf.StringValue status = 7;
+  google.protobuf.Timestamp pre_aa_date = 8;
+  google.protobuf.Timestamp post_aa_date = 9;
+  google.protobuf.StringValue provider = 10;
+  google.protobuf.StringValue package = 11;
+  google.protobuf.StringValue source = 12;
+  google.protobuf.StringValue mvr_status = 13;
+}
+
+message CreateOnboardingRequest {
+  GeoLocator geo_locator = 1;
+  Person person_locator = 2;
+  SignupMetadata signup_metadata = 3;
+}
+
+message GeoLocator {
+  google.protobuf.StringValue zip = 1;
+  google.protobuf.StringValue country = 2;
+  google.protobuf.StringValue locale = 3;
+}
+
+message Person {
+  //applicant_unique_link if null use email and phone_number
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue email = 2;
+  google.protobuf.StringValue phone_number = 3;
+  google.protobuf.StringValue first_name = 4;
+  google.protobuf.StringValue last_name = 5;
+  google.protobuf.StringValue middle_name = 6;
+}
+
+message SignupMetadata {
+  google.protobuf.StringValue referred_by = 1;
+  google.protobuf.StringValue referral_campaign = 2;
+  google.protobuf.StringValue referral_code = 3;
+  google.protobuf.StringValue referral_domain = 4;
+  google.protobuf.StringValue source = 5;
+  google.protobuf.StringValue guaranteed_earnings_code = 6;
+  google.protobuf.BoolValue is_marketing_sms_opt_in = 7;
+  google.protobuf.BoolValue verified_phone_number = 8;
+}
+
+message ResponseMetadata {
+  google.protobuf.StringValue response_code = 1;
+  google.protobuf.StringValue response_message = 2;
+  google.protobuf.StringValue redirect_url = 3;
+  google.protobuf.StringValue referred_by_id = 4;
+  google.protobuf.BoolValue has_consumer_account = 5;
+  google.protobuf.BoolValue has_completed_profile = 6;
+}
+
+message CreateOnboardingResponse {
+  Onboarding onboarding = 1;
+  // return applicant_unique_link to person_locator.id
+  GeoLocator geo_locator = 2;
+  Person person_locator = 3;
+  ResponseMetadata metadata = 4;
+}
+
+message Onboarding {
+  google.protobuf.StringValue onboarding_id = 1;
+  Workflow workflow = 2;
+}
+
+message Workflow {
+  google.protobuf.StringValue current_module_id = 1;
+  google.protobuf.StringValue current_step_id = 2;
+  repeated Module modules = 3;
+  // workflow template JSON to render UI
+  google.protobuf.StringValue template = 4;
+}
+
+message Module {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  repeated Step steps = 3;
+}
+
+message Step {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue name = 2;
+  repeated Input inputs = 3;
+}
+
+message Input {
+  google.protobuf.StringValue id = 1;
+  InputType input_type = 2;
+  Config configs = 3;
+}
+
+message Config {
+  // json metadata from BE State Machine
+  google.protobuf.StringValue json_data = 1;
+}
+
+message Event {
+  repeated Action actions = 1;
+}
+
+message Action {
+  google.protobuf.StringValue input_id = 1;
+  InputType input_type = 2;
+  // json metadata to BE State Machine
+  google.protobuf.StringValue json_data = 3;
+  //if the action is related to BGC, this indicates that who is the BGC vendor
+  dasher_service.dasher_common.BgcVendorType vendor_type = 4;
+}
+
+message CreateDasherApplicantRequest {
+  google.protobuf.StringValue user_id = 1;
+}
+
+message CreateDasherApplicantResponse {
+  google.protobuf.StringValue unique_link = 1;
+  google.protobuf.StringValue url = 2;
+  google.protobuf.BoolValue password_field = 3;
+}
+
+message GetOnboardingRequest {
+  Person person_locator = 1;
+  // use geo_locator.country for onboarding creation when onboarding does not exist
+  GeoLocator geo_locator = 2;
+  //use for shadow logic
+  google.protobuf.StringValue user_id = 3;
+}
+
+message GetOnboardingResponse {
+  Onboarding onboardings = 1;
+  google.protobuf.StringValue nonce = 2;
+  google.protobuf.Struct metadata = 3;
+}
+
+message UpdateOnboardingRequest {
+  Person person_locator = 1;
+  google.protobuf.StringValue current_module_id = 2;
+  google.protobuf.StringValue current_step_id = 3;
+  Event event = 4;
+  // unique user_id provided by identity team for doordash actor cx/dx/mx
+  google.protobuf.StringValue user_id = 5;
+}
+
+message UpdateOnboardingResponse {
+  Onboarding onboarding = 1;
+  google.protobuf.StringValue nonce = 2;
+}
+
+message UpdateBackgroundCheckRequest {
+  Person person_locator = 1;
+  google.protobuf.StringValue current_module_id = 2;
+  google.protobuf.StringValue current_step_id = 3;
+  Event event = 4;
+  google.protobuf.StringValue nonce_token = 5;
+}
+
+message UpdateBackgroundCheckResponse {
+  Onboarding onboarding = 1;
+}
+
+enum InputType {
+  INPUT_TYPE_UNSPECIFIED = 0;
+  reserved "INPUT_TYPE_SSN_INPUT";
+  reserved 1;
+  reserved "INPUT_TYPE_CHECKBOX_INPUT";
+  reserved 2;
+  reserved "INPUT_TYPE_SUBMIT_BUTTON";
+  reserved 3;
+  INPUT_TYPE_BIRTHDAY_INPUT = 4;
+  INPUT_TYPE_BGC_WEBHOOK_RESPONSE = 5;
+  INPUT_TYPE_MAILING_ADDRESS_INPUT = 6;
+  INPUT_TYPE_PREVIOUS_ADDRESS_INPUT = 7;
+  INPUT_TYPE_SELFIE_DOCUMENT = 8;
+  INPUT_TYPE_SIGNATURE_DOCUMENT = 9;
+  INPUT_TYPE_DOCUMENT = 10;
+  INPUT_TYPE_NAMES_AND_PASSWORD = 11;
+  INPUT_TYPE_ALIAS_DATA = 12;
+  INPUT_TYPE_VEHICLE_DETAILS = 13;
+  INPUT_TYPE_TOS_SUBMIT = 14;
+  INPUT_TYPE_DOCUMENT_INFO = 15;
+  INPUT_TYPE_BACK_BUTTON_DOC_UPLOAD = 16;
+  INPUT_TYPE_CURRENT_ADDRESS_INPUT = 17;
+  INPUT_TYPE_DOCUMENT_SELECTION = 18;
+  INPUT_TYPE_PLACE_OF_BIRTH_INPUT = 19;
+  INPUT_TYPE_GENDER_INPUT = 20;
+  INPUT_TYPE_CITIZENSHIP_INPUT = 21;
+  INPUT_TYPE_DRIVERS_LICENSE = 22;
+  INPUT_TYPE_CHECKR_BGC_SUBMIT = 23;
+  INPUT_TYPE_CHECKR_BGC_WEBHOOK_USA = 24;
+  INPUT_TYPE_CREATE_PAYMENT_ACCOUNT = 25;
+  INPUT_TYPE_CREATE_DASHER = 26;
+  INPUT_TYPE_CREATE_VEHICLE = 27;
+  reserved "INPUT_TYPE_PLAIN_VEHICLE_DETAILS_DEPRECATED";
+  reserved 28;
+  INPUT_TYPE_PLAIN_VEHICLE_DETAILS = 29;
+  // Defines the input type for submitting the background check.
+  INPUT_TYPE_BGC_SUBMIT = 30;
+  // Defines the input type for processing the background check status auto refresh.
+  INPUT_TYPE_BGC_STATUS_REFRESH = 31;
+  // Defines the input type for re-submitting the background check due to soft errors, such as TIN verification failure.
+  // During re-submitting, the applicant needs to correct some of the PII, e.g. name, ssn.
+  INPUT_TYPE_BGC_RESUBMIT = 32;
+  // Defines the input type for processing the nearline(async) updates from the payment service.
+  INPUT_TYPE_BGC_PAYMENT_NEARLINE_UPDATE = 33;
+  // Defines the input type for background check admin override.
+  INPUT_TYPE_BGC_ADMIN_OVERRIDE = 34;
+  reserved "INPUT_TYPE_CHECKR_CANADA_BGC_SUBMIT";
+  reserved 35;
+  INPUT_TYPE_SKIP_BANK_ACCOUNT = 36;
+  INPUT_TYPE_BANK_ACCOUNT_SUBMIT = 37;
+  INPUT_TYPE_CONTINUE_BUTTON = 38;
+  INPUT_TYPE_APPLICANT_NAME = 39;
+  reserved "INPUT_TYPE_COMPLETE_SAFETY_COURSE";
+  reserved 40;
+  INPUT_TYPE_CREATE_NONCE = 41;
+  INPUT_TYPE_BACK_BUTTON = 42;
+  reserved "INPUT_TYPE_NCC_BGC_SUBMIT";
+  reserved 43;
+  INPUT_TYPE_IDENTITY_VERIFICATION = 44;
+  INPUT_TYPE_TOF_WAITLIST = 45;
+  INPUT_TYPE_EARNINGS_GOAL_SLIDER = 46;
+  INPUT_TYPE_IDENTITY_VERIFICATION_SUCCESS = 47;
+  INPUT_TYPE_COMPLIANCE_CHECK_SUBMIT = 48;
+  INPUT_TYPE_PERSONAL_ID_NUMBER_DATA = 49;
+  INPUT_TYPE_GOVERNMENT_PHOTO_DATA = 50;
+  INPUT_TYPE_VERIFY_PHONE_DATA = 51;
+  INPUT_TYPE_IDENTITY_VERIFICATION_WEBHOOK = 52;
+  INPUT_TYPE_ORIENTATION_DETAILS = 53;
+  INPUT_TYPE_ORIENTATION_CONFIRMATION_PAGE_SUBMIT = 54;
+  INPUT_TYPE_CALCULATE_SUBMARKET_CAPCITY = 55;
+  INPUT_TYPE_PRE_BGC_REVIEW_APPROVED = 56;
+  // Defines the input type for submitting the Socure check
+  INPUT_TYPE_SOCURE_SUBMIT = 57;
+  INPUT_TYPE_BGC_STATUS_WEBHOOK = 58;
+  // Defines the new signup sms opt-in
+  INPUT_TYPE_SMS_OPT_IN = 59;
+  // Defines the new ICA confirmation
+  INPUT_TYPE_ICA_SUBMIT = 60;
+}
+
+message CreateOnboardingWorkflowRequest {
+  WorkflowTemplate workflow = 1;
+}
+
+message WorkflowTemplate {
+  google.protobuf.StringValue name = 1;
+  repeated Module modules = 2;
+  google.protobuf.StringValue template = 3;
+}
+
+message UpsertOnboardingWorkflowMappingRequest {
+  repeated ModuleMapping module_mapping = 1;
+  repeated StepMapping step_mapping = 2;
+}
+
+message UpsertOnboardingWorkflowMappingResponse {
+  google.protobuf.StringValue workflow_id = 1;
+  UpsertOnboardingWorkflowMappingRequest workflow_mapping_request = 2;
+}
+
+message ModuleMapping {
+  google.protobuf.StringValue workflow_id = 1;
+  google.protobuf.StringValue module_id = 2;
+  google.protobuf.StringValue next_module_id = 3;
+  JumpCriterion jump_criterion = 4;
+}
+
+message StepMapping {
+  google.protobuf.StringValue module_id = 1;
+  google.protobuf.StringValue step_id = 2;
+  google.protobuf.StringValue next_step_id = 3;
+  JumpCriterion jump_criterion = 4;
+}
+
+message JumpCriterion {
+  google.protobuf.StringValue json_data = 1;
+}
+
+message CreateOnboardingWorkflowResponse {
+  google.protobuf.StringValue id = 1;
+  WorkflowTemplate workflow = 2;
+}
+
+message UpdateOnboardingWorkflowTemplateRequest {
+  google.protobuf.StringValue workflow_id = 1;
+  google.protobuf.StringValue template = 2;
+}
+
+message UpdateOnboardingWorkflowTemplateResponse {
+  WorkflowTemplate workflow = 1;
+}
+
+// clear onboarding data request
+message ClearOnboardingDataRequest {
+  google.protobuf.StringValue unique_link = 1;
+}
+
+// clear onboarding data response
+message ClearOnboardingDataResponse {
+  google.protobuf.StringValue unique_link = 1;
+  google.protobuf.StringValue historic_data = 2;
+}
+
+message CreateNonceRequest {
+  google.protobuf.StringValue unique_link = 1;
+  NonceMetadata nonce_metadata = 2;
+}
+
+message NonceMetadata {
+  google.protobuf.StringValue token = 1;
+}
+
+message CreateNonceResponse {
+  google.protobuf.StringValue nonce = 1;
+}
+
+// Trigger DropShipping or InstantDash request
+message TriggerDropShippingOrInstantDashRequest {
+  int64 dasher_id = 1;
+  int32 shift_num_of_deliveries = 2;
+  google.protobuf.StringValue dasher_email = 3;
+  google.protobuf.StringValue dasher_first_name = 4;
+}
+
+// Trigger DropShipping or InstantDash response
+message TriggerDropShippingOrInstantDashResponse {}
+
+// Trigger download app sms request
+message TriggerDownloadAppSMSRequest {
+  google.protobuf.StringValue email = 1;
+  google.protobuf.StringValue phone = 2;
+  google.protobuf.StringValue resend = 3;
+  google.protobuf.StringValue device_source = 4;
+  google.protobuf.StringValue unique_link = 5;
+}
+
+// Trigger download app sms response
+message TriggerDownloadAppSMSResponse {}
+
+message DasherApplicantCreationEvent {
+  google.protobuf.Int64Value dasher_applicant_id = 1;
+  google.protobuf.Int64Value user_id = 2;
+  google.protobuf.StringValue unique_link = 3;
+  google.protobuf.StringValue email = 4;
+  google.protobuf.Timestamp created_at = 5;
+}

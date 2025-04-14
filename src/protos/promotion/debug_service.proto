@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+// buf:lint:ignore DIRECTORY_SAME_PACKAGE
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package promotion_service;
+
+import "common/common.proto";
+import "google/protobuf/wrappers.proto";
+import "promotion/campaign.proto";
+import "promotion/placement.proto";
+import "promotion/consumer_event_stats.proto";
+import "promotion/service.proto";
+
+option java_multiple_files = true;
+option java_generic_services = true;
+// buf:lint:ignore PACKAGE_SAME_JAVA_PACKAGE
+option java_package = "com.doordash.rpc.promotion";
+// buf:lint:ignore PACKAGE_SAME_GO_PACKAGE
+option go_package = "promotion";
+
+// Service meant for debugging purposes. Not intended to be performant
+service DebugService {
+    // rpc to get store geo hashes
+    rpc GetStoreGeoHash (GetStoreGeoHashRequest) returns (GetStoreGeoHashResponse);
+    // rpc to get campaigns from ES given input
+    rpc GetESCampaigns (GetESCampaignsRequest) returns (GetESCampaignsResponse);
+    // rpc to get campaigns from the index by document id
+    rpc GetESCampaignByDocId (GetESCampaignByDocIdRequest) returns (GetESCampaignByDocIdResponse);
+    // rpc to get campaigns from the index by campaign id
+    rpc GetESCampaignsByCampaignId (GetESCampaignsByCampaignIdRequest) returns (GetESCampaignsByCampaignIdResponse);
+    // Allow fetching a consumer interactions for a range of days (up to 30)
+    rpc GetConsumerEventStats(GetConsumerEventStatsRequest) returns (GetConsumerEventStatsResponse);
+    // Method to mimic event interactions to easily test frequency capping
+    rpc UpsertConsumerEvent(UpsertConsumerEventRequest) returns (UpsertConsumerEventResponse);
+    // Method to convert store campaigns to carousels for project trident only
+    // https://docs.google.com/document/d/104N5M3P3N8u0ZlR74pqmiw3x3gi153mqSvfmDIJJ5fM/edit#
+    rpc ConvertCarouselsForProjectTrident(ConvertCarouselsForProjectTridentRequest) returns (ConvertCarouselsForProjectTridentResponse);
+    // rpc to update the merchant tags to in memory cache
+    rpc UpdateMerchantTagsToLocalCache(UpdateMerchantTagsToLocalCacheRequest) returns (UpdateMerchantTagsToLocalCacheResponse);
+    // rpc to parse campaign blob into campaign object
+    rpc ParseCampaignBlob(ParseCampaignBlobRequest) returns (ParseCampaignBlobResponse);
+}
+
+// A request to mimic a consumer event
+message UpsertConsumerEventRequest {
+    // Consumer to simulate the interaction
+    string consumer_id = 1;
+    // Time bucket to add it
+    string time_bucket = 2;
+    // Interaction to upsert adds if doesn't exist or replace it
+    EventCount interaction = 3;
+}
+
+// Upsert response with the current state
+message UpsertConsumerEventResponse {
+    // Updated interaction after upsert call
+    EventCount updated_event = 1;
+}
+
+// A consumer + multiple time buckets to retrieve
+message GetConsumerEventStatsRequest {
+    // Consumer ID to pull information from
+    string consumer_id = 1;
+    // A list of time_buckets with the following format: yyyy-MM-dd
+    repeated string time_buckets = 2;
+}
+
+// A list of stats for the given consumer
+message GetConsumerEventStatsResponse {
+    // List of consumer interactions per day
+    repeated ConsumerEventStats stats = 1;
+}
+
+// Request object for GetStoreGeoHash which has input as list of store ids and resolution
+message GetStoreGeoHashRequest {
+    // list of store ids
+    repeated string store_ids = 1;
+    // geo-hash resolution requested
+    int32 resolution = 2;
+}
+
+// Response object for GetStoreGeoHash
+message GetStoreGeoHashResponse {
+    // List of geo-hashes
+    repeated StoreGeoHash store_geo_hashes = 1;
+}
+
+// This object describes store id and its geo-hash
+message StoreGeoHash {
+    // Single store id
+    string store_id = 1;
+    // Single geo hash
+    string geo_hash = 2;
+}
+
+// Request object for GetESCampaigns
+message GetESCampaignsRequest {
+    // index that you want to search on
+    string index_name = 1;
+    // placement types to search for
+    repeated Placement.PlacementType placement_types = 2;
+    // channel to search for
+    common.Channel channel = 3;
+    // experience to search for
+    common.Experience experience = 4;
+    // geo-hashes to search for
+    repeated string geo_hashes = 5;
+    // submarket ids to search for
+    repeated string submarket_ids = 6;
+    // consumer id optional if we want to do audince filtering as well
+    google.protobuf.StringValue consumer_id = 7;
+    // carousel ids
+    repeated string carousel_ids = 8;
+}
+
+// Response object for GetESCampaigns
+message GetESCampaignsResponse {
+    // List of campaigns
+    repeated Campaign campaigns = 1;
+    // List of item carousel campaigns
+    repeated ItemCarouselCampaign item_carousel_campaigns = 2;
+}
+
+// request object for GetESCampaignByDocId
+message GetESCampaignByDocIdRequest {
+    // index that you want to search on
+    string index_name = 1;
+
+    // document id to search for
+    string id = 2;
+}
+
+
+// response object for GetESCampaignByDocId
+message GetESCampaignByDocIdResponse {
+    // raw document
+    string document = 1;
+
+    // decoded campaign blob
+    string decoded_campaign_blob = 2;
+}
+
+// request object for GetESCampaignsByCampaignId
+message GetESCampaignsByCampaignIdRequest {
+    // index that you want to search on
+    string index_name = 1;
+
+    // campaign id to search for
+    string id = 2;
+}
+
+
+// response object for GetESCampaignsByCampaignId
+message GetESCampaignsByCampaignIdResponse {
+    // raw documents
+    repeated string documents = 1;
+
+    // decoded campaign blobs
+    repeated string decoded_campaign_blobs = 2;
+}
+
+// Request object for project trident store carousel conversion
+message ConvertCarouselsForProjectTridentRequest {
+    // url which contains data in csv format
+    string external_data_url = 1;
+}
+
+// Response object for project trident store carousel conversion
+message ConvertCarouselsForProjectTridentResponse {
+    // list of carousel results
+    repeated CarouselTridentStatus carousel_trident_status = 1;
+}
+
+// This object describes carousel id and what happened to it
+message CarouselTridentStatus {
+    // carousel id
+    string carousel_id = 1;
+    // response of what happened to it
+    google.protobuf.StringValue status = 2;
+}
+
+// Request to update the merchant tag to local cache
+message UpdateMerchantTagsToLocalCacheRequest {
+    // boolean value to decide whether we should ignore the current local cache size to do force update
+    bool force_update = 2;
+}
+
+// Response to update the merchant tag to local cache: empty for now
+message UpdateMerchantTagsToLocalCacheResponse {}
+
+// Request to parse campaign blob to campaign object
+message ParseCampaignBlobRequest {
+    // campaign blob string
+    string campaign_blob = 1;
+}
+
+// Response parsed campaign object
+message ParseCampaignBlobResponse {
+    // parsed campaign object
+    Campaign campaign = 1;
+}

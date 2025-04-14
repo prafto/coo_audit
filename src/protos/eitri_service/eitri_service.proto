@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package eitri_service.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/eitri/api/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.eitri.rpc.api";
+
+// Support devconsole API in accessing services-config
+//
+// Note EITRI_API_NOTE:
+// These APIs will generally request the following specification fields:
+//   * service
+//   * app
+//   * target_env
+//
+// For Phase 1 in RFC-456 (https://docs.google.com/document/d/1GW5UMoClHFdXf0gqhT6OI-jRRDYlo2xkmD7U0pr4bAU/edit),
+//   ALL the specification fields will be REQUIRED, which will refer to the most specific
+//   config file where all fields are specified.
+// For Phase 2 in RFC-456, some config may be left unspecified to refer to a more common
+//   config file.
+//
+// For example, in the deploy.yaml case, see RFC-461 Directory Structure Proposal
+//   https://docs.google.com/document/d/1H5SEkZZxi7Eqmv8gN9TCVKoU2N_MIBtl_FJPPnNa2t0/edit#heading=h.asbggziqd167
+// If service, app, and target_env are all specified, then the API will refer
+//   internally to
+//   service-configs/services/{service}/{app}/{env}/deploy/deploy.yaml
+// If only service and app are specified while target_env is not present, then
+//   the API will refer internally to
+//   service-configs/services/{service}/{app}/common/deploy/deploy.yaml
+// If only service is specified while app and target_env are not present, then
+//   the API will refer internally to
+//   service-configs/services/{service}/common/deploy/deploy.yaml
+// Finally, if all specification fields are missing, the API will refer to
+//   service-configs/services/common/deploy/deploy.yaml
+//   and it is likely only infrastructure team will have access to such a
+//   general config that will apply to all services.
+service EitriService {
+  // Timeout after 3000 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 3000;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // List of services and apps that contain a "deploy.yaml" file.
+  rpc ListDeployServiceApps(ListDeployServiceAppsRequest) returns (ListDeployServiceAppsResponse);
+
+  // Returns the content of the specified deploy config file as a utf8 string.
+  rpc GetDeployContent(GetDeployContentRequest) returns (GetDeployContentResponse);
+
+  // Creates a github PR that puts the content of the specified deploy file
+  //   from a utf8 string.
+  rpc PutDeployContent(PutDeployContentRequest) returns (PutDeployContentResponse);
+
+  // Creates a github PR that puts the content of a default template. Any
+  //   previously made custom changes will be lost in this PR.
+  rpc CreateDeployContentFromTemplate(CreateDeployContentFromTemplateRequest) returns (CreateDeployContentFromTemplateResponse);
+}
+
+// A request to list service apps.
+message ListDeployServiceAppsRequest {
+  // (Optional) The name of the service.  As defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  //   If not provided, all service apps will be returned.
+  google.protobuf.StringValue service = 1;
+
+  // (Optional) The maximum number of events to return. The service may return
+  //   fewer than this value.
+  //   If unspecified, default is at most  50 services will be returned.
+  //   The maximum value is 1000; values above 1000 will be coerced to 1000.
+  google.protobuf.Int32Value page_size = 2;
+
+  // (Optional) A page token, received from the previous
+  //   `ListDeployServiceAppsRequest` call. Provide this to retrieve the
+  //   subsequent page.
+  // When paginating, all other parameters provided to
+  //   `ListDeployServiceAppsRequest` must match the call that provided the
+  //   page token. Follows pagination standard here: https://google.aip.dev/158
+  google.protobuf.StringValue page_token = 3;
+}
+
+// Data type to list service apps
+message ServiceApps {
+  // Service name for this sub-list of apps
+  string service = 1;
+
+  // The list of apps under the service field above.
+  repeated string apps = 2;
+}
+
+// The response for getting a list of apps.
+message ListDeployServiceAppsResponse {
+  // Set of service apps that were requested.
+  repeated ServiceApps service_apps = 1;
+
+  // This field is informational and could be useful to display the version being read.
+  //   https://docs.github.com/en/get-started/learning-about-github/github-glossary#commit-id
+  string github_commit_id = 2;
+
+  // A token that can be sent as `page_token` to retrieve the next page.
+  //   If this field is omitted, there are no subsequent pages.
+  google.protobuf.StringValue next_page_token = 3;
+}
+
+// Request for contents of the deploy configuration
+//   See EITRI_API_NOTE above in EitriService documentation
+message GetDeployContentRequest {
+  // The name of the service.  As defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue service = 1;
+
+  // The app of the service. Oftentimes "web". As defined in
+  //    https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue app = 2;
+
+  // Spinnaker target environments as defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/3009283237/Spinnaker+deployment
+  //
+  // NOTE: SNAPSHOT_OF_SPINNAKER_TARGET_ENVS
+  //   cell001-00
+  //   cell002-00
+  //   cell003-00
+  //   cell004-00
+  //   euw1-001
+  //   euw1-002
+  //   cell001-sandbox
+  //   cell002-sandbox
+  //   cell003-sandbox
+  //   cell004-sandbox
+  //   dev
+  //   staging
+  //   infra-staging
+  //   infra-prod
+  //   data-staging
+  //   data-prod
+  //   main-00
+  //   main-03
+  //   build-dev
+  //   build-staging
+  //   build-prod
+  //   flink-00
+  google.protobuf.StringValue target_env = 3;
+
+  // When true, this will generate fields in the response that being with
+  //   "parsed_". namely the fields "parsed_common" and
+  //   "parsed_diff". When this is true, the fields "target_env", "app",
+  //   and "service" MUST be defined.
+  bool generate_parsed = 4;
+
+  // (Optional) When specified, the "generate_parsed" field in this request
+  //   MUST be true.  The set of target_envs examined to generate the
+  //   "parsed_common" and "parsed_diff" fields in the response.  If not
+  //   specified, will use a default parsed set appropriate for the
+  //   target_env specified.
+  repeated string target_env_parsed_set = 5;
+
+  // When true, skips the content field in the response which may be large.
+  //   Optimization for when that field is not needed. The field
+  //   "generate_parsed" must be true for "skip_content" to be true, or an
+  //   invalid request error (the response is specified to return nothing)
+  //   will be returned.
+  bool skip_content = 6;
+}
+
+// The response which contains the contents of the file
+message GetDeployContentResponse {
+  // The file body represented as a UTF-8 string. This field is only present if
+  //   the content exists. This field is also not populated if "skip_content"
+  //   is true.
+  google.protobuf.StringValue content = 1;
+
+  // The Github commit ID of the deploy content returned from the master branch
+  //   in. This field is present regardless of whether the file_content exists.
+  //   https://docs.github.com/en/get-started/learning-about-github/github-glossary#commit-id
+  //   Please provide this github_commit_id if "PutDeployContentRequest" is
+  //   called in this session so that the PR generated will not potentially
+  //   overwrite another session's changes.
+  google.protobuf.StringValue github_commit_id = 2;
+
+  // Displays the common portions of yaml in the target_env_parsed_set.  The
+  //   order of the common fields will be that of the target_env deploy.yaml in
+  //   the request.
+  google.protobuf.StringValue parsed_common = 3;
+
+  // Displays the portions of the target_env deploy.yaml that are different from the
+  //   "parsed_common" yaml above.  The order of the fields will be that of the
+  //   target_env deploy.yaml in the request.
+  google.protobuf.StringValue parsed_diff = 4;
+}
+
+// Write access to the deploy content. A PR will be generated from the changes.
+//   See EITRI_API_NOTE above in EitriService documentation
+message PutDeployContentRequest {
+  // The name of the service.  As defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue service = 1;
+
+  // The app of the service. Oftentimes "web". As defined in
+  //    https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue app = 2;
+
+  // Spinnaker target environments as defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/3009283237/Spinnaker+deployment
+  //
+  // See NOTE regarding SNAPSHOT_OF_SPINNAKER_TARGET_ENVS above
+  google.protobuf.StringValue target_env = 3;
+
+  // The file body represented as a UTF-8 string.  If this field is not
+  //   present, then this put request will be treated like a deletion.
+  google.protobuf.StringValue content = 4;
+
+  // The Github commit ID of the deploy content returned from the last call to
+  //   GetDeployContent. This will ensure that the update PR genenerated will
+  //   not race or overwrite another commit.
+  google.protobuf.StringValue github_commit_id = 5;
+}
+
+// When successful, the response will contain a github PR to make the requested
+//   changes.
+message PutDeployContentResponse {
+  // A link to the PR with the requested changes.
+  google.protobuf.StringValue github_pr_link = 1;
+}
+
+// Request to create default deploy content from internal templates. Any custom
+//   changes will be overwritten.
+//   See EITRI_API_NOTE above in EitriService documentation
+message CreateDeployContentFromTemplateRequest {
+  // The name of the service.  As defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue service = 1;
+
+  // The app of the service. Oftentimes "web". As defined in
+  //    https://doordash.atlassian.net/wiki/spaces/Eng/pages/2598569148/Service+Discovery+with+Hermes
+  google.protobuf.StringValue app = 2;
+
+  // Spinnaker target environments as defined in
+  //   https://doordash.atlassian.net/wiki/spaces/Eng/pages/3009283237/Spinnaker+deployment
+  //
+  // See NOTE regarding SNAPSHOT_OF_SPINNAKER_TARGET_ENVS above
+  repeated string target_envs = 3;
+
+  // Team email for new service app, used as contact info
+  google.protobuf.StringValue team_email = 4;
+
+  // logging_group for new service app in Scalyr
+  google.protobuf.StringValue logging_group = 5;
+}
+
+// Response to creation of default deploy content from internal templates that
+//   will overwrite any previous custom changes returned as a github PR link.
+message CreateDeployContentFromTemplateResponse {
+  // A link to the PR with the default template changes.
+  google.protobuf.StringValue github_pr_link = 1;
+}

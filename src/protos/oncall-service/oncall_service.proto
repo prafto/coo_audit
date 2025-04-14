@@ -1,0 +1,301 @@
+syntax = "proto3";
+
+package oncall_service.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/oncall-service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.oncall_service";
+
+// OnCallService is a service used for querying historical data around oncall pagerduty events
+service OnCallService {
+  // ListNotifications is for listing raw notification data over a given timespan
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {}
+  // ListIncidents is for listing pagerduty "incidents" that are raised when pages are sent out over a given timespan
+  rpc ListIncidents(ListIncidentsRequest) returns (ListIncidentsResponse) {}
+  // ListInterrupts is for listing interrupts for specific users over time spans
+  rpc ListInterrupts(ListInterruptsRequest) returns (ListInterruptsResponse) {}
+  // GenerateReport is for creating and sending reports via email for oncall data
+  rpc GenerateReport(GenerateReportRequest) returns (GenerateReportResponse) {}
+  // ListOnCallCountsForManagers is for getting the number of people on call under a given manager. Includes managers under given manager
+  rpc ListOnCallCountsForManagers(ListOnCallCountsForManagersRequest) returns (ListOnCallCountsForManagersResponse) {}
+}
+
+// GenerateReportResponse is the response sent back from GenerateReport, contains details for the report that was generated and emails that were sent
+message GenerateReportResponse {
+  // response is a detailed object containing the postal service id for the email and status
+  EmailResponse response = 1;
+}
+
+// EmailResponse is a message for representing a email request
+message EmailResponse {
+  // postal_service_id is the id that is returned from postal service for this email request
+  string postal_service_id = 1;
+  // SendResponseType is an enum to represent the status of this email request
+  enum SendResponseType {
+    // SEND_RESPONSE_TYPE_UNSPECIFIED represents send response that is not specified
+    SEND_RESPONSE_TYPE_UNSPECIFIED = 0;
+    // SEND_RESPONSE_TYPE_SUCCESS represents send response that is successful
+    SEND_RESPONSE_TYPE_SUCCESS = 1;
+    // SEND_RESPONSE_TYPE_FAILED represents send response that has encountered an error
+    SEND_RESPONSE_TYPE_FAILED = 2;
+  }
+  // request_status represents the status of the email request
+  SendResponseType request_status = 2;
+}
+
+// ListNotificationsResponse is the response used for returning notifications and pagination details
+message ListNotificationsResponse {
+  // notifications are a list of notification objects
+  repeated Notification notifications = 1;
+  // next_page_token is the token for paginating the next set of results
+  string next_page_token = 2;
+}
+
+// ListIncidentsResponse is the response used for returning incident data and pagination details
+message ListIncidentsResponse {
+  // incidents are a list of incident objects
+  repeated Incident incidents = 1;
+  // next_page_token is the token for paginating the next set of results
+  string next_page_token = 2;
+}
+
+// ListInterruptsResponse is the response returned by ListInterrupts
+message ListInterruptsResponse {
+  // interrupts are a list of interrupt objects
+  repeated Interrupt interrupts = 1;
+  // next_page_token is the token for paginating the next set of results
+  string next_page_token = 2;
+}
+
+// ListOnCallCountsForManagersResponse is the response returned by ListOnCallCountsForManagers
+message ListOnCallCountsForManagersResponse {
+  // list of on call counts for managers under the manager filtered for
+  repeated OnCallCountsWithDate on_call_count_with_date = 1;
+}
+
+// GenerateReportRequest is the object sent to generate reports and email them to specific users
+message GenerateReportRequest {
+  // emails represents the list of emails we want to send this report to
+  repeated string emails = 1;
+  // ReportType is an enum to represent different types of oncall reports
+  enum ReportType {
+    // REPORT_TYPE_UNSPECIFIED represents unspecified type
+    REPORT_TYPE_UNSPECIFIED = 0;
+    // REPORT_TYPE_INTERRUPTS represents a report of all interrupts that occurred after hours
+    REPORT_TYPE_INTERRUPTS = 1;
+    // REPORT_TYPE_INTERRUPTS_AFTER_HOURS represents a report of all interrupts that occurred after hours
+    REPORT_TYPE_INTERRUPTS_AFTER_HOURS = 2;
+  }
+  // type is the specific type of report desired to create
+  ReportType type = 2;
+  // since represents the start period of the report to be created (inclusive)
+  google.protobuf.Timestamp since = 3;
+  // until represents the end date of the report to be created (exclusive)
+  google.protobuf.Timestamp until = 4;
+}
+
+// ListIncidentsRequest is the request used for ListIncidents, includes options for pagination and filtering
+message ListIncidentsRequest {
+  // filter used for filtering incidents
+  IncidentFilter filter = 1;
+  // page_size is a number representing how many results will be returned per request
+  int32 page_size = 2;
+  // page_token is the token returned as part of the response to be used for pagination, empty represents no more results in set
+  string page_token = 3;
+}
+
+// ListNotificationsRequest is the request used for ListNotifications, includes options for pagination and filtering
+message ListNotificationsRequest {
+  // filter used for filtering interrupts
+  NotificationFilter filter = 1;
+  // page_size is a number representing how many results will be returned per request
+  int32 page_size = 2;
+  // page_token is the token returned as part of the response to be used for pagination, empty represents no more results in set
+  string page_token = 3;
+}
+
+// ListInterruptsRequest is the request object for ListInterrupts
+message ListInterruptsRequest {
+  // filter used for filtering interrupts
+  InterruptFilter filter = 1;
+  // page_size is a number representing how many results will be returned per request
+  int32 page_size = 2;
+  // page_token is the token returned as part of the response to be used for pagination, empty represents no more results in set
+  string page_token = 3;
+}
+
+// ListOnCallCountsForManagersRequest is the request object for ListOnCallCountsForManagers
+message ListOnCallCountsForManagersRequest {
+  // manager is the username of the manager (for example: zachary.shaw) to filter on call counts for (this will gather all managers under the given managers)
+  repeated string manager = 1;
+  // since is a timestamp representing the beginning point of our query
+  google.protobuf.Timestamp since = 2;
+  // until is a timestamp representing the ending point of our query
+  google.protobuf.Timestamp until = 3;
+  // group_by_number_of_days groups on call counts by a specified number of days, if 0 is set sends on call count based on the date range
+  int32 group_by_number_of_days = 4;
+}
+
+// NotificationFilter is the filter used for narrowing down results returned by ListNotifications
+message NotificationFilter {
+  // NotificationType is an enum to represent the different statuses of a notification
+  enum NotificationType {
+    // NOTIFICATION_TYPE_UNSPECIFIED represents unspecified type
+    NOTIFICATION_TYPE_UNSPECIFIED = 0;
+    // NOTIFICATION_TYPE_AFTER_HOURS represents this notification has occurred after normal operating hours
+    NOTIFICATION_TYPE_AFTER_HOURS = 1;
+  }
+  // since is a timestamp representing the beginning point of our query - defaults to 1 month from current date
+  google.protobuf.Timestamp since = 1;
+  // until is a timestamp representing the ending point of our query - defaults to current date
+  google.protobuf.Timestamp until = 2;
+  // include_types is a list of NotificationType to include in this query
+  repeated NotificationType include_types = 3;
+  // severities is a list of strings for including specific severity levels
+  repeated string severities = 4;
+  // user_names is a list of users to query notifications for
+  repeated string user_names = 5;
+}
+
+// IncidentFilter is the filter used for narrowing down results returned by ListIncidents
+message IncidentFilter {
+  // IncidentType is an enum to represent the different types incidents
+  enum IncidentType {
+    // INCIDENT_TYPE_UNSPECIFIED represents unspecified type
+    INCIDENT_TYPE_UNSPECIFIED = 0;
+    // INCIDENT_TYPE_AFTER_HOURS represents this incident has occurred after normal operating hours
+    INCIDENT_TYPE_AFTER_HOURS = 1;
+  }
+  // IncidentStatus is an enum to represent a given status of incidents
+  enum IncidentStatus {
+    // INCIDENT_STATUS_UNSPECIFIED represents unspecified status
+    INCIDENT_STATUS_UNSPECIFIED = 0;
+    // INCIDENT_STATUS_RESOLVED represents an incident that has been marked as resolved in pagerduty
+    INCIDENT_STATUS_RESOLVED = 1;
+    // INCIDENT_STATUS_UNRESOLVED represents an incident that hasn't been marked as resolved in pagerduty
+    INCIDENT_STATUS_UNRESOLVED = 2;
+  }
+  // since is a timestamp representing the beginning point of our query - defaults to 1 month from current date
+  google.protobuf.Timestamp since = 1;
+  // until is a timestamp representing the ending point of our query - defaults to current date
+  google.protobuf.Timestamp until = 2;
+  // include_types is a list of IncidentType to include in this query
+  repeated IncidentType include_types = 3;
+  // service_name is the name of a specific service you wish to query incidents for
+  string service_name = 4;
+  // severities is a list of strings for including specific severity levels
+  repeated string severities = 5;
+}
+
+// InterruptFilter is the filter used while querying for interrupts, includes time span, types, search by manager and domain
+message InterruptFilter {
+  // InterruptType is an enum to represent the different types of interrupts that can exist
+  enum InterruptType {
+    // INTERRUPT_TYPE_UNSPECIFIED represents unspecified type
+    INTERRUPT_TYPE_UNSPECIFIED = 0;
+    // INTERRUPT_TYPE_AFTER_HOURS represents this interrupt has occurred after normal operating hours
+    INTERRUPT_TYPE_AFTER_HOURS = 1;
+  }
+  // since is a timestamp representing the beginning point of our query - defaults to 1 month from current date
+  google.protobuf.Timestamp since = 1;
+  // until is a timestamp representing the ending point of our query - defaults to current date
+  google.protobuf.Timestamp until = 2;
+  // include_types is a list of InterruptType to include in this query
+  repeated InterruptType include_types = 3;
+  // [DEPRECATED] manager is a username of the manager we want to retrieve reportee interrupt data for. Will get all interrupts for anyone who reports to this user. Uses the username as it appears in D3 (for example: zachary.shaw)
+  string manager = 4 [deprecated = true];
+  // [DEPRECATED] domain is to search for a user who belongs to the specified domain ie: 'sre'
+  string domain = 5 [deprecated = true];
+  // pagerduty_ids is a string list of specific user ids from pagerduty we wish to get interrupts for
+  repeated string pagerduty_ids = 6;
+}
+
+// Interrupt is an object representing a notification that is counted as an interrupt as per people OKR specifications
+message Interrupt {
+  // incident is the Incident object where this interrupt occurred
+  Incident incident = 1;
+  // notification is the Notification object that was counted as this interrupt
+  Notification notification = 2;
+  // created_at is the datetime that this notification occurred
+  google.protobuf.Timestamp created_at = 3;
+  // user represents the user that was interrupted
+  User user = 4;
+  // localized_created_at is timestamp of created_at specific to the user's timezone at the time of the interrupt
+  google.protobuf.Timestamp localized_created_at = 5;
+}
+
+// Notification is an object representing the data for a given notification event in pagerduty. Notifications page one user
+message Notification {
+  // id is the pagerduty generated string id for the given notification
+  string id = 1;
+  // incident_id is the id for the pagerduty incident that is the parent of this notification event
+  string incident_id = 2;
+  // created_at is the datetime that this notification occurred
+  google.protobuf.Timestamp created_at = 3;
+  // user is a User object representing the user who was notified
+  User user = 4;
+}
+
+// Incident is an object representing the data for a given incident event in pagerduty. Incidents can page many times (Notification)
+message Incident {
+  // id is the pagerduty generated string id for the incident
+  string id = 1;
+  // description is the text used as the description when the incident was raised in pagerduty
+  string description = 2;
+  // created_at is the datetime when this incident was created
+  google.protobuf.Timestamp created_at = 3;
+  // resolved_at is the datetime when this incident was resolved
+  google.protobuf.Timestamp resolved_at = 4;
+  // escalation_policy_id is the pagerduty id for the escalation policy that was used when creating this incident
+  string escalation_policy_id = 5;
+  // service_name is the name of the given service for which this incident was created as it appears in pagerduty
+  string service_name = 6;
+  // num_acks represents the number of times this incident was acknowledged
+  int32 num_acks = 7;
+  // resolved represents whether this incident has been resolved or not
+  bool resolved = 8;
+  // resolved_by_username is the name of the user that resolved this incident
+  string resolved_by_username = 9;
+}
+
+// User is an object representing the data for a given user in pagerduty
+message User {
+  // id is the pagerduty generated string id for a user
+  string id = 1;
+  // name is the proper name of the user as it appears in pagerduty
+  string name = 2;
+  reserved 3 to 5;
+  // email is the doordash email address of the user in pagerduty
+  // string email = 3;
+  // reporting is the string name of the manager that this user reports to
+  // string reporting = 4;
+  // domain is the engineering domain for this user
+  // string domain = 5;
+  // manager is the name of the direct reporting manager for this user
+  string manager = 6;
+  // groups represents the names of engineering groups this user belongs to
+  repeated string groups = 7;
+  // reporting_chain is the names users this user reports to in format of first.last
+  repeated string reporting_chain = 8;
+}
+
+// On call count represents the number of people on call for a given manager
+message OnCallCount {
+  // Name of manager as it appears in D3 (for example: zachary.shaw)
+  string manager = 1;
+  // on_call_count is the number of people on call for this manager
+  int32 on_call_count = 2;
+  // list of pagerduty ids of people on call for this manager
+  repeated string on_call_pagerduty_ids = 3;
+}
+
+// On Call Count With Date has the counts for the managers and the until date
+message OnCallCountsWithDate {
+  // On Call Count for the date
+  repeated OnCallCount on_call_counts = 1;
+  // the until date for the count
+  string date = 2;
+}

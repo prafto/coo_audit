@@ -1,0 +1,83 @@
+syntax = "proto3";
+// buf:lint:ignore PACKAGE_SAME_DIRECTORY
+// buf:lint:ignore PACKAGE_VERSION_SUFFIX
+package risk.ssot;
+
+import 'google/protobuf/timestamp.proto';
+import 'google/protobuf/wrappers.proto';
+import 'risk-core.event.v1/risk_checkpoint_evaluation.proto';
+import 'risk/services/cx_service.proto';
+import 'risk_platform.event.v1/iguazu_events.proto';
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "RiskSSOT";
+option java_package = "com.doordash.risk.proto.ssot";
+
+/**
+ * A RiskEvent for SSOT/entity timelines.
+ *
+ * The event id is recorded in the timelines
+ * of each entity that has an identifier in this
+ * event.
+ *
+ * The event is also stored in a "raw event"
+ * store shared by the various entity timelines.
+ *
+ * NOTE this event format is used on Kafka streams
+ * internal to SSOT (risk-event-store). There is
+ * a parallel RiskEvent for Fraud workstation that
+ * has a slightly different format, but contains
+ * exactly the same data.
+ */
+// RiskEvent
+message RiskEvent {
+  // Event id
+  google.protobuf.StringValue event_id = 1;
+  // Event type (CHECKOUT, LOGIN, ...)
+  // This should be same as event.payloadCase
+  google.protobuf.StringValue event_type = 2;
+  // This is event context
+  // Adds IP, device details and other details
+  // that may not be in the event itself
+  google.protobuf.StringValue event_context = 3;
+  // Event timestamp
+  google.protobuf.Timestamp event_time = 4;
+  // There may be many identifiers per event
+  // For example, a payment event may involve
+  // a cx id as well as a card fingerprint
+  // both of which are identifiers for which
+  // we want to create timelines of events.
+  repeated Identifier identifiers = 50;
+  // The event itself, CxEvent, or Iguazu event,
+  // or ...
+  oneof payload {
+    // Uncurated data (unreliable)
+    UncuratedData data = 99;
+    // Curated CxEvent
+    CxEvent event = 100;
+    // Curated checkpoint evaluation event
+    risk_platform.event.v1.CheckpointEvaluationEvent checkpoint_evaluation = 101;
+    // Curated Risk Core checkpoint evaluation event
+    risk_core.v1.events.v1.RiskCoreCheckpointEvaluationEvent risk_core_checkpoint_evaluation = 102;
+  }
+}
+
+// A pair (type, value) to hold identifiers relevant
+// to entity timelines.
+message Identifier {
+  // e.g. USER_ID, CONSUMER_ID, CARD_FINGERPRINT ...
+  google.protobuf.StringValue identifier_type = 1;
+  // e.g. 1223456789
+  google.protobuf.StringValue identifier_value = 2;
+}
+
+// Uncurated data is data that SSOT ingests from less reliable
+// sources and that is not exposed to agents and rules.
+// It can still be used by ML models.
+message UncuratedData {
+  // event_data_json
+  google.protobuf.StringValue event_data_json = 1;
+  // event_type
+  google.protobuf.StringValue event_type = 2;
+}

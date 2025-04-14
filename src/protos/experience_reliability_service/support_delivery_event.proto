@@ -1,0 +1,259 @@
+syntax = "proto3";
+package experience_reliability_service.support_delivery_event_api;
+
+import "common/service_client_config.proto";
+import "delivery_event/delivery_event.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.ers.api";
+
+service SupportEventAPI {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "experience-reliability-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+
+  // ERS GetSupportDeliveryEventsByDeliveryId is deprecated
+  rpc GetSupportDeliveryEventsByDeliveryId(GetSupportDeliveryEventsByDeliveryIdRequest) returns (GetSupportDeliveryEventsByDeliveryIdResponse);
+  rpc GetSupportDeliveryIssuesByDeliveryId(GetSupportDeliveryIssuesByDeliveryIdRequest) returns (GetSupportDeliveryIssuesByDeliveryIdResponse);
+  // ERS GetSupportDeliveryEventsByDeliveryIdsAndCategory is deprecated
+  rpc GetSupportDeliveryEventsByDeliveryIdsAndCategory(GetSupportDeliveryEventsByDeliveryIdsAndCategoryRequest) returns (GetSupportDeliveryEventsByDeliveryIdResponse);
+  // CreateSupportDeliveryEvent is going to be deprecated in 2024
+  rpc CreateSupportDeliveryEvent(SupportEventAPICreateSupportDeliveryEventRequest) returns (SupportEventAPICreateSupportDeliveryEventResponse);
+  rpc CreateDeliveryEventAndIssue(CreateDeliveryEventAndIssueRequest) returns (CreateDeliveryEventAndIssueResponse);
+
+  // All category APIs will be deprecated in 2024
+  rpc CreateDeliveryEventCategory(CreateDeliveryEventCategoryRequest) returns (CreateDeliveryEventCategoryResponse);
+  rpc GetAllDeliveryEventCategories(GetAllDeliveryEventCategoriesRequest) returns (GetAllDeliveryEventCategoriesResponse);
+  rpc GetDeliveryEventCategoryById(GetDeliveryEventCategoryByIdRequest) returns (GetDeliveryEventCategoryByIdResponse);
+  rpc UpdateDeliveryEventCategory(UpdateDeliveryEventCategoryRequest) returns (UpdateDeliveryEventCategoryResponse);
+}
+
+// kafka protobuf message format for create_delivery_event topic
+message SupportEventRequest {
+  // name of service publishing to kafka
+  string event_creator_service_name = 1;
+  // Only one of the included entity within this "oneof" block can be set for a single SupportEvent instance.
+  oneof entity {
+    CreateSupportDeliveryEventRequest create_event_request = 2;
+    CreateSupportDeliveryIssueRequest create_issue_request = 3;
+    UpdateSupportDeliveryIssueByCategoryRequest update_issue_request = 4;
+    UpdateSupportDeliveryEventByIdRequest update_event_request = 5;
+    UpdateSupportDeliveryIssueByIdRequest update_issue_by_id_request = 6;
+    CreateDeliveryEventAndIssueRequest create_event_and_issue_request = 7;
+    delivery_event.CreateDelayedEventRequest create_delayed_event_request = 8;
+  }
+}
+
+enum SupportEventRequestType {
+  CREATE_EVENT = 0;
+  CREATE_ISSUE = 1;
+  UPDATE_ISSUE = 2;
+  UPDATE_EVENT = 3;
+  CREATE_EVENT_AND_ISSUE = 4;
+}
+
+message SupportEventAPICreateSupportDeliveryEventRequest {
+  string delivery_uuid = 1;
+  string event_category_name = 2;
+  google.protobuf.StringValue metadata = 3;
+  google.protobuf.Int64Value created_by_id = 4;
+  string event_creator_service_name = 5;
+}
+
+message SupportEventAPICreateSupportDeliveryEventResponse {
+  int64 created_event_id = 1;
+}
+
+message CreateDeliveryEventAndIssueResponse {
+  int64 created_count = 1;
+}
+
+message CreateSupportDeliveryEventRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  google.protobuf.StringValue metadata = 3;
+  google.protobuf.Int64Value created_by_id = 4;
+  repeated ExtendedMetadata extended_metadata = 5;
+  // Field used for pre-checkout events to associate a delivery to a cart_uuid
+  // This field is only used by DIP consumer. Legacy consumer in ERS will ignore this field
+  google.protobuf.StringValue cart_uuid = 6;
+  google.protobuf.StringValue order_uuid = 7;
+
+  // Used to store opaque key/value pairs with a delivery event
+  // New keys must be approved and added to the allow list
+  // The key must be unique per EventRequest.
+  message ExtendedMetadata {
+    // required
+    google.protobuf.StringValue key = 1;
+    // required
+    google.protobuf.Any value = 2;
+  }
+}
+
+message CreateSalesforceAPICaseRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  int64 issue_id = 3;
+}
+
+message CreateSupportDeliveryIssueRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  google.protobuf.Int64Value created_by_id = 3;
+  google.protobuf.StringValue salesforce_case_uid = 4;
+  google.protobuf.StringValue notes = 5;
+  google.protobuf.Int64Value zendesk_id = 6;
+}
+
+message CreateDeliveryEventAndIssueRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  google.protobuf.StringValue metadata = 3;
+  google.protobuf.Int64Value created_by_id = 4;
+  google.protobuf.StringValue salesforce_case_uid = 5;
+  google.protobuf.StringValue notes = 6;
+  google.protobuf.Int64Value zendesk_id = 7;
+}
+
+message SupportDeliveryEventData {
+  int64 delivery_event_id = 1;
+  int64 delivery_id = 2;
+  string event_category_name = 3;
+  google.protobuf.StringValue metadata = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Int64Value created_by_id = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message GetSupportDeliveryEventsByDeliveryIdRequest {
+  int64 delivery_id = 1;
+}
+
+message GetSupportDeliveryEventsByDeliveryIdResponse {
+  repeated SupportDeliveryEventData events = 1;
+}
+
+message GetSupportDeliveryEventsByDeliveryIdsAndCategoryRequest {
+  repeated int64 delivery_ids = 1;
+  string event_category_name = 2;
+}
+
+message SupportDeliveryIssue {
+  int64 issue_id = 1;
+  int64 delivery_event_id = 2;
+  int64 delivery_id = 3;
+  string event_category_name = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Int64Value created_by_id = 6;
+  google.protobuf.Timestamp resolved_at = 7;
+  google.protobuf.Int64Value resolved_by_id = 8;
+  google.protobuf.Timestamp claimed_at = 9;
+  google.protobuf.Int64Value claimed_by_id = 10;
+  google.protobuf.StringValue notes = 11;
+  google.protobuf.Int64Value zendesk_id = 12;
+  google.protobuf.StringValue salesforce_case_uid = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message GetSupportDeliveryIssuesByDeliveryIdRequest {
+  int64 delivery_id = 1;
+}
+
+message GetSupportDeliveryIssuesByDeliveryIdResponse {
+  repeated SupportDeliveryIssue issues = 1;
+}
+
+message UpdateSupportDeliveryEventByIdRequest {
+  int64 delivery_event_id = 1;
+  string metadata = 2;
+}
+
+message UpdateSupportDeliveryIssueByCategoryRequest {
+  int64 delivery_id = 1;
+  string event_category_name = 2;
+  google.protobuf.BoolValue is_issued_resolved = 3;
+  google.protobuf.Int64Value resolved_by_id = 4;
+  google.protobuf.StringValue notes = 5;
+  google.protobuf.StringValue salesforce_case_uid = 6;
+  google.protobuf.BoolValue is_issue_claimed = 7;
+  google.protobuf.Int64Value claimed_by_id = 8;
+  google.protobuf.Int64Value zendesk_id = 9;
+}
+
+message UpdateSupportDeliveryIssueByIdRequest {
+  int64 issue_id = 1;
+  google.protobuf.StringValue salesforce_case_uid = 2;
+}
+
+message DeliveryEventCategory {
+  int64 id = 1;
+  string name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.StringValue can_view = 5;
+  google.protobuf.StringValue can_create = 6;
+}
+
+message GetDeliveryEventCategoryByIdRequest {
+  int64 event_category_id = 1;
+}
+
+message GetDeliveryEventCategoryByIdResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+message GetAllDeliveryEventCategoriesRequest {}
+
+message GetAllDeliveryEventCategoriesResponse {
+  repeated DeliveryEventCategory delivery_event_categories = 1;
+}
+
+message CreateDeliveryEventCategoryRequest {
+  int64 id = 1;
+  string name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue can_view = 4;
+  google.protobuf.StringValue can_create = 5;
+}
+
+message CreateDeliveryEventCategoryResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+message UpdateDeliveryEventCategoryRequest {
+  int64 id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue can_view = 4;
+  google.protobuf.StringValue can_create = 5;
+}
+
+message UpdateDeliveryEventCategoryResponse {
+  DeliveryEventCategory delivery_event_category = 1;
+}
+
+// kafka protobuf message format to publish delivery events created in ERS to kafka
+message ErsDeliveryEvent {
+  // publish message when a delivery event is created
+  oneof entity {
+    CreateErsDeliveryEvent create_ers_delivery_event = 1;
+  }
+}
+
+message CreateErsDeliveryEvent {
+  int64 delivery_event_id = 1;
+  int64 delivery_id = 2;
+  string event_category_name = 3;
+  google.protobuf.StringValue metadata = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Int64Value created_by_id = 6;
+}

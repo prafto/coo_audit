@@ -1,0 +1,424 @@
+syntax = "proto3";
+
+package zero2one.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.zero2one";
+
+// Request to get the available reports for a store
+message GetStoreAvailableReportsRequest {
+  // The store id for which we want to get the available reports
+  google.protobuf.StringValue store_id = 1;
+  // Can be used later to return custom reports based on the role (not part of v0)
+  google.protobuf.StringValue pinned_employee_uuid = 2;
+}
+
+// Response to get the available reports for a store
+message GetStoreAvailableReportsResponse {
+  // The available reports for the store
+  repeated ReportType report_type = 1;
+  // The default report type for the store
+  repeated ReportTypeInfo report_type_info = 2;
+}
+
+// The type of report that can be generated for a store
+enum ReportType {
+  // Unspecified report type
+  REPORT_TYPE_UNSPECIFIED = 0;
+  // Report type for employee sales
+  REPORT_TYPE_EMPLOYEE_SALES = 1;
+  // Report type for daily sales summary
+  REPORT_TYPE_DAILY_SALES_SUMMARY = 2;
+  // Report type for cash drawer
+  REPORT_TYPE_CASH_MANAGEMENT = 3;
+  // Report type for cash drawer activity (drawer session audit log)
+  REPORT_TYPE_CASH_DRAWER_ACTIVITY = 4;
+  // Report type for financials
+  REPORT_TYPE_FINANCIALS = 5;
+  reserved 6;
+  reserved "REPORT_TYPE_CASH_INS_AND_OUTS"; // Deprecate unused report type
+  // Default report type for the store
+  REPORT_TYPE_DEFAULT = 7;
+}
+
+// The details of the selected report for the store
+message ReportTypeInfo {
+  // The report type
+  ReportType report_type = 1;
+  // Whether the report is the selected report for the store (currently selected for default)
+  bool is_selected = 2;
+}
+
+// Request to get a store report
+message GetStoreReportRequest {
+  // The store id for which we want to get the report
+  google.protobuf.StringValue store_id = 1;
+  // The type of report to get
+  ReportType report_type = 2;
+  // Start time
+  google.protobuf.Timestamp start_time = 3;
+  // End time
+  google.protobuf.Timestamp end_time = 4;
+  // (Deprecated) Filters - Use `filters_v2` instead
+  GetStoreReportRequestFilters filters = 5 [deprecated = true];
+  // (Optional) device id
+  google.protobuf.StringValue device_id = 6;
+  // New filters without oneof
+  GetStoreReportRequestFiltersV2 filters_v2 = 7;
+}
+
+// (Deprecated) Request filters for the store report - use GetStoreReportRequestFiltersV2 instead
+message GetStoreReportRequestFilters {
+  // Filter for the cash management report
+  oneof cash_management_report_filter {
+    // The cash drawer session UUID
+    google.protobuf.StringValue cash_drawer_session_id = 1;
+  }
+}
+
+// New version of filters without oneof
+message GetStoreReportRequestFiltersV2 {
+  // The cash drawer session UUID
+  google.protobuf.StringValue cash_drawer_session_id = 1;
+}
+
+// Response to get a store report
+message GetStoreReportResponse {
+  // The date filter type to be shown by the FE
+  DateFilterType date_filter_type = 1;
+  // The report summary data
+  repeated SummarySection summary_section = 2;
+  reserved 3; // Deprecate old columns with no details
+  reserved "column"; // Deprecate old columns with no details
+  // The report list of rows: [
+  // {{REPORT_COLUMN_ORDERS, "15"}, {REPORT_COLUMN_SALES, "$100"}...},
+  // {{REPORT_COLUMN_ORDERS, "10"}, {REPORT_COLUMN_SALES, "$90"}...},
+  // ...]
+  repeated ReportRow rows = 4 [deprecated = true];
+  // The report footer data
+  Footer footer = 5;
+  // The report columns details: [each object contains column name and more details as needed]
+  repeated ReportColumnDetails columns = 6 [deprecated = true];
+  // Whether the report is printable
+  google.protobuf.BoolValue is_printable = 7;
+
+  // List of sections which can contain a column, row, and footer
+  repeated ReportSectionDetails sections = 8;
+
+  // The header of the report
+  HeaderSection header_section = 9;
+
+  // Buttons to be shown in the report, between summary and sections
+  repeated HeaderSectionButtonDetails report_buttons = 10;
+}
+
+// The header of the report
+message HeaderSection {
+  // The navigation details (including title) of the report
+  HeaderSectionNavigationDetails navigation_details = 1;
+  // The primary button details
+  HeaderSectionButtonDetails trailing_primary_button = 2;
+  // The secondary button details
+  HeaderSectionButtonDetails trailing_secondary_button = 3;
+  // The tertiary button details
+  HeaderSectionButtonDetails trailing_tertiary_button = 4;
+}
+
+// The navigation details of the report header
+message HeaderSectionNavigationDetails {
+  // Title of the report
+  google.protobuf.StringValue title = 1;
+  // Subtitle of the report
+  google.protobuf.StringValue subtitle = 2;
+  // IconText button leading the title
+  IconText leading_icon_button = 4;
+}
+
+// The button details of the report header
+message HeaderSectionButtonDetails {
+  // The label of the button
+  google.protobuf.StringValue label = 1;
+  // Icon leading the button label
+  IconName leading_icon = 2;
+  // Icon trailing the button label
+  IconName trailing_icon = 3;
+  // Action that can be taken on the button
+  ActionType action_type = 4;
+}
+
+// The footer of the report
+message Footer {
+  // Using oneOf in preparation for the future
+  oneof value {
+    // The text of the footer
+    google.protobuf.StringValue text = 1;
+  }
+}
+
+// Object representing a summary section in the report
+message SummarySection {
+  // The label of the summary section
+  SummarySectionLabel label = 1;
+  // The value of the summary section, the BE will use the header locale (accept-language) to format this for the FE
+  google.protobuf.StringValue value = 2;
+  // The UI details of the summary section
+  UiDetails details = 3;
+}
+
+// The labels of the summary section
+// Each of these have to be mapped in the FE to a localization string, we can choose to name them the same names to not have to write manual mappers
+enum SummarySectionLabel {
+  // Unspecified summary section label
+  SUMMARY_SECTION_LABEL_UNSPECIFIED = 0;
+  // The current time
+  SUMMARY_SECTION_LABEL_CURRENT_TIME = 1;
+  // The POS credit card sales
+  SUMMARY_SECTION_LABEL_CREDIT_CARD_SALES = 2;
+  // The POS cash sales
+  SUMMARY_SECTION_LABEL_CASH_SALES = 3;
+  // The POS credit card tips
+  SUMMARY_SECTION_LABEL_CREDIT_CARD_TIPS = 4;
+  // total gross sales
+  SUMMARY_SECTION_LABEL_TOTAL_GROSS_SALES = 5;
+  // total order volume
+  SUMMARY_SECTION_LABEL_TOTAL_ORDER_VOLUME = 6;
+  // total ticket size
+  SUMMARY_SECTION_LABEL_TOTAL_TICKET_SIZE = 7;
+  // Starting cash (cash drawer report)
+  SUMMARY_SECTION_LABEL_STARTING_CASH = 8;
+  // Net cash drawer changes (cash drawer report)
+  SUMMARY_SECTION_LABEL_NET_CHANGES = 9;
+  // Expected cash drawer balance (cash drawer report)
+  SUMMARY_SECTION_LABEL_EXPECTED_BALANCE = 10;
+  // Cash in/outs (cash drawer activity)
+  SUMMARY_SECTION_LABEL_CASH_IN_OUTS = 11;
+  // Total cash in amount (cash drawer activity)
+  SUMMARY_SECTION_LABEL_CASH_IN = 12;
+  // Total cash out amount (cash drawer activity)
+  SUMMARY_SECTION_LABEL_CASH_OUT = 13;
+  // Reported cash drawer balance (cash drawer report)
+  SUMMARY_SECTION_LABEL_REPORTED_BALANCE = 14;
+  // Difference between expected and reported cash drawer balance (cash drawer report)
+  SUMMARY_SECTION_LABEL_DIFFERENCE = 15;
+  // Total revenue earned from sales, minus amendments and fees paid for DoorDash services (financials report)
+  SUMMARY_SECTION_LABEL_NET_TOTAL = 16;
+  // Total commission, fees, and taxes paid to Doordash (financials report)
+  SUMMARY_SECTION_LABEL_DOORDASH_SERVICES = 17;
+  // Amendments, including error charges and adjustments (financials report)
+  SUMMARY_SECTION_LABEL_AMENDMENTS = 18;
+}
+
+// The details of a multi-row + column report page
+message ReportSectionDetails {
+  // The report columns details: [each object contains column name and more details as needed]
+  repeated ReportColumnDetails columns = 1;
+  // The report list of rows: [
+  // {{REPORT_COLUMN_ORDERS, "15"}, {REPORT_COLUMN_SALES, "$100"}...},
+  // {{REPORT_COLUMN_ORDERS, "10"}, {REPORT_COLUMN_SALES, "$90"}...},
+  // ...]
+  repeated ReportRow rows = 2;
+  // The report footer data
+  Footer footer = 3;
+}
+
+// The details of the report column
+message ReportColumnDetails {
+  // The column name
+  ReportColumn name = 1;
+  // The UI details of the report column
+  ReportColumnUiDetails ui_details = 2;
+}
+
+// The UI details of the report column
+message ReportColumnUiDetails {
+  // The minimum width of the column
+  google.protobuf.Int32Value min_width = 1;
+  // The maximum width of the column
+  google.protobuf.Int32Value max_width = 2;
+}
+
+// The columns of the report
+// Each of these have to be mapped in the FE to a localization string, we can choose to name them the same names to not have to write manual mappers
+enum ReportColumn {
+  // Unspecified report column
+  REPORT_COLUMN_UNSPECIFIED = 0;
+  // The name of the employee
+  REPORT_COLUMN_NAME = 1;
+  // The time the employee clocked in
+  REPORT_COLUMN_CLOCKED_IN = 2;
+  // The time the employee clocked out
+  REPORT_COLUMN_CLOCKED_OUT = 3;
+  // The time the employee was on shift
+  REPORT_COLUMN_TIME_ON_SHIFT = 4;
+  // The number of orders the employee took
+  REPORT_COLUMN_ORDERS = 5;
+  // The sales the employee made
+  REPORT_COLUMN_SALES = 6;
+  // The tips the employee is owed (Can be different than the tips the employee received, depending on tip pooling rules)
+  REPORT_COLUMN_TIPS = 7;
+  // sales breakdown for daily sales summary
+  REPORT_COLUMN_SALES_BREAKDOWN = 8;
+  // Summary of the active cash drawer session (cash drawer report)
+  REPORT_COLUMN_CURRENT_DRAWER_SUMMARY = 9;
+  // History of cash drawer sessions (cash drawer report)
+  REPORT_COLUMN_CASH_DRAWER_HISTORY = 10;
+  // Cash in/out activity of a cash drawer session (cash drawer activity)
+  REPORT_COLUMN_CASH_DRAWER_ACTIVITY = 11;
+  // Summary of this closed cash drawer session (cash drawer report)
+  REPORT_COLUMN_CASH_DRAWER_SUMMARY = 12;
+  // Employee cash sales breakdown
+  REPORT_COLUMN_EMPLOYEE_CASH_SALES = 13;
+}
+
+// A row in the report
+message ReportRow {
+  // List of fields in the row: [
+  // {REPORT_COLUMN_ORDERS, "15"},
+  // {REPORT_COLUMN_SALES, "$100"}
+  // ...]
+  repeated ReportField fields = 1;
+  // The UI details of the row
+  UiDetails details = 2;
+}
+
+// The common UI details for a row or a section
+message UiDetails {
+  // The text style of the row or section
+  TextStyle text_style = 1;
+}
+
+// The text style of the row or section
+enum TextStyle {
+  // Unspecified text style
+  TEXT_STYLE_UNSPECIFIED = 0;
+  // Regular text style
+  TEXT_STYLE_REGULAR = 1;
+  // Bold text style
+  TEXT_STYLE_BOLD = 2;
+}
+
+// A field in the report row
+message ReportField {
+  // The column name: REPORT_COLUMN_ORDERS, REPORT_COLUMN_TIME_ON_SHIFT, ...
+  ReportColumn name = 1;
+  // Using oneOf in preparation for the future where we might have actions as fields
+  oneof value {
+    // Localized value: $100, 6:00pm, ...
+    google.protobuf.StringValue formatted_value = 2;
+    // Action that can be taken on the field
+    Action action = 3;
+    // Icon text is used when the cell has a text which has a icon with it
+    IconText icon_text = 4;
+  }
+}
+
+// The position of the icon in the cell
+enum IconPosition {
+  // Unspecified icon position
+  ICON_POSITION_UNSPECIFIED = 0;
+  // The icon is on the left of the text
+  ICON_POSITION_START = 1;
+  // The icon is on the right of the text
+  ICON_POSITION_END = 2;
+}
+
+// The name of the icon to be displayed
+enum IconName {
+  // Unspecified icon name
+  ICON_NAME_UNSPECIFIED = 0;
+  // a green colored online dot icon
+  ICON_NAME_ONLINE_GREEN_FILLED_CIRCLE = 1;
+  // a printer icon
+  ICON_NAME_PRINT_LINE = 2;
+  // right chevron icon
+  ICON_NAME_CHEVRON_RIGHT = 3;
+  // back navigation icon
+  ICON_NAME_BACK = 4;
+}
+
+// IconText message is used when the cell has a text which has a icon with it
+message IconText {
+  // The text to be displayed
+  google.protobuf.StringValue text = 1;
+  // The prism icon name to be displayed
+  IconName icon_name = 2;
+  // position of the icon
+  IconPosition icon_position = 3;
+  // Action that can be taken on this IconText
+  Action action = 4;
+}
+
+// The type of action that can be taken on a report field
+enum ActionType {
+  // unspecified action type
+  ACTION_TYPE_UNSPECIFIED = 0;
+  // close shift
+  ACTION_TYPE_CLOSE_SHIFT = 1;
+  // print report
+  ACTION_TYPE_PRINT_REPORT = 2;
+  // open cash drawer
+  ACTION_TYPE_OPEN_DRAWER = 3;
+  // end cash drawer
+  ACTION_TYPE_END_DRAWER = 4;
+  // start cash drawer session
+  ACTION_TYPE_START_DRAWER = 5;
+  // cash in
+  ACTION_TYPE_CASH_IN = 6;
+  // cash out
+  ACTION_TYPE_CASH_OUT = 7;
+  // navigate to cash management
+  ACTION_TYPE_NAVIGATE_TO_CASH_MANAGEMENT = 8;
+  // navigate to cash drawer activity
+  ACTION_TYPE_NAVIGATE_TO_CASH_DRAWER_ACTIVITY = 9;
+}
+
+// Action
+message Action {
+  // action type
+  ActionType type = 1;
+  // The label of the button
+  google.protobuf.StringValue label = 2;
+  // payload based on the action type
+  oneof payload {
+    // payload for a button to close shift
+    CloseShiftPayload data = 3;
+    // payload for a button to navigate to cash management
+    OpenCashManagementPayload open_cash_management = 4;
+    // payload for a button to navigate to cash drawer activity
+    OpenCashDrawerActivityPayload open_cash_drawer_activity = 5;
+  }
+}
+
+// Payload for the close shift action
+message CloseShiftPayload {
+  // The shift UUID to close
+  google.protobuf.StringValue shift_uuid = 1;
+  // The employee UUID to close the shift for
+  google.protobuf.StringValue employee_uuid = 2;
+  // The start time of the shift
+  google.protobuf.Timestamp start_time = 3;
+}
+
+// Payload for the navigate to cash management action
+message OpenCashManagementPayload {
+  // The cash drawer session UUID
+  google.protobuf.StringValue cash_drawer_session_id = 1;
+}
+
+// Payload for the navigate to cash drawer activity action
+message OpenCashDrawerActivityPayload {
+  // The cash drawer session UUID
+  string cash_drawer_session_id = 1;
+}
+
+// The type of date filter to be shown by the FE
+enum DateFilterType {
+  // Unspecified date filter type
+  DATE_FILTER_TYPE_UNSPECIFIED = 0;
+  // The day selector date filter type
+  DATE_FILTER_TYPE_DAY_SELECTOR = 1;
+}

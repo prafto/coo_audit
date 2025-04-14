@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package risk_data_flow.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "risk_data_flow/rcopy_dx_possible_defect_rate.proto";
+import "risk_data_flow/rcopy_get_entities.proto";
+import "risk_data_flow/rcopy_get_entity.proto";
+import "risk_data_flow/rcopy_get_entity_count.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.riskdataflow";
+
+/**
+ * A generic service for fetching rcopy entity infos from CRDB.
+ * There are 9 RCopy tables that are not compatible with Fraud Profile table and the current solution is to hold those
+ * tables in CRDB but the ETL jobs are incremental instead of full load
+ *
+ * RFC: https://docs.google.com/document/d/1ImPFi10bP3E_26OgWvkKhvLV45ujDAY5J4tLsRInx6U/edit
+ */
+service RCopyEntityService {
+  // Timeout after 500 milliseconds.
+  option (service_client.client_config).response_attempt_timeout_millis = 500;
+  // Make a total 4 attempts (initial + three retries).
+  option (service_client.client_config).retry_config.max_attempts = 4;
+  // Add RESOURCE_EXHAUSTED to the set of retriable codes.
+  option (service_client.client_config).retry_config.do_retry_grpc_code = 8;
+  // Break the circuit if the error rate exceeds 80%.
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.8;
+  // Ignore NOT_FOUND from circuit breaker error rate calculation.
+  option (service_client.client_config).circuit_breaker_config.do_ignore_grpc_code = 5;
+
+  // Return one single RCopy entity based on identifiers
+  rpc GetRCopyEntity(GetRCopyEntityRequest) returns (GetRCopyEntityResponse);
+  // Return multiple RCopy entities based on identifiers and query parameters
+  rpc GetRCopyEntities(GetRCopyEntitiesRequest) returns (GetRCopyEntitiesResponse);
+  // Return count of entities based on identifiers
+  rpc GetRCopyEntityCount(GetRCopyEntityCountRequest) returns (GetRCopyEntityCountResponse);
+  // Return Dx possible defect rate calculated from fact_fraud_dx_delivery_table
+  rpc GetDxPossibleDefectRate(GetDxPossibleDefectRateRequest) returns (GetDxPossibleDefectRateResponse);
+}

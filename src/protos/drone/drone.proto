@@ -1,0 +1,444 @@
+syntax = "proto3";
+package drone.v1;
+
+import "common/common.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "smart_scale/smart_scale.proto";
+
+option java_generic_services = true;
+option java_outer_classname = "Service";
+option java_package = "com.doordash.rpc.drone";
+
+// Service dealing with Drone delivery
+service DroneService {
+  option (doordash.api.service) = {
+    name: "smart-scale-service-drone-grpc"
+    url: "smart-scale-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["smart-scale-service"]
+    api_key_name: "SMART_SCALE_SERVICE_API_KEY"
+    owner: {
+      name: "smart-scale"
+      id: "smart-scale-team"
+      slack_channel: "#ask-smart-scale"
+      email_alias: "smart-scale-sw-eng@doordash.com"
+    }
+    target_products: [MX]
+  };
+
+  // GetConsumerDeliveryStatus gets the delivery status of a consumer based on a set of factors (e.g. address)
+  rpc GetConsumerDeliveryStatus(GetConsumerDeliveryStatusRequest) returns (GetConsumerDeliveryStatusResponse);
+  // IsValidDroneDeliveryCart inspects cart items and determines whether the cart is eligible for a drone delivery
+  rpc IsValidDroneDeliveryCart(IsValidDroneDeliveryCartRequest) returns (IsValidDroneDeliveryCartResponse);
+  // IsAddressEligibleForDroneDelivery checks whether the address is eligible for drone delivery for the given stores
+  rpc IsAddressEligibleForDroneDelivery(IsAddressEligibleForDroneDeliveryRequest) returns (IsAddressEligibleForDroneDeliveryResponse);
+  // GetAddressEligibility checks whether the address is eligible for drone/AV deliveries
+  rpc GetAddressEligibility(GetAddressEligibilityRequest) returns (GetAddressEligibilityResponse);
+  // [UG] GetDroneOrderDetails returns per drone packing information for the given delivery UUID.
+  rpc GetDroneOrderDetails(GetDroneOrderDetailsRequest) returns (GetDroneOrderDetailsResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/smart-scale-service/v1/get_drone_order_details"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+
+  // RecordDronePackagesWeight records list of package weights associated with a delivery.
+  rpc RecordDroneDeliveryWeights(RecordDroneDeliveryWeightsRequest) returns (RecordDroneDeliveryWeightsResponse) {
+    option (google.api.http) = {
+      // {HttpMethod}: "{pathPattern}"
+      post: "/smart-scale-service/v1/record_drone_delivery_details"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [MX_USER]
+      target_products: [MX]
+    };
+  }
+  // RecordItemShape upserts item shape for given item id.
+  rpc RecordItemShape(RecordItemShapeRequest) returns (RecordItemShapeResponse);
+  // RecordItemShape upserts option shape for given item id.
+  rpc RecordOptionShape(RecordOptionShapeRequest) returns (RecordOptionShapeResponse);
+  // Get item and option shapes
+  rpc GetItemAndOptionShapes(GetItemAndOptionShapesRequest) returns (GetItemAndOptionShapesResponse);
+  // Healthcheck service
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// Request for Ping
+message PingRequest {
+  // Message to echo
+  string message = 1;
+}
+
+// Response for Ping
+message PingResponse {
+  // Message of the echo
+  string messages = 1;
+}
+
+// Request to get delivery estimates for each consumer <-> store id pairings
+message GetConsumerDeliveryStatusRequest {
+  // Integer ID of the consumer
+  int64 consumer_id = 1;
+  // A postal address for delivery location
+  common.CommonAddress delivery_address = 2;
+  // List of store IDs to fetch estimates from
+  repeated int64 store_ids = 3;
+  // Cassandra cart uuid of the cart. It's same as carnival cart id.
+  string cart_uuid = 4;
+  // Items in the cart
+  repeated CartItem cart_items = 5;
+  // business id of the store
+  google.protobuf.StringValue business_id = 6;
+}
+
+// Contains information about drone order delivery estimates
+message DeliveryEstimate {
+  // Integer ID of the store
+  int64 store_id = 1;
+  // Earliest timestamp that the order can be delivered
+  google.protobuf.Timestamp asap_time_start_range = 2;
+  // Latest timestamp that the order can be delivered
+  google.protobuf.Timestamp asap_time_end_range = 3;
+}
+
+// Response object containing information about drone order delivery estimates
+message GetConsumerDeliveryStatusResponse {
+  // List of delivery estimates for eligible store_ids
+  repeated DeliveryEstimate delivery_estimates = 2;
+
+  // URL to third party validation site. Only populated when the client needs to render a webview for additional
+  // validation steps to confirm delivery.
+  ValidationSiteUrl validation_site_url = 3;
+  // Drone delivery status and message to be displayed to the consumer for the selected delivery location
+  DeliveryStatus delivery_status = 4;
+  // Whether cart is valid for drone delivery.
+  bool is_cart_valid = 5;
+
+  reserved 1;
+  reserved "validation_webview_url";
+}
+
+// Drone delivery status info
+message DeliveryStatus {
+  // Drone delivery status for the consumer for the selected delivery location
+  DroneDeliveryStatus drone_delivery_status = 1;
+  // Message to be displayed to the consumer
+  google.protobuf.StringValue display_message = 2;
+}
+
+// Drone delivery status
+enum DroneDeliveryStatus {
+  // Unspecified
+  DRONE_DELIVERY_STATUS_UNSPECIFIED = 0;
+  // Drone delivery is unavailable
+  DRONE_DELIVERY_STATUS_UNAVAILABLE = 1;
+  // Address selected by the customer is not eligible for drone delivery
+  DRONE_DELIVERY_STATUS_CX_ADDRESS_IS_INELIGIBLE = 2;
+  // Customer address is eligible for drone delivery but not validated
+  DRONE_DELIVERY_STATUS_CX_ADDRESS_NOT_VALIDATED = 3;
+  // Customer address is eligible and validated
+  DRONE_DELIVERY_STATUS_CX_ADDRESS_VALIDATED = 4;
+
+  // New delivery statuses
+  // Drone delivery is available, show delivery option
+  DRONE_DELIVERY_STATUS_AVAILABLE = 5;
+  // Drone delivery is unavailable but still show the delivery option
+  DRONE_DELIVERY_STATUS_UNAVAILABLE_SHOW_OPTION = 6;
+  // Drone delivery is unavailable and hide the delivery option
+  DRONE_DELIVERY_STATUS_UNAVAILABLE_HIDE_OPTION = 7;
+}
+
+// ValidationSiteUrl contains the components for the third party validation site.
+message ValidationSiteUrl {
+  // validation_webview_url is the URL to third party validation site
+  google.protobuf.StringValue validation_webview_url = 1;
+  // dismiss_url is the URL to dismiss the webview
+  google.protobuf.StringValue dismiss_url = 2;
+}
+
+// Request to validate cart items for a given store and menu.
+message IsValidDroneDeliveryCartRequest {
+  // Integer ID of the store
+  int64 store_id = 1;
+  // Integer ID of the menu
+  int64 menu_id = 2;
+  // Items in the cart
+  repeated CartItem cart_items = 3;
+  // Consumer ID of the customer
+  string consumer_id = 4;
+  // business id of the store
+  google.protobuf.StringValue business_id = 5;
+  // Cassandra cart id
+  string cart_id = 6;
+}
+
+// CartItem contains meta information about items in a cart.
+message CartItem {
+  // Integer ID of the item
+  string item_id = 1;
+  // Number of items in the cart
+  int32 quantity = 2;
+  // Name of the item (nullable)
+  google.protobuf.StringValue name = 3;
+  // Merchant supplied item id (nullable)
+  google.protobuf.StringValue merchant_supplied_item_id = 4;
+  // nested item options detail
+  repeated NestedOption nested_options = 5;
+}
+
+// ItemOption contains meta information about option selected for an item
+message NestedOption {
+  // Unique ID of the option
+  string option_id = 1;
+  // Quantity of the option
+  int32 quantity = 2;
+  // Name of the option item (nullable)
+  google.protobuf.StringValue name = 3;
+  // Merchant supplied item id for the option item (nullable)
+  google.protobuf.StringValue merchant_supplied_item_id = 4;
+  // nested options detail
+  repeated NestedOption nested_options = 5;
+}
+
+// Response object containing information about whether cart is valid for drone delivery or not.
+message IsValidDroneDeliveryCartResponse {
+  // Whether cart is valid for drone delivery.
+  bool is_valid = 1;
+}
+
+// Request to check whether address is eligible for drone delivery for the given stores.
+message IsAddressEligibleForDroneDeliveryRequest {
+  // Integer IDs of drone delivery stores
+  repeated int64 store_ids = 1;
+  // A postal address for delivery location
+  common.CommonAddress delivery_address = 2;
+}
+
+// Response object containing information about whether address is eligible for drone delivery or not for the given stores.
+message IsAddressEligibleForDroneDeliveryResponse {
+  // Whether address is eligible for drone delivery for the stores.
+  repeated DroneDeliveryAddressEligility drone_delivery_address_eligility = 1;
+}
+
+// Contains information about whether address is eligible for drone delivery or not for a store
+message DroneDeliveryAddressEligility {
+  // Integer ID of drone delivery store
+  int64 store_id = 1;
+  // Whether address is eligible for drone delivery for the store.
+  bool is_eligible = 2;
+}
+
+// Request for checking if address is eligible for drone/AV deliveries.
+message GetAddressEligibilityRequest {
+  // Latitude of address to check.
+  google.protobuf.DoubleValue address_lat = 1;
+  // Longitude of address to check.
+  google.protobuf.DoubleValue address_lng = 2;
+  // Address ID to check.
+  google.protobuf.StringValue address_id = 3;
+}
+
+// Response for checking if address is eligible for drone/AV deliveries.
+message GetAddressEligibilityResponse {
+  // Return if address is eligible for drone deliveries.
+  bool is_drone_eligible = 1;
+  // URI for routing to eligibility page.
+  google.protobuf.StringValue vertical_page_uri = 2;
+}
+
+// Request to batch fetch per drone packing information.
+message GetDroneOrderDetailsRequest {
+  // String delivery UUID.
+  repeated string delivery_uuids = 1;
+}
+
+// Response object containing per order drone packing information.
+message GetDroneOrderDetailsResponse {
+  // List of drone order details by delivery_uuid.
+  repeated DroneOrderDetail drone_order_details = 1;
+}
+
+// Contains information about packed items
+message DroneOrderDetail {
+  // String delivery UUID.
+  string delivery_uuid = 1;
+  // List of Packages in this delivery and its content.
+  repeated Package packages = 2;
+}
+
+// Contains information about package weight limits and order items inside the package.
+message Package {
+  // String id, provided by Wing.
+  string package_id = 1;
+  // Minimum weight requirement for package weight in grams.
+  int32 min_allowed_bag_weight_grams = 2;
+  // Maximum weight requirement for package weight in grams.
+  int32 max_allowed_bag_weight_grams = 3;
+  // List of items in this package
+  repeated DroneOrderItem order_items = 5;
+  // List of objects in this package
+  repeated DroneObjectItem object_items = 6;
+  // Estimated weight of the package
+  float expected_weight_grams = 7;
+}
+
+// Contains information about item in package.
+message DroneOrderItem {
+  reserved 2;
+  // Integer id of the item
+  string item_id = 1;
+  // List of item options
+  repeated DroneOrderItemOption item_options = 3;
+  // Number of items
+  int32 quantity = 4;
+  // Item name
+  string item_name = 5;
+}
+
+// Contains information about item option in package.
+message DroneOrderItemOption {
+  // Integer id of the item option
+  string item_option_id = 1;
+  // Number of item options
+  int32 quantity = 2;
+  // Option name
+  string option_name = 3;
+}
+
+// Contains information about order item and its objects in package
+message DroneObjectItem {
+  // Title of the item. It is not null when the item is non-object
+  google.protobuf.StringValue title = 1;
+  // Quantity of item, it is not null when the item is non-object
+  google.protobuf.Int32Value quantity = 2;
+  // Real objects contained in this item
+  repeated DroneObjectDetail objects = 3;
+}
+
+// Contains information about objects in package
+message DroneObjectDetail {
+  // Object name
+  string name = 1;
+  // Quantity of this object
+  int32 quantity = 2;
+  // The total weight of object times object quantity in the single item, if weight exists
+  google.protobuf.FloatValue total_weight = 3;
+  // First level options' names under this object
+  repeated string options = 4;
+}
+
+// Request to record package weighed by SmartScale.
+message RecordDroneDeliveryWeightsRequest {
+  // SmartScale device data.
+  smart_scale.v1.SmartScaleDeviceData device_data = 1;
+  // Integer ID of drone delivery store.
+  int64 store_id = 2;
+  // DEPRECATED: Use delivery_uuid instead.
+  reserved 3;
+  reserved "delivery_id";
+  // List of packages and its weights
+  repeated PackageWeight package_weights = 4;
+  // Delivery uuid
+  string delivery_uuid = 5;
+}
+
+// Contains information about package weight.
+message PackageWeight {
+  // String id, provided by Wing.
+  string package_id = 1;
+  // Measured weight of the package in grams.
+  float measured_weight_grams = 2;
+  // Whether package is cancelled.
+  bool is_cancelled = 3;
+}
+
+// Drone delivery weight recorded response.
+message RecordDroneDeliveryWeightsResponse {}
+
+// Shape of an item to help package drone deliveries.
+enum Shape {
+  // Unspecified
+  SHAPE_UNSPECIFIED = 0;
+  // Big flat base shape
+  SHAPE_BIG_FLAT_BASE = 1;
+  // Brick shape
+  SHAPE_BRICK = 2;
+  // Half brick cube shape
+  SHAPE_HALF_BRICK_CUBE = 3;
+  // Long rectangular prism shape
+  SHAPE_LONG_RECTANGULAR_PRISM = 4;
+  // Cup in holder shape
+  SHAPE_CUP_IN_HOLDER = 5;
+  // Cylinder shape
+  SHAPE_CYLINDER = 6;
+  // Flat brick shape
+  SHAPE_FLAT_BRICK = 7;
+  // Whole package shape
+  SHAPE_WHOLE_PACKAGE = 8;
+  // A condiment container that fills the empty space inside the package.
+  SHAPE_CONDIMENT = 9;
+}
+
+// Record item shape request. This request is an upsert operation
+message RecordItemShapeRequest {
+  // ID of item
+  string item_id = 1;
+  // Shape type required for drone deliveries
+  Shape shape_type = 2;
+}
+
+// Response message for successful item shape recorded.
+message RecordItemShapeResponse {}
+
+// Record option shape request. This request is an upsert operation
+message RecordOptionShapeRequest {
+  // ID of option
+  string option_id = 1;
+  // Shape type required for drone deliveries
+  Shape shape_type = 2;
+}
+
+// Response message for successful option shape recorded.
+message RecordOptionShapeResponse {}
+
+// Get item and option shapes request
+message GetItemAndOptionShapesRequest {
+  // ID of the store
+  int64 store_id = 1;
+}
+
+// Get item and option shapes response
+message GetItemAndOptionShapesResponse {
+  reserved 4;
+  // Item shape data
+  repeated ShapeData item_shape_data = 1;
+  // Option shape data
+  repeated ShapeData option_shape_data = 2;
+  // ID of the store
+  string store_id = 3;
+}
+
+// Contains information about shape and menu details for given id
+message ShapeData {
+  reserved 3, 4, 5;
+  // Unique identifier
+  string id = 1;
+  // Type of ItemShape
+  Shape shape_type = 2;
+}

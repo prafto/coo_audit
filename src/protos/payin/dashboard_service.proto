@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package doordash.payin.payin_dashboard.v1;
+
+import "common/service_client_config.proto";
+import "google/protobuf/wrappers.proto";
+import "payin/common_v1.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/payin/payin_dashboard/v1";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.payin.payin_dashboard.v1";
+
+/*
+   PayinDashboard is used to consolidate payin charge data (cx charges) and actions for multiple payout providers in a single place.
+   RFC: https://docs.google.com/document/d/1tLc4BNvHStvRS9rL4sCFRBUPEcSeoa9rOxiCoHBtRKI/edit?ts=60e4e9e5#
+*/
+service PayinDashboardService {
+  // Service info
+  option (service_client.client_config).service_name = "payin-platform";
+  option (service_client.client_config).service_app = "internal";
+
+  option (service_client.client_config).response_attempt_timeout_millis = 300000;
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).retry_config.initial_wait_millis = 100;
+  option (service_client.client_config).retry_config.wait_multiplier = 2;
+
+  // Circuit Breaker config
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 0.5;
+  option (service_client.client_config).circuit_breaker_config.minimum_request_threshold = 30;
+  option (service_client.client_config).circuit_breaker_config.counter_sliding_window_millis = 15000;
+  option (service_client.client_config).circuit_breaker_config.circuit_open_window_millis = 5000;
+  option (service_client.client_config).circuit_breaker_config.trial_request_interval_millis = 2000;
+
+  // Submits a query for charges matching a given input and returns the request id of the query for polling
+  rpc SearchCartPayment(SearchCartPaymentRequest) returns (SearchCartPaymentResponse);
+}
+
+enum CardBrand {
+  CARD_BRAND_UNSPECIFIED = 0;
+  CARD_BRAND_VISA = 1;
+  CARD_BRAND_MASTERCARD = 2;
+  CARD_BRAND_AMEX = 3;
+  CARD_BRAND_DISCOVER = 4;
+}
+
+enum SearchCartPaymentRequestStatus {
+  SEARCH_CART_PAYMENT_REQUEST_STATUS_UNSPECIFIED = 0;
+  SEARCH_CART_PAYMENT_REQUEST_STATUS_SUCCESS = 1;
+  SEARCH_CART_PAYMENT_REQUEST_STATUS_PENDING = 2;
+  SEARCH_CART_PAYMENT_REQUEST_STATUS_ERROR = 3;
+}
+
+message SearchCartPaymentRequest {
+  google.protobuf.Int32Value limit = 1;
+  google.protobuf.Int32Value offset = 2;
+  google.protobuf.FloatValue amount = 3;
+  google.protobuf.StringValue card_last4 = 4;
+  CardBrand card_brand = 5;
+  google.protobuf.StringValue description = 6;
+  google.protobuf.StringValue email = 7;
+  google.protobuf.StringValue zipcode = 8;
+}
+
+message SearchCartPaymentResponse {
+  repeated SearchCartPaymentResult results = 1;
+  SearchCartPaymentRequestStatus request_status = 2;
+}
+
+message SearchCartPaymentResult {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.Int64Value amount = 2;
+  doordash.payin.common.v1.Currency currency = 3;
+  google.protobuf.StringValue description = 4;
+  google.protobuf.StringValue payment_method = 5;
+  google.protobuf.StringValue ref_id = 6;
+  google.protobuf.StringValue ref_type = 7;
+  google.protobuf.StringValue payment_status = 8;
+  google.protobuf.StringValue date = 9;
+  google.protobuf.StringValue email = 10 [deprecated = true];
+  google.protobuf.StringValue pgp_code = 11;
+  google.protobuf.StringValue error_reason = 12;
+}

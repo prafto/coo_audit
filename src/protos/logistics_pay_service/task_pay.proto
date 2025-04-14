@@ -1,0 +1,399 @@
+syntax = "proto3";
+package logistics_pay_service.task_pay;
+
+import "common/service_client_config.proto";
+import "deep_red/context.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/task_fulfillment.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.logistics_pay_service.task_pay";
+
+service TaskPayService {
+  option (service_client.client_config).service_name = "task-pay-service";
+  option (service_client.client_config).retry_config.max_attempts = 1;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+
+  rpc GetTaskGroupPay(GetTaskGroupPayRequest) returns (GetTaskGroupPayResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+
+  rpc CalculateAndSavePayForOffer(CalculateAndSavePayForOfferRequest) returns (CalculateAndSavePayForOfferResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc CalculateAndSavePayForTaskGroup(CalculateAndSavePayForTaskGroupRequest) returns (CalculateAndSavePayForTaskGroupResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc PublishTaskPay(PublishTaskPayRequest) returns (PublishTaskPayResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc GetLatestTaskPayInput(GetLatestTaskPayInputRequest) returns (GetLatestTaskPayInputResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+
+  rpc AddTaskPayInput(AddTaskPayInputRequest) returns (AddTaskPayInputResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 500;
+  }
+
+  rpc CreateTaskPayAndHandleShiftPay(CreateTaskPayAndHandleShiftPayRequest) returns (CreateTaskPayAndHandleShiftPayResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 2500;
+  }
+
+  rpc GetTaskPayRoutingInfo(GetTaskPayRoutingInfoRequest) returns (GetTaskPayRoutingInfoResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 250;
+  }
+
+  rpc GetBatchTaskPayRoutingInfos(GetBatchTaskPayRoutingInfosRequest) returns (GetBatchTaskPayRoutingInfosResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 1000;
+  }
+}
+
+message TaskGroupPay {
+  // Identifiers
+
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue offer_id = 2;
+  google.protobuf.Int64Value shift_id = 3;
+
+  // Reserve fields for future use-cases / extensibility
+
+  // Base Pay components
+
+  google.protobuf.Int64Value dasher_offered_pay_per_active_hour = 11;
+  ActiveTimeInfo active_time_info = 12;
+  DistanceInfo distance_info = 13;
+  google.protobuf.Int64Value fair_value_amount = 14;
+
+  // Reserve fields for future use-cases / extensibility
+
+  // Doordash Contribution Amount components
+
+  google.protobuf.Int64Value base_pay = 101;
+  google.protobuf.Int64Value sos_amount = 102;
+  google.protobuf.Int64Value peak_pay = 103;
+  google.protobuf.Int32Value dasher_offered_peak_pay_per_active_hour = 104;
+  google.protobuf.Int64Value on_time_bonus = 105;
+  google.protobuf.Int64Value setup_pay = 106;
+  google.protobuf.Int64Value streak_pay = 107;
+  google.protobuf.Int64Value compliance_adjustment_pay = 108;
+
+  // Reserve fields for future use-cases / extensibility
+
+  // Actual Pay components
+
+  google.protobuf.Int64Value doordash_contribution_amount = 201;
+  TipInfo tip_info = 202;
+
+  // Final Pay
+
+  google.protobuf.Int64Value actual_pay = 301;
+  google.protobuf.Int64Value dasher_offered_pay = 302;
+  google.protobuf.Int64Value cancellation_pay = 303;
+
+  // Reserve fields for future use-cases / extensibility
+
+  Metadata metadata = 401;
+
+  // Reserve fields for future use-cases / extensibility
+}
+
+message TipInfo {
+  google.protobuf.Int64Value tip_amount = 1;
+  google.protobuf.Int64Value pre_tip_amount = 2;
+  google.protobuf.Int64Value post_tip_amount = 3;
+  google.protobuf.Int64Value capped_tip_amount = 4;
+  google.protobuf.Timestamp tip_pending_until = 5;
+}
+
+message Metadata {
+  PayModelInfo pay_model_info = 1;
+  ActualPayCategory actual_pay_category = 2;
+  google.protobuf.StringValue currency = 3;
+  google.protobuf.StringValue task_source = 4;
+  google.protobuf.Timestamp created_at = 5;
+  repeated google.protobuf.StringValue taskPayIds = 6;
+}
+
+message DistanceInfo {
+  google.protobuf.Int64Value estimated_distance = 1;
+  google.protobuf.Int64Value actual_distance = 2;
+  google.protobuf.Int64Value fraud_adjusted_distance = 3;
+}
+
+message ActiveTimeInfo {
+  int32 actual_active_time = 1;
+  int32 estimated_active_time = 2;
+  int32 fraud_adjusted_active_time = 3;
+}
+
+message PayModelInfo {
+  google.protobuf.StringValue pay_model_type = 1;
+  google.protobuf.StringValue pay_model_version = 2;
+}
+
+message TaskGroupPayEvent {
+  TaskGroupPay task_group_pay = 1;
+  // optional
+  google.protobuf.Int64Value delivery_id = 2;
+}
+
+enum EligibilityStatus {
+  UNKNOWN_ELIGIBILITY_STATUS = 0;
+  NOT_ELIGIBLE = 1;
+  ELIGIBLE = 2;
+}
+
+message LongWaitPayData {
+  // Long wait pay eligibility status
+  EligibilityStatus eligibility_status = 1;
+  // Current wait time in seconds for the given dasher, this would determine the pay data
+  google.protobuf.Int32Value wait_time = 2;
+}
+
+message InStoreMenuPhotoPayData {
+  EligibilityStatus eligibility_status = 1;
+  // Item count as a percentage of total items in the menu for that store
+  google.protobuf.Int32Value item_count_percentage = 2;
+}
+
+message CancellationContextData {
+  google.protobuf.StringValue dasher_job_reason = 1;
+}
+
+// PayData related to item based effort pay for DSD order. e.g. bulky/heavy item
+message DsdItemEffortPayData {
+  // weight unit
+  google.protobuf.StringValue weight_unit = 1;
+  // total weight of the order
+  google.protobuf.FloatValue total_weight = 2;
+  // max weight of the item
+  google.protobuf.FloatValue max_item_weight = 3;
+  // number of the heavy items
+  google.protobuf.Int32Value heavy_item_count = 4;
+}
+
+message OrderPlacementPayData {
+  EligibilityStatus eligibility_status = 1;
+}
+
+message AssignmentContextData {
+  google.protobuf.StringValue assignment_run_id = 1;
+  repeated deep_red.CandidateShiftInfo candidate_shift_info = 2;
+}
+
+message PayInput {
+  google.protobuf.Int32Value component_value = 1;
+  google.protobuf.Int32Value minimum_value = 2;
+  google.protobuf.Int32Value maximum_value = 3;
+}
+
+message PayInputs {
+  reserved 1;
+  reserved "doordash_contribution_amount";
+  // delivery id to assignment context data map
+  map<int64, AssignmentContextData> assignment_context_data = 2;
+  google.protobuf.Int64Value assignment_id = 3;
+}
+
+enum ActualPayCategory {
+  UNKNOWN = 0;
+  NONE = 1;
+  HIGH = 2;
+}
+
+message GetTaskGroupPayRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue offer_id = 2;
+  google.protobuf.Int64Value shift_id = 3;
+  google.protobuf.BoolValue use_cache = 4;
+}
+
+message GetTaskGroupPayResponse {
+  TaskGroupPay task_group_pay = 1;
+}
+
+message GetLatestTaskPayInputRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.Int64Value shift_id = 2;
+  PayInputType.InputType input_type = 3;
+}
+
+message GetLatestTaskPayInputResponse {
+  TaskPayInput task_pay_input = 1;
+}
+
+message AddTaskPayInputRequest {
+  TaskPayInput task_pay_input = 1;
+}
+
+message TaskPayInput {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.Int64Value shift_id = 2;
+  google.protobuf.StringValue offer_id = 3;
+
+  oneof input_data {
+    InStoreMenuPhotoPayData instore_menu_photo_pay_data = 4;
+    CancellationContextData cancellation_context_data = 5;
+    DsdItemEffortPayData dsd_item_effort_pay_data = 6;
+    LongWaitPayData long_wait_pay_data = 7;
+    OrderPlacementPayData order_placement_pay_data = 8;
+  }
+}
+
+message AddTaskPayInputResponse {
+  TaskPayInputStatus status = 1;
+}
+
+enum TaskPayInputStatus {
+  TASK_PAY_INPUT_STATUS_UNSPECIFIED = 0;
+  TASK_PAY_INPUT_STATUS_SUCCESS = 1;
+  TASK_PAY_INPUT_STATUS_FAILED = 2;
+}
+
+message PayInputType {
+  enum InputType {
+    UNKNOWN_TYPE = 0;
+    CANCELLATION_CONTEXT = 1;
+    LONG_WAIT_PAY = 2;
+    INSTORE_MENU_PHOTO_PAY = 3;
+    DSD_ITEM_EFFORT_PAY = 4;
+    ORDER_PLACEMENT_PAY = 5;
+  }
+}
+
+message CalculateAndSavePayForOfferRequest {
+  task_service.v2.Offer offer = 1;
+  google.protobuf.BoolValue is_shadowing = 2;
+  google.protobuf.BoolValue use_fallback_calculator = 3;
+  PayInputs pay_inputs = 4;
+}
+
+message CalculateAndSavePayForOfferResponse {
+  repeated TaskGroupPay task_group_pays = 1;
+}
+
+message CalculateAndSavePayForTaskGroupRequest {
+  google.protobuf.StringValue task_group_id = 1;
+  google.protobuf.StringValue offer_id = 2;
+  google.protobuf.BoolValue is_shadowing = 3;
+  PayInputs pay_inputs = 4;
+}
+
+message CalculateAndSavePayForTaskGroupResponse {
+  TaskGroupPay task_group_pay = 1;
+}
+
+message PublishTaskPayRequest {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue task_name = 2;
+  google.protobuf.StringValue task_group_id = 3;
+  google.protobuf.StringValue offer_id = 4;
+  google.protobuf.Int64Value shift_id = 5;
+}
+
+message PublishTaskPayResponse {}
+
+message CreateTaskPayAndHandleShiftPayRequest {
+  google.protobuf.StringValue task_name = 1;
+  google.protobuf.StringValue task_group_id = 2;
+  google.protobuf.StringValue offer_id = 3;
+  google.protobuf.Int64Value shift_id = 4;
+  google.protobuf.BoolValue is_shadowing = 5;
+}
+
+message CreateTaskPayAndHandleShiftPayResponse {}
+
+message TaskPayCalculatedComponents {
+  google.protobuf.Int64Value shift_id = 1;
+  google.protobuf.StringValue offer_id = 2;
+  google.protobuf.StringValue task_group_id = 3;
+  google.protobuf.Int64Value delivery_id = 4;
+  google.protobuf.StringValue task_source = 5;
+  google.protobuf.Int64Value pay_target_id = 6;
+  google.protobuf.Int64Value base_pay = 7;
+  google.protobuf.Int64Value travel_distance_pay = 8;
+  google.protobuf.Int64Value travel_duration_pay = 9;
+  google.protobuf.Int64Value effort_pay = 10;
+  google.protobuf.Int64Value setup_pay = 11;
+  google.protobuf.Int64Value express_pay = 12;
+  google.protobuf.Int64Value doordash_contribution_amount = 13;
+  google.protobuf.Int64Value actual_pay = 14;
+  google.protobuf.Int64Value dasher_offered_pay = 15;
+  google.protobuf.StringValue calculation_reason = 16;
+  google.protobuf.Int64Value pre_tip_amount = 17;
+  google.protobuf.Int64Value tip_amount = 18;
+  google.protobuf.Int64Value post_tip_amount = 19;
+  google.protobuf.Int64Value capped_tip_amount = 20;
+  google.protobuf.FloatValue pay_tip_cap_distance_factor = 21;
+  google.protobuf.Int64Value capped_tip_amount_without_distance = 22;
+  google.protobuf.Int64Value estimated_effort_duration_secs = 23;
+  google.protobuf.Int64Value actual_effort_duration_secs = 24;
+  google.protobuf.Int64Value fraud_adjusted_effort_duration_secs = 25;
+  google.protobuf.Int64Value estimated_active_time_secs = 26;
+  google.protobuf.Int64Value actual_active_time_secs = 27;
+  google.protobuf.Int64Value fraud_adjusted_active_time_secs = 28;
+  google.protobuf.Int64Value estimated_travel_distance_meters = 29;
+  google.protobuf.Int64Value estimated_travel_duration_secs = 30;
+  google.protobuf.Int64Value peak_pay = 31;
+  google.protobuf.Int64Value distance_peak_pay = 32;
+  google.protobuf.Int64Value streak_pay = 33;
+  google.protobuf.Timestamp created_at = 34;
+  google.protobuf.Int64Value new_dasher_learning_bonus = 35;
+  google.protobuf.Int64Value existing_dasher_bonus = 36;
+  google.protobuf.Int64Value fair_value_amount = 37;
+  google.protobuf.StringValue currency = 38;
+  google.protobuf.StringValue travel_distance_info = 39;
+  google.protobuf.StringValue travel_duration_info = 40;
+  google.protobuf.StringValue effort_info = 41;
+  google.protobuf.StringValue active_time_info = 42;
+  google.protobuf.Int64Value dasher_offered_peak_pay_active_hour = 43;
+  google.protobuf.Int64Value under_pay_bonus = 44;
+  google.protobuf.StringValue acceptance_bonus_info = 45;
+  google.protobuf.StringValue effort_pay_components = 46;
+  google.protobuf.Int64Value num_assign = 47;
+  google.protobuf.Int64Value num_unassigns_for_task = 48;
+  google.protobuf.Int64Value store_boost = 49;
+  google.protobuf.Int64Value redelivery_boost = 50;
+  google.protobuf.Int64Value total_boost = 51;
+}
+
+// Routing info messages
+message TaskPayRoutingInfo {
+  google.protobuf.Int64Value delivery_id = 1;
+  google.protobuf.Int64Value shift_id = 2;
+  google.protobuf.StringValue task_group_id = 3;
+  google.protobuf.StringValue offer_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+
+  // this is needed as per the lint rules
+  reserved 6;
+  reserved "is_active";
+  google.protobuf.StringValue delivery_uuid = 7;
+  google.protobuf.Int64Value assignmentId = 8;
+}
+
+message GetTaskPayRoutingInfoRequest {
+  // optional
+  google.protobuf.Int64Value delivery_id = 1;
+  // optional
+  google.protobuf.Int64Value shift_id = 2;
+  // optional
+  google.protobuf.StringValue delivery_uuid = 3;
+}
+
+message GetBatchTaskPayRoutingInfosRequest {
+  repeated GetTaskPayRoutingInfoRequest getTaskPayRoutingInfoRequestList = 1;
+}
+
+message GetTaskPayRoutingInfoResponse {
+  TaskPayRoutingInfo routing_info = 1;
+}
+
+message GetBatchTaskPayRoutingInfosResponse {
+  repeated GetTaskPayRoutingInfoResponse getTaskPayRoutingInfoResponseList = 1;
+}

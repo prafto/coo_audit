@@ -1,0 +1,318 @@
+syntax = "proto3";
+
+package doordash_consumer_service.subscription;
+
+import "billing_service/subscription_invoice.proto";
+import "common/common.proto";
+import "common/money.proto";
+import "consumer_service/subscription_common.proto";
+import "consumer_service/subscription_invoice.proto";
+import "consumer_service/subscription_plan.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.consumer_service.subscription";
+
+// Granted free period
+message FreeDashpassPeriod {
+  // grant reason
+  money.GrantFreeDashpassReason reason = 1;
+
+  // how many days granted
+  google.protobuf.Int32Value num_free_days = 2;
+
+  // the start timestamp of the granted period
+  google.protobuf.Timestamp start_time = 3;
+
+  // the end timestamp of the granted period
+  google.protobuf.Timestamp end_time = 4;
+}
+
+message ConsumerSubscription {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue consumer_id = 2;
+  SubscriptionPlan subscription_plan = 3;
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  google.protobuf.BoolValue to_be_renewed = 6;
+  SubscriptionPaymentCard payment_card = 7;
+  google.protobuf.BoolValue is_eligible_for_benefits = 8;
+  SubscriptionStatus subscription_status = 9;
+  google.protobuf.Int32Value days_remaining = 10;
+  google.protobuf.BoolValue is_trial = 11;
+  google.protobuf.BoolValue is_annual_plan = 12;
+  SubscriptionMetaData subscription_meta_data = 13;
+  google.protobuf.Timestamp paused_at = 14;
+  // Metadata related to the subscription that isn't shared between plans
+  oneof metadata {
+    ConsumerSubscriptionMetadata consumer_subscription_metadata = 15;
+  }
+  // Billing provider code
+  BillingProvider billing_provider = 16;
+  google.protobuf.Timestamp elected_time = 17;
+  SubscriptionTransitionMetaData subscription_transition_metadata = 18;
+  MembershipSharingType membership_sharing_type = 19;
+  google.protobuf.StringValue subscription_trial_info = 20;
+  repeated FreeDashpassPeriod granted_free_periods = 21;
+
+  // whether allow to pause this subscription
+  google.protobuf.BoolValue is_pause_allowed = 22;
+  repeated doordash_consumer_service.subscription.v1.SubscriptionInvoice invoices = 23;
+  google.protobuf.Timestamp cancellation_requested_at = 24;
+}
+
+message SubscriptionMetaData {
+  // The credit_back_callout_info field is removed and reserved.
+  reserved 18;
+  reserved "credit_back_callout_info";
+
+  SubscriptionDiscountStats discount_stats = 1;
+  LastRenewalAttempt last_renewal_attempt = 2;
+  money.MonetaryFields last_month_savings = 3;
+  SubscriptionCalloutInfo callout_info = 4 [deprecated = true]; // Moved to ManageSubscriptionDashboard
+  CancellationSurvey cancellation_survey = 5;
+  EnrollmentCalloutInfo enrollment_callout_info = 6;
+  google.protobuf.StringValue preferred_payment_copy = 7;
+  ManageSubscriptionDashboard manage_subscription_dashboard = 8;
+  money.UpsellDetails upsell_details = 9;
+  money.UpsellConfirmation callout_data = 10;
+  money.UpsellConfirmation additional_messaging_data = 11;
+  google.protobuf.BoolValue is_eligible_for_dashcard_plan_stacking = 12;
+  money.MonetaryFields partial_refund = 13;
+  money.MonetaryFields full_refund = 14;
+  google.protobuf.BoolValue is_partially_refundable = 15;
+  google.protobuf.BoolValue is_fully_refundable = 16;
+  // only fetched on thq requests
+  doordash.billing_service.v1.SubscriptionInvoiceList subscription_invoice_list = 17;
+  // only fetched on thq requests
+  google.protobuf.StringValue stripe_customer_id = 19;
+  // only fetched on thq requests
+  google.protobuf.StringValue refund_fraud_message = 20;
+}
+
+message SubscriptionTransitionMetaData {
+  google.protobuf.StringValue transition_plan_id = 1;
+  google.protobuf.StringValue transition_plan_interval_type = 2; // Ex: "monthly plan", "annual plan"
+  TransitionType transition_type = 3;
+  google.protobuf.Timestamp start_time = 4;
+}
+
+message ManageSubscriptionDashboard {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue description = 2;
+
+  repeated ManageSubscriptionSection sections = 3;
+  repeated ManageSubscriptionAction actions = 4;
+}
+
+message ManageSubscriptionSection {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue name = 2;
+  ManageSubscriptionSectionBadge badge = 3;
+  repeated google.protobuf.StringValue description = 4;
+  repeated ManageSubscriptionAction actions = 5;
+  google.protobuf.StringValue leading_icon = 6;
+}
+
+enum ManageSubscriptionSectionBadgeType {
+  SECTION_BADGE_TYPE_UNSPECIFIED = 0;
+  SECTION_BADGE_TYPE_UNKNOWN = 1;
+  SECTION_BADGE_TYPE_STATUS_ACTIVE = 2;
+  SECTION_BADGE_TYPE_STATUS_PAUSED = 3;
+  SECTION_BADGE_TYPE_STATUS_CANCELLED = 4;
+  SECTION_BADGE_TYPE_STATUS_PENDING = 5;
+  SECTION_BADGE_TYPE_STATUS_PAYMENT_FAILED = 6;
+  SECTION_BADGE_TYPE_STATUS_FREE_TRIAL = 7;
+}
+
+message ManageSubscriptionSectionBadge {
+  google.protobuf.StringValue label = 1;
+  ManageSubscriptionSectionBadgeType type = 2;
+}
+
+enum ManageSubscriptionActionType {
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_UNSPECIFIED = 0;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_UNKNOWN = 1;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_CHANGE_PAYMENT_METHOD = 2;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_VIEW_BILLING_HISTORY = 3;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_REVIEW_BENEFIT_DETAILS = 4;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_CANCEL_SUBSCRIPTION = 5;
+  // Undo the cancel subscription action
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_RESUBSCRIBE_SUBSCRIPTION = 6;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_PAUSE_SUBSCRIPTION = 7;
+  // Undo the pause subscription action, or resume paused subscription
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_RESUME_SUBSCRIPTION = 8;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_GO_BACK = 9;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_CONTACT_SUPPORT = 10;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_TRIAL_REMINDER = 11;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_ACCEPT_FREE_DASHPASS = 12;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_SEND_DASHPASS_GIFT_CARD = 13;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_SHARE_MEMBERSHIP = 14;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_MANAGE_MAX = 15;
+  MANAGE_SUBSCRIPTION_ACTION_TYPE_NAVIGATE = 16;
+}
+
+message ManageSubscriptionAction {
+  google.protobuf.StringValue label = 1;
+  ManageSubscriptionActionType type = 2;
+
+  // Tapping/clicking the action may bring up an upsell (old, use UIFlowScreen below instead)
+  SubscriptionActionUpsellDetails subscription_upsell_details = 3;
+  repeated SubscriptionActionUpsellParameters subscription_upsell_parameters = 4;
+
+  // Tapping/clicking the action may bring up a completely new screen or upsell
+  common.UIFlowScreen action_flow_screen = 5;
+
+  // Metadata for the action, currently we only have url to support navigate action
+  SubscriptionActionMetadata metadata = 6;
+}
+
+message SubscriptionActionMetadata {
+  google.protobuf.StringValue url = 1;
+}
+
+message SubscriptionActionUpsellParameters {
+  SubscriptionActionUpsellParameterType key = 1;
+  google.protobuf.StringValue value = 2;
+}
+
+enum SubscriptionActionUpsellParameterType {
+  SUBSCRIPTION_ACTION_UPSELL_PARAMETER_TYPE_SUCCESS_MESSAGE = 0;
+  SUBSCRIPTION_ACTION_UPSELL_PARAMETER_TYPE_FAILURE_MESSAGE = 1;
+}
+
+message SubscriptionActionUpsellDetails {
+  google.protobuf.StringValue title = 1;
+  repeated DescriptionSection description = 2;
+  repeated ManageSubscriptionAction actions = 3;
+  money.SubscriptionTermsAndConditions terms_and_conditions = 4;
+  money.BadgeType header_badge = 5;
+  google.protobuf.StringValue image_url = 6;
+  money.UpsellConfirmationAccessoryType accessory_type = 7;
+}
+
+message DescriptionSection {
+  DescriptionType type = 1;
+  google.protobuf.StringValue text = 2;
+  repeated DescriptionSection description = 3;
+}
+
+enum DescriptionType {
+  DESCRIPTION_TYPE_UNKNOWN = 0;
+  DESCRIPTION_TYPE_TITLE = 1;
+  DESCRIPTION_TYPE_LIST_ITEM = 2;
+}
+
+enum SubscriptionStatus {
+  UNKNOWN_SUBSCRIPTION_STATUS = 0;
+  ENROLLED_WAITING_FOR_PAYMENT = 1;
+  ACTIVE = 2;
+  TEMP_DEACTIVATED_WAITING_FOR_PAYMENT = 3;
+  CANCELLED_WAITING_FOR_EXPIRATION = 4;
+  CANCELLED = 5;
+  CANCELLED_IMMEDIATELY_AND_REFUNDED = 6;
+  DOES_NOT_EXIST = 7;
+  CANCELLED_SUBSCRIPTION_CREATION_FAILED = 8;
+  CANCELLED_SUBSCRIPTION_INVOICE_FAILED = 9;
+  PAUSED = 10;
+  PAUSED_WAITING_FOR_EXPIRATION = 11;
+  CANCELLED_WAITING_FOR_FREE_PERIOD = 12;
+  FREE_PERIOD = 13;
+  FREE_PERIOD_CANCEL_AFTER = 14;
+  CANCELLED_AFTER_FREE_PERIOD = 15;
+  PAUSED_FAILED_PAYMENT = 16;
+  ELECTED_PENDING_ACTIVATION = 17;
+}
+
+message SubscriptionPaymentCard {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue stripe_id = 2;
+  google.protobuf.StringValue consumer_id = 3;
+  google.protobuf.StringValue last4 = 4;
+  google.protobuf.StringValue type = 5;
+  google.protobuf.StringValue exp_month = 6;
+  google.protobuf.StringValue exp_year = 7;
+  google.protobuf.StringValue card_benefit_membership_link_status = 8;
+  google.protobuf.StringValue partner_card_display_name = 9;
+  PartnerName partner_name = 10;
+  google.protobuf.StringValue fingerprint = 11;
+  google.protobuf.StringValue dynamic_last4 = 12;
+}
+
+message EnrollmentCalloutInfo {
+  EnrollmentCalloutInfoStatus status = 1;
+  GeneralCalloutInfo callout_info = 2;
+}
+
+enum EnrollmentCalloutInfoStatus {
+  UNKNOWN_ENROLLMENT_INFO_STATUS = 0;
+  SUCCEEDED = 1;
+  PAYMENT_PENDING = 2;
+}
+
+message GeneralCalloutInfo {
+  google.protobuf.StringValue title = 1;
+  google.protobuf.StringValue description = 2;
+  common.UIFlowScreen ui_screen = 3;
+}
+
+message SubscriptionDiscountStats {
+  google.protobuf.Int32Value total_num_discounted_deliveries = 1;
+  money.MonetaryFields total_discount = 2;
+}
+
+message LastRenewalAttempt {
+  google.protobuf.StringValue status = 1;
+  google.protobuf.StringValue error_code = 2;
+  SubscriptionPaymentCard payment_card = 3;
+  google.protobuf.Timestamp attempted_at = 4;
+  money.MonetaryFields amount = 5;
+}
+
+message SubscriptionCalloutInfo {
+  google.protobuf.StringValue header_title = 1;
+  repeated SubscriptionCalloutInfoHeaderDescription header_descriptions = 2;
+  repeated SubscriptionCalloutInfoSection sections = 3;
+}
+
+message SubscriptionCalloutInfoHeaderDescription {
+  google.protobuf.StringValue header_content = 1;
+  google.protobuf.StringValue header_style = 2;
+}
+
+message SubscriptionCalloutInfoSection {
+  google.protobuf.StringValue section_title = 1;
+  google.protobuf.StringValue section_name = 2;
+  repeated google.protobuf.StringValue section_descriptions = 3;
+}
+
+message CancellationSurvey {
+  repeated CancellationSurveyQuestion question = 1;
+}
+
+message CancellationSurveyQuestion {
+  google.protobuf.StringValue id = 1;
+  repeated CancellationSurveyQuestionAnswerOption answer_options = 2;
+  google.protobuf.StringValue question = 3;
+  google.protobuf.BoolValue include_freeform_answer_option = 4;
+}
+
+message CancellationSurveyQuestionAnswerOption {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue text = 2;
+  google.protobuf.Int32Value priority = 3;
+  repeated ManageSubscriptionAction actions = 4;
+}
+
+message ConsumerSubscriptionMetadata {
+  google.protobuf.Int32Value meals_remaining = 1;
+}
+
+enum MembershipSharingType {
+  UNKNOWN_MEMBERSHIP_SHARING_TYPE = 0;
+  NOT_SHARING = 1;
+  PRIMARY = 2;
+  SECONDARY = 3;
+}

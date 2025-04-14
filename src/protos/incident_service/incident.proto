@@ -1,0 +1,319 @@
+syntax = "proto3";
+
+package incident.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/doordash/services-protobuf/generated/incident_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.incident";
+
+// Incident Service defined endpoints
+service IncidentService {
+  // GetIncident retrieves the information for a single incident.
+  rpc GetIncident(GetIncidentRequest) returns (GetIncidentResponse) {}
+
+  // ListIncidents retrieves a paginated list of incidents, optionally
+  // filtered by the filtering options provided.
+  rpc ListIncidents(ListIncidentsRequest) returns (ListIncidentsResponse) {}
+
+  // CreateIncident creates an incident
+  // This RPC expects a custom header for Basic Authentication
+  // The header should contain 'Authorization: Basic <base64 encoded username:password>'
+  // Reach out in #ask-observability to use this API
+  rpc CreateIncident(CreateIncidentRequest) returns (CreateIncidentResponse) {}
+
+  // Future RPC endpoints:
+  //rpc UpdateIncident(UpdateIncidentRequest) returns (IncidentResponse) {}
+
+  // It might make sense to have some custom RPC endpoints (CloseIncident)
+  // that are not easily expressed in the standard set (Get, List, Create,
+  // Update, Delete). Note, we do not provide DeleteIncident, as we never
+  // want to be able to delete an incident (at this time).
+}
+
+// GetIncidentRequest identifies which single incident to retrieve. If provided
+// the incident is retrieved first by UUID, then PEV number, and finally Jira
+// issue, in that order precedence.
+message GetIncidentRequest {
+  // Retrieve an incident by UUID.
+  string uuid = 1;
+
+  // Retrieve an incident by bug/issue.
+  string issue = 2;
+
+  // Retrieve an incident by PEV number.
+  int64 pev = 3;
+}
+
+// ListIncidentsRequest is used to retrieve a (possibly filtered) list of
+// incidents from incident-service.
+message ListIncidentsRequest {
+  // Sample of a filter field, this may need to be expanded upon, possibly
+  // using a set of repeated fields/messages. Or we have a query language
+  // that we interpret and/or use as part of the backend DB query. Filter
+  // needs to remain the same for all subsequent pages of a list request.
+  Filter filter = 1;
+
+  // The maximum number of incidents to return. The service may return fewer
+  // then this value. If unspecified, at most NN incidents will be returned.
+  // The maximum value is 100; values above this will be coerced to 100.
+  int32 page_size = 2;
+
+  // A page token, received from a previous call to ListIncidents. Provide
+  // this field to retrieve subsequent pages. When paginating, all other
+  // parameters must match the original call that provided the page token.
+  string page_token = 3;
+}
+
+// CreateIncidentRequest is used to create an incident
+message CreateIncidentRequest {
+  // Short description for the incident
+  string description = 1;
+  // Severity of the incident (S0, S1, S2)
+  Severity severity = 2;
+  // Name of the service impacted by the incident
+  // Note: Service should be valid and present in the asset catalog
+  string service = 3;
+  // Assignee is the email address of the person
+  // who is assigned to be the Incident Commander
+  string assignee = 4;
+}
+
+// ListIncidentsResponse returns a page of requested incidents.
+message ListIncidentsResponse {
+  // The requested incidents, paginated.
+  repeated Incident incidents = 1;
+
+  // A token that can be used as part of page_token to retrieve the next page
+  // of incidents. If this field is omitted, there are no more incidents to
+  // retrieve.
+  string next_page_token = 2;
+}
+
+// GetIncidentResponse gets an incident
+message GetIncidentResponse {
+  // The incident object
+  Incident incident = 1;
+}
+
+// CreateIncidentResponse returns a newly created incident
+message CreateIncidentResponse {
+  // The incident object
+  Incident incident = 1;
+}
+
+// Incident represents all the data/metadata about a single incident.
+message Incident {
+  // The UUID referencing this incident. Primary key.
+  string uuid = 1;
+  // The pev (production event) key. Unique key. I'm not too enamored
+  // at making this an int64, and would prefer a string. Possibly
+  // encoded to a "PEV-1234" style string for human consumption.
+  int64 pev = 2;
+
+  // The incident type defines the type of incident this is, such as
+  // investigation, incident or past incident. This could be expanded in the
+  // future to add additional incident types
+  IncidentType incident_type = 3;
+
+  // The incident state defines the current state of the incident, such as
+  // Active, Mitigated, Resolved. This could be expanded in the future to
+  // add additional incident states
+  IncidentState incident_state = 4;
+
+  // Severity of this incident (S0, S1, etc). Making a message to easily
+  // allow extension of this field later on, possibly things like "by area",
+  // "by level". It can also be moved from a message to a repeated field
+  // (that operation is backwards compatible), where we may end up encoding
+  // multiple different severities "by area", etc. As long as we keep the
+  // first severity entry (in a repeated field) the "overall severity" of the
+  // incident, code that does not expect a repeated should continue to work.
+  Severity severity = 5;
+
+  // Information for the tracking bug/issue for this incident.
+  Bug issue = 6;
+  // Information about the communications channel(s) used.
+  Comms comms = 7;
+  // Postmortem information.
+  Postmortem postmortem = 8;
+
+  // Who reported the incident
+  // Note, do not use reported_by following https://google.aip.dev/140
+  Reporter reporter = 9;
+
+  // Final role information for this incident. Using a repeated here to be
+  // able to encode historic information about roles in the future by using
+  // the same Role message.
+  repeated Role roles = 10;
+  // Historic role information example.
+  //repeated Role historic_roles = NN;
+
+  // Various timestamps for this incident.
+  Timeinfo times = 11;
+
+  // A human readable description of this incident.
+  string description = 12;
+
+  // Timestamp for the next notification time
+  google.protobuf.Timestamp next_notification_time = 13;
+}
+
+// Encode the Incident Types
+enum IncidentType {
+  // Incident Type is unspecified
+  INCIDENT_TYPE_UNSPECIFIED = 0;
+  // Incident is an Incident
+  INCIDENT_TYPE_INCIDENT = 1;
+  // Incident is an Investigation
+  INCIDENT_TYPE_INVESTIGATION = 2;
+  // Incident is a Past Incident
+  INCIDENT_TYPE_PAST_INCIDENT = 3;
+}
+
+// Encode the Incident States
+enum IncidentState {
+  // Incident State is unspecified
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  // Incident is Active
+  INCIDENT_STATE_ACTIVE = 1;
+  // Incident is Mitigated
+  INCIDENT_STATE_MITIGATED = 2;
+  // Incidient is Resolved
+  INCIDENT_STATE_RESOLVED = 3;
+}
+
+// Encodes the severity, scope, etc of an incident.
+message Severity {
+  // Not used, example for future expansion.
+  //string scope = 1;
+  // Level of this incident (IE: S0, S1, S2).
+  IncidentLevel level = 1;
+}
+
+// Encode the Incident Level (Severity)
+enum IncidentLevel {
+  // Incident doesn't have a severity
+  INCIDENT_LEVEL_UNSPECIFIED = 0;
+  // Incident is an S0
+  INCIDENT_LEVEL_S0 = 1;
+  // Incident is an S1
+  INCIDENT_LEVEL_S1 = 2;
+  // Incident is an S2
+  INCIDENT_LEVEL_S2 = 3;
+}
+
+// Encodes a reference to a tracking bug/issue.
+message Bug {
+  // Foreign key that can be used to query bug database
+  // for more information.
+  string issue_key = 1;
+  // URL for where to send a human to see more about the
+  // specific bug we are referencing.
+  string issue_url = 2;
+}
+
+// Encode the communications mediums used for this incident.
+message Comms {
+  // Slack channel (human readable)
+  string slack_channel = 1;
+  // Slack channel id
+  string slack_channel_id = 2;
+  // Zoom meeting join url
+  string zoom_url = 3;
+  // Response JSON from zoom meetingCreate call (Base64 encoded)
+  string zoom_meeting_data = 4;
+}
+
+// Encode postmortem information.
+message Postmortem {
+  // Where to send a human to find the document.
+  string document_url = 1;
+  // Example things to extend once we handle postmortems a bit more:
+  //PostmortemStatus status = 2;
+  // etc.
+}
+
+// Encode the reporter information
+message Reporter {
+  // Who the reporter was (DD Email)
+  string reporter = 1;
+  // Where the incident was reported from
+  ReporterSource reporter_source = 2;
+}
+
+// Encode the source of the reporter
+enum ReporterSource {
+  // Source is unknown
+  REPORTER_SOURCE_UNSPECIFIED = 0;
+  // Source is slack
+  REPORTER_SOURCE_SLACK = 1;
+  // Source is devconsole
+  REPORTER_SOURCE_DEVCONSOLE = 2;
+}
+
+// Encode role information.
+message Role {
+  // The type of this role (IC, Comms, etc).
+  RoleType type = 1;
+  // EMail address of the human occupying the role.
+  string email_address = 2;
+  // Future expansion ideas. Keep a history, and return those as well. If the
+  // first entry in the repeated is the "final" roles, without filling in the
+  // start/end timestamps, existing code should continue to work.
+  //google.protobuf.Timestamp start = 3;
+  //google.protobuf.Timestamp end = 4;
+}
+
+// Encode the type of role (IC, Comms, etc).
+enum RoleType {
+  // Role is unspecified
+  ROLE_TYPE_UNSPECIFIED = 0;
+  // Role is one of incident commander.
+  ROLE_TYPE_IC = 1;
+  // Role is for communications officer.
+  ROLE_TYPE_COMMS = 2;
+  // Role is for the incident scribe.
+  ROLE_TYPE_SCRIBE = 3;
+  // Role is for the ops person/people.
+  ROLE_TYPE_OPS = 4;
+  // Role for the initial postmortem DRI.
+  ROLE_TYPE_PM_OWNER = 5;
+}
+
+// Encode various timestamp information about the incident.
+message Timeinfo {
+  // When the incident/impact started.
+  google.protobuf.Timestamp start = 1;
+  // When we became aware of the impact.
+  google.protobuf.Timestamp detection = 2;
+  // When we decided to declare this incident.
+  google.protobuf.Timestamp declared = 3;
+  // When the effect was mitigated (recovery started).
+  google.protobuf.Timestamp mitigated = 4;
+  // When the recovery is complete.
+  google.protobuf.Timestamp resolved = 5;
+  // When we believe the incident won't regress.
+  google.protobuf.Timestamp completed = 6;
+}
+
+// Encode the filter options
+message Filter {
+  // Add filters for the incident type
+  repeated IncidentType incident_type = 1;
+  // Add filters for the incident state
+  repeated IncidentState incident_state = 2;
+  // Add filters for the severity
+  repeated Severity severity = 3;
+  // Add filter for the datetime
+  DateTimeRange declare_range = 4;
+}
+
+// Encode the datetime filter
+message DateTimeRange {
+  // Add start datetime
+  google.protobuf.Timestamp start = 1;
+  // Add end datetime
+  google.protobuf.Timestamp end = 2;
+}

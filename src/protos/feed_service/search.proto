@@ -1,0 +1,482 @@
+syntax = "proto3";
+package feed_service;
+
+import "common/order.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "doordash.api/field_validate.proto";
+import "feed_service/bundle_search.proto";
+import "feed_service/common.proto";
+import "feed_service/facet.proto";
+import "feed_service/home_page.proto";
+import "feed_service/nearby_map.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "presentation_gateway/presentation_gateway_config.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_outer_classname = "SearchFeedApi";
+option java_package = "com.doordash.rpc.feed_service.search";
+
+service SearchFeedService {
+  option (doordash.api.service) = {
+    url: "feed-service-web.service.prod.ddsd"
+    name: "SearchFeedService"
+    port: 50051
+    name_spaces: ["search"]
+    owner: {
+      id: "search-eq"
+      name: "search-eq"
+      slack_channel: "#search-eq-oncall"
+      email_alias: "search-eq-eng@doordash.com"
+    }
+    target_products: [CX]
+  };
+
+  rpc getConsumerSearchFilters(GetConsumerSearchFiltersRequest) returns (GetConsumerSearchFiltersResponse);
+  rpc getConsumerSearchFilterResults(GetConsumerSearchFilterResultsRequest) returns (GetConsumerSearchFilterResultsResponse);
+  rpc getConsumerSearchResults(GetConsumerSearchResultsRequest) returns (GetConsumerSearchResultsResponse);
+  rpc getAutocompleteResults(GetAutocompleteResultsRequest) returns (GetAutocompleteResultsResponse);
+
+  rpc getRecommendedStoresSearch(GetRecommendedStoresSearchRequest) returns (GetRecommendedStoresSearchResponse);
+
+  rpc getConsumerPickupSearchFilters(GetConsumerPickupSearchFiltersRequest) returns (GetConsumerPickupSearchFiltersResponse);
+  rpc getConsumerPickupSearchFilterResults(GetConsumerPickupSearchFilterResultsRequest) returns (GetConsumerPickupSearchFilterResultsResponse);
+  rpc getBundleSearchResults(GetBundleSearchResultsRequest) returns (GetBundleSearchResultsResponse) {
+    option (service_client.client_method_config).response_attempt_timeout_millis = 5000;
+    option (presentation_gateway.v1.presentation_gateway_config).service_name = "feed-service";
+    option (presentation_gateway.v1.presentation_gateway_config).service_app = "web";
+  }
+
+  // UG Endpoint for Rotating Search
+  rpc GetRotatingSearchTerms(GetRotatingSearchTermsRequest) returns (GetRotatingSearchTermsResponse) {
+    option (google.api.http) = {get: "/search/v1/rotating_search"};
+    option (service_client.client_method_config).response_attempt_timeout_millis = 3000;
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [
+        CX_USER,
+        CX_GUEST
+      ]
+      target_products: [CX]
+    };
+    option (doordash.api.inject_headers) = {
+      inject: [
+        {field: "platform"},
+        {field: "is_employee"},
+        {field: "cx_id"},
+        {field: "is_guest"},
+        {field: "cx_geo_submarket_id"},
+        {field: "cx_geo_lng"},
+        {field: "cx_geo_lat"},
+        {field: "cx_geo_district_id"},
+        {field: "cx_geo_time_zone"}]
+    };
+  }
+}
+
+message GetRecommendedStoresSearchRequest {
+  // Contains common fields like consumer id, submarket id, district id, lat, lng, timezone
+  CommonFacetRequestFields common_fields = 1;
+}
+
+message GetRecommendedStoresSearchResponse {
+  // List of recommended stores
+  repeated StoreListDM store_list = 1;
+}
+
+message GetConsumerSearchFiltersRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue country_shortname = 6;
+}
+
+message GetConsumerSearchFilterResultsResponse {
+  repeated StoreListDM store_lists = 1;
+  DMNext next = 2;
+  google.protobuf.UInt32Value total_stores = 3;
+}
+
+message SearchItemListDM {
+  google.protobuf.StringValue id = 1;
+  google.protobuf.StringValue type = 2;
+  google.protobuf.UInt32Value sort_order = 3;
+  google.protobuf.StringValue version = 4;
+  Data data = 5;
+
+  message Data {
+    repeated Item content = 1;
+  }
+}
+
+message GetConsumerSearchFilterResultsRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  repeated EFSFilter efs_filters = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue scheduled_time = 6;
+  google.protobuf.StringValue cursor = 7;
+  google.protobuf.Int64Value submarket_id = 8;
+  google.protobuf.StringValue time_zone = 9;
+}
+
+message GetConsumerSearchFiltersResponse {
+  Cuisines cuisines = 1;
+  repeated Filter filters = 2;
+}
+
+message GetConsumerSearchResultsRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.StringValue query = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue scheduled_time = 6;
+  google.protobuf.StringValue store_cursor = 7;
+  google.protobuf.Int64Value submarket_id = 8;
+  google.protobuf.StringValue time_zone = 9;
+  google.protobuf.BoolValue is_pickup = 10;
+  repeated EFSFilter efs_filters = 11;
+  // Consumer's actual location instead of where the search is centered. Used to calculate
+  // distance and travel from consumer to store.
+  google.protobuf.DoubleValue consumer_lat = 12;
+  google.protobuf.DoubleValue consumer_lng = 13;
+  // Used for cropping out search results to a certain area
+  MapBoundingBox map_bounding_box = 14;
+  google.protobuf.StringValue country_shortname = 15;
+  google.protobuf.DoubleValue delivery_lat = 16 [deprecated = true];
+  google.protobuf.DoubleValue delivery_lng = 17 [deprecated = true];
+  SearchUseCase search_use_case = 18;
+  // Information needed to calculate delivery availability and ETAs
+  NearbyMapDeliveryInfo nearby_map_delivery_info = 19;
+
+  // Offset used for reservations search to paginate through stores with reservations
+  // Pagination is required at this point because external vendor is slow so we need to
+  // break our requests into small chunks.
+  google.protobuf.Int64Value reservations_index = 20;
+  // Source of request
+  enum RequestSource {
+    // Unspecified
+    REQUEST_SOURCE_UNSPECIFIED = 0;
+    // Request from SEO
+    REQUEST_SOURCE_SEO = 1;
+  }
+  RequestSource request_source = 21;
+}
+
+message GetConsumerSearchResultsResponse {
+  repeated StoreListDM store_lists = 1;
+  repeated SearchItemListDM item_lists = 2;
+  DMNext store_next = 3;
+  google.protobuf.UInt32Value total_stores = 4;
+  // Eyebrow on top of the bottom sheet
+  EyebrowDetails eyebrow_details = 5;
+
+  // Index for the next page in reservation pagination.
+  // If this is empty, that means there are no more pages available
+  google.protobuf.Int64Value next_reservations_index = 6;
+
+  // The height of the bottom sheet on the map.
+  BottomSheetHeight bottom_sheet_height = 7;
+}
+
+message GetAutocompleteResultsRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.StringValue query = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.Int64Value submarket_id = 6;
+  google.protobuf.BoolValue is_pickup = 7;
+  // Consumer's actual location instead of where the search is centered. Used to calculate
+  // distance and travel from consumer to store.
+  google.protobuf.DoubleValue consumer_lat = 8;
+  google.protobuf.DoubleValue consumer_lng = 9;
+  SearchUseCase search_use_case = 10;
+}
+
+message GetAutocompleteResultsResponse {
+  repeated AutocompleteEntity autocomplete_entities = 1;
+  // represents a grouping of autocompleted stores by business group ids (chain stores like chipotle, mcd, etc)
+  repeated AutocompleteStoreGroupingEntity autocomplete_store_group_entities = 2;
+}
+
+message GetConsumerPickupSearchFiltersRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.Int64Value consumer_id = 3;
+  google.protobuf.Int64Value submarket_id = 4;
+  google.protobuf.Int64Value district_id = 5;
+  google.protobuf.StringValue country_shortname = 6;
+  SearchUseCase search_use_case = 7;
+}
+
+message GetConsumerPickupSearchFiltersResponse {
+  Cuisines cuisines = 1;
+  repeated Filter filters = 2;
+}
+
+message GetConsumerPickupSearchFilterResultsRequest {
+  google.protobuf.DoubleValue lat = 1;
+  google.protobuf.DoubleValue lng = 2;
+  google.protobuf.DoubleValue consumer_lat = 3;
+  google.protobuf.DoubleValue consumer_lng = 4;
+  google.protobuf.Int64Value consumer_id = 5;
+  repeated EFSFilter efs_filters = 6;
+  google.protobuf.Int64Value district_id = 7;
+  google.protobuf.StringValue scheduled_time = 8;
+  google.protobuf.StringValue cursor = 9;
+  google.protobuf.Int64Value submarket_id = 10;
+  google.protobuf.StringValue time_zone = 11;
+  MapBoundingBox map_bounding_box = 12;
+  // Delivery lat/lng used to determine Delivery ETAs
+  // and Delivery Availability on the map
+  google.protobuf.DoubleValue delivery_lat = 13 [deprecated = true];
+  google.protobuf.DoubleValue delivery_lng = 14 [deprecated = true];
+  SearchUseCase search_use_case = 15;
+  // Information needed to calculate delivery availability and ETAs
+  NearbyMapDeliveryInfo nearby_map_delivery_info = 19;
+}
+
+message GetConsumerPickupSearchFilterResultsResponse {
+  // List of containers for Lego components to be included in the bottom sheet of the pickup/nearby tab. For example,
+  // the reorder Lego carousel will be returned here.
+  repeated FacetDM facets = 5;
+
+  // DEPRECATED List of containers for Lego carousels to be included in the bottom sheet of the pickup/nearby tab. For
+  // example, the reorder Lego carousel will be returned here.
+  repeated StoreCarouselDM store_carousels = 4 [deprecated = true];
+
+  repeated StoreListDM store_lists = 1;
+  DMNext next = 2;
+  google.protobuf.UInt32Value total_stores = 3;
+  // Eyebrow on top of the map bottom sheet
+  EyebrowDetails eyebrow_details = 6;
+
+  // Index for the next page in reservation pagination.
+  // If this is empty or -1, that means there are no more pages available
+  google.protobuf.UInt32Value next_reservations_index = 7;
+
+  // The height of the bottom sheet on the map.
+  BottomSheetHeight bottom_sheet_height = 8;
+}
+
+message GetBundleSearchResultsRequest {
+  google.protobuf.StringValue consumer_id = 1;
+  google.protobuf.StringValue user_id = 2;
+  google.protobuf.DoubleValue consumer_lat = 3;
+  google.protobuf.DoubleValue consumer_lng = 4;
+  BundleType bundle_type = 5;
+  order.BundleOpportunitiesCorrelationIdentifier correlation_id = 6;
+  google.protobuf.Int64Value max_num_of_stores = 7;
+  google.protobuf.StringValue submarket_id = 8;
+  google.protobuf.StringValue district_id = 9;
+  google.protobuf.BoolValue is_notification_request = 10;
+  BundleContext bundle_context = 11;
+
+  // Selected sort by type.
+  BundleSortOption.SortByType sort_by_type = 12;
+
+  // Disable cache functionality for debugging purposes.
+  google.protobuf.BoolValue debug_disable_cache = 13;
+
+  // Selected filter(s).
+  repeated BundleFilterSelection filter_selection = 14;
+
+  // Source of request
+  enum RequestSource {
+    // Unspecified
+    REQUEST_SOURCE_UNSPECIFIED = 0;
+    // Request from feed
+    REQUEST_SOURCE_FEED = 1;
+    // Request from post-checkout push notification in order-gateway
+    REQUEST_SOURCE_PUSH_NOTIFICATION = 2;
+    // Request from doubledash post-checkout live activity ui producer
+    REQUEST_SOURCE_POST_CHECKOUT_LIVE_ACTIVITY_PRODUCER = 3;
+    // Request to get homepage reminder
+    REQUEST_SOURCE_HOMEPAGE_REMINDER = 4;
+  }
+  RequestSource request_source = 15;
+  google.protobuf.StringValue cx_geo_address_id = 16;
+}
+
+message GetBundleSearchResultsResponse {
+  repeated BundleStoreOpportunity stores = 1;
+  google.protobuf.Timestamp expires_at = 2;
+
+  // Contains data used to configure various features within the doubledash bottom sheet.
+  BundleDisplayOptions display_options = 3;
+
+  // Contains data used to display lego content on the page.
+  BundleLegoPage lego_page = 4;
+
+  // Contains data used to display store pins on the map.
+  repeated BundleMapStorePin map_store_pins = 5;
+
+  // Contains data used for bundle notifications.
+  BundleNotificationContext notification_context = 6;
+}
+
+message BundleStoreOpportunity {
+  string id = 1;
+  google.protobuf.DoubleValue latitude = 2;
+  google.protobuf.DoubleValue longitude = 3;
+  google.protobuf.StringValue name = 4;
+  google.protobuf.StringValue cover_image_url = 5;
+  google.protobuf.StringValue business_name = 6;
+
+  // used to retrieve retail store collection details for carousel display
+  google.protobuf.StringValue retail_store_default_bundle_collection_id = 7;
+  google.protobuf.BoolValue is_retail = 8;
+  google.protobuf.StringValue bundle_menu_id = 9;
+  google.protobuf.StringValue business_vertical_id = 10;
+
+  // Indicate if this BundleStoreOpportunity is for the same store as O1 (the original order), used for
+  // the DidYouForget project to encourage doubledashing from the same store post-checkout
+  google.protobuf.BoolValue is_primary_store = 11;
+
+  // o2 Static eta information
+  BundleStaticETA bundle_static_eta = 12;
+
+  google.protobuf.StringValue business_description = 13;
+
+  google.protobuf.DoubleValue avg_merchant_rating = 14;
+  google.protobuf.Int32Value num_merchant_ratings = 15;
+
+  // Used to have a consistent display for number of ratings across platforms
+  google.protobuf.StringValue num_merchant_ratings_display_string = 19;
+
+  // 0-indexed (0 is most relevant)
+  google.protobuf.Int32Value relevance_rank = 16;
+
+  google.protobuf.StringValue header_image_url = 17;
+  google.protobuf.Int64Value num_orders_28d = 18;
+
+  // Used for filtering by categories
+  repeated google.protobuf.StringValue categories = 20;
+
+  repeated BundlePromotionBadge promotion_badge = 21;
+
+  // Description to show incremental effort string description, e.g. +1 min or +1 mile
+  google.protobuf.StringValue bundle_incremental_effort_description = 22;
+}
+
+message BundlePromotionBadge {
+  string description = 1;
+}
+
+message BundleStaticETA {
+  google.protobuf.Int64Value bundle_order_incremental_duration_millis = 1;
+  // Description to show in FE. Eg: +1 min
+  google.protobuf.StringValue description = 2;
+}
+
+// Bundle Type
+enum BundleType {
+  // Unspecified
+  BUNDLE_TYPE_UNSPECIFIED = 0;
+  // Pre-Checkout
+  BUNDLE_TYPE_PRE_CHECKOUT = 1;
+  // Post-Checkout
+  BUNDLE_TYPE_POST_CHECKOUT = 2;
+  // Alcohol Menu Bundling
+  BUNDLE_TYPE_ALCOHOL_MENU_BUNDLE = 3;
+  // Pre-Checkout v1
+  BUNDLE_TYPE_PRE_CHECKOUT_V1 = 4;
+  // Package Pickup
+  BUNDLE_TYPE_PACKAGE_PICKUP = 5;
+  // Pre-Checkout Cart Carousel
+  BUNDLE_TYPE_PRE_CHECKOUT_CART = 6;
+  // Bundle orders which were bundled using pre-checkout retail search
+  BUNDLE_TYPE_PRE_CHECKOUT_RETAIL_SEARCH = 7;
+  // Bundle orders which were bundled using pre-checkout item page
+  BUNDLE_TYPE_PRE_CHECKOUT_ITEM = 8;
+  // Bundle orders which were bundled from pre-checkout NV aggregate store
+  BUNDLE_TYPE_NV_AGGREGATE_STORE = 9;
+}
+
+message BundleContext {
+  // Encapsulates data for orthogonal use cases
+  oneof context {
+    // Alcohol menu bundling
+    MenuBundleContext menu_bundle_context = 1;
+    // Pre-checkout V1
+    PreCheckoutV1Context pre_checkout_v1_context = 2;
+  }
+}
+
+message PreCheckoutV1Context {
+  // To be deprecated in favor of anchor_store_id
+  google.protobuf.StringValue primary_store_id = 1;
+  // The store_id of the store page that is being shown, aka, anchor store
+  google.protobuf.StringValue anchor_store_id = 2;
+}
+
+message MenuBundleContext {
+  google.protobuf.StringValue primary_store_id = 1;
+}
+
+// Data used in bundle global search requests.
+message BundleGlobalSearchContext {
+  // O1 store context
+  google.protobuf.Int64Value primary_store_id = 1;
+  google.protobuf.Int64Value primary_store_business_id = 2;
+  google.protobuf.Int32Value primary_store_starting_point_id = 3;
+  google.protobuf.DoubleValue primary_store_lat = 4;
+  google.protobuf.DoubleValue primary_store_lng = 5;
+
+  // primary order delivery address context
+  google.protobuf.DoubleValue delivery_address_lat = 10;
+  google.protobuf.DoubleValue delivery_address_lng = 11;
+  google.protobuf.Int32Value delivery_address_district_id = 12;
+  google.protobuf.Int32Value delivery_address_submarket_id = 13;
+  google.protobuf.StringValue delivery_address_country_code = 14;
+
+  // Bundle type to search with
+  BundleType bundle_type = 6;
+
+  // Location search options
+  enum BundleLocationSearchOption {
+    // Search both area around Mx and Cx
+    BUNDLE_LOCATION_SEARCH_OPTION_UNSPECIFIED = 0;
+    // Search both area around Mx and Cx
+    BUNDLE_LOCATION_SEARCH_OPTION_DEFAULT = 1;
+    // Search area around Mx only
+    BUNDLE_LOCATION_SEARCH_OPTION_MX_LOCATION = 2;
+    // Search area around Cx only
+    BUNDLE_LOCATION_SEARCH_OPTION_CX_LOCATION = 3;
+  }
+  // Location search option to apply to search
+  BundleLocationSearchOption bundle_search_option = 7;
+
+  // Search radius in miles
+  google.protobuf.DoubleValue search_radius_mi = 9;
+
+  reserved 8;
+}
+
+message BundleFilterSelection {
+  // Type of filter to apply. Maps to filtering logic within feed-service.
+  BundleFilter.FilterType filter_type = 1;
+
+  // The selected filter values.
+  repeated google.protobuf.StringValue values = 2;
+}
+
+// Response for rotating search terms
+message GetRotatingSearchTermsResponse {
+  // Lists of display modules
+  repeated google.protobuf.StringValue terms = 1;
+}
+
+// Request for rotating search teams
+message GetRotatingSearchTermsRequest {
+  CommonFacetRequestFields common_fields = 1;
+}

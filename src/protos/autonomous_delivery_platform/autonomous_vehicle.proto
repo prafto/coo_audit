@@ -1,0 +1,424 @@
+syntax = "proto3";
+
+package autonomous_delivery_platform.v1;
+
+import "autonomous_delivery_platform/common.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.autonomous_delivery_platform.v1";
+
+// Service to manage AV delivery communications
+service AutonomousVehicleService {
+  // Unified Gateway Service Definitions
+  option (doordash.api.service) = {
+    name: "AutonomousVehicleService"
+    url: "autonomous-delivery-platform-api.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["vehicle"]
+    owner: {
+      id: "doordash-labs-commercial-team",
+      name: "av-delivery",
+      slack_channel: "#eng-autonomous-delivery-platform",
+      email_alias: "foundry-eng@doordash.com",
+    }
+    target_products: [AUTONOMOUS_DELIVERY]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "Authorization"},
+      {field: "auth"}]
+  };
+
+  // =======================================================
+  // Inbound Autonomous Platform Partner APIs
+  // =======================================================
+
+  // Update delivery status from assigned vehicle to Doordash platform
+  rpc UpdateVehicleStatus(UpdateVehicleStatusRequest) returns (UpdateVehicleStatusResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/vehicle/v1/update_vehicle_status"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "provider-auth"}]
+    };
+  }
+  // Update delivery status from assigned vehicle to Doordash platform
+  rpc UpdateVehiclesStatus(UpdateVehiclesStatusRequest) returns (UpdateVehiclesStatusResponse);
+
+  // Update Operation Site status
+  rpc UpdateOperationSiteStatus(UpdateOperationSiteStatusRequest) returns (UpdateOperationSiteStatusResponse) {
+    option (google.api.http) = {
+      post: "/autonomous_delivery/vehicle/v1/update_operation_site_status"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T0
+      lifecycle: DEV
+      authorization: [NONE]
+      target_products: [AUTONOMOUS_DELIVERY]
+    };
+    option (doordash.api.forward_headers) = {
+      forward: [
+        {field: "provider-auth"}]
+    };
+  }
+
+  // Create a test order on ADP
+  rpc CreateTestOrder(CreateTestOrderRequest) returns (CreateTestOrderResponse);
+
+  // =======================================================
+  // Outbound Autonomous Platform Partner APIs
+  // =======================================================
+
+  // Returns the fleet's ability to fulfill a given a delivery
+  rpc DeliveryGetQuote(DeliveryGetQuoteRequest) returns (DeliveryGetQuoteResponse);
+  // Assigns a delivery
+  rpc DeliveryAssign(DeliveryAssignRequest) returns (DeliveryAssignResponse);
+  // Cancels a delivery
+  rpc DeliveryCancel(DeliveryCancelRequest) returns (DeliveryCancelResponse);
+  // Initiates a hand-off to/from robot (e.g. open hatch to load food)
+  rpc DeliveryHandoff(DeliveryHandoffRequest) returns (DeliveryHandoffResponse);
+  // TODO: Add a new cancel rpc for specific vehicles
+}
+
+// Request message to provide vehicle deliver status updates
+message UpdateVehicleStatusRequest {
+  reserved "estimated_remaining_delivery_duration";
+  reserved 8;
+
+  // Required: Latitude of the vehicle
+  double latitude = 1;
+  // Required: Longitude of the vehicle
+  double longitude = 2;
+  // Required: Unique identifier for this vehicle
+  string vehicle_identifier = 3;
+  // Required: Status of the delivery
+  DeliveryStatus delivery_status = 4;
+  // Delivery failure information, if delivery_status is set to FAILED /
+  // UNDELIVERABLE
+  DeliveryFailure delivery_failure = 5;
+  // Required: Estimated delivery time in UTC.
+  // [DEPRECATED] Use estimated_delivery_duration
+  google.protobuf.Timestamp estimated_delivery_time = 6 [deprecated = true];
+  // Required: Delivery id provided at assignment
+  string external_delivery_id = 7;
+  // Required: Estimated remaining duration for delivery.
+  double estimated_remaining_delivery_seconds = 9;
+  // Optional: Latitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lat = 10;
+  // Optional: Longitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lng = 11;
+}
+
+// Contains information about how to handle delivery failures
+message DeliveryFailureInstruction {
+  // List of actions vehicle should take in case of failure
+  enum Action {
+    // Unspecified
+    ACTION_UNSPECIFIED = 0;
+    // Dispose order
+    ACTION_DISPOSE = 1;
+    // Return order to pickup location
+    ACTION_RETURN_TO_PICKUP = 2;
+    // Partner internal handoff via manual delivery
+    ACTION_INTERNAL_HANDOFF = 3;
+  }
+  // Action vehicle should take in case of delivery failure
+  Action action = 1;
+  // Additional consumer information provided when action is INTERNAL_HANDOFF
+  Consumer consumer_info = 2;
+  // Unique identifier for this vehicle
+  string vehicle_id = 3;
+}
+
+// Response to UpdateVehicleStatus
+message UpdateVehicleStatusResponse {
+  // Optionally populated field in response to delivery status in FAILED state.
+  DeliveryFailureInstruction delivery_failure_instruction = 1;
+}
+
+// Request message to provide vehicle deliver status updates
+message UpdateVehiclesStatusRequest {
+  // Required: Delivery id provided at assignment
+  string external_delivery_id = 1;
+  // A list of all the vehicles
+  repeated VehiclesStatus vehicles_status = 2;
+}
+
+// Status of each vehicle
+message VehiclesStatus {
+  // Required: Latitude of the vehicle
+  double latitude = 1;
+  // Required: Longitude of the vehicle
+  double longitude = 2;
+  // Optional: Elevation of the vehicle
+  google.protobuf.Int32Value elevation = 3;
+  // Required: Unique identifier for this vehicle
+  string vehicle_id = 4;
+  // Required: Status of the delivery
+  DeliveryStatus delivery_status = 5;
+  // Delivery failure information, if delivery_status is set to FAILED /
+  // UNDELIVERABLE
+  DeliveryFailure delivery_failure = 6;
+  // Required: Estimated remaining duration for delivery in seconds.
+  int32 eta_to_dropoff = 7;
+  // Optional: Latitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lat = 8;
+  // Optional: Longitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lng = 9;
+}
+
+// Response to UpdateVehiclesStatus
+message UpdateVehiclesStatusResponse {
+  // Optionally populated field in response to delivery status in FAILED state.
+  repeated DeliveryFailureInstruction delivery_failure_instruction = 1;
+}
+
+// Request to updating operation site status
+message UpdateOperationSiteStatusRequest {
+  // Unique identifier for operation site provided to partner
+  string operational_site_id = 1;
+  // Number of concurrent deliveries supported at given site
+  google.protobuf.Int32Value delivery_capability_load = 2;
+  // Start time of the operation site in 24 hour time format, 'hh:mm'
+  google.protobuf.StringValue operating_hours_start = 3;
+  // End time of the operation site in 24 hour time format, 'hh:mm'
+  google.protobuf.StringValue operating_hours_end = 4;
+}
+
+// Default response for updating operation site information
+message UpdateOperationSiteStatusResponse {}
+
+// Request to create test order
+message CreateTestOrderRequest {
+  // The id shown on receipts. Use to identify an order along with customer name
+  string display_reference_text = 1;
+  // Name of the merchant
+  string merchant_name = 2;
+  // Pick-up location latitude coordinate
+  double pickup_lat = 3;
+  // Pick-up location longitude coordinate
+  double pickup_lng = 4;
+  // Drop-off location latitude coordinate
+  double dropoff_lat = 5;
+  // Drop-off location longitude coordinate
+  double dropoff_lng = 6;
+  // First and last name initial of the consumer. e.g. John D.
+  string consumer_name = 7;
+  // Estimated pickup time of the delivery
+  google.protobuf.Timestamp pickup_time = 8;
+  // A postal address for pickup location
+  string pickup_address = 9;
+  // A postal address for dropoff location
+  string dropoff_address = 10;
+  // Unique identifier for merchant
+  string merchant_id = 11;
+  // Delivery instruction from consumer
+  google.protobuf.StringValue delivery_instruction = 12;
+  // [DEPRECATED] Cart details
+  CartPackageDetails cart_package_details = 13 [deprecated = true];
+  // Objects in an order. E.g. burger, or drink would be an object
+  repeated Object cart_object_details = 14;
+  // Latest allowed pickup time of the delivery from Merchant
+  google.protobuf.Timestamp latest_allowed_pickup_time = 15;
+  // Latest allowed drop off time of the delivery from Merchant
+  google.protobuf.Timestamp latest_allowed_dropoff_time = 16;
+  // If the order pickup location differs from the vehicle pickup location, this field will be populated
+  google.protobuf.StringValue partner_vehicle_pickup_id = 17;
+}
+
+// Response to creating test order
+message CreateTestOrderResponse {
+  // The delivery ID vended from fulfillment platform
+  string external_delivery_id = 1;
+}
+
+// DeliveryGetQuoteRequest includes delivery metadata that may be assigned to
+// fleet
+message DeliveryGetQuoteRequest {
+  // Pick-up location latitude coordinate
+  double pickup_lat = 1;
+  // Pick-up location longitude coordinate
+  double pickup_lng = 2;
+  // Drop-off location latitude coordinate
+  double dropoff_lat = 3;
+  // Drop-off location longitude coordinate
+  double dropoff_lng = 4;
+  // Estimated pickup time of the delivery
+  google.protobuf.Timestamp pickup_time = 5;
+  // Name of the merchant delivery originates from
+  string merchant_name = 6;
+  // Unique identifier for merchant
+  string merchant_id = 7;
+  // A postal address for pickup location
+  string pickup_address = 8;
+  // A postal address for dropoff location
+  string dropoff_address = 9;
+  // [DEPRECATED] Cart details
+  CartPackageDetails cart_package_details = 10 [deprecated = true];
+  // Latest allowed pickup time of the delivery from Merchant
+  google.protobuf.Timestamp latest_allowed_pickup_time = 11;
+  // Latest allowed drop off time of the delivery from Merchant
+  google.protobuf.Timestamp latest_allowed_dropoff_time = 12;
+  // If the order pickup location differs from the vehicle pickup location, this field will be populated
+  google.protobuf.StringValue partner_vehicle_pickup_id = 13;
+  // Operation area id
+  google.protobuf.StringValue operation_area_id = 14;
+}
+
+// DeliveryGetQuoteResponse describes whether a delivery is fulfillable
+message DeliveryGetQuoteResponse {
+  // Whether the delivery is fulfillable by a robot in the fleet
+  // In the future, there may be additional fields to handle partially
+  // fulfillable deliveries
+  bool is_fulfillable = 1;
+  // Estimated time of pickup
+  google.protobuf.Timestamp eta_to_pickup_location = 2;
+  // Estimated duration of delivery from pick-up to drop-off in minutes
+  int32 estimated_delivery_duration = 3;
+  // List of possible locations that are better suited for drop off
+  repeated Location suggested_dropoff_locations = 4;
+  // Categorized list of reasons for quote rejection.
+  repeated RejectionReason quote_rejection_reasons = 5;
+}
+
+// DeliveryAssignRequest includes delivery information that needs to be assigned
+// to a robot
+message DeliveryAssignRequest {
+  // The delivery ID vended from fulfillment platform
+  string external_delivery_id = 1;
+  // The id shown on receipts. Use to identify an order along with customer name
+  string display_reference_text = 2;
+  // Name of the merchant
+  string merchant_name = 3;
+  // Pick-up location latitude coordinate
+  double pickup_lat = 4;
+  // Pick-up location longitude coordinate
+  double pickup_lng = 5;
+  // Drop-off location latitude coordinate
+  double dropoff_lat = 6;
+  // Drop-off location longitude coordinate
+  double dropoff_lng = 7;
+  // First and last name initial of the consumer. e.g. John D.
+  string consumer_name = 8;
+  // Estimated pickup time of the delivery
+  google.protobuf.Timestamp pickup_time = 9;
+  // A postal address for pickup location
+  string pickup_address = 10;
+  // A postal address for dropoff location
+  string dropoff_address = 11;
+  // Unique identifier for merchant
+  string merchant_id = 12;
+  // Delivery instruction from consumer
+  google.protobuf.StringValue delivery_instruction = 13;
+  // [DEPRECATED] Cart details
+  CartPackageDetails cart_package_details = 14 [deprecated = true];
+  // Objects in an order. E.g. burger, or drink would be an object
+  repeated Object cart_object_details = 15;
+  // Latest allowed pick up time
+  google.protobuf.Timestamp latest_allowed_pickup_time = 16;
+  // Latest allowed dropoff time
+  google.protobuf.Timestamp latest_allowed_dropoff_time = 17;
+  // If the order pickup location differs from the vehicle pickup location, this field will be populated
+  google.protobuf.StringValue partner_vehicle_pickup_id = 18;
+  // Operation area id
+  google.protobuf.StringValue operation_area_id = 19;
+  // Provider specific fields
+  oneof provider_fields {
+    // Air fleet specific fields
+    AirFleetAssignRequestFields air_fleet_fields = 20;
+  }
+}
+
+// Air Fleet specific fields in the AssignRequest
+message AirFleetAssignRequestFields {
+  // DD delivery uuid
+  string delivery_uuid = 1;
+}
+
+// DeliveryAssignResponse confirms that a robot has been assigned to a delivery
+message DeliveryAssignResponse {
+  // Contains specifics about delivery fulfillment details
+  message DeliverySpec {
+    // The assigned delivery vehicle identifier
+    string vehicle_id = 1;
+    // unique id of the package
+    google.protobuf.StringValue package_id = 2;
+    // Estimated time of pickup
+    google.protobuf.Timestamp estimate_pickup_location_time = 3;
+    // Estimated duration of delivery from pick-up to drop-off in minutes
+    int32 estimated_delivery_duration = 4;
+    // First party delivery experience traking url, if it exists
+    google.protobuf.StringValue delivery_tracking_url = 5;
+    // Mapping between objects in a particular vehicle. Optional if only one vehicle is being used
+    repeated Object order_objects = 6;
+  }
+  // Contains specifics about delivery fulfillment details
+  // Leaving this unset means the delivery could not be assigned
+  repeated DeliverySpec delivery_spec = 1;
+  // Categorized list of reasons for assignment rejection.
+  repeated RejectionReason assignment_rejection_reasons = 2;
+  // Latitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lat = 3;
+  // Longitude of the drop off location in degrees, if not the value passed in request
+  google.protobuf.DoubleValue dropoff_lng = 4;
+}
+
+// DeliveryCancelRequest is the payload for cancelling deliveries
+message DeliveryCancelRequest {
+  // The delivery ID of the assigned delivery
+  string external_delivery_id = 1;
+}
+
+// DeliveryCancelResponse confirms the cancellation of a delivery
+message DeliveryCancelResponse {
+  // Cancellation response codes
+  enum CancelResponseCode {
+    // No cancel response code specified
+    CANCEL_RESPONSE_CODE_UNSPECIFIED = 0;
+    // Cancellation was successful
+    CANCEL_RESPONSE_CODE_OK = 1;
+  }
+
+  // Status message for the cancellation
+  string message = 1;
+  // Status code for this cancellation
+  CancelResponseCode code = 2;
+}
+
+// DeliveryHandoffRequest is used to open the cargo of the vehicle with the
+// delivery
+message DeliveryHandoffRequest {
+  // The vehicle ID of the robot doing the delivery
+  string vehicle_id = 1;
+}
+
+// DeliveryHandoffResponse confirms the execution of the hand-off
+message DeliveryHandoffResponse {
+  // Handoff response codes
+  enum HandoffResponseCode {
+    // No cancel response code specified
+    HANDOFF_RESPONSE_CODE_UNSPECIFIED = 0;
+    // Cancellation was successful
+    HANDOFF_RESPONSE_CODE_OK = 1;
+  }
+
+  // Status message for the hand-off
+  string message = 1;
+  // Status code for this hand-off
+  HandoffResponseCode code = 2;
+}

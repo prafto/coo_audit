@@ -1,0 +1,1233 @@
+syntax = "proto3";
+package teammate_experience_service.api.v1;
+
+import "case-management-service/common.proto";
+import "case-management-service/message.proto";
+import "case-management-service/queue/queue.proto";
+import "case-management-service/routing_profile/routing_profile.proto";
+import "common/money.proto";
+import "common/service_client_config.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "task_service/task_group.proto";
+import "teammate_experience_service/pagination.proto";
+
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.tes.api.v1";
+
+// THQ Service
+service THQService {
+  // for reference: https://github.com/doordash/dd-util-java/wiki/Hermes#hermes-default-behavior
+  option (service_client.client_config).service_name = "teammate-experience-service";
+  option (service_client.client_config).retry_config.max_attempts = 3;
+  option (service_client.client_config).response_attempt_timeout_millis = 30000;
+  option (service_client.client_config).circuit_breaker_config.failure_rate_threshold = 1.0;
+  option (service_client.client_config).retry_config.initial_wait_millis = 500;
+  option (service_client.client_config).retry_config.wait_multiplier = 2.0;
+  option (doordash.api.service) = {
+    name: "teammate-experience-service"
+    url: "teammate-experience-service-web.service.prod.ddsd"
+    port: 50051
+    name_spaces: ["teammate-experience-service"]
+    api_key_name: "TEAMMATE_EXPERIENCE_SERVICE_API_KEY"
+    owner: {
+      name: "teammate-experience-service"
+      id: "teammate-experience-alerts"
+      slack_channel: "#ask-teammate-experience"
+      email_alias: "team-teammate-experience@doordash.com"
+    }
+    target_products: [INTERNAL]
+  };
+
+  // replacing dsj endpoint /v1/merchant_payment_adjustments/
+  // dsj reference https://github.com/doordash/doorstep-django/blob/a299f65e295e6c97065e32ff844a1503ffee6ef3/doordash/delivery/api/error/v1/api.py#L60
+  rpc CreateMerchantPaymentAdjustment(CreateMerchantPaymentAdjustmentRequest) returns (CreateMerchantPaymentAdjustmentResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/create-merchant-payment-adjustment"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get overview of case history for agent
+  rpc GetAgentCaseOverview(GetAgentCaseOverviewRequest) returns (GetAgentCaseOverviewResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/case-overview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get team view for supervisor
+  rpc GetTeamOverview(GetTeamOverviewRequest) returns (GetTeamOverviewResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/team-overview"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Takes an arbitrary string and attempts to resolve it to supported identifiers.
+  rpc GenericSearch(GenericSearchRequest) returns (GenericSearchResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/generic-search"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get Store Status and Availability for Mx Diagnostic Project
+  rpc GetStoreStatusAndAvailability(GetStoreStatusAndAvailabilityRequest) returns (GetStoreStatusAndAvailabilityResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/get-store-status-and-availability"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ALL,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get order receipt
+  rpc GetOrderReceipt(GetOrderReceiptRequest) returns (GetOrderReceiptResponse);
+
+  // Exchanges available credits for a given delivery to refunds
+  rpc ExchangeCreditsToRefund(ExchangeCreditsToRefundRequest) returns (ExchangeCreditsToRefundResponse);
+
+  // Get Case History
+  rpc GetCaseHistory(GetCaseHistoryRequest) returns (GetCaseHistoryResponse);
+
+  // Gets Cases assigned to an Agent
+  rpc GetAgentAssignedCases(GetAgentAssignedCasesRequest) returns (GetAgentAssignedCasesResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/cases"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: TEST
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Gets the direct reports of an agent (Team Lead or Supervisor)
+  rpc GetAgentDirectReports(GetAgentDirectReportsRequest) returns (GetAgentDirectReportsResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/agentDirectReports"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T2
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+
+  // Get Agent Case List for supervisor view
+  rpc GetAgentCaseList(GetAgentCaseListRequest) returns (GetAgentCaseListResponse) {
+    option (google.api.http) = {
+      post: "/teammate-experience-service/v1/case-list"
+      body: "*"
+    };
+
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: PROD
+      authorization: [DD_USER]
+      target_products: [INTERNAL]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_access_teammate_headquarters"]
+      }
+      authentication_config: {enable_okta_verification: true}
+    };
+  }
+}
+
+// Channel Type that created the incident
+enum ChannelType {
+  // Unspecified
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  // Chat
+  CHANNEL_TYPE_CHAT = 1;
+  // Phone
+  CHANNEL_TYPE_PHONE = 2;
+  // Agent
+  CHANNEL_TYPE_AGENT = 3;
+  // API
+  CHANNEL_TYPE_API = 4;
+  // Web & Email
+  CHANNEL_TYPE_WEB = 5;
+}
+
+// GetStoreStatusAndAvailabilityRequest request object
+message GetStoreStatusAndAvailabilityRequest {
+  // Store ID
+  google.protobuf.StringValue store_id = 1;
+}
+
+// GetStoreStatusAndAvailabilityRequest response object
+message GetStoreStatusAndAvailabilityResponse {
+  // store metadata (name, phone number, etc)
+  StoreIdentifierMetadata store_identifier_metadata = 1;
+  // Is active
+  google.protobuf.BoolValue is_active = 2;
+  // Onboarding Status
+  google.protobuf.BoolValue is_onboarded = 3;
+  // ONGOING temporary deactivations
+  StoreActivityEvent store_temporary_deactivation = 4;
+  // ONGOING permanent deactivations
+  StoreActivityEvent store_permanent_deactivation = 5;
+  // store hours
+  repeated TimeIntervals store_hours = 6;
+  // minutes from 0 to 60 before closing time that the Mx stops accepting  ASAP orders
+  google.protobuf.Int32Value store_padding_minutes_asap_close = 7;
+  // minutes from 0 to 60 before closing time that the Mx stops accepting Scheduled orders
+  google.protobuf.Int32Value padding_minutes_scheduled_close = 8;
+  // special hours
+  repeated StoreActivityEvent special_hours = 9;
+  // delivery radius
+  google.protobuf.Int32Value delivery_radius = 10;
+  // max delivery radius
+  google.protobuf.Int32Value max_delivery_radius = 11;
+  // store might not appear in keyword search due to higher menu prices
+  PricingVisibilityIssue pricing_visibility_issue = 12;
+  // activity
+  repeated StoreActivityEvent store_activity_event = 13;
+  // current time
+  google.protobuf.Timestamp current_time = 15;
+  // if the merchant is in an active delivery region
+  google.protobuf.BoolValue is_submarket_open = 16;
+  // Mx's timezone
+  google.protobuf.StringValue store_timezone = 17;
+  // is pickup enabled
+  google.protobuf.BoolValue is_pickup_enabled = 18;
+  // if the merchant is in an active delivery region
+  google.protobuf.BoolValue is_delivery_enabled = 19;
+}
+
+// represents an open store hour
+message TimeIntervals {
+  // The start time.
+  google.protobuf.Timestamp start = 1;
+
+  // The end time.
+  google.protobuf.Timestamp end = 2;
+}
+
+// Visibility issue types
+// SOT: https://docs.google.com/document/d/1HwaMueJENIRmWdVgJwkuEt10y8pSmMn_q6OJHD_757w/edit?tab=t.0#bookmark=kix.u608g4is9nwa
+enum PricingVisibilityIssue {
+  // unspecified
+  PRICING_VISIBILITY_ISSUE_UNSPECIFIED = 0;
+  // Visibility issues NOT likely due to pricing
+  PRICING_VISIBILITY_ISSUE_NOT_LIKELY_DUE_TO_PRICING = 1;
+  // Visibility issues MAY be due to pricing
+  PRICING_VISIBILITY_ISSUE_MAY_BE_DUE_TO_PRICING = 2;
+  // No visibility issues DUE TO PRICING
+  PRICING_VISIBILITY_ISSUE_NONE = 3;
+}
+
+// Store Activity Event
+message StoreActivityEvent {
+  // store activity event
+  oneof store_activity_event {
+    // Param used when event type is temp/permanent deactivation
+    Deactivation deactivation = 1;
+    // Param used when event type is special hours
+    SpecialHours special_hours = 2;
+  }
+  // store status (open, closed, paused)
+  StoreStatus store_status = 3;
+  // reason
+  google.protobuf.StringValue reason = 4;
+}
+
+// Special Hours
+message SpecialHours {
+  // special hours start time
+  google.protobuf.Timestamp event_start_time = 1;
+  // special hours end time
+  google.protobuf.Timestamp event_end_time = 2;
+  // user ID who created
+  google.protobuf.Int64Value created_by_user_id = 3;
+}
+
+// Deactivation
+message Deactivation {
+  // user ID who created
+  google.protobuf.Int64Value created_by_user_id = 1;
+  // time of deactivation creation
+  google.protobuf.Timestamp created_at_time = 2;
+  // optional reactivation time
+  google.protobuf.Timestamp reactivated_at_time = 3;
+  // optional reactivated by
+  google.protobuf.Int64Value reactivated_by_user_id = 4;
+  // permanent or temporary deactivation
+  google.protobuf.BoolValue is_permanent = 5;
+}
+
+// CreateMerchantPaymentAdjustmentRequest request object
+message CreateMerchantPaymentAdjustmentRequest {
+  // delivery uuid of current delivery
+  google.protobuf.StringValue delivery = 1;
+  // add_payment determined by FE logic
+  google.protobuf.BoolValue add_payment = 2;
+  // selected dispute reason based by Tx
+  google.protobuf.StringValue reason = 3;
+  // explanation string from Tx
+  google.protobuf.StringValue explanation = 4;
+  // total amount to dispute
+  google.protobuf.Int32Value amount = 5;
+  // order_item ids, only being used in event.metadata creation.
+  repeated google.protobuf.Int64Value items = 6;
+  // salesforce id manually input by Tx
+  google.protobuf.Int64Value salesforce_id = 7;
+  // The ids of the dispatch errors being disputed. Required for mx error charge disputes.
+  repeated google.protobuf.Int64Value disputed_dispatch_error_ids = 8;
+}
+
+// CreateMerchantPaymentAdjustmentResponse response object
+message CreateMerchantPaymentAdjustmentResponse {
+  // The name of this enum is included as the "description" error string when this API returns the INVALID_PRECONDITION grpc response code.
+  enum InvalidPreconditionError {
+    // Default for if no enum matches
+    INVALID_PRECONDITION_ERROR_UNSPECIFIED = 0;
+    // The mx error charge refund was denied because the refund deadline has passed.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_DEADLINE_HAS_PASSED = 1;
+    // The mx error charge refund was denied because the dispatch error was already refunded.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_ERROR_CHARGE_ALREADY_REFUNDED = 2;
+    // The mx error charge was denied because the store has disputed too many charges.
+    INVALID_PRECONDITION_ERROR_DISPUTE_DENIED_STORE_HAS_DISPUTED_TOO_MANY_CHARGES = 3;
+    // The mx cancelled order made refund was denied because the refund deadline has passed.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DISPUTE_DENIED_DEADLINE_HAS_PASSED = 4;
+    // The mx cancelled order made refund was denied because the mx was already refunded.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_ERROR_CHARGE_ALREADY_REFUNDED = 5;
+    // The mx cancelled order made was denied because the store did not confirm the order prior to cancellation.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_STORE_DID_NOT_CONFIRM_ORDER_PRIOR_TO_CANCELLATION = 6;
+    // The mx cancelled order made was denied because the store did not mark the order as ready.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_STORE_DID_NOT_MARK_ORDER_AS_READY = 7;
+    // The mx cancelled order made was denied because the cancellation was Mx initiated or Mx fault.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_CANCELLATION_WAS_MX_INITIATED_OR_MX_FAULT = 8;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and items unavailable.
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_ITEMS_UNAVAILABLE = 9;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx could not fulfill order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_COULD_NOT_FULFILL = 10;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx did not receive the order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_ORDER_NOT_RECEIVED = 11;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and mx cancelled the order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_CANCELLED_BY_MX = 12;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and dx not at fault they received wrong order
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_NOT_DX_FAULT = 13;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and too long wait time for dx
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_LONG_WAIT_TIME = 14;
+    // The mx cancelled order made was denied because Mx initiated or Mx fault and store was marked closed
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DENIED_MX_INITIATED_MX_FAULT_STORE_CLOSED = 15;
+    // The mx cancelled order made was denied because the delivery was not cancelled
+    INVALID_PRECONDITION_ERROR_CANCELLED_ORDER_MADE_DELIVERY_IS_NOT_CANCELLED = 16;
+    // The mx error charge refund was denied because the store is currently disallowed for disputes (typically an abuser identified by Mx S&O)
+    INVALID_PRECONDITION_ERROR_STORE_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMENT = 17;
+    // The mx error charge refund was denied because the disputing user is currently disallowed for disputes (typically an abuser identified by Mx S&O)
+    INVALID_PRECONDITION_ERROR_USER_IS_DISALLOWED_FROM_DISPUTING_DUE_TO_COMPANY_POLICY_INFRINGEMEN = 18;
+    // The mx order remade was denied because the delivery was not cancelled
+    INVALID_PRECONDITION_ERROR_ORDER_REMADE_DELIVERY_IS_NOT_CANCELLED = 19 [deprecated = true]; // this will be replaced by 21
+    // The mx error charge dispute was denied because the order did not pass one or more fraud heuristics
+    INVALID_PRECONDITION_ERROR_ORDER_DID_NOT_PASS_MX_ERROR_CHARGE_DISPUTE_FRAUD_HEURISTICS = 20;
+    // The mx dispute was denied because the delivery was already cancelled - for all non cxl reasons dispute
+    INVALID_PRECONDITION_ERROR_NON_CXL_DISPUTE_DENIED_DELIVERY_WAS_CANCELLED = 21;
+  }
+}
+
+// GetAgentAssignedCases request object
+message GetAgentAssignedCasesRequest {
+  // agent id
+  google.protobuf.StringValue agent_id = 1;
+  // incident state
+  repeated case_management_service.v1.IncidentState incident_state = 2;
+  // max count
+  google.protobuf.Int32Value max_count = 3;
+}
+
+// GetAgentAssignedCases response object
+message GetAgentAssignedCasesResponse {
+  // incidents returned
+  repeated CaseInfo case_summaries = 1;
+}
+
+// ExchangeCreditsToRefund request object
+message ExchangeCreditsToRefundRequest {
+  // delivery uuid
+  google.protobuf.StringValue delivery_uuid = 1;
+  // amount
+  google.protobuf.Int32Value amount = 2;
+  // refund reason
+  google.protobuf.StringValue reason = 3;
+}
+
+// ExchangeCreditsToRefund response object
+message ExchangeCreditsToRefundResponse {
+  // credits exchanged
+  google.protobuf.Int32Value credits_exchanged = 1;
+  // consumer explanation email contents
+  google.protobuf.StringValue email = 2;
+  // whether or not this is a stale delivery
+  google.protobuf.BoolValue stale_delivery = 3;
+}
+
+// GetOrderReceipt request object
+message GetOrderReceiptRequest {
+  // order uuid
+  google.protobuf.StringValue order_uuid = 1;
+  // consumer id
+  google.protobuf.StringValue consumer_id = 2;
+}
+
+// GetOrderReceipt response object
+message GetOrderReceiptResponse {
+  // order receipt consumer view
+  OrderReceiptConsumerView order_receipt_consumer_view = 1;
+  // order receipt advanced view
+  OrderReceiptAdvancedView order_receipt_advanced_view = 2;
+}
+
+// Order receipt consumer view
+message OrderReceiptConsumerView {
+  // line items of the order receipt
+  repeated money.LineItem line_items = 1;
+  // line items of the order receipt split by consumer
+  repeated SplitBillingLineItem split_billing_line_items = 2;
+}
+
+// Order receipt advanced view
+message OrderReceiptAdvancedView {
+  // line items of the advanced order receipt
+  repeated SimpleLineItem line_items = 1;
+  // line items of the advanced order receipt split by consumer
+  repeated SplitBillingSimpleLineItem split_billing_line_items = 2;
+}
+
+// Simple line item
+message SimpleLineItem {
+  // line item id
+  SimpleLineItemId id = 1;
+  // line item label
+  google.protobuf.StringValue label = 2;
+  // amount
+  money.MonetaryFields amount = 3;
+}
+
+// Store Activity Event types
+enum StoreStatus {
+  // unspecified
+  STORE_STATUS_UNSPECIFIED = 0;
+  // closed bc special hours/deactivation
+  STORE_STATUS_CLOSED = 1;
+  // paused bc special hours
+  STORE_STATUS_PAUSED = 2;
+  // open bc special hours
+  STORE_STATUS_OPEN = 3;
+}
+
+// Simple line item id
+enum SimpleLineItemId {
+  // unspecified
+  SIMPLE_LINE_ITEM_ID_UNSPECIFIED = 0;
+  // tax amount
+  SIMPLE_LINE_ITEM_ID_TAX_AMOUNT = 1;
+  // subtotal tax amount
+  SIMPLE_LINE_ITEM_ID_SUBTOTAL_TAX_AMOUNT = 2;
+  // fees tax amount
+  SIMPLE_LINE_ITEM_ID_FEES_TAX_AMOUNT = 3;
+  // over authorization amount
+  SIMPLE_LINE_ITEM_ID_OVER_AUTHORIZATION_AMOUNT = 4;
+  // busy fee amount
+  SIMPLE_LINE_ITEM_ID_BUSY_FEE_AMOUNT = 5;
+}
+
+// Line items for consumer
+message SplitBillingLineItem {
+  // consumer id
+  string consumer_id = 1;
+  // first name
+  google.protobuf.StringValue consumer_first_name = 2;
+  // last name
+  google.protobuf.StringValue consumer_last_name = 3;
+  // line items of the order receipt
+  repeated money.LineItem line_items = 4;
+}
+
+// Line items for consumer
+message SplitBillingSimpleLineItem {
+  // consumer id
+  string consumer_id = 1;
+  // first name
+  google.protobuf.StringValue consumer_first_name = 2;
+  // last name
+  google.protobuf.StringValue consumer_last_name = 3;
+  // line items of the order receipt
+  repeated SimpleLineItem line_items = 4;
+}
+
+// GetAgentCaseOverview request object
+message GetAgentCaseOverviewRequest {
+  reserved 1;
+  reserved "agent_id";
+  // agent id
+  google.protobuf.StringValue id = 3;
+  // time filter options
+  TimeFilterOptions time_filter_options = 2;
+  // filter options
+  case_management_service.v1.FilterOptions filter_options = 4;
+  // sorting options
+  case_management_service.v1.SortPreference sort_preference = 5;
+  // how many cases to fetch (limit)
+  google.protobuf.Int32Value num_cases = 6;
+  // offset, along with num_cases, to paginate
+  google.protobuf.Int32Value offset = 7;
+  // agent name
+  google.protobuf.StringValue agent_name = 8;
+}
+
+// GenericSearch request object
+message GenericSearchRequest {
+  // search term
+  string term = 1;
+  // optional - if included, will only try to match on the provided identifiers.
+  // if not included, will try to match on all supported identifiers.
+  repeated IdentifierType filters = 2;
+}
+
+// GenericSearch response object
+message GenericSearchResponse {
+  // a list of identifier matches for the provided search term.
+  repeated Identifier identifiers = 1;
+  // populated with identifiers where backend lookups failed.
+  // empty if no errors occurred.
+  repeated IdentifierType errors = 2;
+}
+
+// GetAgentCaseOverview response object
+message GetAgentCaseOverviewResponse {
+  // agent id
+  google.protobuf.StringValue agent_id = 1;
+  // list of overviews for open cases
+  repeated CaseOverview open_cases_overviews = 2;
+  // list of overviews for closed cases
+  repeated CaseOverview closed_cases_overviews = 3;
+  // support agent object with all agent details
+  SupportAgent support_agent = 4;
+}
+
+// Overview of case history for an agent
+message CaseOverview {
+  // "Pretty" version of a case id - ex. the case number. Corresponding field in ERS: case_number
+  google.protobuf.StringValue case_number = 1;
+  // 18 digit case id
+  google.protobuf.StringValue case_id = 2;
+  // Case status
+  google.protobuf.StringValue status = 3;
+  // Case creation timestamp
+  google.protobuf.Timestamp created_at = 4;
+  // Case assigned at timestamp
+  google.protobuf.Timestamp assigned_at = 5;
+  // last modified date timestamp
+  google.protobuf.Timestamp last_modified_at = 6;
+  // case subject
+  google.protobuf.StringValue subject = 7;
+}
+
+// Identifier
+message Identifier {
+  // identifier value
+  string id = 1;
+  // identifier type
+  IdentifierType type = 2;
+  // metadata associated with the identifier
+  IdentifierMetadata metadata = 3;
+}
+
+// Identifier metadata
+message IdentifierMetadata {
+  // metadata
+  oneof metadata {
+    // case identifier
+    CaseIdentifierMetadata case_identifier_metadata = 1;
+    // order identifier
+    OrderIdentifierMetadata order_identifier_metadata = 2;
+    // delivery identifier
+    DeliveryIdentifierMetadata delivery_identifier_metadata = 3;
+    // consumer identifier
+    ConsumerIdentifierMetadata consumer_identifier_metadata = 4;
+    // dasher identifier
+    DasherIdentifierMetadata dasher_identifier_metadata = 5;
+    // store identifier
+    StoreIdentifierMetadata store_identifier_metadata = 6;
+    // business identifier
+    BusinessIdentifierMetadata business_identifier_metadata = 7;
+    // external delivery identifier
+    ExternalDeliveryIdentifierMetadata external_delivery_metadata = 8;
+    // external order reference identifier
+    ExternalOrderReferenceIdentifierMetadata external_order_reference_metadata = 9;
+    // drive order identifier
+    DriveOrderIdentifierMetadata drive_order_identifier_metadata = 10;
+    // voice order inbound call identifier
+    VoiceOrderInboundCallIdentifierMetadata voice_order_inbound_call_identifier_metadata = 11;
+    // task group identifier
+    TaskGroupIdentifierMetadata task_group_identifier_metadata = 12;
+  }
+}
+
+// Case identifier metadata
+message CaseIdentifierMetadata {
+  // Case number
+  google.protobuf.StringValue case_number = 1;
+  // Case status
+  google.protobuf.StringValue case_status = 2;
+}
+
+// Order identifier metadata
+message OrderIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue consumer_first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue consumer_last_name = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Created at
+  google.protobuf.Timestamp created_at = 5;
+  // Quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+  // Status
+  google.protobuf.StringValue status = 7;
+  // Merchant timezone
+  google.protobuf.StringValue merchant_timezone = 8;
+}
+
+// Delivery identifier metadata
+message DeliveryIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue consumer_first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue consumer_last_name = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Created at
+  google.protobuf.Timestamp created_at = 5;
+  // Quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+  // Status
+  google.protobuf.StringValue status = 7;
+  // Merchant timezone
+  google.protobuf.StringValue merchant_timezone = 8;
+}
+
+// Consumer identifier metadata
+message ConsumerIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue last_name = 2;
+  // Consumer experience
+  google.protobuf.StringValue experience = 3;
+  // Phone number
+  google.protobuf.StringValue phone_number = 4;
+  // Email
+  google.protobuf.StringValue email = 5;
+  // Last active
+  google.protobuf.Timestamp last_active = 6;
+}
+
+// Dasher identifier metadata
+message DasherIdentifierMetadata {
+  // Dasher first name
+  google.protobuf.StringValue first_name = 1;
+  // Dasher last name
+  google.protobuf.StringValue last_name = 2;
+  // Phone number
+  google.protobuf.StringValue phone_number = 3;
+  // Email
+  google.protobuf.StringValue email = 4;
+  // Last active
+  google.protobuf.Timestamp last_active = 5;
+}
+
+// Store identifier metadata
+message StoreIdentifierMetadata {
+  // Store name
+  google.protobuf.StringValue name = 1;
+  // Is active
+  google.protobuf.BoolValue is_active = 2;
+  // Phone number
+  google.protobuf.StringValue phone_number = 3;
+  // Address
+  google.protobuf.StringValue address = 4;
+  // Email
+  google.protobuf.StringValue email = 5;
+  // business tags
+  repeated google.protobuf.StringValue business_tag_names = 6;
+  // Is duplicate store (another store with same name and address id exists)
+  google.protobuf.BoolValue is_duplicate = 7;
+}
+
+// Business identifier metadata
+message BusinessIdentifierMetadata {
+  // Business name
+  google.protobuf.StringValue name = 1;
+  // Is active
+  google.protobuf.BoolValue is_active = 2;
+}
+
+// External delivery identifier metadata
+message ExternalDeliveryIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue consumer_first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue consumer_last_name = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Created at
+  google.protobuf.Timestamp created_at = 5;
+  // Quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+  // Status
+  google.protobuf.StringValue status = 7;
+  // Merchant timezone
+  google.protobuf.StringValue merchant_timezone = 8;
+}
+
+// External order reference identifier metadata
+message ExternalOrderReferenceIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue consumer_first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue consumer_last_name = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Created at
+  google.protobuf.Timestamp created_at = 5;
+  // Quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+  // Status
+  google.protobuf.StringValue status = 7;
+  // Merchant timezone
+  google.protobuf.StringValue merchant_timezone = 8;
+}
+
+// Drive order identifier metadata
+message DriveOrderIdentifierMetadata {
+  // Consumer first name
+  google.protobuf.StringValue consumer_first_name = 1;
+  // Consumer last name
+  google.protobuf.StringValue consumer_last_name = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 4;
+  // Created at
+  google.protobuf.Timestamp created_at = 5;
+  // Quoted delivery time
+  google.protobuf.Timestamp quoted_delivery_time = 6;
+  // Status
+  google.protobuf.StringValue status = 7;
+  // Merchant timezone
+  google.protobuf.StringValue merchant_timezone = 8;
+}
+
+// Voice Order Idnetifier Metadata
+message VoiceOrderInboundCallIdentifierMetadata {
+  // case number
+  google.protobuf.StringValue case_number = 1;
+  // phone number
+  google.protobuf.StringValue phone_number = 2;
+  // created at
+  google.protobuf.Timestamp created_at = 3;
+  // merchant name
+  google.protobuf.StringValue merchant_name = 4;
+  // ai collected first name. Will not always be present.
+  google.protobuf.StringValue voice_ai_customer_first_name = 5;
+}
+
+// Task Group Identifier Metadata
+message TaskGroupIdentifierMetadata {
+  // Store name
+  google.protobuf.StringValue store_name = 1;
+  // Task group type
+  task_service.v2.TaskGroupType task_group_type = 2;
+  // Delivery uuid (optional, only populated if not a canonical task)
+  google.protobuf.StringValue delivery_uuid = 3;
+  // Created at
+  google.protobuf.Timestamp created_at = 4;
+  // Preferred completion time
+  google.protobuf.Timestamp preferred_completion_time = 5;
+  // Status
+  google.protobuf.StringValue status = 6;
+}
+
+//case information
+message CaseInfo {
+  // Case number
+  google.protobuf.StringValue case_number = 1;
+  // Channel number
+  case_management_service.v1.ChannelType channel_type = 2;
+  // Current owner
+  google.protobuf.StringValue current_owner = 3;
+  // Created at
+  google.protobuf.Timestamp created_at = 4;
+  // Status
+  google.protobuf.StringValue status = 5;
+  // Status time
+  google.protobuf.Timestamp status_at = 6;
+  // owner Id
+  google.protobuf.Int64Value owner_id = 7;
+  // pre chat details
+  google.protobuf.StringValue pre_chat_details = 8;
+  // Delivery UUID
+  google.protobuf.StringValue delivery_uuid = 9;
+  // Customer type
+  google.protobuf.StringValue customer_type = 10;
+  // Issue
+  google.protobuf.StringValue issue = 11;
+  // Resolution
+  google.protobuf.StringValue resolution = 12;
+  // Parent id
+  google.protobuf.StringValue parent_id = 13;
+  // incident id
+  google.protobuf.StringValue id = 14;
+  // incident id
+  google.protobuf.StringValue incident_id = 15;
+  // address time zone
+  google.protobuf.StringValue address_time_zone = 16;
+  // Chat key
+  google.protobuf.StringValue chat_key = 17;
+  // Consumer ID
+  google.protobuf.StringValue consumer_id = 18;
+  // Dasher ID
+  google.protobuf.StringValue dasher_id = 19;
+  // Store Id
+  google.protobuf.StringValue store_id = 20;
+  // business id
+  google.protobuf.StringValue business_id = 21;
+  // Initial queue name
+  google.protobuf.StringValue initial_queue_name = 22;
+  // subject
+  google.protobuf.StringValue subject = 23;
+  // type
+  google.protobuf.StringValue type = 24;
+  // business data
+  BusinessDataObject business_data = 25;
+  // customer name
+  google.protobuf.StringValue customer_name = 26;
+  // merchant name
+  google.protobuf.StringValue merchant_name = 27;
+}
+
+//business data
+message BusinessDataObject {
+  // Store ID
+  google.protobuf.StringValue store_id = 1;
+  // Business ID
+  google.protobuf.StringValue business_id = 2;
+  // Merchant name
+  google.protobuf.StringValue merchant_name = 3;
+  // Store Pickup Link
+  google.protobuf.StringValue store_pickup_link = 4;
+  // Store Delivery Link
+  google.protobuf.StringValue store_delivery_lnk = 5;
+  // Agent Greeting
+  google.protobuf.StringValue agent_greeting = 6;
+  // Store Hours
+  google.protobuf.StringValue store_hours = 7;
+  // Merchant phone number
+  google.protobuf.StringValue merchant_phone_number = 8;
+  // Customer phone number
+  google.protobuf.StringValue customer_phone_number = 9;
+  // Merchant website
+  google.protobuf.StringValue merchant_website = 10;
+  // Agent instruction
+  google.protobuf.StringValue agent_instruction = 11;
+}
+
+// Identifier types
+enum IdentifierType {
+  // default unspecified
+  IDENTIFIER_TYPE_UNSPECIFIED = 0;
+  // case
+  IDENTIFIER_TYPE_CASE = 1;
+  // order
+  IDENTIFIER_TYPE_ORDER = 2;
+  // delivery
+  IDENTIFIER_TYPE_DELIVERY = 3;
+  // consumer
+  IDENTIFIER_TYPE_CONSUMER = 4;
+  // dasher
+  IDENTIFIER_TYPE_DASHER = 5;
+  // store
+  IDENTIFIER_TYPE_STORE = 6;
+  // business
+  IDENTIFIER_TYPE_BUSINESS = 7;
+  // external delivery
+  IDENTIFIER_TYPE_EXTERNAL_DELIVERY = 8;
+  // external order reference
+  IDENTIFIER_TYPE_EXTERNAL_ORDER_REFERENCE = 9;
+  // drive order
+  IDENTIFIER_TYPE_DRIVE_ORDER = 10;
+  // Voice Order inbound call
+  IDENTIFIER_TYPE_VOICE_ORDER_INBOUND_CALL = 11;
+  // task group
+  IDENTIFIER_TYPE_TASK_GROUP = 12;
+}
+
+// GetCaseHistoryRequest request object
+message GetCaseHistoryRequest {
+  // pagination options
+  TimeFilterOptions time_filter_options = 1;
+
+  // how many cases to fetch
+  google.protobuf.Int32Value num_cases = 2;
+
+  // user id of who we want to get case history for
+  oneof user_identifier {
+    // consumer id
+    google.protobuf.StringValue consumer_id = 3;
+    // dasher id
+    google.protobuf.StringValue dasher_id = 4;
+  }
+}
+
+// Support agent object
+message SupportAgent {
+  // internal doordash agent id
+  google.protobuf.StringValue id = 1;
+  // internal salesforce agent id
+  google.protobuf.StringValue salesforce_id = 2;
+  // agent name
+  google.protobuf.StringValue name = 3;
+  // agent email
+  google.protobuf.StringValue email = 4;
+  // agent active status
+  google.protobuf.StringValue active_status = 5;
+  // agent active status reason
+  google.protobuf.StringValue status_reason = 6;
+  reserved 7, 8, 9;
+  reserved "routing_profile", "active_status_created_at", "agent_queues";
+  // agent current routing profile
+  case_management_service.routing_profile.v1.RoutingProfile current_routing_profile = 10;
+  // agent status last update time
+  google.protobuf.Timestamp status_updated_at = 11;
+  // agent queues (all queues associated with current routing profile)
+  repeated case_management_service.queue.v1.Queue queues = 12;
+  // agent number of active cases
+  google.protobuf.Int64Value num_active_cases = 13;
+  reserved 14;
+  reserved "capacity";
+  // timestamp of longest running open case time
+  google.protobuf.Timestamp case_time = 15;
+  // agent capacity (maximum number of concurrent cases for an agent)
+  google.protobuf.Int32Value concurrent_capacity = 16;
+}
+
+// issue object
+message Issue {
+  // issue_id
+  google.protobuf.StringValue issue_id = 1;
+  // incident_id
+  google.protobuf.StringValue incident_id = 2;
+  // description
+  google.protobuf.StringValue description = 3;
+  // issue detail
+  google.protobuf.StringValue issue_detail = 4 [deprecated = true];
+  // issue type - higher level
+  google.protobuf.StringValue issue_type = 5 [deprecated = true];
+  // note
+  google.protobuf.StringValue metadata = 6;
+  // created_at
+  google.protobuf.Timestamp created_at = 7;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 8;
+  // agent who last updated the Resolution
+  SupportAgent updated_by = 9;
+  // issue category - highest level (Item Issues, Delivery Issues)
+  google.protobuf.StringValue issue_category = 10;
+  // issue subcategory - sub level (Item Quality, Incorrect, Missing)
+  google.protobuf.StringValue issue_subcategory = 11;
+  // issue description - lowest level (Food Arrived Cold, Incorrect item received, Dasher was rude, Other)
+  google.protobuf.StringValue issue_description = 12;
+}
+
+// resolution object
+message Resolution {
+  // resolution_id
+  google.protobuf.StringValue resolution_id = 1;
+  // issue_id
+  google.protobuf.StringValue issue_id = 2;
+  // incident_id
+  google.protobuf.StringValue incident_id = 3;
+  // description
+  google.protobuf.StringValue description = 4;
+  // resolution detail
+  google.protobuf.StringValue resolution_detail = 5 [deprecated = true];
+  // resolution type - higher level
+  google.protobuf.StringValue resolution_type = 6 [deprecated = true];
+  // note
+  google.protobuf.StringValue metadata = 7;
+  // created_at
+  google.protobuf.Timestamp created_at = 8;
+  // updated_at
+  google.protobuf.Timestamp updated_at = 9;
+  // agent who last updated the Resolution
+  SupportAgent updated_by = 10;
+  // resolution category - highest level
+  google.protobuf.StringValue resolution_category = 11;
+  // resolution subcategory - sub level
+  google.protobuf.StringValue resolution_subcategory = 12;
+  // resolution description - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description = 13;
+  // notes attached to resolution
+  google.protobuf.StringValue notes = 14;
+  // resolution subcategory id - sub level
+  google.protobuf.StringValue resolution_subcategory_id = 15;
+  // resolution description id - lowest level (Redelivery, Credits, Refund, Unable to solve)
+  google.protobuf.StringValue resolution_description_id = 16;
+}
+
+// information on case regarding store
+message MerchantInformationForCase {
+  // store name
+  google.protobuf.StringValue store_name = 1;
+  // store id
+  google.protobuf.Int64Value store_id = 2;
+}
+
+// information on case regarding dash
+message DasherInformationForCase {
+  // starting point name for shift
+  google.protobuf.StringValue starting_point_name = 1;
+  // shift check in time
+  google.protobuf.Timestamp check_in_time = 2;
+  // shift check out time
+  google.protobuf.Timestamp check_out_time = 3;
+  // dasher name
+  google.protobuf.StringValue dasher_name = 4;
+  // dasher user id
+  google.protobuf.StringValue dasher_user_id = 5;
+  // dasher id
+  google.protobuf.Int64Value dasher_id = 6;
+}
+
+// information on case regarding consumer
+message ConsumerInformationForCase {
+  // consumer name
+  google.protobuf.StringValue consumer_name = 1;
+  // consumer user id
+  google.protobuf.Int64Value consumer_user_id = 2;
+  // consumer id
+  google.protobuf.Int64Value consumer_id = 3;
+}
+
+// information on case regarding agent
+message AgentInformationForCase {
+  reserved 2;
+  reserved "agent_id";
+  // agent name
+  google.protobuf.StringValue agent_name = 1;
+  // agent email
+  google.protobuf.StringValue email = 3;
+  // user id of the agent
+  google.protobuf.StringValue agent_user_id = 4;
+}
+
+// queue information
+message QueueInformationForCase {
+  // queue id
+  google.protobuf.StringValue queue_id = 1;
+  // queue display name
+  google.protobuf.StringValue queue_name = 2;
+}
+
+// case history object
+message CaseHistory {
+  // "Pretty" version of a case id - ex. the case number. Corresponding field in ERS: case_number
+  google.protobuf.StringValue case_number = 1;
+  // 18 digit case id
+  google.protobuf.StringValue case_id = 2;
+  // Case status
+  google.protobuf.StringValue status = 3;
+  // Case creation timestamp
+  google.protobuf.Timestamp created_at = 4;
+  // last modified date timestamp
+  google.protobuf.Timestamp last_modified_date = 5;
+  // Phone, web or chat case
+  ChannelType channel = 6;
+  // list of issues in case
+  repeated Issue issue_list = 7;
+  // list of resolutions in case
+  repeated Resolution resolution_list = 8;
+  // issue value in a Salesforce case
+  google.protobuf.StringValue salesforce_issue = 9;
+  // resolution value in a Salesforce case
+  google.protobuf.StringValue salesforce_resolution = 10;
+  // mx information for case
+  MerchantInformationForCase merchant_information_for_case = 11;
+  // dash/shift/dasher information for case
+  DasherInformationForCase dasher_information_for_case = 12;
+  // consumer information for case
+  ConsumerInformationForCase consumer_information_for_case = 13;
+  // agent information for case
+  AgentInformationForCase agent_information_for_case = 14;
+  // queue information for case
+  QueueInformationForCase queue_information_for_case = 15;
+  // subject
+  google.protobuf.StringValue subject = 16;
+  // description
+  google.protobuf.StringValue description = 17;
+  // Case closed timestamp
+  google.protobuf.Timestamp closed_at = 18;
+  // Case solved timestamp
+  google.protobuf.Timestamp solved_at = 19;
+  // store id
+  google.protobuf.StringValue store_id = 20;
+  // business id
+  google.protobuf.StringValue business_id = 21;
+  // issue category value in a Salesforce case
+  google.protobuf.StringValue salesforce_issue_category = 22;
+  // Case assigned at timestamp
+  google.protobuf.Timestamp assigned_at = 23;
+}
+
+// GetCaseHistoryResponse response object
+message GetCaseHistoryResponse {
+  // list of cases in case history
+  repeated CaseHistory case_history_list = 1;
+  // total count of all cases in history
+  google.protobuf.Int32Value total_case_history_count = 2;
+}
+
+// Get supervisor's team overview request
+message GetTeamOverviewRequest {
+  // Agent ID (user id) of the supervisor
+  google.protobuf.StringValue supervisor_id = 1;
+  // Pagination options
+  PaginationOptions pagination_options = 2;
+
+  reserved 3;
+  reserved "filter_options";
+  // Filter options
+  FilterOptions data_filter_options = 4;
+}
+
+// Get supervisor's team overview response
+message GetTeamOverviewResponse {
+  // Direct reports
+  repeated SupportAgent direct_reports = 1;
+}
+
+// Get agent direct reports request
+message GetAgentDirectReportsRequest {
+  // Agent ID (user id) of the supervisor
+  google.protobuf.StringValue agent_id = 1;
+}
+
+// Get agent direct reports response
+message GetAgentDirectReportsResponse {
+  // Direct reports
+  repeated SupportAgent direct_reports = 1;
+}
+
+// Get agent case list request
+message GetAgentCaseListRequest {
+  // Agent ID (user id) of the supervisor
+  google.protobuf.StringValue agent_id = 1;
+  // Whether to include direct reports in the response
+  google.protobuf.BoolValue include_direct_reports = 2;
+  // Pagination options
+  PaginationOptions pagination_options = 3;
+  // time filters options
+  TimeFilterOptions time_filter_options = 4;
+  // filter options, a list of filter options, AND
+  FilterOptions filter_options = 5;
+  // sort options
+  SortOptions sort_options = 6;
+}
+
+// Get agent case list response
+message GetAgentCaseListResponse {
+  // Cases assigned to the agent (and their direct reports)
+  repeated CaseHistory cases = 1;
+  // Total count of all cases
+  google.protobuf.Int32Value total_case_count = 2;
+}

@@ -1,0 +1,687 @@
+syntax = "proto3";
+
+package parcel_service.v1;
+
+import "common/common.proto";
+import "common/dayparts.proto";
+import "doordash.api/annotations.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "parcel_protobuf/common.proto";
+
+option go_package = "drive_parcel_service";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.rpc.parcel";
+
+// Service with defined endpoints for use in midmile routing config
+service ParcelMidmileService {
+  option (doordash.api.service) = {
+    name: "parcel-sort-app-transportation"
+    url: "parcel-service-web.service.prod.ddsd"
+    port: 50051
+    api_key_name: "API_KEY_FOR_PARCEL_SERVICE"
+    owner: {
+      id: "drive-parcels"
+      name: "parcel"
+      slack_channel: "#drive-parcels-alerts"
+      email_alias: "drive-eng-parcel-plus@doordash.com"
+    }
+    name_spaces: ["parcel"]
+    vertical_domains: [CX]
+    target_products: [CX]
+  };
+  option (doordash.api.service_forward_headers) = {
+    forward: [
+      {field: "X-Application-Name"}]
+  };
+
+  // Create a warehouse
+  rpc CreateParcelWarehouse(CreateParcelWarehouseRequest) returns (CreateParcelWarehouseResponse);
+  // Get a warehouse
+  rpc GetParcelWarehouseById(GetParcelWarehouseByIdRequest) returns (GetParcelWarehouseByIdResponse);
+  // Update the warehouse
+  rpc UpdateParcelWarehouse(UpdateParcelWarehouseRequest) returns (UpdateParcelWarehouseResponse);
+  // Create a sortation set
+  rpc CreateParcelSortationSet(CreateParcelSortationSetRequest) returns (CreateParcelSortationSetResponse);
+  // Create a route
+  rpc CreateParcelRoute(CreateParcelRouteRequest) returns (CreateParcelRouteResponse);
+  // Create a Lane
+  rpc CreateParcelMidMileLane(CreateParcelMidMileLaneRequest) returns (CreateParcelMidMileLaneResponse);
+  // Update Lane
+  rpc UpdateLane(UpdateLaneRequest) returns (UpdateLaneResponse);
+  // Update Route
+  rpc UpdateRoute(UpdateRouteRequest) returns (UpdateRouteResponse);
+  // Update Sortation Set
+  rpc UpdateSortationSet(UpdateSortationSetRequest) returns (UpdateSortationSetResponse);
+  // Gets Route For Order
+  rpc GetDriveRouteForOrder(GetDriveRouteForOrderRequest) returns (GetDriveRouteForOrderResponse);
+  // list spokes for given facility api
+  rpc ListConnectedFacilities(ListConnectedFacilitiesRequest) returns (ListConnectedFacilitiesResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/list-connected-facilities"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: [
+          "perm_parcel_operator",
+          "perm_dashmart_internal_tool"
+        ]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // scan route id api
+  rpc ScanRoute(ScanRouteRequest) returns (ScanRouteResponse) {
+    option (google.api.http) = {
+      post: "/parcel/v1/parcel_sort_app/scan-route"
+      body: "*"
+    };
+    option (doordash.api.endpoint) = {
+      tier: T1
+      lifecycle: DEV
+      authorization: [CX_USER]
+      role_based_authorization: {
+        mode: ANY,
+        roles: ["perm_parcel_operator"]
+      }
+      slo_config: {
+        critical_alerts_enabled: true
+        critical_5m_burn_threshold: 3000
+        critical_5m_burn_sustain_seconds: 300
+        p99_latency: 3
+      }
+    };
+  }
+
+  // add coordinates for the parcel zipcode that would be used for calculating midmile distance for zone based pricing
+  rpc AddZipcodeCoordinates(AddZipcodeCoordinatesRequest) returns (AddZipcodeCoordinatesResponse) {}
+
+  // get coordinates for the parcel zipcode that would be used for calculating midmile distance for zone based pricing
+  rpc GetZipcodeCoordinates(GetZipcodeCoordinatesRequest) returns (GetZipcodeCoordinatesResponse) {}
+}
+
+// list spoke facilities request
+message ListConnectedFacilitiesRequest {
+  // facility code
+  string facility_code = 1;
+}
+
+// list spoke facilities response
+message ListConnectedFacilitiesResponse {
+  // list of spokes
+  repeated Facility facilities = 1;
+}
+
+// request to get the route on order creation from drive
+message GetDriveRouteForOrderRequest {
+  reserved 3;
+  reserved "developer_id";
+  // zipcode
+  string zipcode = 1;
+  // business_id. can be 'default'
+  string business_id = 2;
+  // origin facility id if passed in
+  google.protobuf.StringValue origin_facility_id = 4;
+  // developer uuid
+  string developer_uuid = 5;
+  // dropoff location used for calculating distance in zone based pricing
+  LocationPoint dropoff_location_point = 6;
+}
+
+// response to get the route on order creation from drive
+message GetDriveRouteForOrderResponse {
+  // active mapped facility_code
+  string facility_code = 1;
+  // route id
+  string route_id = 2;
+  // pickup_window_start_time in utc
+  google.protobuf.Timestamp pickup_window_start_time = 3;
+  // pickup_window_end_time in utc
+  google.protobuf.Timestamp pickup_window_end_time = 4;
+  // pickup_window_end_time in utc
+  google.protobuf.Timestamp delivery_window_end_time = 5;
+  // mm provider
+  ProviderType provider_type = 6;
+  // info to be used for zone based pricing
+  ZoneBasedInfo zone_based_info = 7;
+  // Sortation Set Id
+  google.protobuf.StringValue sortation_set_id = 8;
+}
+
+// request to update a lane. This will automatically update the relevant routes
+message UpdateLaneRequest {
+  // id of the lane
+  string id = 1;
+  // transportation type of the lane
+  ParcelTransportationType transportation_type = 2;
+  // provider of the lane
+  ProviderType provider_type = 3;
+  // daily schedule of the lane
+  repeated MidmileLaneSchedule schedule = 4;
+}
+
+// response to update a lane
+message UpdateLaneResponse {
+  // new lane id
+  MidmileLane lane = 1;
+}
+
+// request to update a route
+message UpdateRouteRequest {
+  // id of the route
+  string id = 1;
+  // provider of the initial pickup of the route
+  ProviderType pickup_provider_type = 2;
+  // daily schedules for the route
+  repeated CreateRouteDailySchedule daily_schedules = 3;
+}
+
+// response to update a route
+message UpdateRouteResponse {
+  // updated route
+  ParcelRoute route = 1;
+}
+
+// create parcel warehouse response
+message CreateParcelWarehouseRequest {
+  // the warehouse to be created
+  ParcelWarehouse warehouse = 1;
+}
+
+// create parcel warehouse response
+message CreateParcelWarehouseResponse {
+  // id of the warehouse created
+  google.protobuf.StringValue id = 1;
+}
+
+// get parcel warehouse request
+message GetParcelWarehouseByIdRequest {
+  // name of the warehouse
+  string id = 1;
+}
+
+// get parcel warehouse response
+message GetParcelWarehouseByIdResponse {
+  // warehouse
+  ParcelWarehouse warehouse = 1;
+}
+
+// update parcel warehouse request
+message UpdateParcelWarehouseRequest {
+  // warehouse to be updated
+  ParcelWarehouse warehouse = 1;
+}
+
+// update parcel warehouse response
+message UpdateParcelWarehouseResponse {
+  // warehouse
+  ParcelWarehouse warehouse = 1;
+}
+
+// parcel warehouse
+message ParcelWarehouse {
+  reserved 7, 4;
+  reserved "phone_number", "non_operational_days";
+  // name of the warehouse, this will be used to uniquely identify a warehouse.
+  // For Merchant warehouse, this is the name of origin facility id in the request
+  // midmile warehouse, name of the Midmile provider
+  // facility code in case of internal doordash facility
+  google.protobuf.StringValue name = 1;
+  // type of the warehouse
+  ParcelWarehouseType type = 2;
+  // operating hours of the warehouse for the week
+  repeated ParcelWarehouseOperatingHours operating_hours = 3;
+  // address of the warehouse
+  common.CommonAddress address = 5;
+  // specific config for the warehouse in case of midmile or merchant warehosue
+  ParcelWarehouseConfig config = 6;
+}
+
+// types of parcel warehouses
+enum ParcelWarehouseType {
+  // unspecified
+  PARCEL_WAREHOUSE_TYPE_UNSPECIFIED = 0;
+  // merchant warehouse
+  PARCEL_WAREHOUSE_TYPE_MERCHANT = 1;
+  // midmile provider's warehouse
+  PARCEL_WAREHOUSE_TYPE_MIDMILE = 2;
+  // doordash hub facility
+  PARCEL_WAREHOUSE_TYPE_HUB = 3;
+  // doordash spoke facility
+  PARCEL_WAREHOUSE_TYPE_SPOKE = 4;
+}
+
+// parcel warehouse operating hours
+message ParcelWarehouseOperatingHours {
+  // day of th week
+  dayparts.DayOfWeek weekday = 1;
+  // start time
+  dayparts.TimeOfDay start_time = 2;
+  // end time
+  dayparts.TimeOfDay end_time = 3;
+}
+
+// parcel warehouse config
+message ParcelWarehouseConfig {
+  // merchant config
+  MerchantWarehouseConfig merchant_config = 1;
+  // midmile provider config
+  MidmileWarehouseConfig midmile_config = 2;
+  // parcel facility config
+  FacilityWarehouseConfig facility_config = 3;
+}
+
+// Specific config for a midmile warehouse
+message MidmileWarehouseConfig {
+  // name of the midmile provider
+  google.protobuf.StringValue name = 1;
+}
+
+// Specific config of a merchant warehouse
+message MerchantWarehouseConfig {
+  // pickup time at the warehouse
+  dayparts.TimeOfDay pickup_time = 1;
+  // buffer time required for loading parcels onto the truck
+  google.protobuf.Int64Value time_required_for_loading_mins = 2;
+  // list business id
+  repeated google.protobuf.StringValue business_ids = 3;
+  // list of developer uuids that are allowed to use this
+  repeated google.protobuf.StringValue developer_uuids = 4;
+  // initial rate card id for GROUND tier to be used for zone based pricing
+  google.protobuf.StringValue rate_card_id = 5;
+}
+
+// types of parcel warehouses
+enum ParcelFacilityOperatingEntityType {
+  // unspecified
+  PARCEL_FACILITY_OPERATING_ENTITY_TYPE_UNSPECIFIED = 0;
+  // Staple
+  PARCEL_FACILITY_OPERATING_ENTITY_TYPE_STAPLE = 1;
+  // Dashmart
+  PARCEL_FACILITY_OPERATING_ENTITY_TYPE_DASHMART = 2;
+  // ACI
+  PARCEL_FACILITY_OPERATING_ENTITY_TYPE_ACI = 3;
+  // OTHER
+  PARCEL_FACILITY_OPERATING_ENTITY_TYPE_OTHER = 4;
+}
+
+// Specific config for a parcel facility warehouse
+message FacilityWarehouseConfig {
+  // facility id
+  google.protobuf.Int32Value facility_id = 1;
+  // operating entity type
+  ParcelFacilityOperatingEntityType operating_entity_type = 2;
+  // phone number of the facility
+  google.protobuf.StringValue phone_number = 3;
+  // up charge_market_name used for zone based pricing. Applies only to spoke facilities
+  UpchargeMarketName upcharge_market_name = 4;
+}
+
+// create sortation set request
+message CreateParcelSortationSetRequest {
+  reserved 1;
+  reserved "sortation_set";
+  // facility code where the dispatch happens at
+  string facility_code = 2;
+  // facility code
+  dayparts.TimeOfDay start_time = 3;
+  // pickup window end time
+  dayparts.TimeOfDay pickup_end_time = 4;
+  // delivery window end time
+  dayparts.TimeOfDay delivery_end_time = 5;
+  // truck arrived time at the warehouse
+  dayparts.TimeOfDay truck_arrived_by_time = 6;
+  // is next day dispatch
+  bool is_next_day_dispatch = 7;
+}
+
+// update sortation set request
+message UpdateSortationSetRequest {
+  // facility code where the dispatch happens at
+  string id = 1;
+  // facility code
+  dayparts.TimeOfDay start_time = 3;
+  // pickup window end time
+  dayparts.TimeOfDay pickup_end_time = 4;
+  // delivery window end time
+  dayparts.TimeOfDay delivery_end_time = 5;
+  // truck arrived time at the warehouse
+  dayparts.TimeOfDay truck_arrived_by_time = 6;
+  // is next day dispatch
+  bool is_next_day_dispatch = 7;
+}
+
+// update sortation set response
+message UpdateSortationSetResponse {
+  // id of the sortation set updated
+  SortationSet set = 1;
+}
+
+// defines a sortation set
+message SortationSet {
+  // name of the sortation set: this is used on the sort app to display the sets
+  // examples: morning, afternoon, evening
+  google.protobuf.StringValue name = 1;
+  // spoke facility where the dispatch happens at
+  google.protobuf.StringValue facility_code = 2;
+  // pickup & delivery window start time
+  dayparts.TimeOfDay start_time = 3;
+  // pickup window end time
+  dayparts.TimeOfDay pickup_end_time = 4;
+  // delivery window end time
+  dayparts.TimeOfDay delivery_end_time = 5;
+  // truck arrived time at the warehouse
+  dayparts.TimeOfDay truck_arrived_by_time = 6;
+  // id, this is auto generated, value would be discarded while creation of a sortation set
+  google.protobuf.StringValue id = 7;
+  // is next day dispatch
+  google.protobuf.BoolValue is_next_day_dispatch = 8;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 9;
+  // updated at timestamp
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// create sortation set response
+message CreateParcelSortationSetResponse {
+  // id of the sortation set created
+  google.protobuf.StringValue id = 1;
+}
+
+// create parcel route request
+message CreateParcelRouteRequest {
+  reserved 1;
+  reserved "route";
+  // origin warehouse name
+  string origin_warehouse_name = 2;
+  // destination warehouse name
+  string destination_warehouse_name = 3;
+  // provider of the pickup
+  ProviderType pickup_provider_type = 4;
+  //  when the route is enabled
+  google.protobuf.Timestamp enabled_at = 5;
+  // when the route is disabled until
+  google.protobuf.Timestamp enabled_until = 6;
+  // daily schedules for the route
+  repeated CreateRouteDailySchedule daily_schedules = 7;
+  // route type
+  RouteType route_type = 8;
+}
+
+// creation requests for daily schedule of a route
+message CreateRouteDailySchedule {
+  reserved 7;
+  reserved "sortation_set_id";
+  // day of the week
+  dayparts.DayOfWeek weekday = 1;
+  // list of lane ids representing the path
+  repeated string lane_ids = 2;
+  // The Set for a route
+  google.protobuf.StringValue sortationset_id = 8;
+}
+
+// create parcel route response
+message CreateParcelRouteResponse {
+  // id of the route created
+  google.protobuf.StringValue id = 1;
+}
+
+// parcel route
+message ParcelRoute {
+  reserved 3, 4, 5, 6, 7, 8, 9, 10;
+  reserved "path", "lanes", "non_operational_days", "cutoff_offset_days", "departure_time_from_origin", "arrival_time_at_destination", "cutoff_time", "sortation_set";
+  // origin warehouse
+  ParcelWarehouse origin_warehouse = 1;
+  // destination warehouse
+  ParcelWarehouse destination_warehouse = 2;
+  // id of the route
+  google.protobuf.StringValue id = 11;
+  // Provider of the initial pickup of the route
+  ProviderType pickup_provider_type = 12;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 13;
+  // updated at timestamp
+  google.protobuf.Timestamp updated_at = 14;
+  // enabled at timestamp
+  google.protobuf.Timestamp enabled_at = 15;
+  // enabled_until timestamp
+  google.protobuf.Timestamp enabled_until = 16;
+  // The Route schedule for the entire week
+  repeated RouteDailySchedule daily_schedules = 17;
+}
+
+// The route schedule for a specific day of the week
+message RouteDailySchedule {
+  // day of the week
+  dayparts.DayOfWeek weekday = 1;
+  // list of lane ids representing the path
+  repeated google.protobuf.StringValue lane_ids = 2;
+  // departure time from the origin warehouse
+  dayparts.TimeOfDay departure_time = 3;
+  // arrival time at the destination warehouse
+  dayparts.TimeOfDay arrival_time = 4;
+  // cut off time for the route
+  dayparts.TimeOfDay cutoff_time = 5;
+  // cut off offset days for the route
+  google.protobuf.Int32Value cutoff_offset_days = 6;
+  // The Set for a route
+  RouteSet sortation_set = 7;
+}
+
+// The sortation set details tied to route so they don't have to be pulled from the sortation set table
+message RouteSet {
+  // sortation set id
+  google.protobuf.StringValue sortation_set_id = 1;
+  // pickup window start time
+  dayparts.TimeOfDay start_time = 2;
+  // pickup window end time
+  dayparts.TimeOfDay pickup_end_time = 3;
+  // delivery window end time
+  dayparts.TimeOfDay delivery_end_time = 4;
+  // timezone of the sortation set
+  google.protobuf.StringValue timezone = 5;
+  // is next day dispatch
+  google.protobuf.BoolValue is_next_day_dispatch = 6;
+}
+
+// mimile lane
+message MidmileLane {
+  reserved 3, 5;
+  reserved "carrier_provider", "non_operational_days";
+  // from warehouse
+  ParcelWarehouse from_warehouse = 1;
+  // to warehouse
+  ParcelWarehouse to_warehouse = 2;
+  // type of transportation used for the lane
+  ParcelTransportationType transportation_type = 4;
+  // Provider type of the lane
+  ProviderType provider_type = 6;
+  // created at timestamp
+  google.protobuf.Timestamp created_at = 7;
+  // updated at timestamp
+  google.protobuf.Timestamp updated_at = 8;
+  // id of the lane
+  google.protobuf.StringValue id = 9;
+  // daily schedule for the lane
+  repeated MidmileLaneSchedule schedule = 10;
+  // enabled at timestamp
+  google.protobuf.Timestamp enabled_at = 11;
+  // enabled until timestamp
+  google.protobuf.Timestamp enabled_until = 12;
+}
+
+// schedule for the lane for a single day of the week
+message MidmileLaneSchedule {
+  // day of the week, in timezone of the arrival warehouse
+  dayparts.DayOfWeek weekday = 1;
+  // depature time, in timezone of the arrival warehouse
+  dayparts.TimeOfDay departure_time = 2;
+  // arrival time, in timezone of the arrival warehouse
+  dayparts.TimeOfDay arrival_time = 3;
+  // number of days to destination
+  google.protobuf.Int32Value days_to_destination = 4;
+}
+
+// create midmile lane request
+message CreateParcelMidMileLaneRequest {
+  reserved 1;
+  reserved "lane";
+  // name of the from warehouse
+  string from_warehouse_name = 3;
+  // name of the destination warehouse
+  string to_warehouse_name = 4;
+  // transportation type of the lane
+  ParcelTransportationType transportation_type = 5;
+  // provider of the lane
+  ProviderType provider_type = 6;
+  // when the lane is enabled
+  google.protobuf.Timestamp enabled_at = 7;
+  // when the lane is enabled until
+  google.protobuf.Timestamp enabled_until = 8;
+  // daily schedule of the lane
+  repeated MidmileLaneSchedule schedule = 9;
+}
+
+// create midmile lane response
+message CreateParcelMidMileLaneResponse {
+  // id of the lane created
+  google.protobuf.StringValue id = 1;
+}
+
+// transportation types for parcels
+enum ParcelTransportationType {
+  // unspecified
+  PARCEL_TRANSPORTATION_TYPE_UNSPECIFIED = 0;
+  // truck
+  PARCEL_TRANSPORTATION_TYPE_GROUND = 1;
+  // air craft
+  PARCEL_TRANSPORTATION_TYPE_AIR = 2;
+}
+
+// The mid mile provider
+enum ProviderType {
+  // unspecified
+  PROVIDER_TYPE_UNSPECIFIED = 0;
+  // Smart Kargo
+  PROVIDER_TYPE_SMART_KARGO = 1;
+  // Warp
+  PROVIDER_TYPE_WARP = 2;
+  // CHR
+  PROVIDER_TYPE_CHR = 3;
+  // DIRECT INJECT
+  PROVIDER_TYPE_DIRECT_INJECT = 4;
+  // OTHER providers
+  PROVIDER_TYPE_OTHER = 5;
+  // Staples
+  PROVIDER_TYPE_STAPLES = 6;
+}
+
+// Route type of the route
+enum RouteType {
+  // unspecified
+  ROUTE_TYPE_UNSPECIFIED = 0;
+  // parcel route type
+  ROUTE_TYPE_PARCEL = 1;
+  // truck route type
+  ROUTE_TYPE_TRUCK = 2;
+}
+
+// upcharge_market_name used for zone based pricing
+enum UpchargeMarketName {
+  // unspecified
+  UPCHARGE_MARKET_NAME_UNSPECIFIED = 0;
+  // Seattle
+  UPCHARGE_MARKET_NAME_SEATTLE = 1;
+  // CA
+  UPCHARGE_MARKET_NAME_CA = 2;
+  // New York City
+  UPCHARGE_MARKET_NAME_NYC = 3;
+}
+
+// scan route request
+message ScanRouteRequest {
+  // route id
+  google.protobuf.StringValue route_id = 1;
+}
+
+// scan route response
+message ScanRouteResponse {
+  // route details
+  RouteDetails route_details = 1;
+}
+
+// route details
+message RouteDetails {
+  // route id
+  google.protobuf.StringValue route_id = 1;
+  // origin warehouse
+  google.protobuf.StringValue origin = 2;
+  // destination warehouse
+  google.protobuf.StringValue destination = 3;
+  // facility codes for this route
+  repeated google.protobuf.StringValue route_facility_codes = 4;
+  // type of route such as TRUCK and PARCEL
+  RouteType route_type = 5;
+}
+
+// information to be used for zone based pricing
+message ZoneBasedInfo {
+  // distance from origin facility to dropoff location in miles
+  int32 route_distance_in_miles = 1;
+  // origin facility id
+  string origin_facility_id = 2;
+  // service tier
+  ParcelTransportationType service_tier = 3;
+  // upcharge market name
+  UpchargeMarketName upcharge_market_name = 4;
+}
+
+//  message that denotes coordinate with lat and long information
+message LocationPoint {
+  // latitude
+  google.protobuf.DoubleValue lat = 1;
+  // longitude
+  google.protobuf.DoubleValue lng = 2;
+}
+
+// request object for AddZipcodeCoordinates API
+message AddZipcodeCoordinatesRequest {
+  // zipcode
+  google.protobuf.StringValue zipcode = 1;
+  // latitude
+  google.protobuf.DoubleValue latitude = 2;
+  // longitude
+  google.protobuf.DoubleValue longitude = 3;
+}
+
+// response object for AddZipcodeCoordinates API
+message AddZipcodeCoordinatesResponse {}
+
+// request object for GetZipcodeCoordinates API
+message GetZipcodeCoordinatesRequest {
+  // zipcode
+  google.protobuf.StringValue zipcode = 1;
+}
+
+// response object for GetZipcodeCoordinates API
+message GetZipcodeCoordinatesResponse {
+  // zipcode
+  google.protobuf.StringValue zipcode = 1;
+  // latitude
+  google.protobuf.DoubleValue latitude = 2;
+  // longitude
+  google.protobuf.DoubleValue longitude = 3;
+}

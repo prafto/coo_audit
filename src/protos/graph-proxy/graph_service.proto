@@ -1,0 +1,334 @@
+syntax = "proto3";
+
+package graph_proxy.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pkg_common/request_context.proto";
+
+option go_package = "./graph_proxy";
+option java_generic_services = true;
+option java_multiple_files = true;
+option java_package = "com.doordash.graph_proxy";
+
+// RPC service for querying data out of graph storage on top of crdb
+// A single transaction would be used for each streamed request
+service GraphService {
+  // Traverse the graph starting from the root node
+  rpc GetSubGraph(GetSubGraphRequest) returns (stream GetSubGraphResponse);
+
+  // Read individual nodes and edges
+  rpc GetEntities(GetEntitiesRequest) returns (stream GetEntitiesResponse);
+
+  // upsert/delete nodes and edges
+  rpc UpdateSubGraph(UpdateSubGraphRequest) returns (UpdateSubGraphResponse);
+
+  // Begins a new transaction and returns a unique transaction ID.
+  rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
+
+  // Commits an active transaction identified by the transaction ID.
+  rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
+
+  // Rolls back an active transaction identified by the transaction ID.
+  rpc RollbackTransaction(RollbackTransactionRequest) returns (RollbackTransactionResponse);
+
+  // Traverse the graph starting from the root node in streaming manner.
+  rpc GetSubGraphInStream(GetSubGraphInStreamRequest) returns (stream GetSubGraphInStreamResponse);
+}
+
+// Ensure value types are supported by JSON, Neo4j, and other underlying DBs.
+message Value {
+  // Type of the value.
+  oneof type {
+    // Represents a null value.
+    google.protobuf.NullValue null_value = 1;
+    // Represents a string value.
+    string string_value = 2;
+    // Represents a 64-bit signed integer value.
+    int64 long_value = 3;
+    // Represents a double value.
+    double double_value = 4;
+    // Represents a boolean value.
+    bool bool_value = 5;
+  }
+}
+
+// The Primary Key of a node
+message NodeIndex {
+  // Type of node
+  string type = 1;
+  // Node Unique Id
+  string unique_id = 2;
+}
+
+// Represents a secondary index for a node in the graph.
+// The secondary index is a partial index on the properties of the node.
+message NodeSecondaryIndex {
+  // Type of node where the secondary index is consitioned on
+  string type = 1;
+  // Each component of the secondary index
+  map<string, Value> index_components = 2;
+}
+
+// The Primary Key of an edge
+message EdgeIndex {
+  // Type of edge
+  string type = 1;
+  // Unique index of source node
+  NodeIndex source_node_index = 2;
+  // Unique index of target node
+  NodeIndex target_node_index = 3;
+  // Edge Unique Id
+  string unique_id = 4;
+  // Updated at
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// For write node requests
+message WriteNode {
+  // Reserved field numbers.
+  reserved 1, 3;
+  // graph properties
+  map<string, Value> properties = 2;
+  // Key of node, to replace type and unique_id
+  NodeIndex node_index = 4;
+}
+
+// For write edge requests
+message WriteEdge {
+  // Reserved field numbers.
+  reserved 1, 2, 3, 5;
+  // graph properties
+  map<string, Value> properties = 4;
+  // Key of node, to replace type, unique_id, and src/tgt node indexes
+  EdgeIndex edge_index = 6;
+}
+
+// A node
+message Node {
+  // Reserved field numbers.
+  reserved 1, 2;
+  // graph properties
+  map<string, Value> properties = 3;
+  // created time
+  google.protobuf.Timestamp created_at = 4;
+  // updated time
+  google.protobuf.Timestamp updated_at = 5;
+  // Key of node, to replace type and unique_id
+  NodeIndex node_index = 6;
+  // Tenant Id
+  int64 tenant_id = 7;
+  // If true, the node is soft-deleted and will be purged at a later time
+  bool deleted = 8;
+}
+
+// An edge
+message Edge {
+  // Reserved field numbers.
+  reserved 1, 2, 3, 4;
+  // graph properties
+  map<string, Value> properties = 5;
+  // created time
+  google.protobuf.Timestamp created_at = 6;
+  // updated time
+  google.protobuf.Timestamp updated_at = 7;
+  // Key of node, to replace type, unique_id, and src/tgt node indexes
+  EdgeIndex edge_index = 8;
+  // Tenant Id
+  int64 tenant_id = 9;
+  // If true, the node is soft-deleted and will be purged at a later time
+  bool deleted = 10;
+}
+
+// Request to retrieve from graph
+message GetSubGraphRequest {
+  // Reserved field numbers.
+  reserved 1, 5;
+  // Max depth of nodes to retrieve from graph
+  // The first level of nodes is of depth 0
+  int32 max_depth = 2;
+  // Anchored timestamp. Default value of EPOCH means the app uses utcNOW()
+  google.protobuf.Timestamp as_of_timestamp = 3;
+  // List of global filter, or leveled filters
+  // Global filter is enabled if "depth" field in the message is set to 0
+  // If global filter is used, the length of the array should be 1
+  // If leveled filter is used, the length of the array should be equal to max_depth
+  // If global filter is used, and if search forward only, CTE efficient query will be used internally.
+  repeated Filter filters = 4;
+  // List of root node indexes to start from
+  repeated NodeIndex root_node_indexes = 6;
+  // Include soft-deleted nodes and edges in the response
+  bool include_soft_deleted_data = 7;
+}
+
+// Request to retrieve from graph in streaming
+message GetSubGraphInStreamRequest {
+  // Max depth of nodes to retrieve from graph
+  // The first level of nodes is of depth 0
+  int32 max_depth = 1;
+  // Anchored timestamp. Default value of EPOCH means the app uses utcNOW()
+  google.protobuf.Timestamp as_of_timestamp = 2;
+  // List of global filter, or leveled filters
+  // Global filter is enabled if "depth" field in the message is set to 0
+  // If global filter is used, the length of the array should be 1
+  // If leveled filter is used, the length of the array should be equal to max_depth
+  // If global filter is used, and if search forward only, CTE efficient query will be used internally.
+  repeated Filter filters = 3;
+  // List of root node indexes to start from
+  repeated NodeIndex root_node_indexes = 4;
+  // Include soft-deleted nodes and edges in the response
+  bool include_soft_deleted_data = 5;
+  // starting point to fetch the data, EdgeIndex is the primary key of edge.
+  EdgeIndex offset = 6;
+  // page size
+  int32 limit = 7;
+}
+
+// Request to retrieve nodes and edges from graph by primary key
+message GetEntitiesRequest {
+  // nodes to get
+  repeated NodeIndex node_indexes = 1;
+  // edges to get
+  repeated EdgeIndex edge_indexes = 2;
+  // nodes to get by secondary index
+  repeated NodeSecondaryIndex node_secondary_indexes = 3;
+  // Include soft-deleted nodes and edges in the response
+  bool include_soft_deleted_data = 4;
+}
+
+// To filter graph entities during traversal
+message Filter {
+  // strictly defined type from one node to another
+  message AllowedType {
+    // source node type
+    string source_type = 1;
+    // edge type
+    string edge_type = 2;
+    // target node type
+    string target_type = 3;
+  }
+
+  // Set to 0 to use global filter
+  // Set to depth number for leveled filter
+  // For forward search:  (Node of N-1) |  -[Edge of depth N]->(Node of depth N) | -[Edge of N+1]
+  // For backward search: (Node of N-1) |  <-[Edge of depth N]-(Node of depth N) | <-(Edge of N+1)
+  int32 depth = 1;
+  // Whether to enable forward search
+  bool search_forward = 2;
+  // Whether to enable backward search
+  // If enabled, level by level BFS search will be used internally
+  bool search_backward = 3;
+  // List of allowed edge types, going to be deprecated
+  repeated string allowed_edge_types = 4;
+  // List of allowed node types, going to be deprecated
+  repeated string allowed_node_types = 5;
+  // Whether to suppress edge payload in returns
+  bool suppress_edge_payload = 6;
+  // Whether to suppress node payload in returns
+  bool suppress_node_payload = 7;
+  // To provide control over what to search for
+  // Goign to replace allowed_edge_types and allowed_node_types
+  repeated AllowedType allowed_types = 9;
+}
+
+// Response for a subgraph query
+message GetSubGraphResponse {
+  // Reserved field numbers.
+  reserved 1, 2;
+  // retrieved nodes
+  repeated Node nodes = 3;
+  // retrieved edges
+  repeated Edge edges = 4;
+}
+
+// Response for a subgraph query
+message GetSubGraphInStreamResponse {
+  // retrieved nodes
+  repeated Node nodes = 1;
+  // retrieved edges
+  repeated Edge edges = 2;
+}
+
+// Response for getEntities request
+message GetEntitiesResponse {
+  // retrieved nodes
+  repeated Node nodes = 1;
+  // retrieved edges
+  repeated Edge edges = 2;
+}
+
+// Update nodes and edges request
+message UpdateSubGraphRequest {
+  // As name suggests
+  repeated WriteNode nodes_to_upsert = 1;
+  // As name suggests
+  repeated WriteEdge edges_to_upsert = 2;
+  // As name suggests
+  repeated NodeIndex nodes_to_delete = 3;
+  // As name suggests
+  repeated EdgeIndex edges_to_delete = 4;
+  // Anchored timestamp. Default value of EPOCH means the app uses utcNOW()
+  google.protobuf.Timestamp as_of_timestamp = 5;
+  // If not set, each request is in its own transaction as the default behavior
+  // We can skip transaction by setting use_transaction to False
+  google.protobuf.BoolValue use_transaction = 6;
+  // PKG distributed context
+  com.doordash.pkg_common.v1.DistributedContext distributed_context = 7;
+  // if set delete all edges directly connected to the nodes in nodes_to_delete along with the nodes
+  bool use_cascade_delete = 8;
+}
+
+// Update nodes and edges response
+message UpdateSubGraphResponse {
+  // Reserved field numbers.
+  reserved 1, 2;
+  // updated node indexes
+  repeated NodeIndex nodes_updated = 3;
+  // updated edge indexes
+  repeated EdgeIndex edges_updated = 4;
+  // deleted node indexes
+  repeated NodeIndex nodes_deleted = 5;
+  // deleted edge indexes
+  repeated EdgeIndex edges_deleted = 6;
+  // MVCC time
+  google.protobuf.Timestamp mvcc_time = 7;
+}
+
+// Request message for beginning a new transaction.
+message BeginTransactionRequest {
+  // Reserved for future options (e.g., isolation level).
+  // Currently, this message is empty but can be extended.
+}
+
+// Response message for BeginTransaction.
+message BeginTransactionResponse {
+  // Unique identifier for the started transaction.
+  // This ID must be used for subsequent read, write, commit, or rollback operations.
+  string transaction_id = 1;
+}
+
+// Request message for committing an active transaction.
+message CommitTransactionRequest {
+  // The unique transaction ID that was returned from BeginTransaction.
+  // This identifies the transaction to be committed.
+  string transaction_id = 1;
+}
+
+// Response message for CommitTransaction.
+message CommitTransactionResponse {
+  // Indicates whether the commit was successful.
+  bool success = 1;
+}
+
+// Request message for rolling back an active transaction.
+message RollbackTransactionRequest {
+  // The unique transaction ID for the transaction to be rolled back.
+  string transaction_id = 1;
+}
+
+// Response message for RollbackTransaction.
+message RollbackTransactionResponse {
+  // Indicates whether the rollback was successful.
+  bool success = 1;
+}
