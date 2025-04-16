@@ -160,7 +160,7 @@ def analyze_case():
             'avg_sentiment': avg_sentiment,
             'sentiment_timeline': [
                 {
-                    'date': item['date'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'date': item['date'],  # Date is already a string, no need for strftime
                     'score': item['score'],
                     'category': item['category']
                 } for item in sentiment_timeline

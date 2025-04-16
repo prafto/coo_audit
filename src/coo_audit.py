@@ -141,7 +141,8 @@ def process_emails(emails):
                         elif field_name == 'text_body':
                             text_body = value
                         elif field_name == 'created_date':
-                            email_date = value
+                            # Ensure email_date is a string
+                            email_date = str(value)
                         elif field_name == 'subject':
                             subject = value
                 else:
@@ -157,7 +158,7 @@ def process_emails(emails):
             
         # Use current time if email_date is missing
         if not email_date:
-            email_date = datetime.now().isoformat()
+            email_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"Using current time as email date: {email_date}")
         
         # Determine if it's a support email - use from_address or from_email
@@ -195,9 +196,9 @@ def process_emails(emails):
             processed_email['sentiment_category'] = sentiment_category
             processed_email['noteworthy_snippets'] = []
             
-            # Add to sentiment timeline - store email_date as is (string)
+            # Add to sentiment timeline - store email_date as string
             sentiment_timeline.append({
-                'date': email_date,  # Keep as string, don't convert to datetime
+                'date': email_date,  # Already a string
                 'score': sentiment_score,
                 'category': sentiment_category,
                 'details': details
