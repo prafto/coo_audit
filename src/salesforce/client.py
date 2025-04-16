@@ -2,7 +2,7 @@
 Salesforce gRPC client implementation for interacting with the SalesforceGatewayService.
 """
 import grpc
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime
 from google.protobuf import wrappers_pb2, timestamp_pb2
 from case_management_service.salesforce import salesforce_pb2
@@ -17,6 +17,25 @@ def _str_to_timestamp(time_str: str) -> timestamp_pb2.Timestamp:
     ts = timestamp_pb2.Timestamp()
     ts.FromDatetime(dt)
     return ts
+
+
+def get_salesforce_client() -> Tuple['SalesforceClient', List[Tuple[str, str]]]:
+    """Create and return a Salesforce client with the necessary configuration."""
+    # Create metadata credentials
+    api_secret = 'KGCu_nYudn_hdhjNn5UDRO2pnSX7kkjgS88cOCZ62j2R2X8My4eI9Brb3dS0E2MNu5OD_MzXyXAbceYsBiWPmDK7ksrq2S5eFwR2obebzu1zgiD19kM5f1gBG6Dh7Ehwd_OdIhssGcfNV_m9LkGUBXVeijUkQAdzASPl4pB-dGY'
+    
+    # Create channel options
+    channel_options = [
+        ('grpc.max_receive_message_length', 100 * 1024 * 1024),  # 100MB
+    ]
+    
+    # Create a client instance with insecure connection
+    return SalesforceClient(
+        host="localhost",
+        port=50051,
+        use_ssl=False,
+        channel_options=channel_options
+    ), [('dd-api-secret', api_secret)]
 
 
 class SalesforceClient:
@@ -70,6 +89,89 @@ class SalesforceClient:
         if self.channel:
             self.channel.close()
 
+    def get_case_id_from_case_number(self, metadata: List[Tuple[str, str]], case_number: str) -> Optional[str]:
+        """Get the case ID from a case number using the Salesforce API."""
+        try:
+            # Create the request with the case number
+            case_request = salesforce_pb2.GetSalesforceCasesByCaseNumberRequest(
+                case_number=wrappers_pb2.StringValue(value=case_number)
+            )
+            
+            # Make the call to get case details
+            case_response = self.stub.GetSalesforceCasesByCaseNumber(
+                case_request,
+                metadata=metadata,
+                timeout=30.0
+            )
+            
+            if case_response.HasField('salesforce_case'):
+                # Extract the case ID from the response
+                case = case_response.salesforce_case
+                case_id = None
+                
+                # Find the case_id field in the response
+                for field in case.DESCRIPTOR.fields:
+                    if field.name == 'case' and case.HasField('case'):
+                        case_details = getattr(case, 'case')
+                        for detail_field in case_details.DESCRIPTOR.fields:
+                            if detail_field.name == 'case_id' and case_details.HasField('case_id'):
+                                case_id = getattr(case_details, 'case_id').value
+                                break
+                
+                return case_id
+            else:
+                print(f"No case found with the given case number: {case_number}")
+                return None
+        except Exception as e:
+            print(f"Error getting case ID for case number {case_number}: {e}")
+            if isinstance(e, grpc.RpcError):
+                print(f"Status code: {e.code()}")
+                print(f"Details: {e.details()}")
+            return None
+
+    def get_emails_for_case_id(self, metadata: List[Tuple[str, str]], case_id: str) -> List[salesforce_pb2.SalesforceEmail]:
+        """Get emails for a case ID using the Salesforce API."""
+        try:
+            print(f"\nFetching emails for case ID: {case_id}")
+            
+            # Create the request with the case ID
+            email_request = salesforce_pb2.GetSalesforceEmailsRequest(
+                salesforce_case_ids=[wrappers_pb2.StringValue(value=case_id)]
+            )
+            
+            print(f"Request created: {email_request}")
+            
+            # Make the call to get emails
+            print("Making gRPC call to GetSalesforceEmails...")
+            email_response = self.stub.GetSalesforceEmails(
+                email_request,
+                metadata=metadata,
+                timeout=30.0
+            )
+            
+            print(f"Response received: {email_response}")
+            print(f"Retrieved {len(email_response.emails)} emails from Salesforce")
+            
+            # Log email details for debugging
+            for i, email in enumerate(email_response.emails):
+                print(f"\nEmail {i + 1}:")
+                for field in email.DESCRIPTOR.fields:
+                    try:
+                        if hasattr(email, 'HasField') and email.HasField(field.name):
+                            field_value = getattr(email, field.name)
+                            if hasattr(field_value, 'value'):
+                                print(f"{field.name}: {field_value.value}")
+                    except Exception as e:
+                        print(f"Error accessing field {field.name}: {e}")
+            
+            return email_response.emails
+        except Exception as e:
+            print(f"Error getting emails for case ID {case_id}: {e}")
+            if isinstance(e, grpc.RpcError):
+                print(f"Status code: {e.code()}")
+                print(f"Details: {e.details()}")
+            return []
+
     def get_salesforce_case_details(
         self,
         case_ids: List[wrappers_pb2.StringValue],
@@ -122,41 +224,6 @@ class SalesforceClient:
 
         try:
             response = self.stub.GetSalesforceCaseDetails(
-                request,
-                timeout=timeout
-            )
-            return response
-        except grpc.RpcError as e:
-            # Log the error details
-            status_code = e.code()
-            details = e.details()
-            print(f"RPC failed with status {status_code}: {details}")
-            raise
-
-    def get_salesforce_cases_by_case_number(
-        self,
-        case_number: wrappers_pb2.StringValue,
-        timeout: Optional[float] = None,
-    ) -> salesforce_pb2.GetSalesforceCasesByCaseNumberResponse:
-        """Get a Salesforce case by its case number.
-        
-        Args:
-            case_number: The case number to look up
-            timeout: RPC timeout in seconds (optional)
-        
-        Returns:
-            GetSalesforceCasesByCaseNumberResponse containing the case details
-        
-        Raises:
-            grpc.RpcError: If the RPC call fails
-        """
-        # Create the request message
-        request = salesforce_pb2.GetSalesforceCasesByCaseNumberRequest(
-            case_number=case_number
-        )
-
-        try:
-            response = self.stub.GetSalesforceCasesByCaseNumber(
                 request,
                 timeout=timeout
             )

@@ -6,9 +6,6 @@ import re
 from datetime import datetime
 from collections import Counter
 from transformers import pipeline
-import matplotlib
-matplotlib.use('Agg')  # Set the backend to non-interactive before importing pyplot
-import matplotlib.pyplot as plt
 import io
 import base64
 from io import BytesIO
@@ -17,8 +14,9 @@ import numpy as np
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-# Import the coo_audit module
-from coo_audit import get_case_emails, plot_sentiment_trend
+# Import the coo_audit module and Salesforce client
+from coo_audit import process_emails
+from salesforce.client import get_salesforce_client
 
 app = Flask(__name__)
 
@@ -110,58 +108,8 @@ def extract_noteworthy_snippets(text, sentiment_score):
         # For neutral sentiment, return a few sentences from the middle
         return sentences[:3] if len(sentences) > 3 else sentences
 
-def generate_sentiment_trend_chart(sentiment_timeline):
-    """Generate a sentiment trend chart and return as base64 encoded image."""
-    if not sentiment_timeline:
-        return None
-    
-    # Extract data for plotting
-    dates = [item['date'] for item in sentiment_timeline]
-    scores = [item['score'] for item in sentiment_timeline]
-    
-    # Create the plot
-    plt.figure(figsize=(10, 4))
-    
-    # Plot sentiment scores with color gradient
-    for i in range(len(dates) - 1):
-        plt.plot([dates[i], dates[i+1]], [scores[i], scores[i+1]], 
-                 color=get_sentiment_color((scores[i] + scores[i+1]) / 2),
-                 linewidth=3)
-    
-    # Add points
-    plt.scatter(dates, scores, color='black', s=50)
-    
-    # Customize the plot
-    plt.title('Sentimento-Meter: Merchant Sentiment Over Time', fontsize=14)
-    plt.xlabel('Date', fontsize=12)
-    plt.ylabel('Sentiment Score', fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.7)
-    
-    # Set y-axis limits
-    plt.ylim(-1.2, 1.2)
-    
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45)
-    
-    # Add a horizontal line at y=0
-    plt.axhline(y=0, color='black', linestyle='--', alpha=0.3)
-    
-    # Adjust layout
-    plt.tight_layout()
-    
-    # Save the plot to a bytes buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    plt.close()
-    
-    # Encode the image as base64
-    img_str = base64.b64encode(buf.read()).decode('utf-8')
-    return img_str
-
 @app.route('/')
 def index():
-    """Render the main page of the COO Audit Tool."""
     return render_template('index.html')
 
 @app.route('/analyze', methods=['POST'])
@@ -175,96 +123,38 @@ def analyze_case():
         if not case_number:
             return jsonify({'error': 'Case number is required'}), 400
         
+        # Get Salesforce client
+        client, metadata = get_salesforce_client()
+        
         # Get emails for the case
-        emails = get_case_emails(case_number)
-        
-        if not emails:
-            return jsonify({'error': f'No emails found for case number: {case_number}'}), 404
-        
-        # Count support vs merchant emails
-        support_emails = sum(1 for email in emails if email.get('is_support', False))
-        merchant_emails = sum(1 for email in emails if not email.get('is_support', False))
-        
-        # Extract email content for sentiment analysis
-        merchant_texts = [email.get('body', '') for email in emails if not email.get('is_support', False)]
-        
-        # Build sentiment timeline
-        sentiment_timeline = []
-        for email in emails:
-            if not email.get('is_support', False) and email.get('date') and email.get('sentiment_score') is not None:
-                try:
-                    date = datetime.fromisoformat(email['date'].replace('Z', '+00:00'))
-                    sentiment_timeline.append({
-                        'date': date,
-                        'score': email.get('sentiment_score', 0),
-                        'category': email.get('sentiment_category', 'Neutral')
-                    })
-                except Exception as e:
-                    print(f"Error parsing date {email.get('date')}: {e}")
-        
-        # Sort sentiment timeline by date
-        sentiment_timeline.sort(key=lambda x: x['date'])
+        with client as sf_client:
+            # First, get the case ID from the case number
+            case_id = sf_client.get_case_id_from_case_number(metadata, case_number)
+            
+            if not case_id:
+                return jsonify({'error': f'No case found with the given case number: {case_number}'}), 404
+            
+            # Then get emails for the case ID
+            emails = sf_client.get_emails_for_case_id(metadata, case_id)
+            
+            if not emails:
+                return jsonify({'error': f'No emails found for case number: {case_number} (ID: {case_id})'}), 404
+            
+            # Process the emails
+            result = process_emails(emails)
+            processed_emails = result['emails']
+            support_emails = result['support_emails']
+            merchant_emails = result['merchant_emails']
+            sentiment_timeline = result['sentiment_timeline']
         
         # Calculate average sentiment score
-        sentiment_scores = [email.get('sentiment_score', 0) for email in emails if not email.get('is_support', False)]
+        sentiment_scores = [email.get('sentiment_score', 0) for email in processed_emails if not email.get('is_support', False)]
         avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
-        
-        # Generate sentiment trend chart
-        chart_path = None
-        if sentiment_timeline:
-            try:
-                # Create the plot
-                plt.figure(figsize=(10, 4))
-                
-                # Extract data for plotting
-                dates = [item['date'] for item in sentiment_timeline]
-                scores = [item['score'] for item in sentiment_timeline]
-                categories = [item['category'] for item in sentiment_timeline]
-                
-                # Plot sentiment scores
-                plt.plot(dates, scores, 'b-o', linewidth=2, markersize=8)
-                
-                # Add category labels
-                for i, (date, score, category) in enumerate(zip(dates, scores, categories)):
-                    plt.annotate(category, (date, score), 
-                                textcoords="offset points", 
-                                xytext=(0,10), 
-                                ha='center',
-                                fontsize=8)
-                
-                # Customize the plot
-                plt.title('Merchant Sentiment Over Time', fontsize=14)
-                plt.xlabel('Date', fontsize=12)
-                plt.ylabel('Sentiment Score', fontsize=12)
-                plt.grid(True, linestyle='--', alpha=0.7)
-                
-                # Set y-axis limits
-                plt.ylim(-1.2, 1.2)
-                
-                # Rotate x-axis labels for better readability
-                plt.xticks(rotation=45)
-                
-                # Add a horizontal line at y=0
-                plt.axhline(y=0, color='r', linestyle='--', alpha=0.3)
-                
-                # Adjust layout
-                plt.tight_layout()
-                
-                # Save the plot to a BytesIO object
-                img = BytesIO()
-                plt.savefig(img, format='png')
-                img.seek(0)
-                plt.close()
-                
-                # Convert to base64 for embedding in HTML
-                chart_path = base64.b64encode(img.getvalue()).decode('utf-8')
-            except Exception as e:
-                print(f"Error generating chart: {e}")
         
         # Return the results
         return jsonify({
-            'emails': emails,
-            'total_emails': len(emails),
+            'emails': processed_emails,
+            'total_emails': len(processed_emails),
             'support_emails': support_emails,
             'merchant_emails': merchant_emails,
             'avg_sentiment': avg_sentiment,
@@ -274,8 +164,7 @@ def analyze_case():
                     'score': item['score'],
                     'category': item['category']
                 } for item in sentiment_timeline
-            ],
-            'chart_path': chart_path
+            ]
         })
     
     except Exception as e:
