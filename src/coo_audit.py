@@ -75,12 +75,39 @@ def process_emails(emails):
         subject = None
         status = "Unknown"  # Default status
         
+        # First, try to get the message_date directly
+        if hasattr(email, 'HasField') and email.HasField('message_date'):
+            message_date = getattr(email, 'message_date')
+            if hasattr(message_date, 'seconds'):
+                # Convert timestamp to datetime
+                email_date = datetime.fromtimestamp(message_date.seconds).strftime("%Y-%m-%d %H:%M:%S")
+                print(f"Using message_date: {email_date}")
+        
+        # If message_date is not available, try other date fields
+        if not email_date:
+            print("message_date not available, trying other date fields")
+            for field_name in ['sent_date', 'date_sent', 'received_date', 'date_received', 'created_date']:
+                if hasattr(email, 'HasField') and email.HasField(field_name):
+                    field_value = getattr(email, field_name)
+                    if hasattr(field_value, 'seconds'):
+                        # Convert timestamp to datetime
+                        email_date = datetime.fromtimestamp(field_value.seconds).strftime("%Y-%m-%d %H:%M:%S")
+                        print(f"Using {field_name}: {email_date}")
+                        break
+        
+        # If still no date, use current time as fallback
+        if not email_date:
+            print("Warning: No email date found, using current time as fallback")
+            email_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Using current time as email date: {email_date}")
+        
+        # Extract other email details
         print("Email fields:")
         for field in email.DESCRIPTOR.fields:
             field_name = field.name
             try:
                 # Skip fields that don't have presence information or are too noisy
-                if field_name in ['attachments', 'html_body', 'status']:  # Skip problematic fields
+                if field_name in ['attachments', 'html_body', 'status', 'message_date', 'sent_date', 'date_sent', 'received_date', 'date_received', 'created_date']:
                     print(f"Skipping field: {field_name}")
                     continue
                 
@@ -100,10 +127,6 @@ def process_emails(emails):
                             text_body = value
                         elif field_name == 'subject':
                             subject = value
-                        # Store date fields for later use
-                        elif field_name in ['sent_date', 'date_sent', 'received_date', 'date_received', 'created_date']:
-                            if not email_date or field_name in ['sent_date', 'date_sent', 'received_date', 'date_received']:
-                                email_date = str(value)
                 else:
                     print(f"Field {field_name} not present in email")
             except Exception as e:
@@ -123,14 +146,6 @@ def process_emails(emails):
             is_support = True
             
         print(f"Email classification: {'Support' if is_support else 'Merchant'} email")
-        
-        # Use appropriate date field based on email source
-        if not email_date:
-            print("Warning: Email date is missing, using current time as fallback")
-            email_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Using current time as email date: {email_date}")
-        else:
-            print(f"Using {'sent' if is_support else 'received'} date: {email_date}")
         
         # Process the email
         processed_email = {
