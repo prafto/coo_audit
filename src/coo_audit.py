@@ -140,9 +140,9 @@ def process_emails(emails):
             
         # Determine if it's a support email - use from_address or from_email
         is_support = False
-        if from_address and 'support@doordash.com' in from_address.lower():
+        if from_address and '@doordash.com' in from_address.lower():
             is_support = True
-        elif from_email and 'support@doordash.com' in from_email.lower():
+        elif from_email and '@doordash.com' in from_email.lower():
             is_support = True
             
         print(f"Email classification: {'Support' if is_support else 'Merchant'} email")
