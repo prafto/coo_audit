@@ -110,7 +110,7 @@ function getSentimentColor(score) {
 }
 
 // Update Sentiment Chart
-function updateSentimentChart(timeline) {
+function updateSentimentChart(sentimentTimeline) {
     const ctx = document.getElementById('sentimentChart').getContext('2d');
     
     // Destroy existing chart if it exists
@@ -118,39 +118,61 @@ function updateSentimentChart(timeline) {
         sentimentChart.destroy();
     }
     
-    // Create new chart
+    // Sort the sentiment timeline by date (earliest to latest)
+    const sortedTimeline = [...sentimentTimeline].sort((a, b) => {
+        return new Date(a.date) - new Date(b.date);
+    });
+    
+    // Extract dates and scores from the sorted timeline
+    const dates = sortedTimeline.map(item => item.date);
+    const scores = sortedTimeline.map(item => item.score);
+    
+    // Create the chart
     sentimentChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: timeline.map(item => {
-                // Parse the date string from the backend
-                const date = new Date(item.date);
-                return date.toLocaleDateString();
-            }),
+            labels: dates,
             datasets: [{
                 label: 'Sentiment Score',
-                data: timeline.map(item => item.score),
-                borderColor: '#0d6efd',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                tension: 0.4,
-                fill: true
+                data: scores,
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1,
+                fill: false
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
+            maintainAspectRatio: false, // Allow the chart to be as tall as needed
             scales: {
                 y: {
+                    beginAtZero: true,
                     min: -1,
                     max: 1,
-                    ticks: {
-                        stepSize: 0.5
+                    title: {
+                        display: true,
+                        text: 'Sentiment Score'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
                     }
                 }
             },
             plugins: {
-                legend: {
-                    display: false
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const index = context.dataIndex;
+                            const item = sortedTimeline[index];
+                            return [
+                                `Score: ${item.score.toFixed(2)}`,
+                                `Category: ${item.category}`,
+                                `Details: ${item.details.explanation}`
+                            ];
+                        }
+                    }
                 }
             }
         }
@@ -192,9 +214,11 @@ function updateEmailConversation(emails) {
             <div class="d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center">
                     <div class="sentiment-circle me-2" style="background-color: ${sentimentColor};"></div>
-                    <span>${email.from || 'Unknown sender'}</span>
+                    <span class="fw-bold">${email.from || 'Unknown sender'}</span>
                 </div>
-                <small class="text-muted">${emailDate}</small>
+                <div class="date-badge bg-light text-dark px-3 py-1 rounded">
+                    <small class="fw-bold">${emailDate}</small>
+                </div>
             </div>
         `;
         
