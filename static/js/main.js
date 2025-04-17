@@ -84,29 +84,36 @@ function displayResults(data) {
 
 // Helper function to get sentiment color based on score
 function getSentimentColor(score) {
-    // Create a gradient from dark red (-1) to yellow (0) to dark green (1)
-    if (score <= -0.5) {
-        // Strong negative - dark red
-        return '#8B0000'; // Dark red
-    } else if (score >= 0.5) {
-        // Strong positive - dark green
-        return '#006400'; // Dark green
-    } else {
-        // For scores between -0.5 and 0.5, create a smooth transition
-        if (score < 0) {
-            // From dark red to yellow
-            const normalizedScore = (score + 0.5) / 0.5; // 0 to 1
-            const red = Math.round(139 - (normalizedScore * 139)); // 139 is the red component of dark red
-            const green = Math.round(normalizedScore * 255); // 255 is the green component of yellow
-            return `rgb(${red}, ${green}, 0)`; // Yellow has no blue component
-        } else {
-            // From yellow to dark green
-            const normalizedScore = score / 0.5; // 0 to 1
-            const red = Math.round(255 - (normalizedScore * 255)); // 255 is the red component of yellow
-            const green = Math.round(255 - (normalizedScore * 191)); // 255 is the green component of yellow, 191 is the difference to dark green
-            return `rgb(${red}, ${green}, 0)`; // Dark green has no blue component
-        }
-    }
+    // Round to nearest 0.1 to match our color map
+    const roundedScore = Math.round(score * 10) / 10;
+    
+    // Hardcoded color map for each 0.1 increment from -1.0 to 1.0
+    const colorMap = {
+        '-1.0': 'rgb(139, 0, 0)',      // Dark red
+        '-0.9': 'rgb(160, 0, 0)',      // Slightly less dark red
+        '-0.8': 'rgb(180, 0, 0)',      // Even less dark red
+        '-0.7': 'rgb(200, 0, 0)',      // Medium dark red
+        '-0.6': 'rgb(220, 0, 0)',      // Lighter dark red
+        '-0.5': 'rgb(240, 0, 0)',      // Very light dark red
+        '-0.4': 'rgb(255, 51, 0)',     // Red with a hint of orange
+        '-0.3': 'rgb(255, 102, 0)',    // More orange-red
+        '-0.2': 'rgb(255, 153, 0)',    // Orange with a hint of red
+        '-0.1': 'rgb(255, 204, 0)',    // Orange-yellow
+        '0.0': 'rgb(255, 255, 0)',     // Yellow
+        '0.1': 'rgb(204, 255, 0)',     // Yellow with a hint of green
+        '0.2': 'rgb(153, 255, 0)',     // More green-yellow
+        '0.3': 'rgb(102, 255, 0)',     // Even more green-yellow
+        '0.4': 'rgb(51, 255, 0)',      // Mostly green with a hint of yellow
+        '0.5': 'rgb(0, 255, 0)',       // Pure green
+        '0.6': 'rgb(0, 230, 0)',       // Slightly darker green
+        '0.7': 'rgb(0, 204, 0)',       // More darker green
+        '0.8': 'rgb(0, 179, 0)',       // Even darker green
+        '0.9': 'rgb(0, 153, 0)',       // Very dark green
+        '1.0': 'rgb(0, 128, 0)'        // Darkest green
+    };
+    
+    // Return the color from the map, or default to yellow if not found
+    return colorMap[roundedScore.toString()] || 'rgb(255, 255, 0)';
 }
 
 // Update Sentiment Chart
