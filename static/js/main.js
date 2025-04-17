@@ -60,8 +60,43 @@ function displayResults(data) {
     // Update sentiment meter
     const sentimentScore = data.avg_sentiment;
     const sentimentMeter = document.getElementById('sentimentMeter');
+    const sentimentScoreElement = document.getElementById('sentimentScore');
+    
+    // Set the width of the progress bar (from -1 to 1)
     sentimentMeter.style.width = `${(sentimentScore + 1) * 50}%`;
     sentimentMeter.setAttribute('aria-valuenow', sentimentScore);
+    
+    // Update the displayed score
+    sentimentScoreElement.textContent = sentimentScore.toFixed(2);
+    
+    // Set the color based on sentiment score
+    if (sentimentScore <= -0.5) {
+        // Strong negative - red
+        sentimentMeter.style.backgroundColor = '#dc3545'; // Bootstrap danger red
+    } else if (sentimentScore >= 0.5) {
+        // Strong positive - green
+        sentimentMeter.style.backgroundColor = '#198754'; // Bootstrap success green
+    } else {
+        // Neutral or mixed - calculate a color between red and green
+        // Map -0.5 to 0 to 0.5 to a value between 0 and 1
+        const normalizedScore = (sentimentScore + 0.5) / 1;
+        
+        // For values between -0.5 and 0, transition from red to yellow
+        // For values between 0 and 0.5, transition from yellow to green
+        if (normalizedScore <= 0.5) {
+            // Red to Yellow (0 to 0.5)
+            const redToYellow = normalizedScore * 2; // 0 to 1
+            const red = Math.round(220 - (redToYellow * 220)); // 220 is the red component of #dc3545
+            const green = Math.round(25 + (redToYellow * 230)); // 25 is the green component of #dc3545, 230 is the difference to yellow
+            sentimentMeter.style.backgroundColor = `rgb(${red}, ${green}, 0)`; // Yellow has no blue component
+        } else {
+            // Yellow to Green (0.5 to 1)
+            const yellowToGreen = (normalizedScore - 0.5) * 2; // 0 to 1
+            const red = Math.round(220 - (yellowToGreen * 220)); // 220 is the red component of yellow
+            const green = Math.round(255 - (yellowToGreen * 97)); // 255 is the green component of yellow, 97 is the difference to #198754
+            sentimentMeter.style.backgroundColor = `rgb(${red}, ${green}, 84)`; // 84 is the blue component of #198754
+        }
+    }
     
     // Update sentiment chart
     updateSentimentChart(data.sentiment_timeline);
