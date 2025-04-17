@@ -181,29 +181,26 @@ function updateEmailConversation(emails) {
             }
         }
         
-        // Create email content
-        let emailContent = `
-            <div class="email-content">
-                <p><strong>From:</strong> ${email.from}</p>
-                <p><strong>Date:</strong> ${emailDate}</p>
-                <p><strong>Subject:</strong> ${email.subject || 'No subject'}</p>
-                <div class="email-text">
-                    ${email.text.replace(/\n/g, '<br>')}
-                </div>
+        // Create email header with sender and date
+        const emailHeader = `
+            <div class="d-flex justify-content-between align-items-center">
+                <span>${email.from || 'Unknown sender'}</span>
+                <small class="text-muted">${emailDate}</small>
             </div>
         `;
         
-        // Add sentiment information if available
+        // Create sentiment information if available
+        let sentimentInfo = '';
         if (email.sentiment_score !== undefined) {
-            emailContent += `
-                <div class="sentiment-info mt-3">
+            sentimentInfo = `
+                <div class="sentiment-info mt-2">
                     <p><strong>Sentiment:</strong> ${email.sentiment_category} (${email.sentiment_score.toFixed(2)})</p>
                 </div>
             `;
             
             // Add noteworthy snippets if available
             if (email.noteworthy_snippets && email.noteworthy_snippets.length > 0) {
-                emailContent += `
+                sentimentInfo += `
                     <div class="mt-2">
                         <strong>Noteworthy Snippets:</strong>
                         <ul>
@@ -214,22 +211,50 @@ function updateEmailConversation(emails) {
             }
         }
         
+        // Create collapsible email content
+        const emailContent = `
+            <div class="email-content mt-3">
+                <p><strong>Subject:</strong> ${email.subject || 'No subject'}</p>
+                <div class="email-text">
+                    ${email.text.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+        `;
+        
+        // Create the accordion item
         emailItem.innerHTML = `
             <h2 class="accordion-header">
                 <button class="accordion-button ${index === 0 ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#email${index}">
-                    <div class="d-flex justify-content-between align-items-center w-100">
-                        <span>${email.from || 'Unknown sender'}</span>
-                        <small class="text-muted">${emailDate}</small>
-                    </div>
+                    ${emailHeader}
                 </button>
             </h2>
             <div id="email${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" data-bs-parent="#emailConversation">
                 <div class="accordion-body ${emailClass}">
-                    ${emailContent}
+                    ${sentimentInfo}
+                    <div class="d-flex justify-content-start">
+                        <button class="btn btn-sm btn-outline-secondary show-content" data-target="content${index}">
+                            Show Email Content
+                        </button>
+                    </div>
+                    <div id="content${index}" class="email-content-container d-none">
+                        ${emailContent}
+                    </div>
                 </div>
             </div>
         `;
+        
         conversationContainer.appendChild(emailItem);
+    });
+    
+    // Add event listeners to show/hide buttons
+    document.querySelectorAll('.show-content').forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const contentContainer = document.getElementById(targetId);
+            contentContainer.classList.toggle('d-none');
+            this.textContent = contentContainer.classList.contains('d-none') ? 
+                'Show Email Content' : 'Hide Email Content';
+        });
     });
 }
 
