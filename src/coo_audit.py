@@ -13,19 +13,6 @@ from datetime import datetime
 import numpy as np
 from sentiment_analysis_service import SentimentAnalysisService
 
-def get_email_status_description(status_value):
-    """Convert the numeric status value to a human-readable description."""
-    status_map = {
-        0: "Unspecified",
-        1: "New",
-        2: "Read",
-        3: "Replied",
-        4: "Sent",
-        5: "Forwarded",
-        6: "Draft"
-    }
-    return status_map.get(status_value, f"Unknown ({status_value})")
-
 # Initialize sentiment analysis service
 sentiment_service = SentimentAnalysisService()
 
@@ -111,15 +98,16 @@ def process_emails(emails):
                             from_address = value
                         elif field_name == 'text_body':
                             text_body = value
-                        elif field_name == 'created_date':
-                            # Ensure email_date is a string
-                            email_date = str(value)
                         elif field_name == 'subject':
                             subject = value
+                        # Store date fields for later use
+                        elif field_name in ['sent_date', 'date_sent', 'received_date', 'date_received', 'created_date']:
+                            if not email_date or field_name in ['sent_date', 'date_sent', 'received_date', 'date_received']:
+                                email_date = str(value)
                 else:
-                    print(f"Field {field_name} does not have presence information")
+                    print(f"Field {field_name} not present in email")
             except Exception as e:
-                print(f"Error processing field {field_name}: {e}")
+                print(f"Error accessing field {field_name}: {e}")
                 continue
         
         # Skip emails without text body (we need this for sentiment analysis)
@@ -127,11 +115,6 @@ def process_emails(emails):
             print(f"Skipping email due to missing text body")
             continue
             
-        # Use current time if email_date is missing
-        if not email_date:
-            email_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Using current time as email date: {email_date}")
-        
         # Determine if it's a support email - use from_address or from_email
         is_support = False
         if from_address and 'support@doordash.com' in from_address.lower():
@@ -141,9 +124,17 @@ def process_emails(emails):
             
         print(f"Email classification: {'Support' if is_support else 'Merchant'} email")
         
+        # Use appropriate date field based on email source
+        if not email_date:
+            print("Warning: Email date is missing, using current time as fallback")
+            email_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Using current time as email date: {email_date}")
+        else:
+            print(f"Using {'sent' if is_support else 'received'} date: {email_date}")
+        
         # Process the email
         processed_email = {
-            'from': from_email,
+            'from': from_email or from_address or 'Unknown sender',  # Use from_address as fallback
             'from_address': from_address,
             'date': email_date,
             'subject': subject,
@@ -159,7 +150,7 @@ def process_emails(emails):
             merchant_emails += 1
             merchant_texts.append(text_body)
             
-            # Analyze sentiment for merchant emails
+            # Analyze sentiment for merchant emails only
             sentiment_score, sentiment_category, details = analyze_sentiment(text_body)
             
             # Add sentiment information to the processed email
@@ -175,7 +166,9 @@ def process_emails(emails):
                 'details': details
             })
         
+        # Add all emails to the processed_emails list
         processed_emails.append(processed_email)
+        
         print(f"Successfully processed email {i+1}")
     
     print(f"\nProcessing complete:")

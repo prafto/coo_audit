@@ -51,14 +51,17 @@ def analyze_case():
             merchant_emails = result['merchant_emails']
             sentiment_timeline = result['sentiment_timeline']
         
+        # Filter to only include merchant emails for the frontend
+        merchant_only_emails = [email for email in processed_emails if not email.get('is_support', False)]
+        
         # Calculate average sentiment score
-        sentiment_scores = [email.get('sentiment_score', 0) for email in processed_emails if not email.get('is_support', False)]
+        sentiment_scores = [email.get('sentiment_score', 0) for email in merchant_only_emails]
         avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
         
         # Return the results
         return jsonify({
-            'emails': processed_emails,
-            'total_emails': len(processed_emails),
+            'emails': merchant_only_emails,  # Only merchant emails
+            'total_emails': len(processed_emails),  # Total count of all emails
             'support_emails': support_emails,
             'merchant_emails': merchant_emails,
             'avg_sentiment': avg_sentiment,

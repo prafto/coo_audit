@@ -113,31 +113,6 @@ class SentimentAnalysisService:
                 'explanation': f'Error analyzing sentiment: {str(e)}'
             }
     
-    def get_sentiment_color(self, sentiment_score):
-        """
-        Convert sentiment score to a color gradient.
-        
-        Args:
-            sentiment_score (float): The sentiment score between -1 and 1.
-            
-        Returns:
-            str: A hex color code representing the sentiment.
-        """
-        if sentiment_score > 0.6:
-            return "#2ecc71"  # Bright green for very positive
-        elif sentiment_score > 0.2:
-            return "#27ae60"  # Green for positive
-        elif sentiment_score > 0:
-            return "#a8e6cf"  # Light green for slightly positive
-        elif sentiment_score > -0.2:
-            return "#d5f5e3"  # Very light green for neutral
-        elif sentiment_score > -0.6:
-            return "#fadbd8"  # Light red for slightly negative
-        elif sentiment_score > -0.8:
-            return "#f1948a"  # Red for negative
-        else:
-            return "#e74c3c"  # Bright red for very negative
-    
     def extract_noteworthy_snippets(self, text, sentiment_score):
         """
         Extract noteworthy snippets from the email text based on sentiment.

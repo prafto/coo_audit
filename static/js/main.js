@@ -126,27 +126,43 @@ function updateEmailConversation(emails) {
     const conversationContainer = document.getElementById('emailConversation');
     conversationContainer.innerHTML = '';
     
+    // No need to filter since we're only receiving merchant emails from the backend
     emails.forEach((email, index) => {
         const emailItem = document.createElement('div');
         emailItem.className = 'accordion-item';
         
-        // Determine if it's a support or merchant email
-        const isSupport = email.is_support;
-        const emailClass = isSupport ? 'support-email' : 'merchant-email';
-        
         // Format the date
-        const emailDate = email.date ? new Date(email.date).toLocaleString() : 'Unknown date';
+        const emailDate = new Date(email.date).toLocaleString();
         
-        // Create the email content
-        let emailContent = `<div class="email-content">${email.body || 'No content'}</div>`;
+        // Determine the email class based on sentiment
+        let emailClass = '';
+        if (email.sentiment_score !== undefined) {
+            if (email.sentiment_score > 0.5) {
+                emailClass = 'positive-sentiment';
+            } else if (email.sentiment_score < -0.5) {
+                emailClass = 'negative-sentiment';
+            } else {
+                emailClass = 'neutral-sentiment';
+            }
+        }
         
-        // Add sentiment information for merchant emails
-        if (!isSupport && email.sentiment_category) {
+        // Create email content
+        let emailContent = `
+            <div class="email-content">
+                <p><strong>From:</strong> ${email.from}</p>
+                <p><strong>Date:</strong> ${emailDate}</p>
+                <p><strong>Subject:</strong> ${email.subject || 'No subject'}</p>
+                <div class="email-text">
+                    ${email.text.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+        `;
+        
+        // Add sentiment information if available
+        if (email.sentiment_score !== undefined) {
             emailContent += `
-                <div class="mt-3">
-                    <strong>Sentiment:</strong> ${email.sentiment_category}
-                    <br>
-                    <small class="text-muted">Score: ${email.sentiment_score.toFixed(2)}</small>
+                <div class="sentiment-info mt-3">
+                    <p><strong>Sentiment:</strong> ${email.sentiment_category} (${email.sentiment_score.toFixed(2)})</p>
                 </div>
             `;
             
