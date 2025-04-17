@@ -2,14 +2,6 @@ from flask import Flask, render_template, request, jsonify
 import os
 import sys
 import json
-import re
-from datetime import datetime
-from collections import Counter
-from transformers import pipeline
-import io
-import base64
-from io import BytesIO
-import numpy as np
 
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -19,94 +11,6 @@ from coo_audit import process_emails
 from salesforce.client import get_salesforce_client
 
 app = Flask(__name__)
-
-# Initialize the sentiment analysis pipeline
-sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
-
-def analyze_sentiment(text):
-    """Analyze sentiment using the Hugging Face model."""
-    try:
-        # Clean and prepare the text
-        text = text.strip()
-        if not text:
-            return {
-                'score': 0,
-                'category': 'Neutral',
-                'emotions': [],
-                'explanation': 'No text provided for analysis'
-            }
-        
-        # Get sentiment prediction
-        result = sentiment_analyzer(text)[0]
-        
-        # Convert score to our scale (-1 to 1)
-        score = result['score']
-        if result['label'] == 'NEGATIVE':
-            score = -score
-        
-        # Determine category
-        if score > 0.3:
-            category = 'Positive'
-        elif score < -0.3:
-            category = 'Negative'
-        else:
-            category = 'Neutral'
-        
-        return {
-            'score': score,
-            'category': category,
-            'emotions': [],  # Hugging Face model doesn't provide emotions
-            'explanation': f'Text analyzed as {category.lower()} with confidence {abs(score):.2f}'
-        }
-    except Exception as e:
-        print(f"Error in sentiment analysis: {str(e)}")
-        return {
-            'score': 0,
-            'category': 'Neutral',
-            'emotions': [],
-            'explanation': f'Error analyzing sentiment: {str(e)}'
-        }
-
-def get_sentiment_color(sentiment_score):
-    """Convert sentiment score to a color gradient."""
-    if sentiment_score > 0.6:
-        return "#2ecc71"  # Bright green for very positive
-    elif sentiment_score > 0.2:
-        return "#27ae60"  # Green for positive
-    elif sentiment_score > 0:
-        return "#a8e6cf"  # Light green for slightly positive
-    elif sentiment_score > -0.2:
-        return "#d5f5e3"  # Very light green for neutral
-    elif sentiment_score > -0.6:
-        return "#fadbd8"  # Light red for slightly negative
-    elif sentiment_score > -0.8:
-        return "#f1948a"  # Red for negative
-    else:
-        return "#e74c3c"  # Bright red for very negative
-
-def extract_noteworthy_snippets(text, sentiment_score):
-    """Extract noteworthy snippets from the email text based on sentiment."""
-    if not text:
-        return []
-    
-    # Clean the text
-    clean_text = re.sub(r'<[^>]+>', '', text)
-    
-    # Split into sentences
-    sentences = re.split(r'(?<=[.!?])\s+', clean_text)
-    
-    # Filter sentences based on sentiment
-    if sentiment_score < -0.5:
-        # For negative sentiment, look for sentences with negative words
-        negative_words = ['angry', 'frustrated', 'unhappy', 'disappointed', 'terrible', 'bad', 'worst', 'horrible', 'upset', 'annoyed']
-        return [s for s in sentences if any(word in s.lower() for word in negative_words)]
-    elif sentiment_score > 0.5:
-        # For positive sentiment, look for sentences with positive words
-        positive_words = ['happy', 'pleased', 'thank', 'great', 'excellent', 'good', 'wonderful', 'amazing', 'appreciate', 'satisfied']
-        return [s for s in sentences if any(word in s.lower() for word in positive_words)]
-    else:
-        # For neutral sentiment, return a few sentences from the middle
-        return sentences[:3] if len(sentences) > 3 else sentences
 
 @app.route('/')
 def index():

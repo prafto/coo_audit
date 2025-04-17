@@ -11,8 +11,7 @@ from collections import Counter
 import os
 from datetime import datetime
 import numpy as np
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-import torch
+from sentiment_analysis_service import SentimentAnalysisService
 
 def get_email_status_description(status_value):
     """Convert the numeric status value to a human-readable description."""
@@ -27,64 +26,36 @@ def get_email_status_description(status_value):
     }
     return status_map.get(status_value, f"Unknown ({status_value})")
 
-# Initialize sentiment analyzer (will be loaded once)
-sentiment_analyzer = None
-emotion_analyzer = None
-
-def load_models():
-    """Load the sentiment and emotion analysis models."""
-    global sentiment_analyzer, emotion_analyzer
-    
-    if sentiment_analyzer is None:
-        print("Loading sentiment analysis model...")
-        sentiment_analyzer = pipeline(
-            "sentiment-analysis",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            device=0 if torch.cuda.is_available() else -1
-        )
-    
-    if emotion_analyzer is None:
-        print("Loading emotion analysis model...")
-        emotion_analyzer = pipeline(
-            "text-classification",
-            model="j-hartmann/emotion-english-distilroberta-base",
-            device=0 if torch.cuda.is_available() else -1
-        )
+# Initialize sentiment analysis service
+sentiment_service = SentimentAnalysisService()
 
 def analyze_sentiment(text):
-    """Analyze the sentiment of a text using the sentiment analyzer."""
-    try:
-        # Load models if not already loaded
-        load_models()
+    """
+    Analyze the sentiment of the given text using the sentiment analysis service.
+    
+    Args:
+        text (str): The text to analyze.
         
-        # Analyze sentiment
-        sentiment_result = sentiment_analyzer(text)[0]
-        sentiment_score = sentiment_result['score']
-        sentiment_label = sentiment_result['label']
-        
-        # Analyze emotions
-        emotion_result = emotion_analyzer(text)[0]
-        emotions = emotion_result['label']
-        
-        # Determine sentiment category
-        if sentiment_label == 'POSITIVE':
-            category = 'Positive'
-        elif sentiment_label == 'NEGATIVE':
-            category = 'Negative'
-        else:
-            category = 'Neutral'
-        
-        # Generate explanation
-        explanation = f"The text has a {category.lower()} sentiment with a score of {sentiment_score:.2f}. The emotions detected are: {emotions}."
-        
-        return sentiment_score, category, {
-            "emotions": emotions,
-            "explanation": explanation
-        }
-        
-    except Exception as e:
-        print(f"Error in sentiment analysis: {e}")
-        return 0, "Neutral", None
+    Returns:
+        tuple: (sentiment_score, sentiment_category, details)
+    """
+    result = sentiment_service.analyze(text)
+    
+    # Extract the score and category
+    score = result.get('score', 0)
+    category = result.get('category', 'Neutral')
+    
+    # Extract noteworthy snippets
+    snippets = sentiment_service.extract_noteworthy_snippets(text, score)
+    
+    # Create details dictionary
+    details = {
+        'emotions': result.get('emotions', []),
+        'explanation': result.get('explanation', ''),
+        'noteworthy_snippets': snippets
+    }
+    
+    return score, category, details
 
 def process_emails(emails):
     """Process emails and extract relevant information."""
@@ -194,7 +165,7 @@ def process_emails(emails):
             # Add sentiment information to the processed email
             processed_email['sentiment_score'] = sentiment_score
             processed_email['sentiment_category'] = sentiment_category
-            processed_email['noteworthy_snippets'] = []
+            processed_email['noteworthy_snippets'] = details['noteworthy_snippets']
             
             # Add to sentiment timeline - store email_date as string
             sentiment_timeline.append({
