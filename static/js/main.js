@@ -69,34 +69,8 @@ function displayResults(data) {
     // Update the displayed score
     sentimentScoreElement.textContent = sentimentScore.toFixed(2);
     
-    // Set the color based on sentiment score
-    if (sentimentScore <= -0.5) {
-        // Strong negative - red
-        sentimentMeter.style.backgroundColor = '#dc3545'; // Bootstrap danger red
-    } else if (sentimentScore >= 0.5) {
-        // Strong positive - green
-        sentimentMeter.style.backgroundColor = '#198754'; // Bootstrap success green
-    } else {
-        // Neutral or mixed - calculate a color between red and green
-        // Map -0.5 to 0 to 0.5 to a value between 0 and 1
-        const normalizedScore = (sentimentScore + 0.5) / 1;
-        
-        // For values between -0.5 and 0, transition from red to yellow
-        // For values between 0 and 0.5, transition from yellow to green
-        if (normalizedScore <= 0.5) {
-            // Red to Yellow (0 to 0.5)
-            const redToYellow = normalizedScore * 2; // 0 to 1
-            const red = Math.round(220 - (redToYellow * 220)); // 220 is the red component of #dc3545
-            const green = Math.round(25 + (redToYellow * 230)); // 25 is the green component of #dc3545, 230 is the difference to yellow
-            sentimentMeter.style.backgroundColor = `rgb(${red}, ${green}, 0)`; // Yellow has no blue component
-        } else {
-            // Yellow to Green (0.5 to 1)
-            const yellowToGreen = (normalizedScore - 0.5) * 2; // 0 to 1
-            const red = Math.round(220 - (yellowToGreen * 220)); // 220 is the red component of yellow
-            const green = Math.round(255 - (yellowToGreen * 97)); // 255 is the green component of yellow, 97 is the difference to #198754
-            sentimentMeter.style.backgroundColor = `rgb(${red}, ${green}, 84)`; // 84 is the blue component of #198754
-        }
-    }
+    // Set the color based on sentiment score using a consistent gradient
+    sentimentMeter.style.backgroundColor = getSentimentColor(sentimentScore);
     
     // Update sentiment chart
     updateSentimentChart(data.sentiment_timeline);
@@ -106,6 +80,33 @@ function displayResults(data) {
     
     // Show results section
     resultsSection.classList.remove('d-none');
+}
+
+// Helper function to get sentiment color based on score
+function getSentimentColor(score) {
+    // Create a gradient from dark red (-1) to yellow (0) to dark green (1)
+    if (score <= -0.5) {
+        // Strong negative - dark red
+        return '#8B0000'; // Dark red
+    } else if (score >= 0.5) {
+        // Strong positive - dark green
+        return '#006400'; // Dark green
+    } else {
+        // For scores between -0.5 and 0.5, create a smooth transition
+        if (score < 0) {
+            // From dark red to yellow
+            const normalizedScore = (score + 0.5) / 0.5; // 0 to 1
+            const red = Math.round(139 - (normalizedScore * 139)); // 139 is the red component of dark red
+            const green = Math.round(normalizedScore * 255); // 255 is the green component of yellow
+            return `rgb(${red}, ${green}, 0)`; // Yellow has no blue component
+        } else {
+            // From yellow to dark green
+            const normalizedScore = score / 0.5; // 0 to 1
+            const red = Math.round(255 - (normalizedScore * 255)); // 255 is the red component of yellow
+            const green = Math.round(255 - (normalizedScore * 191)); // 255 is the green component of yellow, 191 is the difference to dark green
+            return `rgb(${red}, ${green}, 0)`; // Dark green has no blue component
+        }
+    }
 }
 
 // Update Sentiment Chart
@@ -169,9 +170,14 @@ function updateEmailConversation(emails) {
         // Format the date
         const emailDate = new Date(email.date).toLocaleString();
         
-        // Determine the email class based on sentiment
+        // Determine the email class and sentiment color based on sentiment score
         let emailClass = '';
+        let sentimentColor = '#6c757d'; // Default gray for neutral
+        
         if (email.sentiment_score !== undefined) {
+            // Always use the getSentimentColor function for consistent coloring
+            sentimentColor = getSentimentColor(email.sentiment_score);
+            
             if (email.sentiment_score > 0.5) {
                 emailClass = 'positive-sentiment';
             } else if (email.sentiment_score < -0.5) {
@@ -181,10 +187,13 @@ function updateEmailConversation(emails) {
             }
         }
         
-        // Create email header with sender and date
+        // Create email header with sender, date, and sentiment circle
         const emailHeader = `
             <div class="d-flex justify-content-between align-items-center">
-                <span>${email.from || 'Unknown sender'}</span>
+                <div class="d-flex align-items-center">
+                    <div class="sentiment-circle me-2" style="background-color: ${sentimentColor};"></div>
+                    <span>${email.from || 'Unknown sender'}</span>
+                </div>
                 <small class="text-muted">${emailDate}</small>
             </div>
         `;
@@ -193,7 +202,7 @@ function updateEmailConversation(emails) {
         let sentimentInfo = '';
         if (email.sentiment_score !== undefined) {
             sentimentInfo = `
-                <div class="sentiment-info mt-2">
+                <div class="sentiment-info mt-2" style="border-left: 4px solid ${sentimentColor}; padding-left: 10px;">
                     <p><strong>Sentiment:</strong> ${email.sentiment_category} (${email.sentiment_score.toFixed(2)})</p>
                 </div>
             `;
