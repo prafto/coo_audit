@@ -54,8 +54,12 @@ def analyze_case():
                 }
             
         except Exception as e:
-            app.logger.error(f"Error fetching COO data: {str(e)}")
-            coo_info = None
+            if "NOT_FOUND" in str(e):
+                app.logger.info(f"No COO data found for store {store_id}")
+                coo_info = None
+            else:
+                app.logger.error(f"Error fetching COO data: {str(e)}")
+                coo_info = None
         
         # Get Salesforce client
         client, metadata = get_salesforce_client()

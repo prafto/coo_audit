@@ -29,6 +29,7 @@ async function handleFormSubmit(event) {
     loadingSpinner.classList.remove('d-none');
     errorMessage.classList.add('d-none');
     resultsSection.classList.add('d-none');
+    document.getElementById('cooInfo').classList.add('d-none');  // Hide COO section during loading
     
     try {
         const response = await fetch('/analyze', {
