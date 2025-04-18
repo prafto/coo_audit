@@ -10,10 +10,9 @@ import os
 import sys
 import argparse
 import logging
-import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-import grpc.aio
+import grpc
 from google.protobuf import wrappers_pb2
 
 # Add the generated code directory to Python path
@@ -60,13 +59,13 @@ class OnboardingServiceClient:
         ]
 
     @staticmethod
-    async def get_stub():
+    def get_stub():
         """Get or create the gRPC stub."""
         if OnboardingServiceClient.channel is None or OnboardingServiceClient.stub is None:
             logger.info(f"Connecting to service at: {ONBOARDING_SERVICE_WEB_SERVICE_URL}")
             
             # Use basic insecure channel for development/testing
-            OnboardingServiceClient.channel = grpc.aio.insecure_channel(
+            OnboardingServiceClient.channel = grpc.insecure_channel(
                 target=ONBOARDING_SERVICE_WEB_SERVICE_URL,
                 options=[
                     ('grpc.enable_http_proxy', 0),
@@ -83,13 +82,13 @@ class OnboardingServiceClient:
         return OnboardingServiceClient.stub
 
     @staticmethod
-    async def get_store_change_of_ownership_onboarding(store_id: int):
+    def get_store_change_of_ownership_onboarding(store_id: int):
         """Get COO data for a store ID."""
-        stub = await OnboardingServiceClient.get_stub()
+        stub = OnboardingServiceClient.get_stub()
         logger.info(f"Making request for store_id: {store_id}")
         headers = OnboardingServiceClient.get_headers()
         try:
-            response = await stub.GetStoreChangeOfOwnershipOnboarding(
+            response = stub.GetStoreChangeOfOwnershipOnboarding(
                 request=protobufx.GetStoreChangeOfOwnershipOnboardingRequest(
                     include_completed=wrappers_pb2.BoolValue(value=True),
                     store_id=wrappers_pb2.StringValue(value=str(store_id)),
@@ -154,7 +153,7 @@ def print_coo_data(coo_data):
         for i, event in enumerate(coo_data.events, 1):
             print(f"Event {i}: {event}")
 
-async def main():
+def main():
     """Main function to parse arguments and execute the COO lookup."""
     parser = argparse.ArgumentParser(description='Retrieve Change of Ownership data for a store')
     parser.add_argument('store_id', help='The store ID to look up')
@@ -164,7 +163,7 @@ async def main():
     
     try:
         # Get COO data
-        response = await OnboardingServiceClient.get_store_change_of_ownership_onboarding(int(args.store_id))
+        response = OnboardingServiceClient.get_store_change_of_ownership_onboarding(int(args.store_id))
         
         # Print the results
         if response and response.store_change_of_ownership_onboarding:
@@ -177,7 +176,7 @@ async def main():
     finally:
         # Close the channel
         if OnboardingServiceClient.channel:
-            await OnboardingServiceClient.channel.close()
+            OnboardingServiceClient.channel.close()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

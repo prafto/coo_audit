@@ -18,8 +18,10 @@ async function handleFormSubmit(event) {
     event.preventDefault();
     
     const caseId = caseIdInput.value.trim();
-    if (!caseId) {
-        showError('Please enter a valid case ID');
+    const storeId = document.getElementById('storeId').value.trim();
+    
+    if (!caseId || !storeId) {
+        showError('Please enter both case number and store number');
         return;
     }
     
@@ -34,7 +36,10 @@ async function handleFormSubmit(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ case_number: caseId }),
+            body: JSON.stringify({ 
+                case_number: caseId,
+                store_id: storeId
+            }),
         });
         
         if (!response.ok) {
@@ -43,6 +48,7 @@ async function handleFormSubmit(event) {
         
         const data = await response.json();
         displayResults(data);
+        displayCOOInfo(data.coo_info);
     } catch (error) {
         showError(error.message);
     } finally {
@@ -80,6 +86,28 @@ function displayResults(data) {
     
     // Show results section
     resultsSection.classList.remove('d-none');
+}
+
+// Display COO Information
+function displayCOOInfo(cooInfo) {
+    const cooSection = document.getElementById('cooInfo');
+    if (!cooInfo) {
+        cooSection.classList.add('d-none');
+        return;
+    }
+
+    // Update COO information fields
+    document.getElementById('cooStoreId').textContent = cooInfo.store_id || '-';
+    document.getElementById('cooStoreName').textContent = cooInfo.store_name || '-';
+    document.getElementById('cooNewOwnerName').textContent = cooInfo.new_owner_name || '-';
+    document.getElementById('cooNewOwnerEmail').textContent = cooInfo.new_owner_email || '-';
+    document.getElementById('cooStatus').textContent = cooInfo.coo_status || '-';
+    document.getElementById('cooApprovedAt').textContent = cooInfo.approved_at || '-';
+    document.getElementById('cooApprovalStatus').textContent = cooInfo.approval_status || '-';
+    document.getElementById('cooOnboardingStatus').textContent = cooInfo.onboarding_status || '-';
+
+    // Show the COO section
+    cooSection.classList.remove('d-none');
 }
 
 // Helper function to get sentiment color based on score
@@ -271,7 +299,7 @@ function updateEmailConversation(emails) {
             <div id="email${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" data-bs-parent="#emailConversation">
                 <div class="accordion-body ${emailClass}">
                     ${sentimentInfo}
-                    <div class="d-flex justify-content-start">
+                    <div class="d-flex justify-content-start mt-3">
                         <button class="btn btn-sm btn-outline-secondary show-content" data-target="content${index}">
                             Show Email Content
                         </button>
