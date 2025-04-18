@@ -36,30 +36,21 @@ def analyze_case():
             # Get COO data
             coo_data = OnboardingServiceClient.get_store_change_of_ownership_onboarding(int(store_id))
             
-            if coo_data and coo_data.store_change_of_ownership_onboarding:
-                coo_data = coo_data.store_change_of_ownership_onboarding
+            if coo_data:
                 # Get the latest event for COO status
                 latest_event = None
-                if hasattr(coo_data, 'events') and coo_data.events:
-                    latest_event = coo_data.events[-1]
-
-                # Format dates if they exist
-                approved_at = None
-                if hasattr(coo_data, 'approved_at') and coo_data.approved_at:
-                    try:
-                        approved_at = datetime.fromtimestamp(coo_data.approved_at.seconds).strftime('%Y-%m-%d %H:%M:%S')
-                    except:
-                        approved_at = str(coo_data.approved_at)
+                if coo_data['events']:
+                    latest_event = coo_data['events'][-1]
 
                 coo_info = {
                     'store_id': store_id,
-                    'store_name': coo_data.store_name.value if hasattr(coo_data, 'store_name') else None,
-                    'new_owner_name': f"{coo_data.new_owner_first_name.value if hasattr(coo_data, 'new_owner_first_name') else ''} {coo_data.new_owner_last_name.value if hasattr(coo_data, 'new_owner_last_name') else ''}".strip(),
-                    'new_owner_email': coo_data.new_owner_email.value if hasattr(coo_data, 'new_owner_email') else None,
-                    'coo_status': str(latest_event) if latest_event else None,
-                    'approved_at': approved_at,
-                    'approval_status': str(coo_data.approval_status) if hasattr(coo_data, 'approval_status') else None,
-                    'onboarding_status': str(coo_data.onboarding_status) if hasattr(coo_data, 'onboarding_status') else None
+                    'store_name': coo_data['store_name'],
+                    'new_owner_name': f"{coo_data['new_owner_first_name'] or ''} {coo_data['new_owner_last_name'] or ''}".strip(),
+                    'new_owner_email': coo_data['new_owner_email'],
+                    'coo_status': latest_event,
+                    'approved_at': coo_data['approved_at'],
+                    'approval_status': coo_data['approval_status'],
+                    'onboarding_status': coo_data['onboarding_status']
                 }
             
         except Exception as e:
