@@ -4,7 +4,6 @@ const caseIdInput = document.getElementById('caseId');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const errorMessage = document.getElementById('errorMessage');
 const resultsSection = document.getElementById('results');
-const cooSection = document.getElementById('cooSection');
 
 // Chart instance
 let sentimentChart = null;
@@ -19,10 +18,8 @@ async function handleFormSubmit(event) {
     event.preventDefault();
     
     const caseId = caseIdInput.value.trim();
-    const storeId = document.getElementById('storeId').value.trim();
-    
-    if (!caseId || !storeId) {
-        showError('Please enter valid case ID and store ID');
+    if (!caseId) {
+        showError('Please enter a valid case ID');
         return;
     }
     
@@ -30,7 +27,6 @@ async function handleFormSubmit(event) {
     loadingSpinner.classList.remove('d-none');
     errorMessage.classList.add('d-none');
     resultsSection.classList.add('d-none');
-    cooSection.classList.add('d-none');
     
     try {
         const response = await fetch('/analyze', {
@@ -38,10 +34,7 @@ async function handleFormSubmit(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                case_number: caseId,
-                store_id: storeId
-            }),
+            body: JSON.stringify({ case_number: caseId }),
         });
         
         if (!response.ok) {
@@ -60,44 +53,30 @@ async function handleFormSubmit(event) {
 // Display Results
 function displayResults(data) {
     // Update summary statistics
-    document.getElementById('totalEmails').textContent = data.total_emails || 0;
-    document.getElementById('supportEmails').textContent = data.support_emails || 0;
-    document.getElementById('merchantEmails').textContent = data.merchant_emails || 0;
+    document.getElementById('totalEmails').textContent = data.total_emails;
+    document.getElementById('supportEmails').textContent = data.support_emails;
+    document.getElementById('merchantEmails').textContent = data.merchant_emails;
     
     // Update sentiment meter
-    const sentimentScore = data.average_sentiment_score || 0;
+    const sentimentScore = data.avg_sentiment;
     const sentimentMeter = document.getElementById('sentimentMeter');
     const sentimentScoreElement = document.getElementById('sentimentScore');
     
     // Set the width of the progress bar (from -1 to 1)
-    const percentage = ((sentimentScore + 1) / 2) * 100; // Convert from [-1, 1] to [0, 100]
-    sentimentMeter.style.width = `${percentage}%`;
+    sentimentMeter.style.width = `${(sentimentScore + 1) * 50}%`;
     sentimentMeter.setAttribute('aria-valuenow', sentimentScore);
     
     // Update the displayed score
     sentimentScoreElement.textContent = sentimentScore.toFixed(2);
     
     // Set the color based on sentiment score using a consistent gradient
-    if (sentimentScore < -0.3) {
-        sentimentMeter.classList.remove('bg-success', 'bg-warning');
-        sentimentMeter.classList.add('bg-danger');
-    } else if (sentimentScore > 0.3) {
-        sentimentMeter.classList.remove('bg-danger', 'bg-warning');
-        sentimentMeter.classList.add('bg-success');
-    } else {
-        sentimentMeter.classList.remove('bg-danger', 'bg-success');
-        sentimentMeter.classList.add('bg-warning');
-    }
+    sentimentMeter.style.backgroundColor = getSentimentColor(sentimentScore);
     
     // Update sentiment chart
-    updateSentimentChart(data.sentiment_timeline || []);
+    updateSentimentChart(data.sentiment_timeline);
     
     // Update email conversation
-    updateEmailConversation(data.processed_emails || []);
-    
-    // Always show COO section and update with available data
-    cooSection.classList.remove('d-none');
-    updateCOOInformation(data.coo_data || {});
+    updateEmailConversation(data.emails);
     
     // Show results section
     resultsSection.classList.remove('d-none');
@@ -148,12 +127,12 @@ function updateSentimentChart(sentimentTimeline) {
     
     // Sort the sentiment timeline by date (earliest to latest)
     const sortedTimeline = [...sentimentTimeline].sort((a, b) => {
-        return new Date(a.timestamp) - new Date(b.timestamp);
+        return new Date(a.date) - new Date(b.date);
     });
     
     // Extract dates and scores from the sorted timeline
-    const dates = sortedTimeline.map(item => new Date(item.timestamp).toLocaleString());
-    const scores = sortedTimeline.map(item => item.sentiment_score);
+    const dates = sortedTimeline.map(item => item.date);
+    const scores = sortedTimeline.map(item => item.score);
     
     // Create the chart
     sentimentChart = new Chart(ctx, {
@@ -184,7 +163,7 @@ function updateSentimentChart(sentimentTimeline) {
                 x: {
                     title: {
                         display: true,
-                        text: 'Time'
+                        text: 'Date'
                     }
                 }
             },
@@ -195,7 +174,7 @@ function updateSentimentChart(sentimentTimeline) {
                             const index = context.dataIndex;
                             const item = sortedTimeline[index];
                             return [
-                                `Score: ${item.sentiment_score.toFixed(2)}`,
+                                `Score: ${item.score.toFixed(2)}`,
                                 `Category: ${item.category}`,
                                 `Details: ${item.details.explanation}`
                             ];
@@ -212,114 +191,111 @@ function updateEmailConversation(emails) {
     const conversationContainer = document.getElementById('emailConversation');
     conversationContainer.innerHTML = '';
     
-    if (emails.length === 0) {
-        conversationContainer.innerHTML = '<p class="text-center">No emails found.</p>';
-        return;
-    }
-    
-    // Sort emails by timestamp
-    emails.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    
-    // Create accordion items for each email
+    // No need to filter since we're only receiving merchant emails from the backend
     emails.forEach((email, index) => {
-        const accordionItem = document.createElement('div');
-        accordionItem.className = 'accordion-item';
+        const emailItem = document.createElement('div');
+        emailItem.className = 'accordion-item';
         
-        const headerId = `heading${index}`;
-        const collapseId = `collapse${index}`;
+        // Format the date
+        const emailDate = new Date(email.date).toLocaleString();
         
-        const timestamp = new Date(email.timestamp).toLocaleString();
-        const sentimentClass = email.sentiment_score < -0.3 ? 'text-danger' : 
-                             email.sentiment_score > 0.3 ? 'text-success' : 'text-warning';
+        // Determine the email class and sentiment color based on sentiment score
+        let emailClass = '';
+        let sentimentColor = '#6c757d'; // Default gray for neutral
         
-        accordionItem.innerHTML = `
-            <h2 class="accordion-header" id="${headerId}">
-                <button class="accordion-button ${index === 0 ? '' : 'collapsed'}" type="button" 
-                        data-bs-toggle="collapse" data-bs-target="#${collapseId}" 
-                        aria-expanded="${index === 0 ? 'true' : 'false'}" 
-                        aria-controls="${collapseId}">
-                    <div class="d-flex justify-content-between align-items-center w-100">
-                        <span>${timestamp}</span>
-                        <span class="${sentimentClass} ms-2">
-                            Sentiment: ${email.sentiment_score.toFixed(2)}
-                        </span>
-                    </div>
-                </button>
-            </h2>
-            <div id="${collapseId}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" 
-                 aria-labelledby="${headerId}" data-bs-parent="#emailConversation">
-                <div class="accordion-body">
-                    <p><strong>From:</strong> ${email.from}</p>
-                    <p><strong>To:</strong> ${email.to}</p>
-                    <p><strong>Subject:</strong> ${email.subject}</p>
-                    <hr>
-                    <div class="email-content">${email.content}</div>
+        if (email.sentiment_score !== undefined) {
+            // Always use the getSentimentColor function for consistent coloring
+            sentimentColor = getSentimentColor(email.sentiment_score);
+            
+            if (email.sentiment_score > 0.5) {
+                emailClass = 'positive-sentiment';
+            } else if (email.sentiment_score < -0.5) {
+                emailClass = 'negative-sentiment';
+            } else {
+                emailClass = 'neutral-sentiment';
+            }
+        }
+        
+        // Create email header with sender, date, and sentiment circle
+        const emailHeader = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="sentiment-circle me-2" style="background-color: ${sentimentColor};"></div>
+                    <span class="fw-bold">${email.from || 'Unknown sender'}</span>
+                </div>
+                <div class="date-badge bg-light text-dark px-3 py-1 rounded">
+                    <small class="fw-bold">${emailDate}</small>
                 </div>
             </div>
         `;
         
-        conversationContainer.appendChild(accordionItem);
-    });
-}
-
-// Update COO Information
-function updateCOOInformation(cooData) {
-    // Update store information
-    document.getElementById('cooStoreId').textContent = cooData.store_id || 'N/A';
-    document.getElementById('cooStoreName').textContent = cooData.store_name || 'N/A';
-    document.getElementById('cooBusinessId').textContent = cooData.business_id || 'N/A';
-    document.getElementById('cooLegalBusinessName').textContent = cooData.legal_business_name || 'N/A';
-    
-    // Update new owner information
-    document.getElementById('cooNewOwnerName').textContent = 
-        `${cooData.new_owner_first_name || ''} ${cooData.new_owner_last_name || ''}`.trim() || 'N/A';
-    document.getElementById('cooNewOwnerEmail').textContent = cooData.new_owner_email || 'N/A';
-    document.getElementById('cooNewOwnerPhone').textContent = cooData.new_owner_phone || 'N/A';
-    
-    // Update COO process timeline
-    document.getElementById('cooProcessStarted').textContent = 
-        cooData.process_started_at ? new Date(cooData.process_started_at).toLocaleString() : 'N/A';
-    document.getElementById('cooProcessEnded').textContent = 
-        cooData.process_ended_at ? new Date(cooData.process_ended_at).toLocaleString() : 'N/A';
-    document.getElementById('cooDuration').textContent = cooData.duration || 'N/A';
-    document.getElementById('cooScheduledCutoffTime').textContent = 
-        cooData.scheduled_cutoff_time ? new Date(cooData.scheduled_cutoff_time).toLocaleString() : 'N/A';
-    
-    // Update status information
-    document.getElementById('cooApprovalStatus').textContent = cooData.approval_status || 'N/A';
-    document.getElementById('cooOnboardingStatus').textContent = cooData.onboarding_status || 'N/A';
-    document.getElementById('cooApprovedAt').textContent = 
-        cooData.approved_at ? new Date(cooData.approved_at).toLocaleString() : 'N/A';
-    document.getElementById('cooCancelledAt').textContent = 
-        cooData.cancelled_at ? new Date(cooData.cancelled_at).toLocaleString() : 'N/A';
-    
-    // Update additional information
-    document.getElementById('cooRevokeAccess').textContent = cooData.revoke_access ? 'Yes' : 'No';
-    document.getElementById('cooCreateNewBusiness').textContent = cooData.create_new_business ? 'Yes' : 'No';
-    document.getElementById('cooPaymentAccountId').textContent = cooData.payment_account_id || 'N/A';
-    document.getElementById('cooPactsafeActivityId').textContent = cooData.pactsafe_activity_id || 'N/A';
-    
-    // Update COO events
-    const cooEvents = document.getElementById('cooEvents');
-    cooEvents.innerHTML = '';
-    
-    if (cooData.events && cooData.events.length > 0) {
-        cooData.events.forEach(event => {
-            const eventElement = document.createElement('div');
-            eventElement.className = 'coo-event';
-            
-            const timestamp = new Date(event.timestamp).toLocaleString();
-            
-            eventElement.innerHTML = `
-                <span class="coo-event-time">${timestamp}</span>
-                <p class="mb-0">${event.description}</p>
+        // Create sentiment information if available
+        let sentimentInfo = '';
+        if (email.sentiment_score !== undefined) {
+            sentimentInfo = `
+                <div class="sentiment-info mt-2" style="border-left: 4px solid ${sentimentColor}; padding-left: 10px;">
+                    <p><strong>Sentiment:</strong> ${email.sentiment_category} (${email.sentiment_score.toFixed(2)})</p>
+                </div>
             `;
             
-            cooEvents.appendChild(eventElement);
+            // Add noteworthy snippets if available
+            if (email.noteworthy_snippets && email.noteworthy_snippets.length > 0) {
+                sentimentInfo += `
+                    <div class="mt-2">
+                        <strong>Noteworthy Snippets:</strong>
+                        <ul>
+                            ${email.noteworthy_snippets.map(snippet => `<li>${snippet}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+        
+        // Create collapsible email content
+        const emailContent = `
+            <div class="email-content mt-3">
+                <p><strong>Subject:</strong> ${email.subject || 'No subject'}</p>
+                <div class="email-text">
+                    ${email.text.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+        `;
+        
+        // Create the accordion item
+        emailItem.innerHTML = `
+            <h2 class="accordion-header">
+                <button class="accordion-button ${index === 0 ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#email${index}">
+                    ${emailHeader}
+                </button>
+            </h2>
+            <div id="email${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" data-bs-parent="#emailConversation">
+                <div class="accordion-body ${emailClass}">
+                    ${sentimentInfo}
+                    <div class="d-flex justify-content-start">
+                        <button class="btn btn-sm btn-outline-secondary show-content" data-target="content${index}">
+                            Show Email Content
+                        </button>
+                    </div>
+                    <div id="content${index}" class="email-content-container d-none">
+                        ${emailContent}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        conversationContainer.appendChild(emailItem);
+    });
+    
+    // Add event listeners to show/hide buttons
+    document.querySelectorAll('.show-content').forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const contentContainer = document.getElementById(targetId);
+            contentContainer.classList.toggle('d-none');
+            this.textContent = contentContainer.classList.contains('d-none') ? 
+                'Show Email Content' : 'Hide Email Content';
         });
-    } else {
-        cooEvents.innerHTML = '<p>No events found.</p>';
-    }
+    });
 }
 
 // Show Error Message
