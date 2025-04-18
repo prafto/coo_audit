@@ -154,6 +154,29 @@ def print_coo_data(coo_data):
         for i, event in enumerate(coo_data.events, 1):
             print(f"Event {i}: {event}")
 
+def calculate_coo_duration(start_time, end_time):
+    """Calculate the duration between start and end times.
+    
+    Args:
+        start_time (datetime): The start time
+        end_time (datetime): The end time
+        
+    Returns:
+        tuple: A tuple containing (days, hours, minutes)
+    """
+    if not start_time or not end_time:
+        return None
+        
+    duration = end_time - start_time
+    total_minutes = int(duration.total_seconds() / 60)
+    
+    days = total_minutes // (24 * 60)
+    remaining_minutes = total_minutes % (24 * 60)
+    hours = remaining_minutes // 60
+    minutes = remaining_minutes % 60
+    
+    return (days, hours, minutes)
+
 async def main():
     """Main function to parse arguments and execute the COO lookup."""
     parser = argparse.ArgumentParser(description='Retrieve Change of Ownership data for a store')
